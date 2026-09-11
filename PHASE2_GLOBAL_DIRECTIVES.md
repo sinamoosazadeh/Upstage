@@ -1,10 +1,3 @@
-# PHASE2_PROMPT_AGENT_03.md — COMPLETE STARTUP PROMPT for AGENT-03 — Engines E07–E12
-> HOW TO USE (owner only): start a NEW chat/session on your AI service — full context isolation from every other agent (and, for a fresh role, from any previous project; staged sessions follow PHASE2_MASTER_PLAN.md §4). Paste this ENTIRE file as the first message. Do not edit, split, or summarize the PART G block below — it is the complete global directive set, copied verbatim from PROMPT.md and the Phase-2 control plan, embedded so this agent cannot miss it. The agent needs only its own GitHub account and the repository URL. Do not give the agent private keys or bot tokens.
-
----
-
-# PART G — GLOBAL MANDATORY DIRECTIVES (verbatim law; applies to every action you take)
-
 ## PART G — GLOBAL BINDING DIRECTIVES (full text; applies to you completely, beside your checkpoint-specific PART M below)
 
 These are the general, cross-section obligations of the project (re-based from `PROMPT.md`, the frozen Chief-Engineer directive, for the multi-agent chain — nothing here is optional; where wording is marked [MA] it has been adapted for the agent chain only, never for the system design).
@@ -56,35 +49,3 @@ G19. CHAIN MECHANICS — reading budget, exit, resume, ownership, naming. [MA]
 - NAMING INTEGRITY: identifiers exactly as in the plan — checkpoints CP-1..CP-6 (CP-7 = owner closure marker on the board; no code scope), agents AGENT-01..AGENT-06 (zero-padded), blueprint `APEX_GEN5.md`, directives `PROMPT.md`, control files `PHASE2_*` verbatim, normative-tree paths verbatim (e.g. `apex/data_catalog/store/sqlite_store.py`), test ids as in AI.10/AI.13 and engine chapter acceptance ids. Never rename, renumber or rebrand anything you pass along.
 
 G20. FINAL COMPLETION CONDITION (from §19, chain-mapped). APEX_GEN5 Phase 2 is complete only when: the repository contains the full implementation of the frozen blueprint; the system follows APEX_GEN5.md exactly; Phase Paper functionality is operational; the runtime starts successfully; the Telegram interface works; no further coding is required for the defined scope; final documentation is delivered — evidenced at CP-7 by `PHASE2_FINAL_REPORT.md` with the Blueprint Compliance Declaration checked ONLY where parts I–III of the traceability matrix and executed tests prove it. External measurement gates (AI.13) remain owner-side procedures; an agent declaring them CLOSED without a recorded artifact commits fabrication.
-
----
-# PART M3 — YOUR MISSION: AGENT-03 · Engines E07–E12 (checkpoint CP-3, two staged sessions)
-
-**You build the six right-side engines exactly as blueprint chapters 3.7–3.11 + 3.13.6 define them: clean builds — the previous attempt never reached this territory, there is nothing to salvage. Two chained fresh sessions: stage 1 = E07→E09, stage 2 = E10→E12.**
-
-## Scope (execute per PHASE2_CHECKPOINTS.md §CP-3)
-`apex/engines/e07_rtm/`, `e08_wyckoff/`, `e09_trend/` (stage 1); `e10_momentum/`, `e11_regime/`, `e12_temporal/` (stage 2). Cross-stage dependencies are pre-arranged: E07↔E12 wiring ships at stage-2 exit; E11 consumes E09/E10 (E09 pushed at stage-1 exit); E08 chapters 2–4 stay Wave-Out with explicit stubs; E11 live-gate ships with its default-off flag.
-
-## Blueprint reading list
-- ALWAYS first: GLOBAL IDENTITY/PIT contract L4104–4158; §9.5 L20128–20247; §3.12 global rules + §3.13 L13529–14382.
-- E07: L8293–9085 · E08: L9086–9466 · E09: L9467–10275 (stage 1)
-- E10: L10276–11670 · E11: L11671–12732 · E12: L12733–13528 (stage 2)
-- E01/E03/E04 §5/§7 interface blocks — via `HANDOFF_CP2.md` §INTERFACES ONLY; if a needed detail is missing there, request via DECISION_LOG [ISSUE] and code against the blueprint range; NEVER open predecessor engine source files (isolation law).
-- AI.10: L18906–18975 · AI.12: L19006–19051 · §9.9 L19212–19400.
-
-## First 30 minutes (stage 1)
-1. Clone; verify sha; board CP-3 IN-PROGRESS (`docs(board): CP-3 IN-PROGRESS by AGENT-03 [STAGE-1]`).
-2. Read PART G + PROTOCOL + §CP-3 + DECISION_LOG §A + HANDOFF_CP2 §[STAGE-2] INTERFACES/LEDGER (A02 must have finished CP-2; if its exit boxes are unchecked — STOP, comment on the board, do not start).
-3. Confirm CP-1/CP-2 gate tests still green in your checkout (full suite run; a pre-existing failure = G13 report, don't fix silently).
-4. E12 first? No — build order E07→E08→E09 as gated; but before writing E07, draft its E12-interface expectations as comments from the blueprint range so the stage-2 session can satisfy them (record in stage-1 ledger).
-5. E07 clean build: §3.1.6 + §4.6 + §5.6 + §6.6 + §7 (including "E12 not available → degraded, do not fabricate") + §8.1–8.6 with fixtures → commit `feat(engines): E07 rtm [CP-3 S1] ...`.
-
-## Stage 2 notes
-E12 ships before E07's degradation branch is exercised both ways (add E07 integration tests at stage-2 exit — this closes the seam). E11's K=9 math carries the dimensionality proof test (T-E11-K9). After both stages, append `HANDOFF_CP3.md §CP-3-INTEGRATION-NOTES` (merged 12-engine topic/version map deduped from HANDOFF_CP2+CP3).
-
-## Character of work
-These six engines carry the most original math in the blueprint (footprint matching, spring/sweep judgment, regime K=9, session windows). The audit (CP-6) will check each against its §8 acceptance battery clause-by-clause; "the code runs" is not a signal. Where the blueprint embeds a correction ("PHASE 79/C-3", "correction 3", "directive 21…"), that numbered sentence goes into a comment above the exact line it governs.
-
----
-## IF YOU ARE CONTINUING (RESUME protocol)
-If you are a fresh session of the SAME agent slot resuming a staged role: your predecessor's chat is not available to you — read `PHASE2_MASTER_PLAN.md` §4 and the RESUME BLOCKS in `PHASE2_CHECKPOINT_STATUS.md`, then start from PART M / your stage's entry actions with the repo state (branch + handoff ledger) as your only context.

@@ -1,12 +1,12 @@
-# PHASE2 HANDOFF — CP-3 (Twelve Analysts E01–E12) → consumed by AGENT-06 (all), AGENT-04/05 (predecessor slots)
+# PHASE2 HANDOFF — CP-3 (Engines E07–E12) → consumed by AGENT-04, AGENT-05
 
-Authors: AGENT-03, AGENT-04, AGENT-05 — one fenced section each, ≤400 lines each, identical heading order. A04 reads §[AGENT-03]; A05 reads §[AGENT-04]; A06 reads all three.
+Author: AGENT-03. Two stage sections + one integration-notes section, ≤400 lines each, identical heading order (PROTOCOL P16).
 
-## [AGENT-03] (E01 Structure, E02 Liquidity, E03 Volume, E04 Volatility)
+## [STAGE-1 E07–E09]
 ### STATUS
 ### DELIVERED
 ### INTERFACES
-(per engine: class path, params keys, emitted event types + schema pointers, degradation branches implemented, fixture list, §8 battery commands)
+(per engine, same shape as CP-2)
 ### DATA-CHANGES
 ### TESTS
 ### DEVIATIONS
@@ -14,8 +14,8 @@ Authors: AGENT-03, AGENT-04, AGENT-05 — one fenced section each, ≤400 lines 
 ### HOW-TO-RUN
 ### REMAINING WORK LEDGER
 
-## [AGENT-04] (E05 FVG, E06 OrderBlock, E07 RTM/ICT, E08 Wyckoff)
-(same nine headings)
+## [STAGE-2 E10–E12]
+(same 10 headings; + E11 K=9 proof location; E11 live-gate flag default; E12 window canonicalization entry points)
 
-## [AGENT-05] (E09 Trend, E10 Momentum, E11 Regime, E12 Temporal)
-(same nine headings; explicitly record: E11 K=9/d=8 proof location; E11 live-gate flag default; E12 window canonicalization entry points)
+## CP-3-INTEGRATION-NOTES (≤40 lines; written at stage-2 exit)
+Merged 12-engine map from HANDOFF_CP2 §INTERFACES + both CP-3 stages: for each engine — event topics, schema pointer, contract version, params keys. Deduplicated; no prose. This is CP-4's assembly index.

@@ -1,4 +1,4 @@
-# APEX_GEN5 — PHASE 2 FINAL REPORT (assembled by AGENT-10 at CP-7)
+# APEX_GEN5 — PHASE 2 FINAL REPORT (assembled by AGENT-06 at CP-6)
 
 Structure preserved from PROMPT.md §18 (Final Engineering Report) — sections and confirmation wording are mandatory. Fill with evidence pointers only; no claims a test does not back. Do not write until ALL CP handoffs are read and the full suite has been executed.
 
@@ -8,10 +8,10 @@ Structure preserved from PROMPT.md §18 (Final Engineering Report) — sections 
 - Major modules: one-line status each (from handoffs)
 
 ## 2. Implementation Report (per subsystem: Purpose | Location | Status | Integration state)
-Foundation / Feature Fabric / E01–E12 / Fabric-Pattern-Setup-Playbook-Arbitration / Forecast-Decision-Risk-Execution-Ledger-Scheduler / Telegram-Ops / Research-Governance — (A10 fills from handoffs + own verification)
+Foundation+Feature Fabric (A01) / Engines E01–E06 (A02) / E07–E12 (A03) / Fabric-Pattern-Setup-Playbook-Arbitration (A04) / Forecast-Decision-Risk-Execution-Ledger-Scheduler + Telegram-Ops + Research-Governance (A05 stages) — (A06 fills from handoffs + own verification)
 
 ## 3. Engine Report (E01–E12)
-Per engine: implementation status | formula implementation status (each §3 group) | validation status (§8 battery results) — (A10 fills; A03/04/05 handoff rows are the source)
+Per engine: implementation status | formula implementation status (each §3 group) | validation status (§8 battery results) — (A06 fills; A02/A03 handoff rows are the source)
 
 ## 4. Runtime Report
 - Startup result (PAPER boot on fixture clock + real-data smoke, if run)
@@ -36,4 +36,4 @@ Every ISSUE-CP*-* → CLOSED (evidence) or ESCALATED-TO-OWNER (verbatim)
 - [ ] No placeholder implementation remains. (evidence: completeness sweep report)
 - [ ] No specification deviation occurred beyond logged & accepted items (list ADR/issue ids).
 
-AGENT-10 signature line: `A10 completed CP-7 — <UTC datetime> — commits <range> — suite: <x passed / y failed / z harness-open>`
+AGENT-06 signature line: `A06 completed CP-6 — <UTC datetime> — commits <range> — suite: <x passed / y failed / z harness-open>`

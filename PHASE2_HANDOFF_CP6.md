@@ -1,29 +1,13 @@
-# PHASE2 HANDOFF — CP-6 (Control plane & Ops | Research & Governance) → consumed by AGENT-10
+# PHASE2 HANDOFF — CP-6 (Independent integration audit) — terminal record; consumed by OWNER only (+future maintainers)
 
-Authors: AGENT-08, AGENT-09 — one fenced section each, ≤400 lines each, identical heading order.
+Author: AGENT-06 (fresh-session audit; ADR-P2-016). Exceeds the 400-line cap by design ONLY in its tables (this file is terminal; no downstream token budget applies).
 
-## [AGENT-08] (Telegram, ops, watchdog, backup, README final)
-### STATUS
-### DELIVERED
-### INTERFACES
-(handler entrypoints; manual smoke procedure for owner; watchdog process launch command; backup/restore commands; README final run block (quote the exact lines; A10 verifies verbatim))
-### DATA-CHANGES
-(audit-trail/alert rows if any new)
-### TESTS
-### DEVIATIONS
-### OPEN-ISSUES
-### HOW-TO-RUN
-### REMAINING WORK LEDGER
-
-## [AGENT-09] (research, optimizer, bootstrap, promotion, governance service, proxies, adapters, packages)
-### STATUS
-### DELIVERED
-### INTERFACES
-(package file format + loader API; governance service API; harness run commands for G-ADAPTER-001 and replay-equivalence)
-### DATA-CHANGES
-(research-plane tables, logged)
-### TESTS
-### DEVIATIONS
-### OPEN-ISSUES
-### HOW-TO-RUN
-### REMAINING WORK LEDGER
+## STATUS
+## AUDIT RESULT
+(Part I/II matrix completion state; sweep findings; corrective patch list with commits; reopened CP entries if any)
+## RELEASE STATE
+(CODING_READY / PAPER_READY candidate + every AI.13 gate row per ADR-P2-009/010 vocabulary; §9.9 readiness checklist evaluation box-by-box)
+## OWNER ACTION LIST
+(the six external measurements + ECONOMIC_GATE checklist + every escalated ISSUE, verbatim)
+## POINTER TO FINAL REPORT
+PHASE2_FINAL_REPORT.md — sections 1..9
