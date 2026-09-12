@@ -1,0 +1,87 @@
+{
+  "note": "E05 §8.1 golden fixtures — bar inputs verbatim from APEX_GEN5.md L6575-6680; expected values RE-DERIVED from the §3 formulas (ADR-P2-007/P8). Document scalars that are internally inconsistent with their own inputs are recorded under doc_inconsistency; classification fixtures exercise the classify_fvg layer over a Gate_D-passing detection (the document's 3-bar inputs do not all pass the default min-width gate with their own ATR — see per-fixture notes; ISSUE-CP3-007).",
+  "fixtures": [
+    {"name": "VALID_BULL_CONVENTIONAL",
+     "bars": [
+       {"o":100,"h":101,"l":99.5,"c":100.5,"v":1000,"ts_close":1000},
+       {"o":100.5,"h":101.2,"l":100.3,"c":101.0,"v":1200,"ts_close":2000},
+       {"o":101.0,"h":104,"l":102.5,"c":103.5,"v":2000,"ts_close":3000}],
+     "i": 2,
+     "expected": {"direction":"UP","lower":101,"upper":102.5,"width":1.5,"ftype":"CONVENTIONAL","quality":"Q2"},
+     "note": "fully re-derived: H0=101<L2=102.5; ICT zone [H_{t-2},L_t]; ATR fallback over 2 TRs (0.9,3.0)=1.95 → min_w=0.39<1.5 passes; BR(b1)=0.5/0.9=0.556≥0.1, c>o → not BISI; wick ratio 0.222<0.5 → CONVENTIONAL"},
+
+    {"name": "INVALID_NEGATIVE_WIDTH_OLD_FORMULA_BUT_VALID_WITH_NEW",
+     "bars": [
+       {"o":100,"h":122.4,"l":118,"c":120,"v":1000,"ts_close":1000},
+       {"o":121,"h":123,"l":120.1,"c":122.9,"v":1100,"ts_close":2000},
+       {"o":122,"h":128,"l":124.6,"c":127,"v":1500,"ts_close":3000}],
+     "i": 2,
+     "expected": {"new_lower":122.4,"new_upper":124.6,"width":2.2,"direction":"UP"},
+     "note": "the abandoned max/min zone formula gives lower=max(H0,H1)=123 > upper=min(L1,L2)=120.1 → NEGATIVE_WIDTH; the frozen ICT zone [H0,L2]=[122.4,124.6] is valid (§7 Ch.1-11 historical note)"},
+
+    {"name": "BISI_VALID_BODYRATIO",
+     "bars": [
+       {"o":100,"h":102,"l":99,"c":101,"v":1000,"ts_close":1000},
+       {"o":102,"h":103,"l":99.5,"c":100,"v":1800,"ts_close":2000},
+       {"o":100,"h":105,"l":102.5,"c":104,"v":2000,"ts_close":3000}],
+     "i": 2,
+     "expected": {"ftype":"BISI","body_ratio":0.571},
+     "note": "BR=|100−102|/(103−99.5)=0.5714; UP zone with bearish middle candle (C<O) → BISI (§3.2); classification layer over Gate_D-passing detection (ATR-supplied width path)"},
+
+    {"name": "DOJI_FVG_PENALTY",
+     "bars": [
+       {"o":100,"h":102,"l":99,"c":101,"v":1000,"ts_close":1000},
+       {"o":100,"h":101,"l":99,"c":100.05,"v":900,"ts_close":2000},
+       {"o":100.05,"h":104,"l":102.2,"c":103,"v":1100,"ts_close":3000}],
+     "i": 2,
+     "expected": {"ftype":"DOJI_FVG","body_ratio":0.025,"salience_penalty":0.7},
+     "note": "BR=0.05/2=0.025<0.1 → DOJI_FVG, Salience×0.7 (§3.2 step 1)"},
+
+    {"name": "REJECTION_FVG",
+     "bars": [
+       {"o":100,"h":101,"l":99,"c":100,"v":1000,"ts_close":1000},
+       {"o":100,"h":101.5,"l":99.8,"c":101,"v":1100,"ts_close":2000},
+       {"o":101,"h":106,"l":100.5,"c":101.2,"v":2000,"ts_close":3000}],
+     "i": 2,
+     "expected": {"wick_ratio":0.873,"rejection_rule":"WR≥0.5 ∧ |C−O|/(H−L)≤0.4"},
+     "doc_inconsistency": "the fixture's own bars do NOT satisfy Gate_B (H0=101 ≮ L2=100.5; L0=99 ≯ H2=106), so no three-candle FVG exists for the REJECTION branch to classify; the re-derived test asserts the WR formula value (4.8/5.5=0.8727) on the fixture bar and the REJECTION classification on a Gate_B-passing shape (ISSUE-CP3-009)"},
+
+    {"name": "SEQUENTIAL_MTF_ALIGNMENT",
+     "bars_ltf": [
+       {"o":100,"h":101,"l":99,"c":100,"v":1000,"ts_close":3000},
+       {"o":100,"h":101.5,"l":99.5,"c":101,"v":1100,"ts_close":4000},
+       {"o":101,"h":104,"l":101.2,"c":103,"v":1300,"ts_close":5000}],
+     "htf_fvg": {"direction":"UP","lower":100,"upper":102,"mid":101,"atr_at_creation":2.0,"created_at_ts":2000},
+     "expected": {"ftype":"SEQUENTIAL","alignment_tol":0.6,"mid_diff":0.1},
+     "note": "LTF zone [101,101.2] mid 101.1; |101.1−101|=0.1 ≤ 0.3·2.0=0.6; overlap non-empty; HTF closed ts 2000 ≤ 5000 (§3.5 four conditions)"},
+
+    {"name": "INVERSE_WITH_BOS_OPP",
+     "bars": [
+       {"o":110,"h":112,"l":108,"c":109,"v":1000,"ts_close":1000},
+       {"o":109,"h":110,"l":107,"c":109.5,"v":1000,"ts_close":2000},
+       {"o":109.5,"h":111,"l":105,"c":106,"v":1500,"ts_close":3000}],
+     "i": 2,
+     "trend_htf": "DOWN",
+     "bos_events": [{"dir":"DOWN","idx":4}],
+     "expected": {"ftype":"INVERSE","quality":"Q3_Experimental"},
+     "doc_inconsistency": "the fixture's own bars satisfy NEITHER Gate_B condition (H0=112 ≮ L2=105; L0=108 ≯ H2=111), so no zone is detectable from them — the fixture defines the INVERSE classification-layer inputs (UP zone against DOWN HTF trend + opposite BOS DOWN within [i, i+5], inverse_enabled=true). Re-derived test: a Gate_B-passing UP zone with this trend/BOS context → INVERSE + Q3_Experimental (§3.6; VolRatio>1.2 gate applies when computable, ISSUE-CP3-005)"},
+
+    {"name": "MITIGATION_DIRECTIONAL_FROM_ABOVE",
+     "fvg": {"lower":100,"upper":102,"direction":"UP","width":2},
+     "bar": {"h":103,"l":99,"c":100},
+     "prev_c": 102.8,
+     "expected": {"depth":1.0,"dir":1,"fate":"FILLED"}},
+
+    {"name": "FRESHNESS_DECAY_EXPIRY",
+     "fvg": {"salience_0":1.0,"age_bars":96,"half_life":48},
+     "expected": {"freshness":0.25,"expired":true},
+     "doc_inconsistency": "§5.2 text says 'age>max'; at age==max_age(96) with freshness 0.25>0.15 only the boundary-inclusive age rule reproduces expired=true — fixture canonical (ISSUE-CP3-004)"},
+
+    {"name": "OVERLAP_MERGE_IOU",
+     "fvgs": [
+       {"lower":100,"upper":102,"direction":"UP","salience_0":0.8},
+       {"lower":100.5,"upper":102.5,"direction":"UP","salience_0":0.9}],
+     "expected": {"iou":0.6,"merged_lower":100,"merged_upper":102.5},
+     "doc_inconsistency": "document fixture name/expected iou 0.75; the fixture's own zones give inter=1.5, union=2.5 → IoU=0.6 exactly (re-derived). At the default iou_merge_thr=0.7 these two zones do NOT merge — the merge mechanics (merged bounds [100,102.5], S=max×1.1) are asserted via the governed threshold parameter and the containment rule (ISSUE-CP3-010)"}
+  ]
+}
