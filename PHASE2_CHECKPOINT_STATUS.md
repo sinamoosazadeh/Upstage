@@ -48,7 +48,7 @@ COMMIT-RANGE: 8024232..(branch HEAD; see git log --oneline main..arena/01a094c8-
 COMMIT-RANGE: 1d06481..(branch HEAD) = 1d06481 board · 83a651c E07 · 55e90e7 E08 · 8426680 E09 · 7957bc2 integration · branch-HEAD docs/closeout commits — complete range pushed to `origin/arena/01a0953f-upstage` (verified 2026-09-12T18:26Z after `git pull --rebase origin main`)  OWNER-CHECKED: [x]
 ```
 
-## CP-5 · E10+E11+E12 + 12-engine map — STATUS: PENDING
+## CP-5 · E10+E11+E12 + 12-engine map — STATUS: IN-PROGRESS (2026-09-12, arena/01a096fc-upstage; entry gate re-verified: 726 passed / 0 failed, sha256(APEX_GEN5.md)==216bcc9e…bd9e)
 ```
 [ ] ENTRY: CP-4 [x] · T-E11-K9 + T-E12-Windows + E07↔E12 both-mode green
 [ ] §CP-5-INTEGRATION-NOTES appended to HANDOFF_CP5 · MATRIX CP-5 · board
