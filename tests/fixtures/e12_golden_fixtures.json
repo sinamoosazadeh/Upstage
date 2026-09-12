@@ -1,0 +1,406 @@
+{
+  "blueprint": "APEX_GEN5.md \u00a78.1 (12 golden fixtures) + \u00a79 case anchors",
+  "case_study": {
+    "bins": {
+      "06:00": 12,
+      "07:00": 14,
+      "12:30": 25,
+      "16:00": 32
+    },
+    "chi2_p_H98_df3": 0.0204,
+    "progress_1230": 0.0,
+    "vr_case8": 1.5,
+    "wilson_n": 5000,
+    "wilson_p": 0.45,
+    "y_vol_case8": false
+  },
+  "contract_version": "4.0.0",
+  "engine": "E12_Temporal_Context",
+  "fixtures": [
+    {
+      "candle": {
+        "C": 69950,
+        "H": 70000,
+        "L": 69900,
+        "V": 1200,
+        "availability_time_ms": 1710468000000,
+        "ts": 1710468000000
+      },
+      "context": {},
+      "expected": {
+        "day_type": "FRIDAY",
+        "hour_utc": 2.0,
+        "is_gap": false,
+        "is_overlap": false,
+        "is_utc_activity_window": false,
+        "minute": 0,
+        "quality": "Q1",
+        "reason": null,
+        "rollover_active": false,
+        "temporal_window": "UTC_W0",
+        "tod_bin": 4,
+        "utc_window_progress": 0.285714285714,
+        "vol_ratio": null,
+        "weekday": 4,
+        "window_phase": "MID"
+      },
+      "hash": "829e3f138f527e647eef5653f2f6ddabb23ea1b3dfc2c9511facae73a3cc5b45",
+      "id": "GF01_UTC_W0",
+      "note": "\u00a78.1 expects WEEKDAY; 2024-03-15 is a Friday \u21d2 FRIDAY per \u00a74 pseudocode (ISSUE-CP5-021; GF11 confirms)."
+    },
+    {
+      "candle": {
+        "C": 70050,
+        "H": 70100,
+        "L": 69950,
+        "V": 3000,
+        "availability_time_ms": 1710486900000,
+        "ts": 1710486900000
+      },
+      "context": {},
+      "expected": {
+        "day_type": "FRIDAY",
+        "hour_utc": 7.25,
+        "is_gap": false,
+        "is_overlap": false,
+        "is_utc_activity_window": true,
+        "minute": 15,
+        "quality": "Q1",
+        "reason": null,
+        "rollover_active": false,
+        "temporal_window": "UTC_W1",
+        "tod_bin": 14,
+        "utc_window_progress": 0.045454545455,
+        "vol_ratio": null,
+        "weekday": 4,
+        "window_phase": "EARLY"
+      },
+      "hash": "158ec3764a55727694d3d05bc8feb4d177c1080d283f75a5f6e28184dfaa45d4",
+      "id": "GF02_UTC_W1_EARLY",
+      "note": "Direct \u00a78.1 re-derivation."
+    },
+    {
+      "candle": {
+        "C": 70150,
+        "H": 70200,
+        "L": 70000,
+        "V": 8500,
+        "availability_time_ms": 1710506700000,
+        "ts": 1710506700000
+      },
+      "context": {},
+      "expected": {
+        "day_type": "FRIDAY",
+        "hour_utc": 12.75,
+        "is_gap": false,
+        "is_overlap": true,
+        "is_utc_activity_window": true,
+        "minute": 45,
+        "quality": "Q1",
+        "reason": null,
+        "rollover_active": false,
+        "temporal_window": "UTC_W2",
+        "tod_bin": 25,
+        "utc_window_progress": 0.029411764706,
+        "vol_ratio": null,
+        "weekday": 4,
+        "window_phase": "EARLY"
+      },
+      "hash": "f0f0d501a208a465fa84b15fdff9d08cc0002e146697e98687a16324556581c8",
+      "id": "GF03_OVERLAP_ENTRY",
+      "note": "Direct \u00a78.1 re-derivation."
+    },
+    {
+      "candle": {
+        "C": 70250,
+        "H": 70300,
+        "L": 70100,
+        "V": 6000,
+        "availability_time_ms": 1710522000000,
+        "ts": 1710522000000
+      },
+      "context": {},
+      "expected": {
+        "day_type": "FRIDAY",
+        "hour_utc": 17.0,
+        "is_gap": false,
+        "is_overlap": false,
+        "is_utc_activity_window": false,
+        "minute": 0,
+        "quality": "Q1",
+        "reason": null,
+        "rollover_active": false,
+        "temporal_window": "UTC_W2",
+        "tod_bin": 34,
+        "utc_window_progress": 0.529411764706,
+        "vol_ratio": null,
+        "weekday": 4,
+        "window_phase": "MID"
+      },
+      "hash": "0d9a3d39d27ef282df99c26856d98a07a0494666a283fc59bb701e6c6b0bb88a",
+      "id": "GF04_UTC_W2_AFTER",
+      "note": "Direct \u00a78.1 re-derivation."
+    },
+    {
+      "candle": {
+        "C": 69500,
+        "H": 71000,
+        "L": 69000,
+        "V": 20000,
+        "availability_time_ms": 1712752200000,
+        "ts": 1712752200000
+      },
+      "context": {
+        "econ_calendar": [
+          "2024-04-10"
+        ],
+        "window_volume_history": [
+          8000.0,
+          8000.0,
+          8000.0,
+          8000.0,
+          8000.0
+        ]
+      },
+      "expected": {
+        "day_type": "HIGH_IMPACT",
+        "hour_utc": 12.5,
+        "is_gap": false,
+        "is_overlap": true,
+        "is_utc_activity_window": true,
+        "minute": 30,
+        "quality": "Q1",
+        "reason": null,
+        "rollover_active": false,
+        "temporal_window": "UTC_W2",
+        "tod_bin": 25,
+        "utc_window_progress": 0.0,
+        "vol_ratio": 2.5,
+        "weekday": 2,
+        "window_phase": "EARLY"
+      },
+      "hash": "e81077b2362a2676579e0e6b69929749ef3dcb17fafe5ebcfba7cd50f3e1c029",
+      "id": "GF05_HIGH_IMPACT",
+      "note": "VR=2.5 requires window-volume history (\u00a72 VR = V/mean(V_window,180d)); injected canonical window mean 8000 \u21d2 20000/8000 = 2.5 (ISSUE-CP5-026). y_vol = [2.5 > 1.5] = True."
+    },
+    {
+      "candle": {
+        "C": 69400,
+        "H": 69500,
+        "L": 69300,
+        "V": 800,
+        "availability_time_ms": 1710597600000,
+        "ts": 1710597600000
+      },
+      "context": {},
+      "expected": {
+        "day_type": "SATURDAY_SUNDAY_CONTEXT",
+        "hour_utc": 14.0,
+        "is_gap": false,
+        "is_overlap": true,
+        "is_utc_activity_window": true,
+        "minute": 0,
+        "quality": "Q1",
+        "reason": null,
+        "rollover_active": false,
+        "temporal_window": "UTC_W2",
+        "tod_bin": 28,
+        "utc_window_progress": 0.176470588235,
+        "vol_ratio": null,
+        "weekday": 5,
+        "window_phase": "MID"
+      },
+      "hash": "976a9f58a1bbe7f58618be4ae8e450279771447fc6a4e97e2c3e0b142e54aa58",
+      "id": "GF06_SATURDAY_SUNDAY_CONTEXT",
+      "note": "Direct \u00a78.1 re-derivation."
+    },
+    {
+      "candle": {
+        "C": 69500,
+        "H": 69000,
+        "L": 70000,
+        "V": 1000,
+        "availability_time_ms": 1710496800000,
+        "ts": 1710496800000
+      },
+      "context": {},
+      "expected": {
+        "fate": "INVALIDATED",
+        "quality": "Q0",
+        "reason": "INVALID_CANDLE"
+      },
+      "hash": "636f84a91bae9ea78449dccca1edc993d196528cdf9f29d9f8afd499bd14d3d8",
+      "id": "GF07_INVALID_HL",
+      "note": "H<L \u21d2 Q0 INVALID_CANDLE, fate INVALIDATED, snapshot_id over the SAME \u00a75.1 payload shape (state={quality,reason})."
+    },
+    {
+      "candle": {
+        "C": 70000,
+        "H": 70000,
+        "L": 70000,
+        "V": 0,
+        "availability_time_ms": 1710471600000,
+        "ts": 1710471600000
+      },
+      "context": {},
+      "expected": {
+        "day_type": "FRIDAY",
+        "hour_utc": 3.0,
+        "is_gap": false,
+        "is_overlap": false,
+        "is_utc_activity_window": false,
+        "minute": 0,
+        "quality": "Q1",
+        "reason": "V_ZERO",
+        "rollover_active": false,
+        "temporal_window": "UTC_W0",
+        "tod_bin": 6,
+        "utc_window_progress": 0.428571428571,
+        "vol_ratio": null,
+        "weekday": 4,
+        "window_phase": "MID"
+      },
+      "hash": "f3070e9f66dbb17b03ebee257bff0090763cd499212bdbae303d9aa0e289fc94",
+      "id": "GF08_ZERO_VOLUME",
+      "note": "V=0 \u21d2 VolRatio undefined \u21d2 vol_ratio=null, Q1, reason V_ZERO (\u00a73.1)."
+    },
+    {
+      "candle": {
+        "C": 70950,
+        "H": 71000,
+        "L": 70900,
+        "O": 71000,
+        "V": 5000,
+        "availability_time_ms": 1710486000000,
+        "prev_H": 70000,
+        "prev_L": 69900,
+        "ts": 1710486000000
+      },
+      "context": {},
+      "expected": {
+        "day_type": "FRIDAY",
+        "hour_utc": 7.0,
+        "is_gap": false,
+        "is_overlap": false,
+        "is_utc_activity_window": true,
+        "minute": 0,
+        "quality": "Q1",
+        "reason": null,
+        "rollover_active": false,
+        "temporal_window": "UTC_W1",
+        "tod_bin": 14,
+        "utc_window_progress": 0.0,
+        "vol_ratio": null,
+        "weekday": 4,
+        "window_phase": "EARLY"
+      },
+      "hash": "23bde799aa1b016c82c8dffc52e8e0437527571d531e665c90bc469019991d06",
+      "id": "GF09_GAP",
+      "note": "\u00a78.1 expects gap=true but \u00a73.1 gives 71000 \u2264 70000\u00b71.1 = 77000 \u21d2 NO gap; formula governs (ISSUE-CP5-022). Gap law proven separately with O=78000 > 77000."
+    },
+    {
+      "candle": {
+        "C": 69380,
+        "H": 69400,
+        "L": 69350,
+        "V": 100,
+        "availability_time_ms": 1710549000000,
+        "ts": 1710549000000
+      },
+      "context": {
+        "rollover_windows": [
+          {
+            "end_h": 1.0,
+            "start_h": 0.0,
+            "weekdays": [
+              5
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "day_type": "SATURDAY_SUNDAY_CONTEXT",
+        "hour_utc": 0.5,
+        "is_gap": false,
+        "is_overlap": false,
+        "is_utc_activity_window": false,
+        "minute": 30,
+        "quality": "Q1",
+        "reason": null,
+        "rollover_active": true,
+        "temporal_window": "UTC_W0",
+        "tod_bin": 1,
+        "utc_window_progress": 0.071428571429,
+        "vol_ratio": null,
+        "weekday": 5,
+        "window_phase": "MID"
+      },
+      "hash": "876332675df5af3ebf421f9dd66588b66bebf40c69dc571028f3c5ac67f198a7",
+      "id": "GF10_ROLLOVER",
+      "note": "\u03c3(00:30) = UTC_W0 not UTC_W3 (ISSUE-CP5-023); rollover_active=true only under the injected Saturday [00:00,01:00) exchange configuration \u2014 default config empty \u21d2 never active (ISSUE-CP5-020)."
+    },
+    {
+      "candle": {
+        "C": 70820,
+        "H": 70850,
+        "L": 70800,
+        "V": 4500,
+        "availability_time_ms": 1710532800000,
+        "ts": 1710532800000
+      },
+      "context": {},
+      "expected": {
+        "day_type": "FRIDAY",
+        "hour_utc": 20.0,
+        "is_gap": false,
+        "is_overlap": false,
+        "is_utc_activity_window": false,
+        "minute": 0,
+        "quality": "Q1",
+        "reason": null,
+        "rollover_active": false,
+        "temporal_window": "UTC_W2",
+        "tod_bin": 40,
+        "utc_window_progress": 0.882352941176,
+        "vol_ratio": null,
+        "weekday": 4,
+        "window_phase": "MID"
+      },
+      "hash": "35f093d9ee0b6e77fc09e9297b027d3d2ed5a56b99715f5266c7e352d6995f5a",
+      "id": "GF11_FRIDAY",
+      "note": "Direct \u00a78.1 re-derivation."
+    },
+    {
+      "candle": {
+        "C": 70850,
+        "H": 70950,
+        "L": 70700,
+        "V": 5000,
+        "availability_time_ms": 1710518400000,
+        "ts": 1710518400000
+      },
+      "context": {},
+      "expected": {
+        "day_type": "FRIDAY",
+        "hour_utc": 16.0,
+        "is_gap": false,
+        "is_overlap": false,
+        "is_utc_activity_window": false,
+        "minute": 0,
+        "quality": "Q1",
+        "reason": null,
+        "rollover_active": false,
+        "temporal_window": "UTC_W2",
+        "tod_bin": 32,
+        "utc_window_progress": 0.411764705882,
+        "vol_ratio": null,
+        "weekday": 4,
+        "window_phase": "MID"
+      },
+      "hash": "1210b3210f9ec20a668f81793d3da556318542c1a631dc5195dc82b959717156",
+      "id": "GF12_OVERLAP_EDGE",
+      "note": "16:00 is the EXCLUSIVE end of [12:30,16:00) \u21d2 is_overlap=false; UTC_W2/MID (13 \u2264 16 < 20.5)."
+    }
+  ],
+  "hash_rule": "sha256(canonical_json(body minus hash and note))"
+}
