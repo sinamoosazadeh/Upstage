@@ -21,12 +21,12 @@ OWNER: ____
 COMMIT-RANGE: fba2e88..7e9e9c9  OWNER-CHECKED: [x]
 ```
 
-## CP-2 · E01+E02+E03 — STATUS: PENDING
+## CP-2 · E01+E02+E03 — STATUS: COMPLETE (2026-09-12)
 ```
-[ ] ENTRY: CP-1 boxes all [x]; CP-1 suite green in fresh clone
-[ ] §8 BATTERIES E01–E03 + T-E01-001 + T-DR-001 green; FIX_* fixtures derived (not copied)
-[ ] HANDOFF CP-2 · MATRIX CP-2 · board updated · (overflow? CONTINUE-NEEDED + ledger)
-COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
+[x] ENTRY: CP-1 boxes all [x]; CP-1 suite green in fresh clone (158/0 re-verified at session start)
+[x] §8 BATTERIES E01–E03 + T-E01-001 + T-DR-001 green; FIX_* fixtures derived (not copied) — full suite 305 passed/0 failed; 147 CP-2 tests across tests/unit/test_e01_structure.py (44), test_e02_liquidity.py (46), test_e03_volume.py (49), tests/integration/test_cp2_engines.py (8)
+[x] HANDOFF CP-2 · MATRIX CP-2 · board updated · no overflow — PHASE2_HANDOFF_CP2.md (9 headings, LAW-ACK first line); PHASE2_TRACEABILITY_MATRIX.md Parts I/II/III CP-2 rows; ISSUE-CP2-001..016 in DECISION_LOG §B/CP-2; emission rows validate against store DDL (frozen evidence_event)
+COMMIT-RANGE: 3cd94e3..4570a17  OWNER-CHECKED: [ ]
 ```
 
 ## CP-3 · E04+E05+E06 — STATUS: PENDING
