@@ -59,7 +59,7 @@ COMMIT-RANGE: 1d06481..(branch HEAD) = 1d06481 board · 83a651c E07 · 55e90e7 E
 COMMIT-RANGE: 26cb10a..(branch HEAD) = 26cb10a board · 267dfb4 E10 · 4f5f7c6 E11 · 53007b7 E12 · ea12a18 integration · branch-HEAD docs/closeout commit — ENV NOTE (push): origin/arena/01a096fc-upstage is current through 4f5f7c6; 53007b7..HEAD are committed locally and queued for push — the sandbox GitHub token expired mid-session (gh auth: "token no longer valid"); after the Owner reconnects GitHub in Arena, `git pull --rebase origin main && git push origin arena/01a096fc-upstage` completes the range (nothing is lost; branch commits are the record per the ENV NOTE)  OWNER-CHECKED: [x]
 ```
 
-## CP-6 · Context chain + Forecast/Decision/Risk — STATUS: PENDING
+## CP-6 · Context chain + Forecast/Decision/Risk — STATUS: IN-PROGRESS (2026-09-13, arena/01a097fa-upstage)
 ```
 [ ] ENTRY: CP-5 [x] · gates ±1 matrix · GF_SC_01/02 fire · T_VETO×14 · T-DR-002/003 · RSK-ERR-506 · seam test · vacuous-pass assert
 [ ] HANDOFF CP-6 §INTERFACES = StrategyProposal/trade-plan/veto shapes ONLY (CP-7 needs nothing else)
