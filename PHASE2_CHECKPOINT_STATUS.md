@@ -21,7 +21,7 @@ OWNER: ____
 COMMIT-RANGE: fba2e88..7e9e9c9  OWNER-CHECKED: [x]
 ```
 
-## CP-2 · E01+E02+E03 — STATUS: PENDING
+## CP-2 · E01+E02+E03 — STATUS: IN-PROGRESS (2026-09-12)
 ```
 [ ] ENTRY: CP-1 boxes all [x]; CP-1 suite green in fresh clone
 [ ] §8 BATTERIES E01–E03 + T-E01-001 + T-DR-001 green; FIX_* fixtures derived (not copied)
