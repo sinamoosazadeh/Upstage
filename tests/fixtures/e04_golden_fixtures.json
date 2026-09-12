@@ -1,0 +1,58 @@
+{
+  "note": "E04 §8.1 golden fixtures — inputs verbatim from APEX_GEN5.md L5497-5512; every expected value RE-DERIVED from the §3 formulas (ADR-P2-007/P8: never copy a document scalar you can recompute). Document scalars that are internally inconsistent with their own inputs are recorded under doc_inconsistency and the re-derived value is asserted.",
+  "fixtures": [
+    {"fixture_id": "E04_F01_ATR_seed",
+     "input": {"trs": [4.0, 4.2, 3.8, 5.0, 4.5, 4.1, 4.3, 4.0, 3.9, 4.4, 4.6, 4.2, 4.0, 4.1]},
+     "expected": {"atr": 4.221428571428571, "q_tag": "Q2"},
+     "doc_inconsistency": "document expected 4.2142857 = 59.0/14; the fixture's own TR list sums to 59.1 → seed = 59.1/14 = 4.221428… (§3.1 seed = mean(TR) over first n)"},
+
+    {"fixture_id": "E04_F02_RMA_step",
+     "input": {"prev": 4.2142857, "tr": 6.0, "n": 14},
+     "expected": {"new": 4.341836744285714, "formula": "(prev*(n-1)+tr)/n"}},
+
+    {"fixture_id": "E04_F03_TR_gap",
+     "input": {"h": 610, "l": 590, "c_prev": 600},
+     "expected": {"tr": 20}},
+
+    {"fixture_id": "E04_F04_TR_gap_up",
+     "input": {"h": 620, "l": 610, "c_prev": 600},
+     "expected": {"tr": 20, "dominant": "H-Cprev"}},
+
+    {"fixture_id": "E04_F05_Parkinson",
+     "input": {"highs": [110, 112], "lows": [100, 100]},
+     "expected": {"sigma": 0.0628835, "tol": 0.0001},
+     "doc_inconsistency": "document exp 0.0665; σ² = (ln²(1.10)+ln²(1.12))/(4·ln2·2) = 0.00395433 → σ = 0.0628835 re-derived (§3.3 Parkinson raw)"},
+
+    {"fixture_id": "E04_F06_GK_floor",
+     "input": {"o": 100, "h": 101, "l": 99, "c": 110},
+     "expected": {"gk_contribution_raw": -0.0033091, "gk_floor": 0}},
+
+    {"fixture_id": "E04_F07_YZ",
+     "input": {"opens": [600, 605], "closes_prev": [598, 605], "highs": [610, 615], "lows": [595, 600], "closes": [605, 602]},
+     "expected": {"yz": 0.0176164, "tol": 0.00005},
+     "doc_inconsistency": "document yz 0.01735 (tol 0.0002) is the §7 Ch.2-11 illustrative value, reproduced only with its own approximate intermediates (RS²=0.000324, k=0.1018 ⇒ n=3); the exact §3.3 formula at n=2 gives ON²=5.5741e-6, OC²=4.6791e-5, RS²=3.2669e-4, k=0.078341 → YZ=0.0176164 (re-derived, asserted)"},
+
+    {"fixture_id": "E04_F08_BollWidth",
+     "input": {"closes20": [600, 602, 601, 603, 604, 605, 603, 602, 601, 600, 602, 604, 605, 606, 607, 608, 609, 610, 611, 612]},
+     "expected": {"sma": 604.75, "std_pop": 3.5899164, "width": 0.0237456, "width_formula": "(U-L)/M = 4σ/SMA20"},
+     "doc_inconsistency": "document exp_sma 604.35; the fixture's own 20 closes sum to 12095 → SMA = 604.75 (§3.7)"},
+
+    {"fixture_id": "E04_F09_VolRatio",
+     "input": {"atr_s": 4.0, "atr_l": 6.5, "bw": 0.08, "range_z": -1.0},
+     "expected": {"vr": 0.6153846, "squeeze": true},
+     "doc_inconsistency": "document fixture supplies no RangeZ although §3.8 requires VR≤0.75 ∧ BW≤0.12 ∧ RZ≤−0.5; the re-derived test supplies RZ=−1.0 explicitly and asserts all three bounds (missing RZ fails closed to squeeze=false — ISSUE-CP3-008)"},
+
+    {"fixture_id": "E04_F10_Regime_PIT",
+     "input": {"hv_hist": [0.01, 0.012, 0.015, 0.018, 0.022, 0.03, 0.04, 0.06], "hv_cur": 0.025},
+     "expected": {"qs": {"q15": 0.01215, "q35": 0.01635, "q75": 0.0325, "q95": 0.053}, "reg": "NORMAL", "pit": true},
+     "doc_inconsistency": "document qs 0.012/0.016/0.03/0.05 are rounded; linear-interpolation percentiles (§3.9) re-derived exactly: idx=q/100·(m−1)"},
+
+    {"fixture_id": "E04_F11_Ljung",
+     "input": {"r2": [0.0004, 0.0001, 0.0009, 0.0004, 0.0006, 0.0002, 0.0008, 0.0003, 0.0005, 0.0007], "m": 2},
+     "expected": {"Q": 5.0569, "tol": 0.01, "Q_gt_0": true, "p": 0.0798, "p_tol": 0.005}},
+
+    {"fixture_id": "E04_F12_VolTargeting",
+     "input": {"risk": 100, "atr": 35, "reg": "NORMAL"},
+     "expected": {"k": 2.0, "pos": 1.4285714}}
+  ]
+}
