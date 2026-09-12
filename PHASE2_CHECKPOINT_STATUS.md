@@ -10,7 +10,7 @@ Legend: PENDING · IN-PROGRESS · DELIVERED (self-checked & pushed) · CONTINUE-
 - [ ] Stage-1 account created with write access to THIS repo only; owner read MASTER_PLAN §4 runbook
 OWNER: ____
 
-## CP-1 · Foundation + Feature Fabric + Engine Base — STATUS: PENDING
+## CP-1 · Foundation + Feature Fabric + Engine Base — STATUS: IN-PROGRESS (claimed 2026-09-12 by CP-1 executor; LAW-ACK: G1..G20 + P1..P21 read 2026-09-12T02:10Z; CP-0 gate facts verified — see [ISSUE-CP1-002]; work on pinned session branch arena/01a0935b-upstage per [ISSUE-CP1-003])
 ```
 [ ] ALL EXIT BOXES PASS (see PHASE2_CHECKPOINTS.md §CP-1)
 [ ] TREE: all CP-1 files exist, non-empty, import-chain test green
