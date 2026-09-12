@@ -35,7 +35,7 @@ COMMIT-RANGE: 3cd94e3..4570a17  OWNER-CHECKED: [x]
 [x] ALL EXIT BOXES PASS (see PHASE2_CHECKPOINTS.md CP-3) — full suite 481 passed/0 failed (scripts/run_all_tests.sh); E04 ε=1e-12 tier + adaptive-ATR Wave-Out raise; E05 min-width 0.2 rule + full lifecycle; E06 evidence-only consumption + lint test proving zero internal SMA/ATR re-computation
 [x] §8 BATTERIES E04–E06 + T-DR-001 re-runs green; FIX_* fixtures re-derived (doc divergences logged as doc_inconsistency) — 176 CP-3 tests: tests/unit/test_e04_volatility.py (66), test_e05_fvg.py (49), test_e06_orderblock.py (53), tests/integration/test_cp3_engines.py (8)
 [x] HANDOFF CP-3 (§INTERFACES complete ≤400 lines) · MATRIX CP-3 rows (Parts I/II + Part III CP-3 table) · board updated — PHASE2_HANDOFF_CP3.md; ISSUE-CP3-001..013 mirrored to DECISION_LOG §B/CP-3
-COMMIT-RANGE: 8024232..(branch HEAD; see git log --oneline main..arena/01a094c8-upstage — pushed commits a27b362, a58cdc9, + CP-3 closeout commit)  OWNER-CHECKED: [ ]
+COMMIT-RANGE: 8024232..(branch HEAD; see git log --oneline main..arena/01a094c8-upstage — pushed commits a27b362, a58cdc9, + CP-3 closeout commit)  OWNER-CHECKED: [x]
 ```
 
 ## CP-4 · E07+E08+E09 — STATUS: PENDING
