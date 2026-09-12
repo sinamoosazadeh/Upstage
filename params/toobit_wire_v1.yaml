@@ -1,0 +1,64 @@
+# params/toobit_wire_v1.yaml — copy of the SL-6 Toobit wire maps and paths
+# (Ch.16). Wave-In uses API v1; public + signed Wave-In endpoints exactly
+# as listed; no unlisted path exists (forbidden = failed deliverable).
+base_url: https://api.toobit.com
+header_api_key: X-BB-APIKEY
+recv_window_ms: 5000
+auth_scheme: HMAC-SHA256
+symbol_map:
+  BTCUSDT: BTC-SWAP-USDT
+  ETHUSDT: ETH-SWAP-USDT
+  SOLUSDT: SOL-SWAP-USDT
+  BNBUSDT: BNB-SWAP-USDT
+  XRPUSDT: XRP-SWAP-USDT
+  ADAUSDT: ADA-SWAP-USDT
+  DOGEUSDT: DOGE-SWAP-USDT
+  AVAXUSDT: AVAX-SWAP-USDT
+  LINKUSDT: LINK-SWAP-USDT
+  LTCUSDT: LTC-SWAP-USDT
+interval_map:
+  1mo: 1M
+interval_unsupported_code: -1120
+interval_unsupported_handling: DISABLE_TF_FOR_SYMBOL_ONLY
+public_endpoints:
+  - GET /api/v1/time
+  - GET /api/v1/exchangeInfo
+  - GET /quote/v1/depth
+  - GET /quote/v1/klines
+  - GET /quote/v1/openInterest
+  - GET /api/v1/futures/fundingRate
+klines_limit: 1000
+open_interest_failure_handling: OI_MISSING
+funding_rate_alert_threshold: 0.001
+funding_rate_alert_only: true
+signed_wave_in_endpoints:
+  - POST /api/v1/futures/order
+  - DELETE /api/v1/futures/order
+  - DELETE /api/v1/futures/batchOrders
+  - GET /api/v1/futures/order
+  - GET /api/v1/futures/openOrders
+  - GET /api/v1/futures/positions
+  - GET /api/v1/futures/balance
+  - POST /api/v1/futures/leverage
+  - POST /api/v1/futures/marginType
+  - GET /api/v1/futures/userTrades
+  - GET /api/v1/futures/commissionRate
+forbidden_operations: [withdraw, transfer, flashClose, reversePosition, auto_add_margin]
+forbidden_order_type: MARKET
+margin_type_value: ISOLATED
+side_map:
+  LONG_entry: BUY_OPEN
+  SHORT_entry: SELL_OPEN
+  LONG_flatten: SELL_CLOSE
+  SHORT_flatten: BUY_CLOSE
+order_defaults:
+  entry: {type: LIMIT, tif: IOC, price_type: INPUT}
+  stop: {type: STOP, price_type: MARKET}
+  target: {type: LIMIT, tif: GTC}
+business_codes_ok: [0, 200]
+unknown_outcome_codes: [-1006, -1007, -1146, -1147]
+abort_code: -1022
+backoff_code: -1003
+retry_attempts: 3
+retry_backoff_seconds: [1, 2, 4]
+rollover_min_days: 7

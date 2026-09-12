@@ -1,0 +1,24 @@
+# params/setup_weights_v1.yaml — §9.5 + Ch.10 Setup Engine.
+# FROZEN_BOOTSTRAP setup weights (sum = 1; do not retune in code), the only
+# Wave-In family, and the fixed penalty constants (versioned params).
+family_id: SF_FVG_SWEEP_REV
+playbook_id: PB_FVG_SWEEP_REV_A
+Q_min_setup: 0.55
+gate7_entropy_threshold: 0.85
+conflict_penalty: 0.4
+redundancy_penalty: 0.3
+redundancy_rho_threshold: 0.85
+redundancy_window_n: 48
+weights:
+  w_structure: 0.16
+  w_liquidity: 0.12
+  w_volume: 0.10
+  w_volatility: 0.08
+  w_fvg: 0.12
+  w_orderblock: 0.10
+  w_rtm: 0.06
+  w_wyckoff: 0.06
+  w_trend: 0.08
+  w_momentum: 0.06
+  w_regime: 0.04
+  w_temporal: 0.02

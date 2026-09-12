@@ -10,15 +10,15 @@ Legend: PENDING · IN-PROGRESS · DELIVERED (self-checked & pushed) · CONTINUE-
 - [ ] Stage-1 account created with write access to THIS repo only; owner read MASTER_PLAN §4 runbook
 OWNER: ____
 
-## CP-1 · Foundation + Feature Fabric + Engine Base — STATUS: PENDING
+## CP-1 · Foundation + Feature Fabric + Engine Base — STATUS: COMPLETE (2026-09-12)
 ```
-[ ] ALL EXIT BOXES PASS (see PHASE2_CHECKPOINTS.md §CP-1)
-[ ] TREE: all CP-1 files exist, non-empty, import-chain test green
-[ ] PACKAGING: 9 pins; pytest dev-only; no dotenv; params tests green
-[ ] FABRIC: 74/74 + §3.13 enforcement + tier-cache + guards green; base.py FROZEN
-[ ] HANDOFF WRITTEN (§INTERFACES complete ≤400 lines) · LAW-ACK logged
-[ ] MATRIX CP-1 rows filled · issues mirrored to DECISION_LOG §B/CP-1
-COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
+[x] ALL EXIT BOXES PASS (see PHASE2_CHECKPOINTS.md §CP-1) — full suite 158 passed/0 failed (scripts/run_all_tests.sh)
+[x] TREE: all CP-1 files exist, non-empty, import-chain test green — tests/unit/test_cp1_foundations.py::TestNormativeTree
+[x] PACKAGING: 9 pins; pytest dev-only; no dotenv; params tests green — tests/unit/test_cp1_foundations.py::TestPackaging + TestParamsFrozenValues + tests/unit/test_config.py
+[x] FABRIC: 74/74 + §3.13 enforcement + tier-cache + guards green; base.py FROZEN — tests/unit/test_catalog.py + tests/unit/test_base_contract.py
+[x] HANDOFF WRITTEN (§INTERFACES complete ≤400 lines) · LAW-ACK logged — PHASE2_HANDOFF_CP1.md (204 lines, 9 headings, first STATUS line LAW-ACK)
+[x] MATRIX CP-1 rows filled · issues mirrored to DECISION_LOG §B/CP-1 — PHASE2_TRACEABILITY_MATRIX.md Parts I/II/III; ISSUE-CP1-002..014
+COMMIT-RANGE: fba2e88..7e9e9c9  OWNER-CHECKED: [ ]
 ```
 
 ## CP-2 · E01+E02+E03 — STATUS: PENDING

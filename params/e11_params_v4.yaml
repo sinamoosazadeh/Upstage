@@ -1,0 +1,10 @@
+# params/e11_params_v4.yaml — §9.5-canonical E11 values (ADR-P2-008:
+# YAML is §9.5-canonical; engine §6 tables govern formula internals;
+# runtime loads the YAML, never the other way around).
+K: 9
+theta_H: 0.65
+lambda_ewma: 0.94
+hysteresis_candles: 3
+dirichlet_alpha: 0.1
+transition_delay_candles: 48
+W_180d_H1: 4320

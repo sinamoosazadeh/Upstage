@@ -1,0 +1,56 @@
+# params/universe_v1.yaml — §9.5 normative block + Ch.5 Trading Universe
+# table (additive keys: tick_size / quantity_step / min_notional /
+# exchange_max_leverage — Ch.5 requires them as governed parameter values;
+# ADR-P2-003 logged). Values are frozen literals; code reads, never
+# hardcodes (§9.5-10).
+symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, AVAXUSDT, LINKUSDT, LTCUSDT]
+timeframes: [1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 1w, 1mo]
+setup_timeframes: [1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 1w, 1mo]
+nightly_window_utc: {start: "03:00", end: "05:00"}
+# Ch.5 Trading Universe table (AJ/GC-D6: max_leverage is exchange filter
+# metadata, NOT the APEX system ceiling; runtime cap = min(exchange max,
+# Y.2 system cap, owner cap)).
+tick_size:
+  BTCUSDT: 0.1
+  ETHUSDT: 0.01
+  SOLUSDT: 0.001
+  BNBUSDT: 0.01
+  XRPUSDT: 0.0001
+  ADAUSDT: 0.0001
+  DOGEUSDT: 0.00001
+  AVAXUSDT: 0.001
+  LINKUSDT: 0.001
+  LTCUSDT: 0.01
+quantity_step:
+  BTCUSDT: 0.001
+  ETHUSDT: 0.001
+  SOLUSDT: 0.01
+  BNBUSDT: 0.001
+  XRPUSDT: 1
+  ADAUSDT: 1
+  DOGEUSDT: 1
+  AVAXUSDT: 0.01
+  LINKUSDT: 0.01
+  LTCUSDT: 0.001
+min_notional:
+  BTCUSDT: 5
+  ETHUSDT: 5
+  SOLUSDT: 5
+  BNBUSDT: 5
+  XRPUSDT: 5
+  ADAUSDT: 5
+  DOGEUSDT: 5
+  AVAXUSDT: 5
+  LINKUSDT: 5
+  LTCUSDT: 5
+exchange_max_leverage:
+  BTCUSDT: 125
+  ETHUSDT: 100
+  SOLUSDT: 75
+  BNBUSDT: 75
+  XRPUSDT: 75
+  ADAUSDT: 50
+  DOGEUSDT: 50
+  AVAXUSDT: 50
+  LINKUSDT: 50
+  LTCUSDT: 50
