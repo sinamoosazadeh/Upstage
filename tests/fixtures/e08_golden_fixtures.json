@@ -1,0 +1,377 @@
+{
+ "engine": "E08_Wyckoff",
+ "contract_version": "4.0.0",
+ "source": "APEX_GEN5.md \u00a78 'Golden Fixtures: 12 samples' \u2014 the source specifies only the fixture SHAPE {id, bars, expected{sc, vol_ratio, range_z}, hash} and states 'the source does not include the 12 concrete bar arrays'; the arrays here are constructed and every expected value is re-derived from \u00a73.1/\u00a73.3 (ADR-P2-007/ADR-P2-014).",
+ "naming": "P20 fixture-id scheme FIX_* per engine. The doc's illustrative id 'GF_SC_01' is NOT used: ADR-P2-014 reserves tests/fixtures/gf_sc_01.json + gf_sc_02.json for the CP-6 Ch.9 setup fixtures.",
+ "hash_rule": "\u00a79.5-3 'hash only after fixture exists': each hash is sha256(canonical_json(bars)) computed after the bar array was written (apex.identity \u2014 never a document hash).",
+ "fixtures": [
+  {
+   "id": "FIX_E08_01_SC_CANONICAL",
+   "bars": [
+    {
+     "o": 616.0,
+     "h": 616.4,
+     "l": 608.2,
+     "c": 611.5,
+     "v": 65100.0
+    }
+   ],
+   "expected": {
+    "sc": true,
+    "vol_ratio": 3.1,
+    "range_z": 2.4
+   },
+   "hash": "sha256:6ee31a2c10be35104dbcb8990d801ffce38defa062fb5309d6ff2309612508c2",
+   "note": "\u00a79 candle-5 SC. doc_inconsistency: \u00a79 states ClosePos=0.40 \u2192 SC but gives no Open; with O=616.0 the six \u00a73.3 conditions all hold (ClosePos 0.4024, BodyRatio 0.5488, bearish, VR 3.1, RangeZ 2.4, low extremum)."
+  },
+  {
+   "id": "FIX_E08_02_SC_FAIL_CLOSEPOS",
+   "bars": [
+    {
+     "o": 615.0,
+     "h": 616.4,
+     "l": 608.2,
+     "c": 610.0,
+     "v": 65100.0
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": 3.1,
+    "range_z": 2.4
+   },
+   "hash": "sha256:1fb9836b7801276af6438ffb783f9bef704111c2c91954def352f286e4e2729b",
+   "note": "\u00a79's own reading: ClosePos 0.2195 < 0.25 \u21d2 not an SC."
+  },
+  {
+   "id": "FIX_E08_03_SC_FAIL_VOLRATIO",
+   "bars": [
+    {
+     "o": 616.0,
+     "h": 616.4,
+     "l": 608.2,
+     "c": 611.5,
+     "v": 31000.0
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": 1.1,
+    "range_z": 2.4
+   },
+   "hash": "sha256:3ae41130031702370857ae73c181a89d0ccdcdabfc91ac686b0854941971e2bc",
+   "note": "VolRatio 1.1 < 2.5 (\u00a76 sc_vol_ratio)."
+  },
+  {
+   "id": "FIX_E08_04_SC_FAIL_RANGEZ",
+   "bars": [
+    {
+     "o": 616.0,
+     "h": 616.4,
+     "l": 608.2,
+     "c": 611.5,
+     "v": 65100.0
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": 3.1,
+    "range_z": 1.4
+   },
+   "hash": "sha256:6ee31a2c10be35104dbcb8990d801ffce38defa062fb5309d6ff2309612508c2",
+   "note": "RangeZ 1.4 < 2.0 (\u00a76 sc_range_z)."
+  },
+  {
+   "id": "FIX_E08_05_EDGE_H_L_INVALID",
+   "bars": [
+    {
+     "o": 610.0,
+     "h": 608.0,
+     "l": 612.0,
+     "c": 609.0,
+     "v": 30000.0
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": null,
+    "range_z": null
+   },
+   "hash": "sha256:ae578287b75dca0069c9b08a09bb053723c07f75b6b2746d33a1c6c2e95f964b",
+   "note": "H<L \u21d2 Q0_INVALID/reason H<L (\u00a74); expected floats recorded as null in JSON."
+  },
+  {
+   "id": "FIX_E08_06_EDGE_ATR_ZERO",
+   "bars": [
+    {
+     "o": 610.0,
+     "h": 612.0,
+     "l": 608.0,
+     "c": 611.0,
+     "v": 30000.0
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": null,
+    "range_z": null
+   },
+   "hash": "sha256:c0b18d56acd96541612d53e31c47d0316121df7742f5ef08271507d5261c7003",
+   "note": "ATR=0 \u21d2 Q0_INVALID/reason ATR=0 (\u00a74)."
+  },
+  {
+   "id": "FIX_E08_07_RANGE_BOUNDARY",
+   "bars": [
+    {
+     "o": 610.4575,
+     "h": 611.2736,
+     "l": 610.066,
+     "c": 610.6863,
+     "v": 32745.2
+    },
+    {
+     "o": 609.6448,
+     "h": 609.9883,
+     "l": 609.2383,
+     "c": 609.4673,
+     "v": 27869.0
+    },
+    {
+     "o": 609.5411,
+     "h": 609.8534,
+     "l": 609.1034,
+     "c": 609.3116,
+     "v": 27246.4
+    },
+    {
+     "o": 608.8908,
+     "h": 609.008,
+     "l": 608.258,
+     "c": 608.3362,
+     "v": 23344.8
+    },
+    {
+     "o": 609.5687,
+     "h": 609.8893,
+     "l": 609.1393,
+     "c": 609.353,
+     "v": 27412.0
+    },
+    {
+     "o": 610.6701,
+     "h": 611.6561,
+     "l": 610.2361,
+     "c": 611.0051,
+     "v": 34020.4
+    },
+    {
+     "o": 610.9836,
+     "h": 612.2205,
+     "l": 610.4869,
+     "c": 611.4755,
+     "v": 35901.8
+    },
+    {
+     "o": 609.898,
+     "h": 610.3175,
+     "l": 609.5675,
+     "c": 609.8471,
+     "v": 29388.3
+    },
+    {
+     "o": 610.7289,
+     "h": 611.762,
+     "l": 610.2831,
+     "c": 611.0933,
+     "v": 34373.3
+    },
+    {
+     "o": 610.9158,
+     "h": 612.0984,
+     "l": 610.4326,
+     "c": 611.3736,
+     "v": 35494.6
+    },
+    {
+     "o": 609.0432,
+     "h": 609.2062,
+     "l": 608.4562,
+     "c": 608.5648,
+     "v": 24259.2
+    },
+    {
+     "o": 608.5908,
+     "h": 608.618,
+     "l": 607.868,
+     "c": 607.8862,
+     "v": 21544.8
+    },
+    {
+     "o": 609.4669,
+     "h": 609.7569,
+     "l": 609.0069,
+     "c": 609.2003,
+     "v": 26801.1
+    },
+    {
+     "o": 608.712,
+     "h": 608.7756,
+     "l": 608.0256,
+     "c": 608.068,
+     "v": 22271.9
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": 1.0,
+    "range_z": 0.5
+   },
+   "hash": "sha256:c5bfd4802e04542e852880a68dcea060e1cefa290b685500b29ccdb613af0451",
+   "note": "14-candle range [lo,hi] with hi-lo < 1.5\u00b7ATR \u21d2 EV_WYK_011 (\u00a74 detect_range)."
+  },
+  {
+   "id": "FIX_E08_08_SPRING",
+   "bars": [
+    {
+     "o": 610.0,
+     "h": 610.5,
+     "l": 607.6,
+     "c": 609.4,
+     "v": 42000.0
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": 1.4,
+    "range_z": 0.9
+   },
+   "hash": "sha256:ff287d61aa83352807a738aa130f61362d815702a0553c8e30fc8ef6b918db2d",
+   "note": "\u00a79 candle-11 Spring: Pen 0.6 = 0.143\u00b7ATR \u2264 0.3, Close 609.4 > RangeLo 608.2, VR 1.4 \u2265 1.3."
+  },
+  {
+   "id": "FIX_E08_09_SOS",
+   "bars": [
+    {
+     "o": 628.5,
+     "h": 630.5,
+     "l": 628.0,
+     "c": 630.1,
+     "v": 54000.0
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": 1.8,
+    "range_z": 1.1
+   },
+   "hash": "sha256:dbabbd5d91175ca06b5dd1c631658d332cf1769fd1843919d7245dff17ed0604",
+   "note": "\u00a79 candle-13 SOS: Close 630.1 > 628.4+0.2\u00b74.2=629.24, VR 1.8 \u2265 1.2, ClosePos 0.8 \u2265 0.65, BOS confirmed_at_idx \u2264 t\u22121."
+  },
+  {
+   "id": "FIX_E08_10_ST",
+   "bars": [
+    {
+     "o": 610.0,
+     "h": 611.0,
+     "l": 609.0,
+     "c": 610.5,
+     "v": 15000.0
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": 0.5,
+    "range_z": 0.3
+   },
+   "hash": "sha256:e149c53df1a043651bbf6ad8081e21c94b021a0a18eeede81e1b68b231b556f9",
+   "note": "\u00a79 candle-8 ST: Low 609.0 \u2208 [606.94, 609.46] and VR 0.5 \u2264 0.7."
+  },
+  {
+   "id": "FIX_E08_11_UTAD",
+   "bars": [
+    {
+     "o": 628.0,
+     "h": 629.4,
+     "l": 627.5,
+     "c": 627.9,
+     "v": 45000.0
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": 1.5,
+    "range_z": 0.8
+   },
+   "hash": "sha256:0d45958db41c550f007edc9fe0a879610074b6038b4ea9f97d39fe5b56457282",
+   "note": "\u00a73.3 UTAD: Pen 1.0 = 0.238\u00b7ATR \u2264 0.3, Close < RangeHi, VR \u2265 1.2, ClosePos 0.21 \u2264 0.4."
+  },
+  {
+   "id": "FIX_E08_12_PHASE_VECTOR",
+   "bars": [
+    {
+     "o": 612.6101,
+     "h": 613.8981,
+     "l": 612.088,
+     "c": 613.1151,
+     "v": 34928.3
+    },
+    {
+     "o": 611.7265,
+     "h": 612.1844,
+     "l": 611.3844,
+     "c": 611.6897,
+     "v": 29727.0
+    },
+    {
+     "o": 611.7881,
+     "h": 612.2045,
+     "l": 611.4045,
+     "c": 611.6821,
+     "v": 29062.9
+    },
+    {
+     "o": 611.1211,
+     "h": 611.2774,
+     "l": 610.4774,
+     "c": 610.5816,
+     "v": 24901.1
+    },
+    {
+     "o": 612.2249,
+     "h": 612.6524,
+     "l": 611.8524,
+     "c": 612.1373,
+     "v": 29239.5
+    },
+    {
+     "o": 613.8934,
+     "h": 615.4082,
+     "l": 613.3147,
+     "c": 614.5401,
+     "v": 36288.4
+    },
+    {
+     "o": 614.5115,
+     "h": 616.3607,
+     "l": 613.8492,
+     "c": 615.3673,
+     "v": 38295.3
+    },
+    {
+     "o": 613.2641,
+     "h": 613.9553,
+     "l": 612.8912,
+     "c": 613.3961,
+     "v": 31347.5
+    }
+   ],
+   "expected": {
+    "sc": false,
+    "vol_ratio": 1.0,
+    "range_z": 0.4
+   },
+   "hash": "sha256:f41e9089e5b1df9f7265294bbde43891653e98e8d2275750a2f5ea181cf33505",
+   "note": "PhaseHypotheses shape: 8 phases, \u03a3p = 1, H \u2265 \u03b8_H = 0.85 \u21d2 AMBIGUOUS (ISSUE-CP4-013: with 8 phases and \u03a3w = 1 the \u00a79 3-phase example is not reproducible)."
+  }
+ ]
+}

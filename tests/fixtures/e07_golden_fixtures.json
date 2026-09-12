@@ -1,0 +1,273 @@
+{
+ "engine": "E07_RTM_ICT",
+ "contract_version": "4.0.0",
+ "as_of_iso": "2026-01-15T09:00:00Z",
+ "source": "APEX_GEN5.md \u00a78.1 (15 cases) \u2014 expected values RE-DERIVED from \u00a73.1\u2013\u00a73.7 per ADR-P2-007/\u00a79.5-2; no document hash or case number copied (\u00a79.5-3).",
+ "fixtures": [
+  {
+   "id": "PO3_COMPLETE_VALID",
+   "inputs": {
+    "range_bars": 9,
+    "atr_ratio": 0.68,
+    "vol_ratio": 0.75,
+    "sweep": "EV_LIQ_005",
+    "bos": "EV_STRUCT_002",
+    "fvg": "EV_FVG_001",
+    "vol_confirm": 2.1,
+    "as_of_iso": "2026-01-15T09:00:00Z"
+   },
+   "expected": {
+    "framework": "RTM.PO3.v1",
+    "integrity": 0.9999999980000001,
+    "integrity_min": 0.9,
+    "weight_coverage": 1.0,
+    "q_min": "Q4",
+    "resolution_class": "Q4",
+    "confidence": 0.9749999992000001,
+    "has_bundle": true,
+    "total_weight": 5.0,
+    "kz_which": [
+     "UTC_W1"
+    ],
+    "kz_is_overlap": false
+   },
+   "note": "\u00a78.1 case 1, re-derived. Integrity = \u03a3w\u00b7s/(\u03a3w+\u03b5) = 5.0/(5.0+1e-8) = 0.999999998 (the \u00a73.1 \u03b5 term makes the exact value 0.999999998, not 1.0); WeightCoverage = 1.0 exactly (\u00a73.1 defines it without \u03b5 \u2014 ISSUE-CP4-021). as_of = 2026-01-15T09:00Z (UTC_W1, outside the 12:30\u201316:00 overlap) \u21d2 at CP-4 the E12-absent degraded branch is active and the \u00a73.7 Q5 overlap gate caps the class at Q4 (ISSUE-CP4-005/006)."
+  },
+  {
+   "id": "PO3_RANGE_FAIL_VOL_HIGH",
+   "inputs": {
+    "range_bars": 9,
+    "atr_ratio": 0.68,
+    "vol_ratio": 1.2
+   },
+   "expected": {
+    "has_bundle": false,
+    "range_condition": false,
+    "reason": "vol_ratio > po3_vol_th (0.9)"
+   },
+   "note": "\u00a78.1 case 2 / \u00a79 example B: VolRatio 1.2 fails the \u00a73.2 Accumulation gate \u21d2 EV_RTM_005 Bundle_Incomplete."
+  },
+  {
+   "id": "MSS_NEAR_TRUE",
+   "inputs": {
+    "p_sweep": 604.2,
+    "p_choch": 604.8,
+    "atr20": 1.5
+   },
+   "expected": {
+    "proximity": true,
+    "distance": 0.599999999999909,
+    "threshold": 0.75
+   }
+  },
+  {
+   "id": "MSS_NEAR_FALSE_FAR",
+   "inputs": {
+    "p_sweep": 600.0,
+    "p_choch": 605.0,
+    "atr20": 2.0
+   },
+   "expected": {
+    "proximity": false,
+    "distance": 5.0,
+    "threshold": 1.0
+   }
+  },
+  {
+   "id": "OTE_VALID",
+   "inputs": {
+    "A": 600.0,
+    "B": 620.0
+   },
+   "expected": {
+    "lo": 612.4,
+    "hi": 615.8,
+    "star": 614.1
+   },
+   "note": "\u00a78.1 case 5 reproduced exactly: lo 612.4, hi 615.8, star 614.1."
+  },
+  {
+   "id": "OTE_INVALID_ZERO_IMPULSE",
+   "inputs": {
+    "A": 600.0,
+    "B": 600.0
+   },
+   "expected": {
+    "valid": false
+   }
+  },
+  {
+   "id": "JUDAS_VALID_REV100_IN3",
+   "inputs": {
+    "expected_dir": "UP",
+    "j_len_atr_ratio": 0.2,
+    "rev_ratio": 1.2,
+    "bars_to_rev": 2
+   },
+   "expected": {
+    "judas_confirmed": true,
+    "judas_max_pen": 0.25,
+    "rev_min_ratio": 1.0,
+    "max_bars": 3
+   }
+  },
+  {
+   "id": "JUDAS_FAIL_REV_SMALL",
+   "inputs": {
+    "expected_dir": "UP",
+    "j_len_atr_ratio": 0.2,
+    "rev_ratio": 0.6,
+    "bars_to_rev": 2
+   },
+   "expected": {
+    "judas_confirmed": false
+   }
+  },
+  {
+   "id": "UTC_ACTIVITY_WINDOW_OVERLAP_CANONICAL_INSIDE",
+   "inputs": {
+    "ts": "2026-01-15T14:00:00Z"
+   },
+   "expected": {
+    "in_kz": true,
+    "which": [
+     "UTC_W2",
+     "UTC_W1_W2_OVERLAP"
+    ],
+    "is_overlap": true,
+    "utc_activity_window": "UTC_W2",
+    "core_windows": [
+     "UTC_W2_CORE"
+    ],
+    "config_version": "KZ.v2.1.1",
+    "source": "E07_LOCAL_NON_AUTHORITATIVE",
+    "degraded": true,
+    "degraded_reason": "E12_UNAVAILABLE_DEGRADED_QX"
+   },
+   "note": "doc_inconsistency (ADR-P2-007): the \u00a78.1 expected `which` lists [UTC_W1, UTC_W2, UTC_W1_W2_OVERLAP] at 14:00Z, but \u00a73.6 defines UTC_W1 = 07:00\u201312:30 and UTC_W2 = 12:30\u201321:00 \u2014 disjoint windows, so 14:00 belongs to UTC_W2 alone. The re-derived membership + the derived overlap tag and is_overlap=True (12:30\u201316:00) are asserted."
+  },
+  {
+   "id": "UTC_ACTIVITY_WINDOW_UTC_W1_CORE_INSIDE_OVERLAP_OUTSIDE",
+   "inputs": {
+    "ts": "2026-01-15T09:30:00Z"
+   },
+   "expected": {
+    "in_kz": true,
+    "which": [
+     "UTC_W1"
+    ],
+    "core_windows": [
+     "UTC_W1_CORE"
+    ],
+    "is_overlap": false,
+    "utc_activity_window": "UTC_W1"
+   }
+  },
+  {
+   "id": "INTEGRITY_ORDER_WRONG_PENALTY_0.5",
+   "inputs": {
+    "expected": [
+     "sweep",
+     "BOS",
+     "FVG"
+    ],
+    "present": [
+     "FVG",
+     "BOS",
+     "sweep"
+    ],
+    "order_correct": [
+     false,
+     false,
+     true
+    ]
+   },
+   "expected": {
+    "integrity": 0.6666666644444444,
+    "integrity_fixture": 0.666,
+    "penalty": 0.5,
+    "weight_coverage": 1.0
+   },
+   "note": "(1\u00b70.5 + 1\u00b70.5 + 1\u00b71)/(3+1e-8) = 0.66666666444 \u2014 \u00a78.1's '0.666' is the rounded value; \u00a77 Ch.3 example 2 ('downgraded to Q2') agrees with the 0.7 \u2264 I < 0.8 band not being met."
+  },
+  {
+   "id": "CONFLICT_RESOLUTION",
+   "inputs": {
+    "bundleA": {
+     "dir": "UP",
+     "conf": 0.91,
+     "time": "13:30"
+    },
+    "bundleB": {
+     "dir": "DOWN",
+     "conf": 0.62,
+     "time": "13:45",
+     "overlap": 0.85
+    }
+   },
+   "expected": {
+    "winner": "A",
+    "loser_fate": "invalidated",
+    "margin": 0.1
+   },
+   "note": "\u00a74 resolver: the newer bundle supersedes only when it exceeds the older by conflict_conf_margin = 0.1; 0.62 < 0.91 + 0.1 \u21d2 B invalidated, A stays active (\u00a77 Ch.3 example 1 agrees)."
+  },
+  {
+   "id": "EDGE_H_L_INVALID",
+   "inputs": {
+    "high": 100.0,
+    "low": 101.0
+   },
+   "expected": {
+    "skip_bar": true
+   },
+   "note": "\u00a73.2/\u00a73.8: an H<L bar is skipped in the TR series, never repaired."
+  },
+  {
+   "id": "EDGE_V_ZERO",
+   "inputs": {
+    "volume": 0.0
+   },
+   "expected": {
+    "vol_confirm": false,
+    "range_authorized": false,
+    "reason": "VOL_UNAVAILABLE_QX"
+   },
+   "note": "\u00a73.2 edge case (ISSUE-CP4-002): V=0 \u21d2 VolRatio unavailable \u21d2 the range decision is NOT authorized from a synthetic neutral value; \u00a74's `or recent_vol==0` shortcut is not applied."
+  },
+  {
+   "id": "LIQUIDITY_GRAB_CHAIN_VALID",
+   "inputs": {
+    "chain": [
+     "sweep",
+     "choch",
+     "fvg",
+     "retest",
+     "vol_confirm"
+    ],
+    "order_correct": [
+     true,
+     true,
+     true,
+     true,
+     true
+    ],
+    "avg_quality": 0.8,
+    "mtf_align": true,
+    "utc_window_align": true,
+    "as_of_iso": "2026-01-15T09:00:00Z"
+   },
+   "expected": {
+    "event": "EV_RTM_011",
+    "integrity": 0.9999999979166667,
+    "penalty": 0,
+    "emit_bundle": true,
+    "resolution_class": "Q4",
+    "confidence": 0.9499999991666667,
+    "total_weight": 4.8,
+    "weight_coverage": 1.0
+   },
+   "note": "\u03a3w = 4.8 ([sweep 1.5, choch 1.0, fvg 0.8, retest 0.8, vol 0.7]; the retest weight is the FVG term \u2014 ISSUE-CP4-007). Integrity = 4.8/(4.8+1e-8). EV_RTM_011 is emitted by run_engine when framework_id == RTM.CHAIN.v1 and both thresholds pass (\u00a75.3.1)."
+  }
+ ]
+}
