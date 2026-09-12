@@ -1,0 +1,42 @@
+{
+  "_comment": "E02 golden fixtures — inputs hand-constructed from APEX_GEN5.md E02 §8.1 definitions; expected values RE-DERIVED from the §3 formulas (never copied; ADR-P2-007). Re-derivations: GF_001 tol=0.645, D_max=1.29, median 648.05; GF_003 pool radius 2·θ·ATR·κ=0.06, minPts=max(2,ceil(log4))=2, weight=0.8·√2·e^0+0.7·√3·e^(−0.05/0.06)+0.75·√2·e^(−0.04/0.06)=2.2487; GF_004 score=0.25·tanh(3)+0.25·(0.7647/0.8)+0.2·(1/3/1.5)+0.2·(log1p(1.875)/log1p(4))=0.6845; GF_007 lvn threshold=0.15·ΣV=1822.5 ≥ inside sum 1150; GF_008 e_a=+5 (price up), OFI=e_b−e_a=2−5=−3; GF_009 VPIN=(|2·945.2−1000|+|2·274.3−1000|)/2000=0.671; GF_010 exp(−0.5/2)=0.7788; GF_011 exp(−0.02·35)=0.4966, half-life ln2/0.02=34.66≈35; GF_012 d=1·σ_ret=0.01, σ_eff=√(0.000108), p_merton=1.0 > p_brown=0.9203.",
+  "fixtures": [
+    {"id": "GF_LIQ_001_EqualHigh_Formed", "prices": [648.2, 647.9], "atr": 4.3, "theta_eq": 0.15,
+     "expected": {"groups_count": 1, "median": 648.05, "diameter": 0.3, "instances": 2, "Q": "Q1"}},
+    {"id": "GF_LIQ_002_ChainPrevention", "prices": [100, 100.3, 100.6, 100.9], "atr": 0.2, "theta_eq": 0.15,
+     "expected": {"groups_count": 4, "prevent_chain": true}},
+    {"id": "GF_LIQ_003_DBSCAN_Pool", "levels": [
+        {"price": 100, "salience": 0.8, "instances": 2},
+        {"price": 100.05, "salience": 0.7, "instances": 3},
+        {"price": 100.09, "salience": 0.75, "instances": 2}],
+     "atr": 0.2, "theta_eq": 0.15, "kappa": 1.0,
+     "expected": {"pools_count": 1, "member_count": 3, "weight_gt": 2.0, "weight": 2.2487}},
+    {"id": "GF_LIQ_004_Sweep_Valid", "candle": {"open": 100.2, "high": 101.5, "low": 99.8, "close": 99.5, "volume": 1500, "bar_index": 10},
+     "level": {"price": 100, "side": "SELL_SIDE", "fate": "ACTIVE", "Q": "Q1", "first_seen": 5, "last_touch": 8},
+     "atr": 1.0, "vol_sma20": 800,
+     "expected": {"kind": "SWEEP", "P1": true, "P2": true, "P3": true, "P4": true, "P5": true, "score_gte": 0.6, "score": 0.6845}},
+    {"id": "GF_LIQ_005_WickOnly_NoReturn", "candle": {"open": 100, "high": 100.12, "low": 99.5, "close": 100.08, "volume": 500, "bar_index": 11},
+     "level": {"price": 100, "side": "SELL_SIDE", "fate": "ACTIVE", "Q": "Q1", "first_seen": 5, "last_touch": 8},
+     "atr": 1.0, "vol_sma20": 800,
+     "expected": {"kind": "WICK_ONLY"}},
+    {"id": "GF_LIQ_006_Raid_TwoLevels", "sweeps": [{"level_id": "lvl1", "at": 100}, {"level_id": "lvl2", "at": 101}], "window": 3,
+     "expected": {"raid": true, "count": 2}},
+    {"id": "GF_LIQ_007_Void_LVN", "levels": [{"price": 100}, {"price": 105}], "atr": 1.0,
+     "volume_profile": {"100": 5000, "101": 200, "102": 250, "103": 300, "104": 400, "105": 6000},
+     "void_gap": 2.5,
+     "expected": {"voids_count": 1, "lo": 100, "hi": 105, "type": "VOID"}},
+    {"id": "GF_LIQ_008_OFI_Complete", "snapshots": [
+        {"p_bid": 100, "q_bid": 10, "p_ask": 101, "q_ask": 5},
+        {"p_bid": 100, "q_bid": 12, "p_ask": 102, "q_ask": 5}],
+     "expected": {"ofi_second": -3, "formula": "Cont2013"}},
+    {"id": "GF_LIQ_009_VPIN_BVC", "buckets": [{"V": 1000, "dP": 0.8}, {"V": 1000, "dP": -0.3}], "sigma": 0.5,
+     "expected": {"vpin_gt": 0.3, "vpin": 0.6709, "method": "BVC"}},
+    {"id": "GF_LIQ_010_Salience_proximityHTF", "level": {"price": 100, "instances": 3, "ltype": "EQUAL_HIGH", "last_touch": 90},
+     "current_bar": 100, "p_htf": 100.5, "atr_htf": 2.0, "lambda": 0.02,
+     "expected": {"proximity": 0.7788, "formula": "exp(-|100-100.5|/2)"}},
+    {"id": "GF_LIQ_011_Freshness_Governed", "age": 35, "lambda": 0.02,
+     "expected": {"freshness": 0.4966, "half_life": 35}},
+    {"id": "GF_LIQ_012_Merton_HitProb", "distance_atr": 1.0, "atr": 1.0, "sigma_ret": 0.01, "T": 100, "lambda_j": 0.02,
+     "expected": {"p_hit_gt_brownian": true, "p_merton": 1.0, "p_brownian": 0.9203, "Q": "Q4"}}
+  ]
+}
