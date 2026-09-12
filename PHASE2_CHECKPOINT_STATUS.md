@@ -38,9 +38,9 @@ COMMIT-RANGE: 3cd94e3..4570a17  OWNER-CHECKED: [x]
 COMMIT-RANGE: 8024232..(branch HEAD; see git log --oneline main..arena/01a094c8-upstage — pushed commits a27b362, a58cdc9, + CP-3 closeout commit)  OWNER-CHECKED: [x]
 ```
 
-## CP-4 · E07+E08+E09 — STATUS: PENDING
+## CP-4 · E07+E08+E09 — STATUS: IN-PROGRESS (2026-09-12, arena/01a09645-upstage)
 ```
-[ ] ENTRY: CP-3 [x] · batteries green; E07 degraded-mode test present; E08 ch.2–4 raises WaveOutError
+[x] ENTRY: CP-3 [x] · batteries green (481 passed/0 failed re-verified at session start); E07 degraded-mode test present; E08 ch.2–4 raises WaveOutError
 [ ] HANDOFF CP-4 (E07↔E12 deferred-integration note) · MATRIX CP-4 · board
 COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
 ```
