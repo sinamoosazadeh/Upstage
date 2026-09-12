@@ -38,11 +38,13 @@ COMMIT-RANGE: 3cd94e3..4570a17  OWNER-CHECKED: [x]
 COMMIT-RANGE: 8024232..(branch HEAD; see git log --oneline main..arena/01a094c8-upstage — pushed commits a27b362, a58cdc9, + CP-3 closeout commit)  OWNER-CHECKED: [x]
 ```
 
-## CP-4 · E07+E08+E09 — STATUS: IN-PROGRESS (2026-09-12, arena/01a09645-upstage)
+## CP-4 · E07+E08+E09 — STATUS: DELIVERED (2026-09-12, arena/01a09645-upstage)
 ```
 [x] ENTRY: CP-3 [x] · batteries green (481 passed/0 failed re-verified at session start); E07 degraded-mode test present; E08 ch.2–4 raises WaveOutError
-[ ] HANDOFF CP-4 (E07↔E12 deferred-integration note) · MATRIX CP-4 · board
-COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
+[x] ALL EXIT BOXES PASS (see PHASE2_CHECKPOINTS.md CP-4) — full suite 593 passed/0 failed; E07 E12-unavailable → degraded (never fabricates); E08 encyclopedia ch.2–4 raise WaveOutError (never stub); E09 Wilder ADX + multi-scale Trend
+[x] §8 BATTERIES E07–E09 + T-DR-001 re-runs green; fixtures re-derived (doc_inconsistency notes) — 112 CP-4 tests: tests/unit/test_e07_rtm.py (33), test_e08_wyckoff.py (44), test_e09_trend.py (29), tests/integration/test_cp4_engines.py (6)
+[x] HANDOFF CP-4 (§INTERFACES complete ≤400 lines, E07↔E12 deferred-integration note) · MATRIX CP-4 rows (Parts I/II + Part III CP-4 table) · board updated — PHASE2_HANDOFF_CP4.md; ISSUE-CP4-001..007 mirrored to DECISION_LOG §B/CP-4
+COMMIT-RANGE: 6893742..0f26234 (branch arena/01a09645-upstage)  OWNER-CHECKED: [ ]
 ```
 
 ## CP-5 · E10+E11+E12 + 12-engine map — STATUS: PENDING
