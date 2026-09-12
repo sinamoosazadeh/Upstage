@@ -22,3 +22,13 @@ weights:
   w_momentum: 0.06
   w_regime: 0.04
   w_temporal: 0.02
+# --- CP-6 additions (ADR-P2-003, logged in DECISION_LOG §B/CP-6) ---------
+# Context-layer governed scalars for apex/fabric. Bands + decay laws are
+# governed parameters (SL-12); the propagation decision stays the Ch.8 §8.0
+# threshold table, the band grid is the operational classification of the
+# same scalar (ISSUE-CP6-002).
+context_bands: {admissible: 0.70, confirmatory: 0.50, collapsed: 0.30}
+propagation_confirmatory_threshold: 0.40
+data_trust_floor: 0.30
+context_decay_per_bar: 0.05
+evidence_decay_per_bar: 0.02
