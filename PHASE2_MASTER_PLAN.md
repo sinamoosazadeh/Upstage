@@ -1,72 +1,43 @@
-# APEX_GEN5 — PHASE 2 MULTI-AGENT IMPLEMENTATION PLAN (MASTER, REV-2)
+# APEX_GEN5 — PHASE 2 MASTER PLAN — Rev-3 (FINAL)
 
-Status: ACTIVE. Rev-2 (2026-09-12) supersedes Rev-1 after the owner's constraints review: agent count compressed to **5 implementation agents + 1 independent audit session (≤5 accounts)**, per-agent prompts now embed the **full text of all global directives** (PART G), and the **previous partial implementation is formally salvaged through an audited worksheet** (`PHASE2_SALVAGE.md`).
+Status: ACTIVE. Rev-3 (2026-09-12) supersedes Rev-2 per the owner's model correction: the real execution substrate is **a serial chain of isolated chat sessions — one freshly-registered account = one fixed, non-extendable context window = one stage**. There are no "agents", no parallelism, no multi-session products, no shared memory. The previous partial-attempt repository is **deleted by the owner and is NOT part of this plan in any way** (ADR-P2-015): Phase 2 runs 100% from zero; its only legacy use was capacity calibration (ADR-P2-016). A review/audit phase is the owner's separate later decision and is deliberately NOT part of this plan.
 
 ---
 
-## 1. Purpose
+## 1. Mission
+Convert the frozen blueprint `APEX_GEN5.md` (20,551 lines; sha256 `216bcc9e…fbd9e`) in `https://github.com/sinamoosazadeh/Upstage` into the complete production implementation of the normative tree (§9.5), stage by stage, with zero deviation, full tests, and file-based handoffs. The blueprint is the sole truth; `PROMPT.md` is the standing Chief-Engineer directive; this plan's control files are the only coordination medium.
 
-Convert the frozen blueprint `APEX_GEN5.md` (20,551 lines, repo `https://github.com/sinamoosazadeh/Upstage`) into a complete, production-grade implementation, executed by a chain of mutually independent AI sessions. Each agent implements exactly one checkpoint; writes its completion/handoff report into pre-created control files; commits and pushes into the normative repository tree; stops. The successor reads the control files and its own blueprint ranges — never predecessors' code wholesale. The failure mode of the first attempt (one agent, token exhaustion at ~E04 of twelve engines) is engineered out in two ways: (a) coupling-driven checkpoint cuts sized per measured session capacity; (b) the RESUME protocol: an over-budget agent pushes partial work + a file-level remaining-work ledger, and a FRESH SESSION OF THE SAME ROLE (same prompt file) continues — roles stay 5, sessions may exceed 5, and independence comes from empty context, not from distinct accounts.
+## 2. Capacity model (why eight stages)
+Measured anchor: the solo prior attempt burned one full window producing ~6.7k mostly-thin lines after ~5–7k spec lines of reading, dying around E03/E04 of twelve engines — with no tests. Full-fidelity work costs more per line (real math + §8 batteries + fixtures + params). Therefore: total remaining work ≈ 55–65k work-lines (≈17k blueprint reading + ≈36k code/tests + control-file bookkeeping) → **8 stages sized at ~6–11k work-lines each (≈60–75% of measured ceiling)**, each ending in a green push with its gate boxes provably checked. Six stages would require ~13k-line windows — the exact profile that already died once. Stage count is a derived quantity, not a preference; if any stage overflows, the OVERFLOW ledger (P18/G19) absorbs it with one continuation account for that stage, which is cheaper and safer than overloading a window.
 
-Empirical calibration used for sizing: the previous single session (same blueprint, same platform class) produced ~6.7K LoC — foundation + 74-registry + base + E01–E04 drafting — before stopping. Rev-2 therefore targets ~6–9K LoC written per agent, with the engine waves being the heaviest and explicitly resume-chained.
+## 3. Stage table (one fresh account per row, strictly serial; never run two accounts before the predecessor's board boxes are all checked)
 
-## 2. Source of truth and precedence (binding; full text in each agent prompt, PART G)
+| Stage | Subsystems (blueprint ranges) | Main writes (normative tree) | Est. read+write |
+|---|---|---|---|
+| CP-1 | Ch.1–2 (L87–1197) · identity contract (L4104–4158) · §3.12/3.13 (L13529–14382) · Ch.4/5 DDL (L14383–14642) · Ch.7 (L14643–14671) · §9.5 (L20128–20247) | packaging, config, errors, bus, identity×4, data_catalog (contracts/catalog/store/ingest + tier registry), quality×3, 6 params YAMLs, `engines/base.py`, tests, README skeleton | ~3.3k + 6.2k |
+| CP-2 | E01 (L1205–2789) · E02 (L2790–3871) · E03 (L3872–4954) | `apex/engines/e01..e03/` full §3/§5/§6/§8 incl. all Phase-correction clauses + fixtures + batteries | ~3.8k + 3.6k |
+| CP-3 | E04 (L4955–5601) · E05 (L5602–6859) · E06 (L6860–8292) | `e04..e06/` + evidence-consumption through base contract | ~3.4k + 3.5k |
+| CP-4 | E07 (L8293–9085) · E08 (L9086–9466) · E09 (L9467–10275) | `e07..e09/` (E07 degradation branch for absent E12; E08 ch.2–4 Wave-Out raises) | ~2.0k + 3.3k |
+| CP-5 | E10 (L10276–11670) · E11 (L11671–12732) · E12 (L12733–13528) | `e10..e12/` + E07↔E12 integration tests + 12-engine interface map (handoff §CP-5-INTEGRATION-NOTES) | ~3.3k + 3.2k |
+| CP-6 | Ch.8–12 (L14672–15971) · Ch.13–15 (L15972–16749) | `fabric/×3`, `pattern/×2`, `setup/×2`, `playbook/`, `forecast/`, `decision/`, `risk/kernel.py`, GF_SC fixtures, 13-gate + 14-veto suites | ~2.1k + 6.6k |
+| CP-7 | Ch.16 (L16750–16936) · Ch.19 (L17357–17445) · Ch.21 (L17562–18220) · Ch.23 (L18221–18314) · AI.3 | `execution/×3`, `ledger/`, `scheduler/`, `telegram/×2` + alerts, PAPER-loop integration suite, README run finalization | ~1.2k + 7.0k |
+| CP-8 | Ch.17 (L16937–17022) · Ch.18 (L17023–17356) · Ch.20 (L17446–17561) · Ch.24 W/Z/AA (L18581–18905) · AI.12/13/14 · §9.9 (L19212–19400) | `research/**`, `ops/×2`, governance service, harnesses, FULL-SUITE closeout sweep, `PHASE2_FINAL_REPORT.md` | ~0.9k + 5.2k |
 
-1. Owner decree (as recorded in the blueprint) > 14 hard vetoes (Ch.15 registry) > runtime Chapters 1–24 + GLOBAL IDENTITY/PIT UTILITY CONTRACT (L4104–4158) > engine chapters for engine formulas > diagrams.
-2. Part R = history, EXCEPT §9.5 Execution-team directives (L20128–20247: normative repo tree, params YAML, env names, Wave-Out list, FROZEN_BOOTSTRAP values) — execution-team law.
-3. `PROMPT.md`'s binding global sections (1,2,3,4,5,6,7,8,9,11,12,13,14,15,16,17,18,19) are preserved — embedded verbatim-adapted into every agent prompt (PART G), not deleted, not referenced-only.
-4. The previous attempt's repo `sinamoosazadeh/APEX_GEN5` is REFERENCE MATERIAL ONLY (its `APEX_GEN5.md` copy is byte-identical to this repo's — verified SHA-256 — so it was built on the same frozen spec; its code may be salvaged ONLY through `PHASE2_SALVAGE.md` dispositions with per-line re-verification).
-5. Known defects pre-adjudicated (DECISION_LOG ADR-P2-001..017): PROMPT.md's wrong repo URL (001); pytest dev-only (002); tree minimum+canonical (003); ladder-state table (004); research/ops packages additive (005); 3.12-tier modules under data_catalog (006); illustrative hashes re-computed (007); E11 YAML precedence (008); adapter conformance honesty (009); device/NFR gates as harnesses (010); SL-reference mapping (011); single-branch chain (012); .gitignore (013); fixture canonicality (014); salvage-is-audit-not-import (015); audit-session account reuse allowed, fresh-context required (016); engine seam E06↔E07 chosen to keep E06's dependencies (E01–E05) and E07's dependency (E12) inside slots (017).
+Dependency proof: base/registry precede all engines (CP-1); E10/E11 consume E01–E09 (CP-2..4 done); chain consumes engines (CP-2..5 done); risk consumes setup candidates (same stage CP-6, sequenced fabric→…→risk in commits); execution consumes risk decisions (CP-7); telegram consumes execution events (CP-7); research/governance consume everything + are last (CP-8). E07's only forward dependency (E12) is handled by the blueprint's own degradation branch + a CP-5 integration test.
 
-## 3. Coupling analysis (why these five cut lines, no others)
+## 4. Execution model (owner runbook)
+1. Upload the 16 control files (this plan §6) to `Upstage` root — exactly as named; verify `APEX_GEN5.md` sha256 == `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
+2. For stage n = 1..8: register a fresh account (new Gmail) on the chat-bot, connect it to GitHub with write access to `Upstage` ONLY (fine-grained PAT limited to that repo; no other repo, no org rights), then paste the stage-n prompt text (delivered to the owner in chat by the plan author — NOT stored in the repo) as the first and only instruction. Type nothing else.
+3. Watch: the executor reads law → verifies predecessor gate → claims board → builds → tests → pushes → writes handoff → fills traceability → closes boxes → stops. Verify on the board that every CP-n exit box is `[x]` with named evidence, and `PHASE2_HANDOFF_CPn.md` is complete.
+4. If a stage reports CONTINUE-NEEDED (overflow): register ONE more account and paste the generic CONTINUE prompt (delivered alongside the stage prompts); it finishes only the ledger of that CP, closes it, then normal chain resumes at stage n+1.
+5. NEVER run two stages concurrently, never paste a stage prompt into the same chat twice, never edit predecessors' control blocks except at listed extension points.
+6. After CP-8: board shows CODE-COMPLETE candidate; owner runs the external-measurement procedures named in the final report; a separate review/audit phase is decided afterward by the owner (out of this plan).
 
-Inseparable cores (never split): ① identity+contracts+store+quality+config+bus (everything imports them; corrections PHASE 67/67A unified exactly this layer); ② 74-feature registry + `engines/base.py` (the frozen engine contract — engines read features ONLY via `catalog.get`); ③ Risk(14 vetoes)+FSM+single-writer ledger+scheduler chain (blueprint forbids any bypass beneath Risk; all FSM mutations queue through one writer); ④ Evidence→Pattern→Setup→Playbook→Arbitration (shared 13-gate semantics and scoring formula).
-Weak seams (safe cuts): the twelve engines are versioned-interface coupled with documented degradation (e.g., E06 without E01→Q2 fallback; E07 without E12→time-sync QX) → split at exactly ONE seam, E06|E07, chosen because: E06 consumes E01–E05 (all ≤E06 → same agent), and E07/E11 consume E12/E09/E10 (all ≥E07 → same agent). Runtime chain (Ch.13–16,19) consumes engines+context via frozen schemas. Ops (Ch.21,23) and Research (Ch.17,18,20) consume runtime events only — appended to the same slot with a stage split inside the handoff, never a new role.
+## 5. Failure modes engineered against (each has a mechanical defense above)
+Solo-window overload → stage sizing + OVERFLOW ledger · silent simplification → §8 battery exit gates + G4 no-"Simplified" rule · invented tables/paths → tree-conformance Part I + verbatim DDL rows · cross-stage interface drift → interface blocks in handoffs; successors code against handoff+blueprint, not predecessors' file bodies · board lies → boxes need test-name evidence; closeout re-runs everything · two writers → serial execution rule (no parallel accounts) · context amnesia of the plan → prompts are self-contained orderings; law is mandatory first read with acknowledgement line · legacy temptation → ADR-P2-015 (repo deleted; nothing to salvage) · secrets → G16 + closeout history grep.
 
-## 4. Checkpoint architecture (Rev-2: 5 agents + 1 audit; CP-1..CP-7 board)
+## 6. Control files in the repo (16; nothing else may exist at root beyond frozen inputs + normative tree)
+`PHASE2_MASTER_PLAN.md` (this file) · `PHASE2_GLOBAL_DIRECTIVES.md` (common law G1..G20 — first mandatory read of every stage) · `PHASE2_PROTOCOL.md` (mechanics P1..P21) · `PHASE2_CHECKPOINTS.md` (per-stage contracts) · `PHASE2_CHECKPOINT_STATUS.md` (board; claim/claim-close only in own block) · `PHASE2_TRACEABILITY_MATRIX.md` (Parts I/II pre-seeded; Part III per stage) · `PHASE2_DECISION_LOG.md` (ADRs 001..017 + open issues) · `PHASE2_HANDOFF_CP1.md`…`PHASE2_HANDOFF_CP8.md` (nine-heading template pre-created) · `PHASE2_FINAL_REPORT.md` (filled at CP-8). Stage prompts are chat-side only by owner decree.
 
-| CP | Agent | Account | Subsystems (blueprint) | Session expectation | Hard-stop gate (AI.12/§9.9 + plan) |
-|---|---|---|---|---|---|
-| CP-1 | AGENT-01 Foundation+Fabric | #1 | Ch.1,2,4,5,6,7 + identity contract + AI.3/5/6/8 + §3.12/13 + `engines/base.py` + params YAML + packaging/README-skeleton + **salvage audit of ALL A01 worksheet rows** | 1–2 | T-DC-001..004, T-PIT-001..004, T-ID-001..002, T-CL-001..003, T-OM-001..003, T-RS-001..003, T-DR-001(feature tier), T-MON-001 green; 74/74 registry; DDL verbatim; SALVAGE rows §A01 all dispositioned |
-| CP-2 | AGENT-02 Engines E01–E06 | #2 | E01..E06 full §1–§10; **salvage audit of E01–E04 worksheet rows (complete/rewrite, no "simplified" inheritance)**; fixtures+§8 batteries | 2 (stage-1: E01–E04 conform+test; stage-2: E05–E06 fresh) | T-E01-001 + every engine's §8 suite; interface publication for A03 |
-| CP-3 | AGENT-03 Engines E07–E12 | #3 | E07..E12 full §1–§10; fresh from blueprint; consumes A02's real modules via versioned interfaces | 2 (stage-1: E07–E09; stage-2: E10–E12) | per-engine §8 batteries; T-E11-K9; T-E12-Windows; CP-3 integration-notes block |
-| CP-4 | AGENT-04 Context chain | #4 | Ch.8,9,10,11,12 (fabric, conflict, pattern+AC, setup 13-gates+AD, playbook AE/X.1–X.5, arbitration AF) + gf_sc_01/02 fixtures | 1–2 | T-DR-002; gate-1..13 boundary matrix; chain green end-to-end synthetic |
-| CP-5 | AGENT-05 Decision→Risk→Execution→Ledger→Scheduler→Ops→Research | #5 | Ch.13(AG),14,15,16,19 + scheduler + store extensions; THEN stage-2: Ch.21,23 (Telegram/Ops) + Ch.17,18,20 (Governance/Research/Proxies) | 2–3 (stage-1 runtime core [must finish]; stage-2 telegram/ops; stage-3 research/governance) | T-DR-003, T_VETO, T-LR-001..003, T_MATCH/RECONCILE/LEDGER/ADAPTER-*, T-MON-002/T_MONOTONE, then T-FB-001..003, T-NFR-004, T-RESTORE-001, then T-AD-001/002, T-PKG-001, red-line suite; README run procedure complete |
-| CP-6 | AGENT-06 Audit (independent) | reuse #1 or #2 as a FRESH CHAT (ADR-P2-016) | Ch.24 (AI.10 full + §9.9 checklists) + tree conformance + completeness/Wave-Out/secrets sweeps + matrix completion + triage + FINAL report assembly; corrective patches only, never redesign | 1–2 | board fully reconciled; every OPEN issue CLOSED-with-evidence or ESCALATED verbatim; `PHASE2_FINAL_REPORT.md` complete |
-| CP-7 | — | — | board-closure checkpoint (owner): audit's exit boxes checked; Phase-2-coding declaration | — | per §7 below |
-
-CP-7 is a board marker only: the owner's closure stamp after CP-6's exit boxes are checked; the audit's own gate rows live in CP-6 and there is no CP-7 code scope.
-
-Rules: agents never start unless predecessor CP exit boxes are checked (entry gate); a CP is complete only with handoff ≤400-line per slot + traceability rows + green tests + pushed commits; partial budget ⇒ RESUME ledger, never silent truncation; CP-5's stages are intra-role handoffs written into `PHASE2_HANDOFF_CP5.md` sections §[RUNTIME], §[TELEGRAM-OPS], §[RESEARCH] so each successor stage session (same prompt) continues from exactly one section — the same mechanism the audit uses on CP-5's output.
-
-## 5. Why not 3–4 agents (and why 5 is the floor)
-
-3–4 would force either (a) one role reading >9K blueprint lines (E01–E12 in a single context ≈ 220K+ tokens of spec reading alone → the exact first-attempt failure) or (b) mid-core splits across roles (engine|fabric or risk|ledger boundaries — forbidden by §3's inseparability). The 5+1 architecture keeps every hard dependency inside a role and puts seams only where the blueprint itself defines graceful degradation. If any role needs more sessions, the RESUME mechanism adds sessions, not roles — the anti-drift property the owner is protecting is role-boundary discipline, not session count.
-
-## 6. Control files (21 `PHASE2_*` files total; all upload-ready)
-
-| File | Written by | Read by |
-|---|---|---|
-| `PHASE2_MASTER_PLAN.md` | Rev-2 planning | owner; agents (orientation only) |
-| `PHASE2_GLOBAL_DIRECTIVES.md` | Rev-2 planning | canonical copy of PART G (each prompt embeds the same text; on divergence the prompt copy + this file are equivalent, the PROTOCOL's adjudications win) |
-| `PHASE2_PROTOCOL.md` | Rev-2 planning | every agent (chain mechanics: rebase, ownership, handoff template, status law, reading budget details) |
-| `PHASE2_CHECKPOINTS.md` | Rev-2 planning | every agent — own CP section (write sets, read sets, gates) |
-| `PHASE2_SALVAGE.md` | Rev-2 planning | A01, A02 (worksheet above); A06 audits dispositions |
-| `PHASE2_CHECKPOINT_STATUS.md` | each agent, own section only | every agent (entry gate); owner board |
-| `PHASE2_TRACEABILITY_MATRIX.md` | each agent, pre-seeded sections | successors (their inputs); A06 completes |
-| `PHASE2_DECISION_LOG.md` | each agent, own CP heading | every agent (§A before coding); A06 triages |
-| `PHASE2_HANDOFF_CP1..CP6.md` | owning agent (CP-5/CP-6 multi-section) | the next role only (mandated) |
-| `PHASE2_PROMPT_AGENT_01..06.md` | Rev-2 planning | pasted as the FIRST MESSAGE of each agent session; also the RESUME entry |
-| `PHASE2_FINAL_REPORT.md` | A06 (+stage inputs) | owner |
-
-## 7. Operating procedure (owner runbook, Rev-2)
-
-1. **CP-0**: upload all 21 `PHASE2_*` files to the repo root (they sit beside `APEX_GEN5.md`, `PROMPT.md`, `AI_SUGGESTION_PLAN.md`). Commit: `PHASE2 CP-0 (rev2): control files`.
-2. For each role 01→06: open a fresh AI session (account per table; role 06 = fresh chat on account 1 or 2); paste the ENTIRE content of `PHASE2_PROMPT_AGENT_0N.md`; send nothing else. Wait for push; verify the CP block on the STATUS board (boxes + handoff present). On RESUME-NEEDED: fresh session, SAME prompt file, which resumes from the remaining-work ledger. Repeat until the role reports COMPLETE.
-3. Role 05 expects 2–3 sequential sessions (runtime → telegram/ops → research/governance) by design — that is stage-discipline inside ONE role, not new agents.
-4. After CP-6: read `PHASE2_FINAL_REPORT.md`; reconcile the board (CP-7 row); the six external measurement procedures (Toobit depth listing/rate-limit, target-device spec + capacity, restore drill, paper-trading windows, ECONOMIC_GATE checklist) are owner-side executions of delivered harnesses — Phase-2 CODING completion does not wait on them; LIVE capital deployment does (AI.13/AI.14).
-5. Never let two roles touch the same file: the ownership map in `PHASE2_CHECKPOINTS.md` + the rebase rules in PROTOCOL P14 make parallelism safe, but the recommended cadence is strictly serial.
-
-## 8. What remains from Rev-1 unchanged (deliberate)
-
-Blueprint reading map (§3 of Rev-1, reproduced inside CHECKPOINTS per-role), the ten cross-checkpoint invariants, the "no silent contradiction" law (G13), fixture/hashing integrity (G11), Wave-In/Wave-Out discipline (G6), the AI.12/AI.13/§9.9 gate binding, naming/numbering integrity (P20/G19), and the assessment of `AI_SUGGESTION_PLAN.md` (Rev-1 §9) — all carried into the agents' PART G and CHECKPOINTS. Rev-2's only structural changes: role compression with intra-role staging, salvage law, directive embedding.
+## 7. Rev-3 change log
+Removed: whole salvage apparatus (`PHASE2_SALVAGE.md`, P14-bis, SALVAGE handoff section, audit-oriented agent prompts in repo), the internal audit stage (CP-6/AGENT-06 of Rev-2), the RESUME/multi-session-role mechanics, all parallelism language. Restated: 8 stages = 8 accounts serial (capacity-derived), overflow via continuation account, law delivery = repo `PHASE2_GLOBAL_DIRECTIVES.md` with blocking first-read + acknowledgement (the shared prompt part), prompts written in chat only, traceability/status/decision-log renumbered CP-1..CP-8, ADRs 001/015/016/017 rewritten to owner decrees.

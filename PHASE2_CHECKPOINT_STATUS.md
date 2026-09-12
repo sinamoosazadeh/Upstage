@@ -1,101 +1,88 @@
-# APEX_GEN5 — PHASE 2 CHECKPOINT STATUS BOARD (Rev-2)
+# APEX_GEN5 — PHASE 2 CHECKPOINT STATUS BOARD — Rev-3
 
-Rules (binding): each CP section is edited ONLY by its owning agent role, inside its own fenced block (CP-5: per-stage fenced blocks). The OWNER-VERIFIED lines are edited only by the owner. An agent must not start if the predecessor CP block does not show `[x] ALL EXIT BOXES PASS` + `[x] HANDOFF WRITTEN`. Parallelism is not required by this rev; if two stages of CP-5 ever overlap, they write disjoint stage blocks. Do not reformat others' blocks; rebase conflicts in this file keep BOTH blocks verbatim.
+Rules: each CP block is edited ONLY by its stage executor. Board lines like `OWNER:` are owner-only. An executor must not start unless the predecessor block shows `[x] ALL EXIT BOXES PASS` + `[x] HANDOFF WRITTEN`, and its own §CP-n ENTRY items are green (record `LAW-ACK` line first in your handoff). No parallel execution: exactly one block may be IN-PROGRESS at any time, the one the owner just started. Do not reformat others' blocks; control-file push conflicts: `git pull --rebase`, keep both blocks verbatim.
 
-Legend: PENDING · IN-PROGRESS · DELIVERED (agent self-checked & pushed) · OWNER-VERIFIED · REOPENED (audit finding).
+Legend: PENDING · IN-PROGRESS · DELIVERED (self-checked & pushed) · CONTINUE-NEEDED (overflow; ledger in handoff) · OWNER-CHECKED.
 
----
+## CP-0 · Owner bootstrap (before stage 1) — STATUS: PENDING
+- [ ] 16 `PHASE2_*` control files at repo root (7 docs + 8 handoffs + this board) — names exactly per MASTER_PLAN §6
+- [ ] `APEX_GEN5.md` sha256 == 216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e ; `PROMPT.md`, `AI_SUGGESTION_PLAN.md` present untouched
+- [ ] Stage-1 account created with write access to THIS repo only; owner read MASTER_PLAN §4 runbook
+OWNER: ____
 
-## CP-0 · Owner bootstrap — STATUS: PENDING (owner checks at upload)
-- [ ] All 21 `PHASE2_*` files present at repo root (master, global-directives, protocol, checkpoints, salvage, status, traceability, decision-log, final-report = 9 · handoffs CP1..CP6 = 6 · prompts 01..06 = 6)
-- [ ] `APEX_GEN5.md`, `PROMPT.md`, `AI_SUGGESTION_PLAN.md` present, untouched (frozen inputs)
-- [ ] Owner read `PHASE2_MASTER_PLAN.md` §7 runbook
-- [ ] Legacy reference repo confirmed frozen: owner makes no changes in `sinamoosazadeh/APEX_GEN5` while Phase 2 runs
-
-## CP-1 · AGENT-01 Foundation + Feature Fabric + Salvage audit — STATUS: PENDING
+## CP-1 · Foundation + Feature Fabric + Engine Base — STATUS: PENDING
 ```
-[ ] ALL EXIT BOXES PASS
-[ ] Tree files (CP-1 WRITE SET) exist, non-empty, import-clean (integration import-chain test)
-[ ] Ch.4/Ch.5 DDL verbatim-equivalence rows filled in TRACEABILITY Part I (Result col)
-[ ] params/*.yaml == §9.5/Ch.10/Ch.2.1/Ch.5 frozen literals (assertion test green)
-[ ] requirements.lock == the nine SBOM pins; pytest dev-extra only; no python-dotenv import
-[ ] 74/74 feature registry + §3.13 enforcement + tier-cache rules + guards green
-[ ] base.py frozen; §INTERFACES complete in HANDOFF_CP1
-[ ] SALVAGE rows §A01 all dispositioned (adopted rows carry in-repo proving tests)
-[ ] T-DC-001..004, T-PIT-001..004, T-ID-001..002, T-CL-001..003, T-OM-001..003, T-RS-001..003, T-DR-001(feature tier), T-MON-001 green
-[ ] HANDOFF_CP1 written ≤400 lines, all nine headings
-[ ] OPEN-ISSUES mirrored into DECISION_LOG (or none)
-[ ] Pushed; commit range recorded below; owner board check next
-COMMIT-RANGE: ____  HANDOFF: PHASE2_HANDOFF_CP1.md  ISSUES-OPEN: ____
-OWNER-VERIFIED: [ ]  date: ____  notes: ____
+[ ] ALL EXIT BOXES PASS (see PHASE2_CHECKPOINTS.md §CP-1)
+[ ] TREE: all CP-1 files exist, non-empty, import-chain test green
+[ ] PACKAGING: 9 pins; pytest dev-only; no dotenv; params tests green
+[ ] FABRIC: 74/74 + §3.13 enforcement + tier-cache + guards green; base.py FROZEN
+[ ] HANDOFF WRITTEN (§INTERFACES complete ≤400 lines) · LAW-ACK logged
+[ ] MATRIX CP-1 rows filled · issues mirrored to DECISION_LOG §B/CP-1
+COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
 ```
 
-## CP-2 · AGENT-02 Engines E01–E06 — STATUS: PENDING
+## CP-2 · E01+E02+E03 — STATUS: PENDING
 ```
-[ ] ALL EXIT BOXES PASS
-[ ] Stage-1 §[STAGE-1 E01–E04]: conform/rewrite dispositions done; E01..E04 §8 batteries green; T-E01-001 green
-[ ] Stage-2 §[STAGE-2 E05–E06]: E05/E06 §8 batteries green; E06 consumes pushed E01/E03/E04 evidence via interfaces only (no internal SMA/ATR)
-[ ] SALVAGE rows §A02 dispositioned
-[ ] HANDOFF_CP2 ≤400/section; §INTERFACES complete for A03; pushed
-COMMIT-RANGE: ____  ISSUES-OPEN: ____
-OWNER-VERIFIED: [ ]  date: ____  notes: ____
+[ ] ENTRY: CP-1 boxes all [x]; CP-1 suite green in fresh clone
+[ ] §8 BATTERIES E01–E03 + T-E01-001 + T-DR-001 green; FIX_* fixtures derived (not copied)
+[ ] HANDOFF CP-2 · MATRIX CP-2 · board updated · (overflow? CONTINUE-NEEDED + ledger)
+COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
 ```
 
-## CP-3 · AGENT-03 Engines E07–E12 — STATUS: PENDING
+## CP-3 · E04+E05+E06 — STATUS: PENDING
 ```
-[ ] ALL EXIT BOXES PASS
-[ ] Stage-1 §[STAGE-1 E07–E09]: §8 batteries green (E07↔E12 wired incl. degradation branch; E08 ch.2–4 Wave-Out respected)
-[ ] Stage-2 §[STAGE-2 E10–E12]: §8 batteries green; T-E11-K9; T-E12-Windows; E11 live-gate flag default-off
-[ ] §CP-3-INTEGRATION-NOTES appended (12-engine topic/version map)
-[ ] HANDOFF_CP3 ≤400/section; pushed
-COMMIT-RANGE: ____  ISSUES-OPEN: ____
-OWNER-VERIFIED: [ ]  date: ____  notes: ____
+[ ] ENTRY: CP-2 [x] · batteries green (E04 ε-tier, E05 lifecycle, E06 consumption-lint)
+[ ] HANDOFF CP-3 · MATRIX CP-3 · board updated
+COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
 ```
 
-## CP-4 · AGENT-04 Context chain — STATUS: PENDING
+## CP-4 · E07+E08+E09 — STATUS: PENDING
 ```
-[ ] ALL EXIT BOXES PASS
-[ ] Gates 1–13 boundary matrix green; weights/Q_min_setup assertion green; ×0.6 conflict multiplier & |ρ|>0.85 redundancy rules green
-[ ] GF_SC_01/02 constructed with re-derived values + real hashes; GF_SC_03..12 schema-only
-[ ] MTF relative algorithm + vacuous-pass test green; playbook exit-precedence (X.4) suite green
-[ ] T-DR-002 green; end-to-end synthetic chain runs without decision/risk imports (seam proof)
-[ ] HANDOFF_CP4 ≤400 lines; §INTERFACES complete for A05; pushed
-COMMIT-RANGE: ____  ISSUES-OPEN: ____
-OWNER-VERIFIED: [ ]  date: ____  notes: ____
+[ ] ENTRY: CP-3 [x] · batteries green; E07 degraded-mode test present; E08 ch.2–4 raises WaveOutError
+[ ] HANDOFF CP-4 (E07↔E12 deferred-integration note) · MATRIX CP-4 · board
+COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
 ```
 
-## CP-5 · AGENT-05 Runtime core → Telegram/Ops → Research/Governance — STATUS: PENDING
+## CP-5 · E10+E11+E12 + 12-engine map — STATUS: PENDING
 ```
-[ ] §[RUNTIME] ALL PASS: T-DR-003; T_VETO ×14; T-VETO-SIZE; T-MON-002/T_MONOTONE; T-LR-001..003; T_MATCH; T_RECONCILE; T_LEDGER; T_ADAPTER_SUBMIT/DUPLICATE/LOST_ACK; E-EXEC-001; RSK-ERR-506; FSM illegal-transition matrix; leverage min() table; scheduler order/semaphore4; PAPER full-loop boot on fixture clock; trade_plan/outcome/ladder-state migrations logged
-[ ] §[TELEGRAM-OPS] ALL PASS: T-FB-001..003; T-NFR-004; E-TELE-001..007 suite; idempotency replay; busy-guard; watchdog heartbeat-loss; dedup; backup+restore tempdir drill; Agg headless; README final run section present & copy-pasteable
-[ ] §[RESEARCH] ALL PASS: T-AD-001/002; T-PKG-001; red-line rejection suite; YAML-immutability watch; Z.8 re-derived; determinism double-run; bootstrap pause/resume; CVaR boundary; registry-38 + rejected-6 absent; 10-day replay-equivalence harness green (labels honest)
-[ ] HANDOFF_CP5: three stage sections ≤400 each; §[RESEARCH] carries final HOW-TO-RUN (full boot)
-[ ] OPEN-ISSUES mirrored; pushed at each stage
-COMMIT-RANGES: ____  ISSUES-OPEN: ____
-OWNER-VERIFIED: [ ]  date: ____  notes: ____
+[ ] ENTRY: CP-4 [x] · T-E11-K9 + T-E12-Windows + E07↔E12 both-mode green
+[ ] §CP-5-INTEGRATION-NOTES appended to HANDOFF_CP5 · MATRIX CP-5 · board
+COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
 ```
 
-## CP-6 · AGENT-06 Independent audit — STATUS: PENDING
+## CP-6 · Context chain + Forecast/Decision/Risk — STATUS: PENDING
 ```
-[ ] Full suite green (unit+integration+§8 batteries+gate runner)
-[ ] Every AI.10 T-id + AI.12 acceptance item ↔ real test + recorded result (MATRIX Part I/II complete)
-[ ] Tree conformance + additive-file ↔ log reconciliation; salvage dispositions consistent
-[ ] Completeness/Wave-Out/secrets-history/snapshot-envelope/uuid-single/single-writer sweeps reported
-[ ] §9.9 readiness checklists evaluated box-by-box (owner-side items labeled OWNER-PENDING with harness pointer)
-[ ] DECISION_LOG: every issue CLOSED-with-evidence or ESCALATED-TO-OWNER verbatim; false-greens reopened if found
-[ ] PHASE2_FINAL_REPORT.md complete (PROMPT §18 structure + compliance declaration + owner action list)
-[ ] No feature diffs beyond corrective patches (git diff --stat proof recorded)
-COMMIT-RANGE: ____  REOPENED-CPs: ____
-OWNER-VERIFIED: [ ]  date: ____  notes: ____
+[ ] ENTRY: CP-5 [x] · gates ±1 matrix · GF_SC_01/02 fire · T_VETO×14 · T-DR-002/003 · RSK-ERR-506 · seam test · vacuous-pass assert
+[ ] HANDOFF CP-6 §INTERFACES = StrategyProposal/trade-plan/veto shapes ONLY (CP-7 needs nothing else)
+[ ] PAPER synthetic end-to-end (evidence→sized plan) runs · MATRIX CP-6 · board
+COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
 ```
 
-## CP-7 · Board closure (owner stamp; no code scope)
+## CP-7 · Execution/Ledger/Scheduler + Telegram/Alerts — STATUS: PENDING
 ```
-[ ] CP-0..CP-6 all DELIVERED + OWNER-VERIFIED
-[ ] Owner read FINAL REPORT incl. escalation list; decided on the six external measurements + ECONOMIC_GATE
-[ ] Phase-2 (coding) declared COMPLETE by owner — this line is the only lawful "done" signal
+[ ] ENTRY: CP-6 [x] · T_MATCH/RECONCILE/LEDGER + adapter trio + FSM matrix + T_MONOTONE + E-TELE-001..007 + single-writer grep + Agg-only grep
+[ ] README run section final, copy-paste verified in clean sandbox · full PAPER-loop boot test green
+[ ] HANDOFF CP-7 (incl. data-changes) · MATRIX CP-7 · board
+COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
+```
+
+## CP-8 · Research/Governance/Ops + CLOSEOUT — STATUS: PENDING
+```
+[ ] ENTRY: CP-7 [x]
+[ ] research/governance/ops suites green (T-AD/T-PKG/red-line/registry-38/bootstrap/determinism/T-RESTORE)
+[ ] CLOSEOUT SWEEP table complete (MATRIX Part III CP-8) incl. secrets+stubs greps; suite green twice
+[ ] all DECISION_LOG issues dispositioned (CLOSED-with-evidence / ESCALATED verbatim)
+[ ] PHASE2_FINAL_REPORT.md assembled + HANDOFF_CP8 · board CP-8 checked
+COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
+```
+
+## Closure (owner-only, after CP-8)
+```
+[ ] Owner read FINAL_REPORT incl. escalation list; external measurements (AI.13) either executed or scheduled by owner procedures
+[ ] Review/audit phase: owner's separate decision (NOT part of this plan)
+[ ] Phase 2 coding declared complete by owner — this box is the only lawful "done" signal
 STAMP: ____  date: ____
 ```
 
-## RESUME BLOCKS (append under the CP you resume; format: `RESUME @ <date> <AGENT-nn> [stage]: <ledger in handoff>` + the resuming session's completion line)
+## CONTINUE BLOCKS (overflow; format: `CONTINUE(CP-n) @ <date>: ledger = <handoff §REMAINING WORK LEDGER ref>` + completion line of the continuation session)
 (none)

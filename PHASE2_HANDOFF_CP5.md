@@ -1,41 +1,30 @@
-# PHASE2 HANDOFF — CP-5 (Runtime core → Telegram/Ops → Research/Governance) → consumed by AGENT-06
+# PHASE2 HANDOFF — CP-5 → consumed by CP-6 (and CP-8 closeout)
+Stage: CP-5 — Engines E10 Momentum, E11 Regime, E12 Temporal + §CP-5-INTEGRATION-NOTES (12-engine interface map)
+Rules (PROTOCOL P16): author = CP-5 executor (or its continuation session — state which, first line of STATUS). ≤400 lines, nine headings below in order. Successors read ONLY this file + their own prompt/law/checkpoint sections; interfaces listed here are the public contract they may code against. First STATUS line: `LAW-ACK: G1..G20 + P1..P21 read <UTC>`.
 
-Author: AGENT-05, across up to three sessions (one per stage). Three stage sections, ≤400 lines each, identical heading order (PROTOCOL P16). Successor sessions of THIS role read only the prior stage sections (REMAINING WORK LEDGER first). The audit reads all three.
+## STATUS
+(complete / CONTINUE-NEEDED+ledger-ref; commits pushed; suite totals: x passed/y failed; environment note incl. python/OS)
 
-## [RUNTIME]
-### STATUS
-### DELIVERED
-### INTERFACES
-(Trade Plan object; veto result shape (ALLOW/REDUCE/REJECT + vetoes_applied); ledger writer API + event stream topics/priorities; FSM public transitions; adapter public operations (5) + error mapping table; scheduler entrypoint + stop/restart semantics; trade_plan/outcome/ladder-state table names; PAPER-mode config matrix; CVaR advisory consumption point (for stage-3 producer); ECONOMIC_GATE read surface (for stage-2 checklist screen))
-### DATA-CHANGES
-(trade_plan, outcome, apex_risk_ladder_state — migration ids; ADR-P2-004 note)
-### TESTS
-### DEVIATIONS
-### OPEN-ISSUES
-### HOW-TO-RUN
-### REMAINING WORK LEDGER
+## DELIVERED
+(file | purpose | blueprint section | rows into MATRIX Part III)
 
-## [TELEGRAM-OPS]
-### STATUS
-### DELIVERED
-### INTERFACES
-(handler entrypoints; callback table; manual smoke procedure for owner; watchdog process launch command; backup/restore commands; README final run block — quote the exact lines; A06 verifies verbatim)
-### DATA-CHANGES
-### TESTS
-### DEVIATIONS
-### OPEN-ISSUES
-### HOW-TO-RUN
-### REMAINING WORK LEDGER
+## INTERFACES
+(module | class/function | signature | semantics | version) — exhaustive for everything CP-6 consumes; nothing invented, everything cited.
 
-## [RESEARCH]
-### STATUS
-### DELIVERED
-### INTERFACES
-(package file format + loader API; governance service API; harness run commands (G-ADAPTER-001, replay-equivalence, NFR))
-### DATA-CHANGES
-(research-plane tables, logged)
-### TESTS
-### DEVIATIONS
-### OPEN-ISSUES
-### HOW-TO-RUN (FINAL ROLE SUMMARY — the complete system boot/run/test surface)
-### REMAINING WORK LEDGER (should read `none` at CP-5 exit; otherwise the role is not COMPLETE)
+## DATA-CHANGES
+(tables/columns/migrations created or altered; if none: "none")
+
+## TESTS
+(test file | ids covered | result) — one row per delivered component; ids exactly as AI.10/§8/acceptance names.
+
+## DEVIATIONS
+(only pre-adjudicated ADRs applied, each as `ADR-P2-0NN applied: <where>`; otherwise: none — silent deviation is a breach (G4))
+
+## OPEN-ISSUES
+(exact [ISSUE-CP5-0NN] format from PROTOCOL P13; mirrored to DECISION_LOG §B/CP-5; or "none")
+
+## HOW-TO-RUN
+(exact commands to use THIS increment: install, run tests, demo entry; copy-pasteable, nothing implied)
+
+## REMAINING WORK LEDGER
+(none — stage fully closed / otherwise per-file table: remaining items | blueprint ranges to read | interface contracts already emitted | estimated lines; CONTINUE-NEEDED set on the board when non-empty)

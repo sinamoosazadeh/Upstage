@@ -1,6 +1,6 @@
-# PHASE2 HANDOFF — CP-6 → consumed by CP-7 (and CP-8 closeout)
-Stage: CP-6 — Context chain (Ch.8–12) + Forecast/Decision/Risk (Ch.13–15)
-Rules (PROTOCOL P16): author = CP-6 executor (or its continuation session — state which, first line of STATUS). ≤400 lines, nine headings below in order. Successors read ONLY this file + their own prompt/law/checkpoint sections; interfaces listed here are the public contract they may code against. First STATUS line: `LAW-ACK: G1..G20 + P1..P21 read <UTC>`.
+# PHASE2 HANDOFF — CP-8 → terminal record of the plan; consumed by the OWNER (and any later review phase)
+Stage: CP-8 — Research/Governance (Ch.17,18,W/Z/AA) + Ops (Ch.20) + CLOSEOUT sweep + FINAL REPORT assembly
+Rules (PROTOCOL P16): author = CP-8 executor (or its continuation session — state which, first line of STATUS). ≤400 lines, nine headings below in order. Successors read ONLY this file + their own prompt/law/checkpoint sections; interfaces listed here are the public contract they may code against. First STATUS line: `LAW-ACK: G1..G20 + P1..P21 read <UTC>`.
 
 ## STATUS
 (complete / CONTINUE-NEEDED+ledger-ref; commits pushed; suite totals: x passed/y failed; environment note incl. python/OS)
@@ -9,7 +9,7 @@ Rules (PROTOCOL P16): author = CP-6 executor (or its continuation session — st
 (file | purpose | blueprint section | rows into MATRIX Part III)
 
 ## INTERFACES
-(module | class/function | signature | semantics | version) — exhaustive for everything CP-7 consumes; nothing invented, everything cited.
+(module | class/function | signature | semantics | version) — exhaustive for everything CP-9 consumes; nothing invented, everything cited.
 
 ## DATA-CHANGES
 (tables/columns/migrations created or altered; if none: "none")
@@ -21,7 +21,7 @@ Rules (PROTOCOL P16): author = CP-6 executor (or its continuation session — st
 (only pre-adjudicated ADRs applied, each as `ADR-P2-0NN applied: <where>`; otherwise: none — silent deviation is a breach (G4))
 
 ## OPEN-ISSUES
-(exact [ISSUE-CP6-0NN] format from PROTOCOL P13; mirrored to DECISION_LOG §B/CP-6; or "none")
+(exact [ISSUE-CP8-0NN] format from PROTOCOL P13; mirrored to DECISION_LOG §B/CP-8; or "none")
 
 ## HOW-TO-RUN
 (exact commands to use THIS increment: install, run tests, demo entry; copy-pasteable, nothing implied)
