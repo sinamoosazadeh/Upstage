@@ -29,9 +29,9 @@ COMMIT-RANGE: fba2e88..7e9e9c9  OWNER-CHECKED: [x]
 COMMIT-RANGE: 3cd94e3..4570a17  OWNER-CHECKED: [x]
 ```
 
-## CP-3 · E04+E05+E06 — STATUS: PENDING
+## CP-3 · E04+E05+E06 — STATUS: IN-PROGRESS (claimed 2026-09-12, arena/01a094c8-upstage)
 ```
-[ ] ENTRY: CP-2 [x] · batteries green (E04 ε-tier, E05 lifecycle, E06 consumption-lint)
+[x] ENTRY: CP-2 [x] · batteries green (305 passed/0 failed re-verified at session start; E04 ε-tier, E05 lifecycle, E06 consumption-lint ahead)
 [ ] HANDOFF CP-3 · MATRIX CP-3 · board updated
 COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
 ```
