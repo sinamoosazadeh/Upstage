@@ -1,0 +1,367 @@
+{
+  "_comment": "E01 golden fixtures \u2014 inputs hand-constructed from APEX_GEN5.md \u00a78.1 definitions; expected values RE-DERIVED from the \u00a73 formulas (never copied; ADR-P2-007/\u00a79.5-2/3). The document's illustrative 'hash' fields (empty-string digests) are never recorded here; hashes are computed only after the fixture exists and passes (no-hash rule). BM values: FIX_003 |638.9-635.5|/4.2=0.8095238; FIX_004 |641.5-635.5|/4.2=1.428571 (L1=nearest opposing level in price-adjacency order) and |641.5-640|/4.2=0.357143 (L2).",
+  "fixtures": [
+    {
+      "id": "FIX_001_WILLIAMS_HIGH",
+      "candles": [
+        {
+          "O": 620,
+          "H": 625,
+          "L": 618,
+          "C": 622,
+          "V": 100,
+          "open_time": "2026-02-01T00:00:00Z",
+          "close_time": "2026-02-01T06:00:00Z"
+        },
+        {
+          "O": 622,
+          "H": 628,
+          "L": 620,
+          "C": 627,
+          "V": 110,
+          "open_time": "2026-02-01T06:00:00Z",
+          "close_time": "2026-02-01T12:00:00Z"
+        },
+        {
+          "O": 627,
+          "H": 632.4,
+          "L": 624.1,
+          "C": 631.2,
+          "V": 150,
+          "open_time": "2026-02-01T12:00:00Z",
+          "close_time": "2026-02-01T18:00:00Z"
+        },
+        {
+          "O": 631.2,
+          "H": 631.5,
+          "L": 626,
+          "C": 627,
+          "V": 120,
+          "open_time": "2026-02-01T18:00:00Z",
+          "close_time": "2026-02-02T00:00:00Z"
+        },
+        {
+          "O": 627,
+          "H": 629,
+          "L": 621,
+          "C": 623,
+          "V": 90,
+          "open_time": "2026-02-02T00:00:00Z",
+          "close_time": "2026-02-02T06:00:00Z"
+        }
+      ],
+      "config": {
+        "k": 2,
+        "atr_n": 14
+      },
+      "expected_swings": [
+        {
+          "type": "HIGH",
+          "price": 632.4,
+          "index": 2,
+          "method": "WILLIAMS",
+          "q": "Q2"
+        }
+      ]
+    },
+    {
+      "id": "FIX_002_GANN_LOW",
+      "candles": [
+        {
+          "O": 100,
+          "H": 101,
+          "L": 99,
+          "C": 99.5,
+          "V": 10,
+          "open_time": "2026-01-01T00:00:00Z",
+          "close_time": "2026-01-01T01:00:00Z"
+        },
+        {
+          "O": 99.5,
+          "H": 100,
+          "L": 98,
+          "C": 98.5,
+          "V": 12,
+          "open_time": "2026-01-01T01:00:00Z",
+          "close_time": "2026-01-01T02:00:00Z"
+        },
+        {
+          "O": 98.5,
+          "H": 99,
+          "L": 97,
+          "C": 97.2,
+          "V": 15,
+          "open_time": "2026-01-01T02:00:00Z",
+          "close_time": "2026-01-01T03:00:00Z"
+        },
+        {
+          "O": 97.2,
+          "H": 99.5,
+          "L": 97.1,
+          "C": 99,
+          "V": 14,
+          "open_time": "2026-01-01T03:00:00Z",
+          "close_time": "2026-01-01T04:00:00Z"
+        }
+      ],
+      "expected_swings": [
+        {
+          "type": "LOW",
+          "price": 97,
+          "index": 2,
+          "method": "GANN"
+        }
+      ]
+    },
+    {
+      "id": "FIX_003_BOS_L1",
+      "warmup_bars": 12,
+      "warmup": {
+        "O": 630,
+        "H": 632.1,
+        "L": 627.9,
+        "C": 630,
+        "V": 100
+      },
+      "swing": {
+        "type": "HIGH",
+        "price": 635.5,
+        "index": 10
+      },
+      "candle": {
+        "O": 636,
+        "H": 639,
+        "L": 635.8,
+        "C": 638.9,
+        "V": 200,
+        "close_time": "2026-02-02T12:00:00Z"
+      },
+      "atr": 4.2,
+      "expected": {
+        "event": "EV_STR_007_BOS_BULLISH",
+        "break_mag": 0.8095238,
+        "S_min": 0.6
+      }
+    },
+    {
+      "id": "FIX_004_BOS_MULTI_LEVEL",
+      "warmup_bars": 13,
+      "warmup": {
+        "O": 630,
+        "H": 632.1,
+        "L": 627.9,
+        "C": 630,
+        "V": 100
+      },
+      "swings": [
+        {
+          "type": "HIGH",
+          "price": 635.5,
+          "index": 5
+        },
+        {
+          "type": "HIGH",
+          "price": 640,
+          "index": 8
+        }
+      ],
+      "candle": {
+        "O": 640,
+        "H": 642,
+        "L": 639,
+        "C": 641.5,
+        "V": 180,
+        "close_time": "2026-02-03T00:00:00Z"
+      },
+      "atr": 4.2,
+      "expected_count": 2,
+      "expected_BM_L1": 1.428,
+      "expected_BM_L2": 0.357
+    },
+    {
+      "id": "FIX_005_CHOCHE_BULL",
+      "warmup_bars": 12,
+      "warmup": {
+        "O": 630,
+        "H": 632.1,
+        "L": 627.9,
+        "C": 630,
+        "V": 100
+      },
+      "swings": [
+        {
+          "type": "LOW",
+          "price": 635,
+          "index": 1
+        },
+        {
+          "type": "HIGH",
+          "price": 640,
+          "index": 3
+        },
+        {
+          "type": "LOW",
+          "price": 630,
+          "index": 5
+        },
+        {
+          "type": "HIGH",
+          "price": 632.4,
+          "index": 7
+        },
+        {
+          "type": "LOW",
+          "price": 628,
+          "index": 9
+        }
+      ],
+      "prior_bos_bear_at": 11,
+      "candle": {
+        "O": 633,
+        "H": 639,
+        "L": 632.8,
+        "C": 638.9,
+        "V": 210
+      },
+      "atr": 4.2,
+      "expected_event": "EV_STR_009_CHOCHE_BULLISH"
+    },
+    {
+      "id": "FIX_006_RETEST",
+      "warmup_bars": 11,
+      "warmup": {
+        "O": 630,
+        "H": 632.1,
+        "L": 627.9,
+        "C": 630,
+        "V": 100
+      },
+      "bos": {
+        "price_level": 635.5,
+        "candle_index": 10,
+        "event_type": "EV_STR_007_BOS_BULLISH"
+      },
+      "candles_after": [
+        {
+          "O": 637,
+          "H": 637.5,
+          "L": 635.6,
+          "C": 635.8,
+          "V": 100,
+          "close_time": "2026-02-03T06:00:00Z"
+        }
+      ],
+      "atr": 4.2,
+      "kappa": 0.25,
+      "expected": "EV_STR_011_RETEST"
+    },
+    {
+      "id": "FIX_007_INVALIDATION",
+      "warmup_bars": 11,
+      "warmup": {
+        "O": 630,
+        "H": 632.1,
+        "L": 627.9,
+        "C": 630,
+        "V": 100
+      },
+      "bos": {
+        "price_level": 635.5,
+        "candle_index": 10,
+        "event_type": "EV_STR_007_BOS_BULLISH"
+      },
+      "candle": {
+        "O": 634,
+        "H": 635,
+        "L": 630,
+        "C": 631,
+        "V": 100,
+        "close_time": "2026-02-04T00:00:00Z"
+      },
+      "atr": 4.2,
+      "inv_thr": 0.5,
+      "expected": "EV_STR_013_INVALIDATION"
+    },
+    {
+      "id": "FIX_008_GAP_BREAKAWAY",
+      "candles": [
+        {
+          "O": 620,
+          "H": 625,
+          "L": 618,
+          "C": 625,
+          "V": 100,
+          "open_time": "2026-02-01T00:00:00Z",
+          "close_time": "2026-02-01T06:00:00Z"
+        },
+        {
+          "O": 631,
+          "H": 635,
+          "L": 630,
+          "C": 634,
+          "V": 300,
+          "open_time": "2026-02-01T06:00:00Z",
+          "close_time": "2026-02-01T12:00:00Z"
+        }
+      ],
+      "warmup_bars": 13,
+      "warmup": {
+        "O": 618,
+        "H": 620,
+        "L": 618,
+        "C": 620,
+        "V": 100
+      },
+      "atr": 2.0,
+      "gamma": 1.8,
+      "expected_gap": 6,
+      "expected_type": "BREAKAWAY"
+    },
+    {
+      "id": "FIX_009_PRUNE_REDUNDANCY",
+      "warmup_bars": 15,
+      "warmup": {
+        "O": 630,
+        "H": 632.1,
+        "L": 627.9,
+        "C": 630,
+        "V": 100
+      },
+      "swings": [
+        {
+          "type": "HIGH",
+          "price": 631.2,
+          "index": 5
+        },
+        {
+          "type": "HIGH",
+          "price": 632.4,
+          "index": 7
+        },
+        {
+          "type": "HIGH",
+          "price": 631.8,
+          "index": 8
+        }
+      ],
+      "atr": 4.2,
+      "T_htf": 0.63,
+      "expected_pruned_count": 2,
+      "reason": "depth<theta_depth (the fixture's 'redundancy>0.9' scenario label; count re-derived \u2014 ISSUE-CP2-003)"
+    },
+    {
+      "id": "FIX_010_BIAS_MTF",
+      "states": {
+        "1D": "BULL",
+        "1W": "BULL",
+        "4H": "RANGE"
+      },
+      "weights": {
+        "1D": 0.6,
+        "1W": 0.4
+      },
+      "expected_bias": 0.6,
+      "expected_label": "BULL"
+    }
+  ]
+}
