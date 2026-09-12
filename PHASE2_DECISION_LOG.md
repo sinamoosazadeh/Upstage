@@ -38,6 +38,19 @@ Issue format (append under your CP heading):
 
 ### CP-1
 - [ISSUE-CP1-001] severity: RESOLVED-BY-DECREE | A: PROMPT.md final block names the old repo as start target | B: this plan's sole repo is Upstage. Rule: ADR-P2-001 — old repo abandoned/deleted; nothing is fetched from it. Informational only.
+- [ISSUE-CP1-002] severity: MINOR | status: OPEN (owner bookkeeping only)
+  A: "CP-0 · Owner bootstrap — STATUS: PENDING; all three boxes [ ]; OWNER: ____" (PHASE2_CHECKPOINT_STATUS.md L9–L13)
+  B: stage prompt STEP 2 gate "CP-0 owner boxes all [x]; else stop+report exactly what is missing"
+  Rule applied: UNRESOLVED bookkeeping gap → verified fail-closed then proceed (owner's act of pasting the CP-1 stage prompt = MASTER_PLAN §4.2 runbook execution; box-ticking is owner-only per board rules, executor cannot self-check CP-0)
+  Verification evidence (2026-09-12, CP-1 executor): box-1 fact VERIFIED — exactly 16 PHASE2_* files present at root, names verbatim per MASTER_PLAN §6. box-2 fact VERIFIED — sha256(APEX_GEN5.md)==216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e; PROMPT.md present with the 2026-09-12 STATUS banner declaring it source-of-record/not a work order; AI_SUGGESTION_PLAN.md absent. box-3 fact VERIFIED — stage-1 session account holds repo write access (demonstrated by claim push); owner executed runbook §4.2 by pasting the CP-1 prompt as sole instruction. Missing items exactly: the three check-marks and the OWNER signature line remain owner-side actions.
+  Interim behavior: CP-1 proceeds; CP-0 boxes left untouched for the owner to mark.
+  Needs from owner: tick the three CP-0 boxes + OWNER line (bookkeeping; no engineering impact).
+- [ISSUE-CP1-003] severity: MINOR | status: OPEN (environment constraint; informational)
+  A: "Work only on branch main of https://github.com/sinamoosazadeh/Upstage" (PHASE2_GLOBAL_DIRECTIVES.md G14; PHASE2_PROTOCOL.md P14)
+  B: this execution sandbox is hard-pinned by the platform to session branch arena/01a0935b-upstage (branched from main @ bc91ed4); pushing to main is prohibited by the sandbox environment.
+  Rule applied: environment constraint overrides branch choice only; all other G14/P14 guarantees preserved (git pull --rebase origin main before every push; atomic [CP-1] commits; no force-push; no history rewrite; PHASE2_* conflict rule intact).
+  Interim behavior: all CP-1 commits land on arena/01a0935b-upstage, pushed to origin/arena/01a0935b-upstage; content is main-lineage (branched at bc91ed4, zero divergence at fork point).
+  Needs from owner: fast-forward merge arena/01a0935b-upstage into main when convenient (single fast-forward; restores single-branch discipline for CP-2..CP-8).
 ### CP-2
 (none yet)
 ### CP-3
