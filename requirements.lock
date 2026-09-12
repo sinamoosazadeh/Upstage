@@ -1,0 +1,12 @@
+# APEX_GEN5 SBOM — Ch.1 System Dependencies. This pin list IS requirements.lock.
+# Runtime dependencies are EXACTLY these nine pins; pip install without this
+# lock is forbidden in LIVE. pytest is dev-only and MUST NOT appear here.
+aiohttp==3.9.5
+aiogram==3.7.0
+aiosqlite==0.20.0
+matplotlib==3.8.4
+pandas==2.2.0
+numpy==1.26.0
+pydantic==2.5.0
+python-dateutil==2.8.2
+pytz==2024.1

@@ -1,0 +1,9 @@
+# ADR-P2-013 (owned by CP-1; nothing else may be added without a DECISION_LOG note).
+data/
+*.sqlite3*
+.env
+__pycache__/
+.pytest_cache/
+dist/
+build/
+# Chart artifacts: none expected — chart output is in-memory PNG only (Ch.1 Agg rule).
