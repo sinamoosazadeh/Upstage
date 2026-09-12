@@ -1,0 +1,27 @@
+{
+  "engine": "E09_Trend",
+  "contract_version": "4.0.0",
+  "note": "§8.1 golden fixtures FIX_01..FIX_11, re-derived per ADR-P2-007. doc_inconsistency fields record where the blueprint's own fixture diverges from the §4 executable formulas.",
+  "scales": {"MICRO": 5, "SHORT": 20, "INTER": 60, "MACRO": 240},
+  "stack_weights": {"MICRO": 0.1, "SHORT": 0.2, "INTER": 0.3, "MACRO": 0.4},
+  "fixtures": [
+    {"id": "FIX_01_UPTREND_STRONG", "expected": {"MICRO_dir": 1, "seq_score_min": 0.5, "slope_z_min": 1.0},
+     "doc_inconsistency": "FIX_01's 'Q_min Q2' is not reproducible from 5 bars — Wilder ADX14 requires >= 2n=28 bars, so Q=0 at MICRO."},
+    {"id": "FIX_02_DOWNTREND", "expected": {"MICRO_dir": -1, "seq_score_max": -0.3}},
+    {"id": "FIX_03_SIDEWAYS", "expected": {"adx_max": 20, "hurst_range": [0.4, 0.6], "r2_max": 0.3},
+     "doc_inconsistency": "FIX_03's 'MICRO_dir 0' is not reproducible — the §4 raw slope_z t-statistic on a near-flat 5-bar series yields a spurious non-zero direction (tiny SE). Sideways is asserted via the statistical signature (seq~0, R2<0.3, ADX<20, H~0.5)."},
+    {"id": "FIX_04_ADX_KNOWN", "expected": {"adx_min": 25, "di_plus_gt_di_minus": true},
+     "doc_inconsistency": "FIX_04's 15-bar array is insufficient for Wilder ADX14 (needs >= 2n=28 bars); re-derived with a 40-bar strong uptrend (ADX≈100, DI+>DI-)."},
+    {"id": "FIX_05_MK_TIE", "bars_log": [10.0, 10.0, 10.0, 10.01, 10.01, 10.02, 10.02, 10.02, 10.03, 10.04],
+     "expected": {"mk_var_correction_nonzero": true, "var_s": 116.66666666666667, "z": 3.4255343691584406}},
+    {"id": "FIX_06_HURST_TRENDING", "expected": {"hurst_min": 0.6},
+     "note": "deterministic trending series (linear + sin), re-derived H≈0.878."},
+    {"id": "FIX_07_HURST_MEANREV", "expected": {"hurst_max": 0.45},
+     "note": "deterministic OU mean-reverting series, re-derived H≈0.0."},
+    {"id": "FIX_08_EXHAUSTION_DIV", "expected": {"exhaustion": true, "type": "BEARISH_DIVERGENCE"}},
+    {"id": "FIX_09_STACK_ALIGNED", "expected": {"bias": 1.0, "alignment": "ALIGNED_BULL"}},
+    {"id": "FIX_10_QUALITY_FORMULA", "inputs": {"r2": 0.8, "adx": 30, "hurst": 0.65},
+     "expected": {"Q": 0.156, "calc": "0.8*0.3*0.65"}},
+    {"id": "FIX_11_EDGE_H_L_INVALID", "expected": {"invalid": true}}
+  ]
+}
