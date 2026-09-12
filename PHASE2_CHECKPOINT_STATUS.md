@@ -38,9 +38,10 @@ COMMIT-RANGE: 3cd94e3..4570a17  OWNER-CHECKED: [x]
 COMMIT-RANGE: 8024232..(branch HEAD; see git log --oneline main..arena/01a094c8-upstage — pushed commits a27b362, a58cdc9, + CP-3 closeout commit)  OWNER-CHECKED: [x]
 ```
 
-## CP-4 · E07+E08+E09 — STATUS: PENDING
+## CP-4 · E07+E08+E09 — STATUS: IN-PROGRESS (2026-09-12, arena/01a0953f-upstage)
 ```
-[ ] ENTRY: CP-3 [x] · batteries green; E07 degraded-mode test present; E08 ch.2–4 raises WaveOutError
+[x] ENTRY: CP-3 [x] (all exit boxes + OWNER-CHECKED [x]; HANDOFF_CP3 nine headings, LAW-ACK first STATUS line) · batteries green — 481 passed / 0 failed re-verified 2026-09-12T10:58Z in a fresh sandbox venv (nine SBOM pins from requirements.lock + pytest 8.4.2 dev-only, ADR-P2-002); sha256(APEX_GEN5.md) == 216bcc9e…bd9e re-checked at session start
+[ ] E07 degraded-mode test present; E08 ch.2–4 raises WaveOutError
 [ ] HANDOFF CP-4 (E07↔E12 deferred-integration note) · MATRIX CP-4 · board
 COMMIT-RANGE: ____  OWNER-CHECKED: [ ]
 ```
