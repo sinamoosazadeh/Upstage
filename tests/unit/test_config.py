@@ -119,7 +119,6 @@ def test_no_dotenv_bypass():
     import sys
     assert "dotenv" not in sys.modules
     src = pathlib.Path(config.__file__).read_text()
-    assert "dotenv" not in src.split("\n")[0:0] or True
     assert "from dotenv" not in src and "import dotenv" not in src
     for name in list(sys.modules):
         assert "dotenv" not in name

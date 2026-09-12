@@ -82,9 +82,11 @@ def test_ratchet_semantics_present():
 
 
 def test_q_oi_stale_weight_canonical():
-    assert "STALE=0.5" in ERROR_REGISTRY["VETO_OI_LAG"].handling
-    assert "0.9" not in ERROR_REGISTRY["VETO_OI_LAG"].handling.split(
-        "STALE=0.5")[0].split("AVAILABLE=1.0")[-1] or True
+    """Ch.7: Q_oi AVAILABLE=1.0 STALE=0.5 — not 0.9 (canonical)."""
+    handling = ERROR_REGISTRY["VETO_OI_LAG"].handling
+    assert "STALE=0.5" in handling
+    assert "AVAILABLE=1.0" in handling
+    assert "Not 0.9" in handling
 
 
 def test_wave_out_error_plumbing():
