@@ -1,0 +1,79 @@
+# params/quality_weights_v1.yaml — copy the Q_raw / Q_min / OI-lag tables of
+# §2.1 exactly. Do not re-interpolate (§9.5). Q_thr carries the three
+# documented representative rows; the §2.1 algorithm default Q_thr=0.5
+# covers other timeframes (as in the frozen algorithm signature).
+freshness_threshold_seconds:
+  1m: 5
+  3m: 8
+  5m: 10
+  15m: 20
+  30m: 25
+  1h: 30
+  2h: 60
+  4h: 120
+  6h: 180
+  8h: 240
+  12h: 300
+  1d: 300
+  1w: 3600
+  1mo: 14400
+q_min_by_tf:
+  1m: 0.60
+  3m: 0.58
+  5m: 0.56
+  15m: 0.54
+  30m: 0.52
+  1h: 0.50
+  2h: 0.48
+  4h: 0.46
+  6h: 0.45
+  8h: 0.44
+  12h: 0.42
+  1d: 0.40
+  1w: 0.40
+  1mo: 0.40
+oi_lag_threshold_seconds:
+  1m: 10
+  3m: 15
+  5m: 20
+  15m: 30
+  30m: 45
+  1h: 60
+  2h: 90
+  4h: 120
+  6h: 180
+  8h: 240
+  12h: 300
+  1d: 300
+  1w: 3600
+  1mo: 14400
+q_thr_by_tf:
+  1m: 0.6
+  1h: 0.5
+  1d: 0.4
+q_raw_weights_by_tf:
+  1m: {Q_schema: 0.20, Q_time: 0.20, Q_seq: 0.15, Q_ohlc: 0.20, Q_volume: 0.10, Q_oi: 0.10, Q_source: 0.05}
+  3m: {Q_schema: 0.19, Q_time: 0.19, Q_seq: 0.15, Q_ohlc: 0.21, Q_volume: 0.11, Q_oi: 0.10, Q_source: 0.05}
+  5m: {Q_schema: 0.18, Q_time: 0.18, Q_seq: 0.15, Q_ohlc: 0.22, Q_volume: 0.12, Q_oi: 0.10, Q_source: 0.05}
+  15m: {Q_schema: 0.17, Q_time: 0.17, Q_seq: 0.15, Q_ohlc: 0.23, Q_volume: 0.13, Q_oi: 0.10, Q_source: 0.05}
+  30m: {Q_schema: 0.16, Q_time: 0.16, Q_seq: 0.15, Q_ohlc: 0.24, Q_volume: 0.14, Q_oi: 0.10, Q_source: 0.05}
+  1h: {Q_schema: 0.15, Q_time: 0.15, Q_seq: 0.15, Q_ohlc: 0.25, Q_volume: 0.15, Q_oi: 0.10, Q_source: 0.05}
+  2h: {Q_schema: 0.14, Q_time: 0.14, Q_seq: 0.14, Q_ohlc: 0.26, Q_volume: 0.15, Q_oi: 0.11, Q_source: 0.06}
+  4h: {Q_schema: 0.13, Q_time: 0.13, Q_seq: 0.13, Q_ohlc: 0.27, Q_volume: 0.15, Q_oi: 0.12, Q_source: 0.07}
+  6h: {Q_schema: 0.12, Q_time: 0.12, Q_seq: 0.12, Q_ohlc: 0.28, Q_volume: 0.15, Q_oi: 0.13, Q_source: 0.08}
+  8h: {Q_schema: 0.12, Q_time: 0.12, Q_seq: 0.12, Q_ohlc: 0.28, Q_volume: 0.15, Q_oi: 0.13, Q_source: 0.08}
+  12h: {Q_schema: 0.11, Q_time: 0.11, Q_seq: 0.11, Q_ohlc: 0.29, Q_volume: 0.15, Q_oi: 0.14, Q_source: 0.09}
+  1d: {Q_schema: 0.10, Q_time: 0.10, Q_seq: 0.10, Q_ohlc: 0.30, Q_volume: 0.15, Q_oi: 0.15, Q_source: 0.10}
+  1w: {Q_schema: 0.10, Q_time: 0.10, Q_seq: 0.10, Q_ohlc: 0.30, Q_volume: 0.15, Q_oi: 0.15, Q_source: 0.10}
+  1mo: {Q_schema: 0.10, Q_time: 0.10, Q_seq: 0.10, Q_ohlc: 0.30, Q_volume: 0.15, Q_oi: 0.15, Q_source: 0.10}
+q_feature_weights: {w_formula: 0.5, w_lookback: 0.3, w_epsilon: 0.2}
+q_evidence_weights:
+  w_conf_by_tf: {1m: 0.3, 1h: 0.25, 1d: 0.2}
+  w_strength: 0.3
+  w_freshness_by_tf: {1m: 0.2, 1h: 0.25}
+  w_regime: 0.2
+q_window_lambda: 0.1
+q_evidence_lambda: 0.1
+sma_period: 20
+atr_period: 14
+rsi_period: 14
