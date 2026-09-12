@@ -1,0 +1,685 @@
+{
+ "engine": "E09_Trend",
+ "contract_version": "4.0.0",
+ "source": "APEX_GEN5.md \u00a78.1 'Golden Fixtures (Minimum 10 Samples)' \u2014 11 cases; every expected value re-derived from \u00a73.1\u2013\u00a73.8 (ADR-P2-007). Document hashes: none copied (\u00a79.5-3); hash = sha256(canonical_json({all fixture keys except 'hash' and 'note'})), computed after the fixture was written (\u00a79.5-3). No document hash is copied; every expected value is re-derived from \u00a73.1\u2013\u00a73.8.",
+ "fixtures": [
+  {
+   "id": "FIX_01_UPTREND_STRONG",
+   "bars": [
+    {
+     "o": 60000,
+     "h": 60200,
+     "l": 59900,
+     "c": 60150
+    },
+    {
+     "o": 60150,
+     "h": 60300,
+     "l": 60100,
+     "c": 60250
+    },
+    {
+     "o": 60250,
+     "h": 60400,
+     "l": 60200,
+     "c": 60350
+    },
+    {
+     "o": 60350,
+     "h": 60500,
+     "l": 60300,
+     "c": 60450
+    },
+    {
+     "o": 60450,
+     "h": 60600,
+     "l": 60400,
+     "c": 60550
+    }
+   ],
+   "swings": [
+    {
+     "type": "HH",
+     "price": 60300,
+     "idx": 1,
+     "confirmed_at_idx": 2
+    },
+    {
+     "type": "HL",
+     "price": 60100,
+     "idx": 2,
+     "confirmed_at_idx": 3
+    },
+    {
+     "type": "HH",
+     "price": 60600,
+     "idx": 4,
+     "confirmed_at_idx": 3
+    }
+   ],
+   "atr": 200,
+   "expected": {
+    "MICRO_dir": 1,
+    "seq_score": 1.0,
+    "seq_score_min": 0.5,
+    "slope_z": 1657.0059846865,
+    "slope_z_min": 1.0,
+    "r2": 0.999999039,
+    "Q_min": "Q2",
+    "quality_label": "Q0",
+    "evidence_count": 3,
+    "Q_rederived": "Q0"
+   },
+   "hash": "sha256:974d82a18bdc3f7f35be22ef554df9995565d62ea36917821746d2d0c7e1094a",
+   "note": "doc_inconsistency (ADR-P2-007): the third swing (HH at idx 4) carries confirmed_at_idx=3 < idx, i.e. it is confirmed before it exists; \u00a78.3 makes that a PIT violation. Kept verbatim as the doc's array; the engine counts it because the \u00a73.1 gate is confirmed_at_idx <= current_idx-1 (3 <= 3), which is what makes seq = 3/3 = 1.0. | Q_min=Q2 is NOT reproducible from the fixture's own 5-bar array: \u00a73.5 needs >= n=14 directional samples for any ADX, so ADX = 0 (warmup) and Q = R2*(ADX/100)*H = 0 \u21d2 Q0. MICRO_dir=1, seq_score=1.0 >= 0.5 and slope_z >= 1.0 all hold; the re-derived Q0 is asserted and the divergence recorded (ADR-P2-007, ISSUE-CP4-020)."
+  },
+  {
+   "id": "FIX_02_DOWNTREND",
+   "bars": [
+    {
+     "o": 60500,
+     "h": 60600,
+     "l": 60300,
+     "c": 60400
+    },
+    {
+     "o": 60400,
+     "h": 60500,
+     "l": 60200,
+     "c": 60300
+    },
+    {
+     "o": 60300,
+     "h": 60400,
+     "l": 60100,
+     "c": 60200
+    },
+    {
+     "o": 60200,
+     "h": 60300,
+     "l": 60000,
+     "c": 60100
+    },
+    {
+     "o": 60100,
+     "h": 60200,
+     "l": 59900,
+     "c": 60000
+    }
+   ],
+   "swings": [
+    {
+     "type": "LL",
+     "price": 60200,
+     "idx": 1,
+     "confirmed_at_idx": 2
+    },
+    {
+     "type": "LH",
+     "price": 60500,
+     "idx": 2,
+     "confirmed_at_idx": 3
+    }
+   ],
+   "atr": 180,
+   "expected": {
+    "MICRO_dir": -1,
+    "seq_score": -1.0,
+    "seq_score_max": -0.3,
+    "quality_label": "Q0"
+   },
+   "hash": "sha256:f7496f623928870ea484ff07dc581cc674d2700c64ecee361753b16c4507fdba"
+  },
+  {
+   "id": "FIX_03_SIDEWAYS",
+   "bars": [
+    {
+     "o": 60000,
+     "h": 60100,
+     "l": 59900,
+     "c": 60000
+    },
+    {
+     "o": 60000,
+     "h": 60120,
+     "l": 59880,
+     "c": 59980
+    },
+    {
+     "o": 59980,
+     "h": 60050,
+     "l": 59850,
+     "c": 60010
+    },
+    {
+     "o": 60010,
+     "h": 60100,
+     "l": 59900,
+     "c": 59990
+    },
+    {
+     "o": 59990,
+     "h": 60080,
+     "l": 59920,
+     "c": 60000
+    }
+   ],
+   "swings": [
+    {
+     "type": "EQ",
+     "price": 60100,
+     "idx": 1,
+     "confirmed_at_idx": 2
+    }
+   ],
+   "atr": 150,
+   "expected": {
+    "MICRO_dir": 0,
+    "adx": 0.0,
+    "adx_max": 20,
+    "hurst": 0.5,
+    "hurst_range": [
+     0.4,
+     0.6
+    ],
+    "hurst_note": "\u00a78.1 expects H in [0.4,0.6]; on a 5-bar window the \u00a73.4 estimator cannot regress (n < 2\u00b7min_len = 16) and returns the random-walk value 0.5 with r2 = 0 \u2014 inside the expected band by construction, recorded rather than tuned.",
+    "MICRO_dir_rederived": 1,
+    "sideways_event": "EV_TRD_007"
+   },
+   "hash": "sha256:352c205eb8aa482576bca30b0bc808ea47ae7af108f95568ee58cff0c4a9d92b",
+   "note": "doc_inconsistency (ISSUE-CP4-019): \u00a78.1 expects MICRO_dir=0, but on these bars \u00a73.2/\u00a74 give slope_z = 1.0742 (beta 1.6671e-05 / SE_NW 1.5519e-05), pos = 0.0267, seq = 0 \u21d2 z = 0.3827 > the \u00a74 deadband 0.05 \u21d2 direction +1. The sideways diagnosis is carried by the engine's own \u00a75.4 EV_TRD_007 (|H-0.5| < 0.1 \u2227 ADX < 20 \u2227 R2 < 0.3 all hold: H = 0.5, ADX = 0, R2 = 0.0192), which the test asserts; adx_max=20 and hurst_range=[0.4,0.6] hold as written."
+  },
+  {
+   "id": "FIX_04_ADX_KNOWN",
+   "bars": [
+    {
+     "o": 1,
+     "h": 2,
+     "l": 0.5,
+     "c": 1.5
+    },
+    {
+     "o": 1.5,
+     "h": 2.5,
+     "l": 1,
+     "c": 2
+    },
+    {
+     "o": 2,
+     "h": 3,
+     "l": 1.5,
+     "c": 2.8
+    },
+    {
+     "o": 2.8,
+     "h": 3.5,
+     "l": 2,
+     "c": 3.2
+    },
+    {
+     "o": 3.2,
+     "h": 4,
+     "l": 2.5,
+     "c": 3.8
+    },
+    {
+     "o": 3.8,
+     "h": 4.5,
+     "l": 3,
+     "c": 4.2
+    },
+    {
+     "o": 4.2,
+     "h": 5,
+     "l": 3.5,
+     "c": 4.8
+    },
+    {
+     "o": 4.8,
+     "h": 5.5,
+     "l": 4,
+     "c": 5.2
+    },
+    {
+     "o": 5.2,
+     "h": 6,
+     "l": 4.5,
+     "c": 5.8
+    },
+    {
+     "o": 5.8,
+     "h": 6.5,
+     "l": 5,
+     "c": 6.2
+    },
+    {
+     "o": 6.2,
+     "h": 7,
+     "l": 5.5,
+     "c": 6.8
+    },
+    {
+     "o": 6.8,
+     "h": 7.5,
+     "l": 6,
+     "c": 7.2
+    },
+    {
+     "o": 7.2,
+     "h": 8,
+     "l": 6.5,
+     "c": 7.8
+    },
+    {
+     "o": 7.8,
+     "h": 8.5,
+     "l": 7,
+     "c": 8.2
+    },
+    {
+     "o": 8.2,
+     "h": 9,
+     "l": 7.5,
+     "c": 8.8
+    }
+   ],
+   "atr": 0.8,
+   "expected": {
+    "adx": 100.0,
+    "adx_min": 25,
+    "di_plus": 33.3333333333,
+    "di_minus": 0.0,
+    "di_plus_gt_di_minus": true,
+    "dx": 100.0,
+    "warmup": false,
+    "warmup_2n": true
+   },
+   "hash": "sha256:540b575f9ad430adb0ebb1d7884b22dd5b3eb4f5afa8220be5812382f9b844d0",
+   "note": "15 bars \u21d2 14 directional samples = n: ADX is the Wilder seed mean of a single DX = 100 (a monotone series has \u2212DM \u2261 0). \u00a73.5's 'NaN until t >= 2n' is carried by warmup_2n=True (ISSUE-CP4-018) \u2014 the fixture's adx_min=25 and DI+ > DI\u2212 both hold."
+  },
+  {
+   "id": "FIX_05_MK_TIE",
+   "bars_log": [
+    10.0,
+    10.0,
+    10.0,
+    10.01,
+    10.01,
+    10.02,
+    10.02,
+    10.02,
+    10.03,
+    10.04
+   ],
+   "expected": {
+    "S": 38.0,
+    "var_s": 116.6666666667,
+    "z_mk": 3.4255343692,
+    "mk_var_correction_nonzero": true,
+    "untied_var": 125.0,
+    "correction": 8.3333333333
+   },
+   "hash": "sha256:969fea576128ea11e8cbadfa249532420f1263c19465dcd7b0ccabba025bfc25",
+   "note": "n=10 \u21d2 n(n-1)(2n+5) = 2250; tie groups [3,2,3] \u21d2 \u03a3t(t-1)(2t+5) = 66+18+66 = 150 \u21d2 Var(S) = (2250-150)/18 = 116.6667 exactly (untied 125, correction 8.3333); S = 38 \u21d2 z = (38-1)/sqrt(116.6667) = 3.4255. The \u00a74 guard max(Var,1) does not bind."
+  },
+  {
+   "id": "FIX_06_HURST_TRENDING",
+   "series": [
+    60000.0,
+    60007.0,
+    60014.0,
+    60021.0,
+    60028.0,
+    60035.0,
+    60042.0,
+    60049.0,
+    60056.0,
+    60063.0,
+    60070.0,
+    60077.0,
+    60084.0,
+    60091.0,
+    60098.0,
+    60105.0,
+    60112.0,
+    60119.0,
+    60126.0,
+    60133.0,
+    60140.0,
+    60147.0,
+    60154.0,
+    60161.0,
+    60168.0,
+    60175.0,
+    60182.0,
+    60189.0,
+    60196.0,
+    60203.0,
+    60210.0,
+    60217.0,
+    60224.0,
+    60231.0,
+    60238.0,
+    60245.0,
+    60252.0,
+    60259.0,
+    60266.0,
+    60273.0,
+    60280.0,
+    60287.0,
+    60294.0,
+    60301.0,
+    60308.0,
+    60315.0,
+    60322.0,
+    60329.0,
+    60336.0,
+    60343.0,
+    60350.0,
+    60357.0,
+    60364.0,
+    60371.0,
+    60378.0,
+    60385.0,
+    60392.0,
+    60399.0,
+    60406.0,
+    60413.0,
+    60420.0,
+    60427.0,
+    60434.0,
+    60441.0,
+    60448.0,
+    60455.0,
+    60462.0,
+    60469.0,
+    60476.0,
+    60483.0,
+    60490.0,
+    60497.0,
+    60504.0,
+    60511.0,
+    60518.0,
+    60525.0,
+    60532.0,
+    60539.0,
+    60546.0,
+    60553.0,
+    60560.0,
+    60567.0,
+    60574.0,
+    60581.0,
+    60588.0,
+    60595.0,
+    60602.0,
+    60609.0,
+    60616.0,
+    60623.0,
+    60630.0,
+    60637.0,
+    60644.0,
+    60651.0,
+    60658.0,
+    60665.0,
+    60672.0,
+    60679.0,
+    60686.0,
+    60693.0,
+    60700.0,
+    60707.0,
+    60714.0,
+    60721.0,
+    60728.0,
+    60735.0,
+    60742.0,
+    60749.0,
+    60756.0,
+    60763.0,
+    60770.0,
+    60777.0,
+    60784.0,
+    60791.0,
+    60798.0,
+    60805.0,
+    60812.0,
+    60819.0,
+    60826.0,
+    60833.0,
+    60840.0,
+    60847.0,
+    60854.0,
+    60861.0,
+    60868.0,
+    60875.0,
+    60882.0,
+    60889.0
+   ],
+   "expected": {
+    "hurst": 0.8791099762807741,
+    "hurst_min": 0.6,
+    "rsq": 0.9993342671728013
+   },
+   "hash": "sha256:600c39d5728baf3f1fba9ad887a07c52da118e372a5f9c22ec5d58deb5ab3707",
+   "note": "Constructed input (replaces an earlier prose descriptor, which was not replayable): a deterministic monotone series 60000+7i, length 128 \u2014 \u00a78.1 names only 'synthetic H0.7 length128'. H and r2 are re-derived from the \u00a73.4 Anis\u2013Lloyd-corrected R/S estimator on this series."
+  },
+  {
+   "id": "FIX_07_HURST_MEANREV",
+   "series": [
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0,
+    60005.0,
+    59995.0
+   ],
+   "expected": {
+    "hurst": 0.0,
+    "hurst_max": 0.45,
+    "rsq": 0.9693625905564197
+   },
+   "hash": "sha256:6455e6f50156c9caeb3ee78f260be0c99a682bbf120fe76126b5eedf79929330",
+   "note": "Constructed input: deterministic \u00b15 alternation about a flat 60000 level, length 128. A perfect anti-persistent alternation drives the R/S regression slope to 0 \u2014 the estimator's floor, recorded as such."
+  },
+  {
+   "id": "FIX_08_EXHAUSTION_DIV",
+   "price_swings": [
+    {
+     "type": "HH",
+     "price": 62500,
+     "idx": 10
+    },
+    {
+     "type": "HH",
+     "price": 63000,
+     "idx": 20
+    }
+   ],
+   "mom_series": [
+    70,
+    75,
+    78,
+    72,
+    68
+   ],
+   "expected": {
+    "exhaustion": true,
+    "type": "BEARISH_DIVERGENCE",
+    "score": 0.8,
+    "lookback_used": 5,
+    "at_default_lookback_20": {
+     "is_exhaustion": false,
+     "degraded": false,
+     "degraded_reason": null,
+     "reason": "len(mom_series)=5 < lookback=20 \u2014 the branch returns no divergence rather than evaluating a short series"
+    }
+   },
+   "hash": "sha256:6f199a05d362460bd51b3b69ac84c1767f16607f815d0194f3052e6cc1841756",
+   "note": "doc_inconsistency: \u00a74's own guard (len(mom_series) < lookback \u21d2 no divergence) makes this 5-value fixture untriggerable at the \u00a76 default lookback=20. The divergence_delta=0.1 branch is exercised with the governed lookback passed explicitly; the default-lookback reading is recorded, not hidden."
+  },
+  {
+   "id": "FIX_09_STACK_ALIGNED",
+   "dirs": {
+    "MICRO": 1,
+    "SHORT": 1,
+    "INTER": 1,
+    "MACRO": 1
+   },
+   "expected": {
+    "bias": 1.0,
+    "alignment": "ALIGNED_BULL",
+    "quality_agg_all_ones": 1.0
+   },
+   "hash": "sha256:f9477d7b2e7af5522bfbb339b8ad6f834329bf22ff0a8e389310155a11cc8762"
+  },
+  {
+   "id": "FIX_10_QUALITY_FORMULA",
+   "r2": 0.8,
+   "adx": 30,
+   "hurst": 0.65,
+   "expected": {
+    "Q": 0.156,
+    "calc": "0.8*0.3*0.65",
+    "quality_label": "Q1"
+   },
+   "hash": "sha256:9ab7ca39ddff93ef20dead4b409427fa72b85cafddbc832c91229122989b45aa"
+  },
+  {
+   "id": "FIX_11_EDGE_H_L_INVALID",
+   "bars": [
+    {
+     "o": 100,
+     "h": 90,
+     "l": 110,
+     "c": 100
+    }
+   ],
+   "expected": {
+    "invalid": true
+   },
+   "hash": "sha256:acd34acb27f9603e6d06112bacf0b1fb23be1cee07e9909bdf3c5d0ea209d02c"
+  }
+ ],
+ "hash_rule": "hash = sha256(canonical_json({all fixture keys except 'hash' and 'note'})), computed after the fixture was written (\u00a79.5-3). No document hash is copied; every expected value is re-derived from \u00a73.1\u2013\u00a73.8."
+}
