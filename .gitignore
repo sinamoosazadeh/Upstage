@@ -1,0 +1,15 @@
+# APEX_GEN5 — .gitignore (ADR-P2-013, owned by CP-1).
+# DBs and .env never enter git; nothing may be added here by later agents without a log note.
+data/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+.env
+__pycache__/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+# chart artifacts — none expected (in-memory PNG rule, Ch.1/Ch.23), guarded anyway
+*.png

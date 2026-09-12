@@ -1,0 +1,47 @@
+# APEX_GEN5 — Phase 2 CP-1 packaging (G15/ADR-P2-002).
+# Runtime dependencies are EXACTLY the nine SBOM pins of APEX_GEN5.md Ch.1.
+# requirements.lock IS that pin list; pip install without the lock is forbidden in LIVE.
+# pytest is a DEV-ONLY extra: never in requirements.lock, never imported by apex/** runtime code.
+
+[project]
+name = "apex-gen5"
+version = "4.0.0"
+description = "APEX_GEN5 frozen-blueprint implementation (Toobit crypto futures, Phase Paper runtime)."
+requires-python = ">=3.11"
+dependencies = [
+    "aiohttp==3.9.5",
+    "aiogram==3.7.0",
+    "aiosqlite==0.20.0",
+    "matplotlib==3.8.4",
+    "pandas==2.2.0",
+    "numpy==1.26.0",
+    "pydantic==2.5.0",
+    "python-dateutil==2.8.2",
+    "pytz==2024.1",
+]
+
+[project.optional-dependencies]
+tests = ["pytest>=7,<9"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = [
+    "apex",
+    "apex.identity",
+    "apex.data_catalog",
+    "apex.data_catalog.store",
+    "apex.data_catalog.ingest",
+    "apex.data_catalog.atomic",
+    "apex.data_catalog.molecular",
+    "apex.data_catalog.organismic",
+    "apex.data_catalog.math",
+    "apex.data_catalog.performance",
+    "apex.quality",
+    "apex.engines",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

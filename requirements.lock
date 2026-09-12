@@ -1,0 +1,12 @@
+# APEX_GEN5 Ch.1 SBOM — this pin list IS requirements.lock (nine pins exact).
+# Hashes UNVERIFIED until first `pip freeze`. `pip install` without the lock
+# is forbidden in LIVE. No extra runtime dependency without SL-12.
+aiohttp==3.9.5
+aiogram==3.7.0
+aiosqlite==0.20.0
+matplotlib==3.8.4
+pandas==2.2.0
+numpy==1.26.0
+pydantic==2.5.0
+python-dateutil==2.8.2
+pytz==2024.1
