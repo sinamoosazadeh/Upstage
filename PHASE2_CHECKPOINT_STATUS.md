@@ -6,7 +6,7 @@ Legend: PENDING · IN-PROGRESS · DELIVERED (self-checked & pushed) · CONTINUE-
 
 ## CP-0 · Owner bootstrap (before stage 1) — STATUS: PENDING
 - [ ] 16 `PHASE2_*` control files at repo root (7 docs + 8 handoffs + this board) — names exactly per MASTER_PLAN §6
-- [ ] `APEX_GEN5.md` sha256 == 216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e ; `PROMPT.md`, `AI_SUGGESTION_PLAN.md` present untouched
+- [ ] `APEX_GEN5.md` sha256 == 216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e ; `PROMPT.md` present carrying ONLY its STATUS banner (source-of-record, never edited); `AI_SUGGESTION_PLAN.md` absent (deleted by owner decree 2026-09-12 — no plan reference depends on it)
 - [ ] Stage-1 account created with write access to THIS repo only; owner read MASTER_PLAN §4 runbook
 OWNER: ____
 

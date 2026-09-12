@@ -15,7 +15,7 @@ You are one specialized implementation engineer in a serial chain building APEX_
 - Repository: `https://github.com/sinamoosazadeh/Upstage` — this is the ONLY authorized development environment and the repository that holds `APEX_GEN5.md`. (The alternate name `sinamoosazadeh/APEX_GEN5` appearing in PROMPT.md's START EXECUTION block is a known defect; see ADR-P2-001. `Upstage` IS the `APEX_GEN5` repository for Phase-2 purposes; do not create or touch any other repo.)
 - Frozen specification: `APEX_GEN5.md` (repo root). It is the single authoritative source of implementation truth. Before writing any code you MUST read, in full, the blueprint ranges assigned to you by your stage prompt (plus the always-binding layers: Ch.1–2, GLOBAL IDENTITY/PIT contract L4104–4158, §9.5), and build your internal implementation map for your scope. No coding begins before your assigned specification is understood.
 - No artifact of the previous partial attempt exists or may be sought: Phase 2 is implemented strictly from the blueprint and the control files (owner decree; ADR-P2-015).
-- You never modify: `APEX_GEN5.md`, `PROMPT.md`, `AI_SUGGESTION_PLAN.md`, any `PHASE2_*` file outside the sections you own, and any path owned by another agent (ownership: `PHASE2_CHECKPOINTS.md`).
+- You never modify: `APEX_GEN5.md`, `PROMPT.md` (it carries a STATUS banner marking its obligations as migrated to G1..G20 — read the banner, then treat the law files as binding), any `PHASE2_*` file outside the sections you own, and any path owned by another agent (ownership: `PHASE2_CHECKPOINTS.md`).
 
 ## P3. Authority hierarchy (re-based from PROMPT.md §3 + blueprint preamble)
 

@@ -1,3 +1,21 @@
+<!--
+==================== PHASE-2 STATUS NOTE (added 2026-09-12 by plan authority — do not delete) ====================
+This file is the owner's Chief-Engineer directive and is RETAINED here as the permanent source-of-record. Its text below is UNMODIFIED.
+STATUS: it is NOT an executable work order anymore. Every obligation, prohibition, and warning it contains — including sections
+1 (role), 4 (non-deviation), 5 (no scope expansion), 6 (fail-closed), 9 (complete implementation), 11 (mathematical fidelity),
+12 (QC without redesign), 13 (change control), 18 (final report) — has been carried, non-negotiable and unabridged, into the
+Phase-2 control files: PHASE2_GLOBAL_DIRECTIVES.md (G1..G20, each item cites its PROMPT.md section) and PHASE2_PROTOCOL.md
+(P1..P21). Reading those two files IN FULL is the mandatory, blocking first action of every stage (stage prompts STEP 2), and
+each stage handoff must open with `LAW-ACK: G1..G20 + P1..P21 read <UTC>` — so the directives bind every executor exactly as
+this document intended, adapted to the 8-stage isolated-window execution model.
+The final block below ("START EXECUTION — access https://github.com/sinamoosazadeh/APEX_GEN5") addressed the earlier solo
+attempt; that repository was deprecated and deleted by the owner (ADR-P2-001/015). DO NOT ACT ON IT. Phase 2 executes solely
+on https://github.com/sinamoosazadeh/Upstage, branch main, per PHASE2_MASTER_PLAN.md §3–§4.
+Executors never edit or delete this file. (The former reference note `AI_SUGGESTION_PLAN.md` was deleted by the owner on
+2026-09-12; nothing in the plan depends on it.)
+====================================================================================================================
+-->
+
 APEX_GEN5
 
 CHIEF ENGINEER AUTONOMOUS IMPLEMENTATION PROTOCOL
