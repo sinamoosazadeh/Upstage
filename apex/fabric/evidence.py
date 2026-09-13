@@ -340,7 +340,7 @@ class EvidenceFabric:
             if raw_ids is not None and not _lineage_ok(ref, raw_ids):
                 excluded.append((ref.evidence_id, "LINEAGE_UNRESOLVED_QX"))
                 continue
-            if ref.age_bars * TF_DURATION_SECONDS[timeframe] >= expiry:
+            if ref.age_bars * TF_DURATION_SECONDS[timeframe] > expiry:
                 excluded.append((ref.evidence_id, "EXPIRED_5TF"))
                 continue
             members.append(ref)

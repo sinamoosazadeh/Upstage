@@ -190,12 +190,14 @@ class TestEvidenceFabric:
         assert {r for _i, r in fab.excluded} == {"FABRIC_SCOPE_MISMATCH_QX"}
 
     def test_expired_members_leave_the_fabric(self):
-        # age beyond 5×TF ⇒ EXPIRED_5TF (1h ⇒ 5·3600 s ⇒ 5 bars of age).
+        # older than 5×TF ⇒ EXPIRED_5TF (1h ⇒ 5·3600 s ⇒ 5 bars of age);
+        # the boundary itself (exactly 5 bars) is the last valid age.
         fab = EvidenceFabric.assemble(
             symbol="BTCUSDT", timeframe="1h", as_of=1000,
-            evidence=[mkref("ev_1", age=5.0), mkref("ev_2", age=4.99)],
+            evidence=[mkref("ev_1", age=5.01), mkref("ev_2", age=5.0),
+                      mkref("ev_3", age=0.0)],
             data_trust=0.98)
-        assert [m.evidence_id for m in fab.members] == ["ev_2"]
+        assert [m.evidence_id for m in fab.members] == ["ev_2", "ev_3"]
         assert fab.excluded == (("ev_1", "EXPIRED_5TF"),)
 
     def test_data_trust_out_of_range_fails_closed(self):

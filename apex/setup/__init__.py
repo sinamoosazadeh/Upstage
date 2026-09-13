@@ -1,0 +1,57 @@
+"""APEX_GEN5 Setup Engine package (Ch.10; CP-6).
+
+One instantiated family (SF_FVG_SWEEP_REV) and the thirteen hard gates.
+No second family may be invented in code (Ch.10 §10.1).
+"""
+
+from apex.setup.gates import (  # noqa: F401
+    GATE_COUNT,
+    GATE_NAMES,
+    GATES,
+    QUARANTINE,
+    GateResult,
+    evaluate,
+    gate10_forecast_quality,
+    gate11_snapshot_lineage,
+    gate12_q_forecast,
+    gate13_parameter_package,
+    gate1_final_score,
+    gate2_window_quality,
+    gate3_conflict_penalty,
+    gate4_redundancy_penalty,
+    gate5_mtf_conflicting,
+    gate6_mtf_sufficient,
+    gate7_regime_quality,
+    gate8_temporal_window_quality,
+    gate9_volatility_quality,
+    quality_min_class,
+    run_all,
+    score_unit,
+)
+from apex.setup.family_sf_fvg_sweep_rev import (  # noqa: F401
+    EMITTED,
+    ENTRY_LOGIC_REF,
+    FAMILY_ID,
+    FORBIDDEN_REGIMES,
+    FVG_LOOKBACK_BARS,
+    HORIZON_BARS,
+    NOT_EMITTED,
+    OPTIONAL_EVIDENCE,
+    PLAYBOOK_ID,
+    QUARANTINED,
+    REQUIRED_EVIDENCE,
+    SWEEP_LOOKBACK,
+    SetupEvaluation,
+    all_cells,
+    atr_gate,
+    evaluate_cell,
+    family_params,
+    fvg_gate,
+    mtf_gate,
+    s_struct_min,
+    register_family,
+    relative_mtf,
+    regime_gate,
+    structure_gate,
+    sweep_and_reclaim,
+)
