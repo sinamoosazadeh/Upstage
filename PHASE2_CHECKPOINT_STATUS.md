@@ -67,7 +67,7 @@ COMMIT-RANGE: 26cb10a..(branch HEAD) = 26cb10a board · 267dfb4 E10 · 4f5f7c6 E
 COMMIT-RANGE: 6e27169..(branch HEAD) = 6e27169 board · c2502ea fabric · fc4ff55 pattern+GF_SC fixtures · 15680eb setup family+gates · 74307a5 playbook · 9230eed forecast/decision/risk · 2089385 integration · branch-HEAD docs/closeout commit — pushed to origin/arena/01a097fa-upstage; open as PR #7 (main ← branch) for the owner's plain merge  OWNER-CHECKED: [x]
 ```
 
-## CP-7 · Execution/Ledger/Scheduler + Telegram/Alerts — STATUS: PENDING
+## CP-7 · Execution/Ledger/Scheduler + Telegram/Alerts — STATUS: IN-PROGRESS (2026-09-13, arena/01a09b05-upstage)
 ```
 [ ] ENTRY: CP-6 [x] · T_MATCH/RECONCILE/LEDGER + adapter trio + FSM matrix + T_MONOTONE + E-TELE-001..007 + single-writer grep + Agg-only grep
 [ ] README run section final, copy-paste verified in clean sandbox · full PAPER-loop boot test green
