@@ -576,6 +576,11 @@ def setup_score(fabric: EvidenceFabric, *, s_i: Mapping[str, float],
     else:
         present = {name for name, eng in COMPONENT_ENGINE.items()
                    if any(m.engine_id == eng for m in fabric.members)}
+        # "absent components contribute nothing" (raw_setup_score law): an
+        # engine may sit in the fabric while the setup layer scores no term
+        # for its component — that component is UNSCORABLE input, never a
+        # KeyError and never a zero-substituted term.
+        present &= set(s_i)
         if not present:
             raw_res = {"raw": 0.0, "reason": "VACUOUS_NO_EVIDENCE",
                        "admitted": False, "terms": {}}

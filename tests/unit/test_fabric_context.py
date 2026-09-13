@@ -340,6 +340,20 @@ class TestSetupScoreAndVacuousPass:
         assert math.isclose(r["raw"], 0.16)
         assert r["final"] < q_min_setup()      # one engine ≠ a setup
 
+    def test_unscored_engine_in_fabric_contributes_nothing(self):
+        """CP-6 integration regression: real E08 (wyckoff) evidence may sit
+        in the fabric while the setup layer scores no wyckoff term. That
+        component contributes NOTHING — it never raises KeyError and never
+        gains a fabricated zero-weighted term (the raw_setup_score law)."""
+        fab = fabric(ref("a", "E01"), ref("b", "E08"))
+        r = setup_score(fab, s_i={"structure": 1.0}, q_i={"structure": 1.0})
+        assert math.isclose(r["raw"], 0.16)
+        assert "wyckoff" not in r["terms"]
+        assert r["vacuous"] is False and r["reason"] == "OK"
+        with_s_i = setup_score(fab, s_i={"structure": 1.0, "wyckoff": 1.0},
+                                q_i={"structure": 1.0, "wyckoff": 1.0})
+        assert math.isclose(with_s_i["raw"], 0.16 + with_s_i["terms"]["wyckoff"])
+
     def test_vacuous_pass_EMPTY_EVIDENCE_FAILS(self):
         """Mission item: a deliberately empty evidence set must NOT pass.
 
