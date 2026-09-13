@@ -1,0 +1,61 @@
+"""APEX_GEN5 Pattern Intelligence package (Ch.9; CP-6).
+
+Detectors on engine evidence — they do not size risk and they do not send
+orders (Ch.9 §9.0). Fibonacci is an in-repo module, not a network service
+(§9.5-15).
+"""
+
+from apex.pattern.detect import (  # noqa: F401
+    AC1_FAMILIES,
+    AC1_MANDATORY_FIELDS,
+    CATALOGUE,
+    CATALOGUE_BY_NAME,
+    CONTRIBUTION_CLASSES,
+    DETECTORS,
+    EXCLUDED_PAT_DER,
+    LIFECYCLE_STATES,
+    PROVENANCE_CLASSES,
+    RESEARCH_ONLY_PATTERNS,
+    PatternEntity,
+    PatternHit,
+    assert_scoring_admissible,
+    detect_all,
+    detect_broadening,
+    detect_double_bottom,
+    detect_double_top,
+    detect_falling_wedge,
+    detect_flag,
+    detect_head_and_shoulders,
+    detect_inverse_head_and_shoulders,
+    detect_quasimodo,
+    detect_rectangle,
+    detect_rising_wedge,
+    detect_triangle_ascending,
+    detect_triangle_descending,
+    detect_triangle_symmetrical,
+    entity_for,
+    from_e08_spring,
+    from_e08_upthrust,
+    is_invalidated,
+    swings,
+)
+from apex.pattern.fibonacci import (  # noqa: F401
+    EXTENSION_RATIOS,
+    EXPANSION_RATIOS,
+    GOLDEN_CONJUGATE,
+    GOLDEN_RATIO,
+    HARMONIC_RATIOS,
+    PROJECTION_RATIOS,
+    RETRACE_RATIOS,
+    FibLevel,
+    confluence,
+    extensions,
+    expansion,
+    golden_identities,
+    harmonic_prz,
+    level,
+    ladder,
+    ote_zone,
+    projections,
+    retracements,
+)

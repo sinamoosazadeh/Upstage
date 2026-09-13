@@ -1,0 +1,168 @@
+{
+ "fixture_id": "GF_SC_02",
+ "pattern_id": "GF_SC_02_UPTHRUST_SHAPE",
+ "kind": "SYNTHETIC",
+ "symbol": "SYNTH",
+ "timeframe": "6h",
+ "note": "schema lock (Ch.9 \u00a79.1 L15018\u201315021): the document fixes the SHAPE \u2014 upthrust index 4 (H=102.5 then close back inside) \u2014 and states 'no SHA-256 here' and 'The source does not include the 12 concrete bar arrays' (Ch.13 E08 \u00a78). Per \u00a79.5-3 the hash is computed after the fixture exists. Because a Spring/Upthrust is only decidable on the governed ATR(14) window (15 TRs minimum, E08 \u00a74 \u2014 no substitute ATR is ever fabricated), the array is extended to 20 closed bars; the documented extremes are preserved exactly (L=98.0 / H=102.5) and the candidate sits at bar index 16 = 4th-from-last, so '12 bars around 100 \u2026 candidate index 4' holds as its tail. Every expected value below is re-derived with apex.engines.e08_wyckoff (ADR-P2-007/014); the test re-derives them at run time and asserts equality.",
+ "derivation": {
+  "atr14": 6.5583574472583726,
+  "range_extreme": 100.6,
+  "vol_ratio_rule": "V_t / SMA_20(V on t\u22121) via apex.quality.numerical.formula_volume_ratio (8 digits, \u00a72.2)",
+  "range_z_rule": "apex.engines.e08_wyckoff.range_z over (H\u2212L) up to and including the candidate bar (z vs the t\u22121 history, \u00a73.1)",
+  "sc_rule": "detect_ut (penetration \u2264 0.3\u00b7ATR, close back inside, VolRatio \u2265 1.2)"
+ },
+ "fixtures": [
+  {
+   "id": "GF_SC_02_UPTHRUST_SHAPE",
+   "bars": [
+    {
+     "o": 99.0,
+     "h": 100.6,
+     "l": 93.0,
+     "c": 99.0,
+     "v": 1000.0
+    },
+    {
+     "o": 99.4,
+     "h": 100.5,
+     "l": 93.3,
+     "c": 99.25,
+     "v": 1015.0
+    },
+    {
+     "o": 99.8,
+     "h": 100.4,
+     "l": 93.6,
+     "c": 99.5,
+     "v": 1030.0
+    },
+    {
+     "o": 100.2,
+     "h": 100.3,
+     "l": 93.0,
+     "c": 99.75,
+     "v": 1045.0
+    },
+    {
+     "o": 99.0,
+     "h": 100.2,
+     "l": 93.3,
+     "c": 100.0,
+     "v": 1060.0
+    },
+    {
+     "o": 99.4,
+     "h": 100.6,
+     "l": 93.6,
+     "c": 100.25,
+     "v": 1075.0
+    },
+    {
+     "o": 99.8,
+     "h": 100.5,
+     "l": 93.0,
+     "c": 99.0,
+     "v": 1090.0
+    },
+    {
+     "o": 100.2,
+     "h": 100.4,
+     "l": 93.3,
+     "c": 99.25,
+     "v": 1105.0
+    },
+    {
+     "o": 99.0,
+     "h": 100.3,
+     "l": 93.6,
+     "c": 99.5,
+     "v": 1120.0
+    },
+    {
+     "o": 99.4,
+     "h": 100.2,
+     "l": 93.0,
+     "c": 99.75,
+     "v": 1135.0
+    },
+    {
+     "o": 99.8,
+     "h": 100.6,
+     "l": 93.3,
+     "c": 100.0,
+     "v": 1150.0
+    },
+    {
+     "o": 100.2,
+     "h": 100.5,
+     "l": 93.6,
+     "c": 100.25,
+     "v": 1165.0
+    },
+    {
+     "o": 99.0,
+     "h": 100.4,
+     "l": 93.0,
+     "c": 99.0,
+     "v": 1180.0
+    },
+    {
+     "o": 99.4,
+     "h": 100.3,
+     "l": 93.3,
+     "c": 99.25,
+     "v": 1195.0
+    },
+    {
+     "o": 99.8,
+     "h": 100.2,
+     "l": 93.6,
+     "c": 99.5,
+     "v": 1210.0
+    },
+    {
+     "o": 100.2,
+     "h": 100.6,
+     "l": 93.0,
+     "c": 99.75,
+     "v": 1225.0
+    },
+    {
+     "o": 99.0,
+     "h": 102.5,
+     "l": 93.0,
+     "c": 99.0,
+     "v": 2600.0
+    },
+    {
+     "o": 99.0,
+     "h": 100.4,
+     "l": 96.6,
+     "c": 97.2,
+     "v": 1300.0
+    },
+    {
+     "o": 97.2,
+     "h": 100.3,
+     "l": 96.2,
+     "c": 98.5,
+     "v": 1100.0
+    },
+    {
+     "o": 98.5,
+     "h": 100.2,
+     "l": 97.0,
+     "c": 99.8,
+     "v": 1050.0
+    }
+   ],
+   "expected": {
+    "sc": true,
+    "vol_ratio": 2.33707865,
+    "range_z": 7.911300210709141
+   },
+   "hash": "sha256:37d6d6e3178e0fac58511e9ef776aaace747e63f7aaae4793efa01a07788a93d"
+  }
+ ]
+}

@@ -22,3 +22,20 @@ weights:
   w_momentum: 0.06
   w_regime: 0.04
   w_temporal: 0.02
+# --- CP-6 additions (ADR-P2-003, logged in DECISION_LOG §B/CP-6) ---------
+# Context-layer governed scalars for apex/fabric. Bands + decay laws are
+# governed parameters (SL-12); the propagation decision stays the Ch.8 §8.0
+# threshold table, the band grid is the operational classification of the
+# same scalar (ISSUE-CP6-002).
+context_bands: {admissible: 0.70, confirmatory: 0.50, collapsed: 0.30}
+propagation_confirmatory_threshold: 0.40
+data_trust_floor: 0.30
+context_decay_per_bar: 0.05
+evidence_decay_per_bar: 0.02
+# Setup hard-gate thresholds (Ch.10 §10.1). Gates 1–4/7/12 are score gates on
+# the frozen [0,1] scale, quantized at 0.01 (the "±1 unit" of the gate matrix);
+# Gates 8/9 are quality-class gates (Q0..Q5, one Q-class = 1 unit).
+gate_score_unit: 0.01
+gate_quality_min_class: 2
+gate_forecast_q_min: 0.5
+family_s_struct_min: 0.55

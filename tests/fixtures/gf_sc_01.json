@@ -1,0 +1,168 @@
+{
+ "fixture_id": "GF_SC_01",
+ "pattern_id": "GF_SC_01_SPRING_SHAPE",
+ "kind": "SYNTHETIC",
+ "symbol": "SYNTH",
+ "timeframe": "6h",
+ "note": "schema lock (Ch.9 \u00a79.1 L15018\u201315021): the document fixes the SHAPE \u2014 spring candidate index 4 (L=98.0 then close back above 99.3) \u2014 and states 'no SHA-256 here' and 'The source does not include the 12 concrete bar arrays' (Ch.13 E08 \u00a78). Per \u00a79.5-3 the hash is computed after the fixture exists. Because a Spring/Upthrust is only decidable on the governed ATR(14) window (15 TRs minimum, E08 \u00a74 \u2014 no substitute ATR is ever fabricated), the array is extended to 20 closed bars; the documented extremes are preserved exactly (L=98.0 / H=102.5) and the candidate sits at bar index 16 = 4th-from-last, so '12 bars around 100 \u2026 candidate index 4' holds as its tail. Every expected value below is re-derived with apex.engines.e08_wyckoff (ADR-P2-007/014); the test re-derives them at run time and asserts equality.",
+ "derivation": {
+  "atr14": 6.629309428894422,
+  "range_extreme": 99.0,
+  "vol_ratio_rule": "V_t / SMA_20(V on t\u22121) via apex.quality.numerical.formula_volume_ratio (8 digits, \u00a72.2)",
+  "range_z_rule": "apex.engines.e08_wyckoff.range_z over (H\u2212L) up to and including the candidate bar (z vs the t\u22121 history, \u00a73.1)",
+  "sc_rule": "detect_spring \u2227 spring_recovered(\u22643 bars)"
+ },
+ "fixtures": [
+  {
+   "id": "GF_SC_01_SPRING_SHAPE",
+   "bars": [
+    {
+     "o": 103.0,
+     "h": 108.0,
+     "l": 99.0,
+     "c": 104.5,
+     "v": 1000.0
+    },
+    {
+     "o": 103.9,
+     "h": 107.3,
+     "l": 99.2,
+     "c": 103.6,
+     "v": 1025.0
+    },
+    {
+     "o": 104.8,
+     "h": 106.6,
+     "l": 99.4,
+     "c": 102.7,
+     "v": 1050.0
+    },
+    {
+     "o": 105.7,
+     "h": 105.9,
+     "l": 99.0,
+     "c": 101.8,
+     "v": 1075.0
+    },
+    {
+     "o": 103.0,
+     "h": 105.2,
+     "l": 99.2,
+     "c": 100.9,
+     "v": 1100.0
+    },
+    {
+     "o": 103.9,
+     "h": 108.0,
+     "l": 99.4,
+     "c": 100.0,
+     "v": 1125.0
+    },
+    {
+     "o": 104.8,
+     "h": 107.3,
+     "l": 99.0,
+     "c": 104.5,
+     "v": 1150.0
+    },
+    {
+     "o": 105.7,
+     "h": 106.6,
+     "l": 99.2,
+     "c": 103.6,
+     "v": 1175.0
+    },
+    {
+     "o": 103.0,
+     "h": 105.9,
+     "l": 99.4,
+     "c": 102.7,
+     "v": 1200.0
+    },
+    {
+     "o": 103.9,
+     "h": 105.2,
+     "l": 99.0,
+     "c": 101.8,
+     "v": 1225.0
+    },
+    {
+     "o": 104.8,
+     "h": 108.0,
+     "l": 99.2,
+     "c": 100.9,
+     "v": 1250.0
+    },
+    {
+     "o": 105.7,
+     "h": 107.3,
+     "l": 99.4,
+     "c": 100.0,
+     "v": 1275.0
+    },
+    {
+     "o": 103.0,
+     "h": 106.6,
+     "l": 99.0,
+     "c": 104.5,
+     "v": 1300.0
+    },
+    {
+     "o": 103.9,
+     "h": 105.9,
+     "l": 99.2,
+     "c": 103.6,
+     "v": 1325.0
+    },
+    {
+     "o": 104.8,
+     "h": 105.2,
+     "l": 99.4,
+     "c": 102.7,
+     "v": 1350.0
+    },
+    {
+     "o": 105.7,
+     "h": 108.0,
+     "l": 99.0,
+     "c": 101.8,
+     "v": 1375.0
+    },
+    {
+     "o": 104.0,
+     "h": 104.4,
+     "l": 98.0,
+     "c": 99.4,
+     "v": 2000.0
+    },
+    {
+     "o": 99.4,
+     "h": 103.2,
+     "l": 99.1,
+     "c": 102.5,
+     "v": 1300.0
+    },
+    {
+     "o": 102.5,
+     "h": 103.6,
+     "l": 100.0,
+     "c": 101.0,
+     "v": 1050.0
+    },
+    {
+     "o": 101.0,
+     "h": 103.4,
+     "l": 99.7,
+     "c": 102.6,
+     "v": 1000.0
+    }
+   ],
+   "expected": {
+    "sc": true,
+    "vol_ratio": 1.68421053,
+    "range_z": -1.0518011762142596
+   },
+   "hash": "sha256:317fd5a35cd24d50eded3cfd25b90248fb4f52a446e34ff07be7df8672801b17"
+  }
+ ]
+}
