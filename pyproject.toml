@@ -24,8 +24,10 @@ dependencies = [
 # requirements.lock and is never imported by apex/** runtime code.
 tests = ["pytest>=7,<9"]
 
-[tool.setuptools]
-packages = ["apex"]
+[tool.setuptools.packages.find]
+# Include the complete normative package tree in wheels and editable installs.
+# An explicit `packages = ["apex"]` would omit every runtime subpackage.
+include = ["apex*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/integration"]
