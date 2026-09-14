@@ -3,7 +3,13 @@
 W.8-1 (normative): the state of every bundle-cell lives in the local SQLite
 database; on process kill, device reboot or network failure the run resumes at
 the start of the next uncompleted cell and is **never** restarted from the
-beginning. W.6 Phase-1 checkpoints the ``bootstrap_progress`` cursor per cell
+beginning. W.6 Phase-1 checkpoints its per-cell cursor in
+``research_bootstrap_progress`` (named for the research runner: the Ch.5 raw
+store already owns a frozen ``bootstrap_progress`` table — symbol/timeframe/
+P1..P3 — in the same database file, and two tables cannot share one name;
+ISSUE-CP9-002)
+
+W.6's wording "checkpoint ``bootstrap_progress``" is the cursor concept:
 and resumes from it without rewinding.
 
 The tables created here are research-plane tables (ADR-P2-003 additive rule,
@@ -28,8 +34,8 @@ from apex.research.proxies import REPO_ROOT
 
 CONTRACT_VERSION = "4.0.0"
 
-M201_bootstrap_progress = """
-CREATE TABLE IF NOT EXISTS bootstrap_progress (
+M201_research_bootstrap_progress = """
+CREATE TABLE IF NOT EXISTS research_bootstrap_progress (
   cell_id           TEXT PRIMARY KEY,
   symbol            TEXT NOT NULL,
   timeframe         TEXT NOT NULL,
@@ -78,7 +84,7 @@ CREATE TABLE IF NOT EXISTS research_monitor_log (
 """
 
 RESEARCH_MIGRATIONS: Tuple[Tuple[str, str], ...] = (
-    ("M201_bootstrap_progress", M201_bootstrap_progress),
+    ("M201_research_bootstrap_progress", M201_research_bootstrap_progress),
     ("M202_optimizer_checkpoint", M202_optimizer_checkpoint),
     ("M203_research_monitor_log", M203_research_monitor_log),
 )
@@ -148,13 +154,16 @@ class ResearchCheckpointStore:
         if int(phase) not in BOOTSTRAP_PHASES:
             raise CheckpointError("PHASE_QX", str(phase))
         await self.db.execute(
-            "INSERT INTO bootstrap_progress (cell_id, symbol, timeframe, phase,"
+            "INSERT INTO research_bootstrap_progress "
+            "(cell_id, symbol, timeframe, phase,"
             " status, cursor_ms, bars_ingested, oi_available, updated_at,"
             " payload_json) VALUES (?,?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(cell_id) DO UPDATE SET phase=excluded.phase,"
             " status=excluded.status,"
-            " cursor_ms=MAX(bootstrap_progress.cursor_ms, excluded.cursor_ms),"
-            " bars_ingested=bootstrap_progress.bars_ingested + excluded.bars_ingested,"
+            " cursor_ms=MAX(research_bootstrap_progress.cursor_ms,"
+            " excluded.cursor_ms),"
+            " bars_ingested=research_bootstrap_progress.bars_ingested"
+            " + excluded.bars_ingested,"
             " oi_available=excluded.oi_available,"
             " updated_at=excluded.updated_at, payload_json=excluded.payload_json",
             (cell_id, symbol, timeframe, int(phase), status, int(cursor_ms),
@@ -164,7 +173,8 @@ class ResearchCheckpointStore:
 
     async def load_bootstrap(self, cell_id: str) -> Optional[Dict[str, Any]]:
         cur = await self.db.execute(
-            "SELECT * FROM bootstrap_progress WHERE cell_id=?", (cell_id,))
+            "SELECT * FROM research_bootstrap_progress WHERE cell_id=?",
+            (cell_id,))
         row = await cur.fetchone()
         await cur.close()
         if row is None:
@@ -176,14 +186,15 @@ class ResearchCheckpointStore:
 
     async def bootstrap_rows(self) -> List[Dict[str, Any]]:
         cur = await self.db.execute(
-            "SELECT * FROM bootstrap_progress ORDER BY cell_id")
+            "SELECT * FROM research_bootstrap_progress ORDER BY cell_id")
         rows = [dict(r) for r in await cur.fetchall()]
         await cur.close()
         return rows
 
     async def incomplete_bootstrap_cells(self) -> List[str]:
         cur = await self.db.execute(
-            "SELECT cell_id FROM bootstrap_progress WHERE status NOT IN"
+            "SELECT cell_id FROM research_bootstrap_progress "
+            "WHERE status NOT IN"
             " ('COMPLETE','SKIPPED') ORDER BY cell_id")
         rows = [r[0] for r in await cur.fetchall()]
         await cur.close()

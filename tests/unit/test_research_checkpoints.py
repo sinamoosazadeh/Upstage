@@ -26,7 +26,7 @@ def store(tmp_path):
 class TestSchema:
     def test_three_additive_migrations(self):
         assert [name for name, _ in RESEARCH_MIGRATIONS] == [
-            "M201_bootstrap_progress", "M202_optimizer_checkpoint",
+            "M201_research_bootstrap_progress", "M202_optimizer_checkpoint",
             "M203_research_monitor_log"]
 
     def test_tables_exist_after_open(self, store, tmp_path):
@@ -36,7 +36,7 @@ class TestSchema:
                     "SELECT name FROM sqlite_master WHERE type='table'")
                 return sorted(r[0] for r in await cur.fetchall())
         names = _run(_check())
-        assert {"bootstrap_progress", "optimizer_checkpoint",
+        assert {"research_bootstrap_progress", "optimizer_checkpoint",
                 "research_monitor_log"} <= set(names)
 
     def test_wal_journal_mode(self, store):
@@ -54,7 +54,7 @@ class TestSchema:
         assert len(_run(_check())) == 3
 
     def test_phase_check_constraint_is_in_the_ddl(self):
-        ddl = dict(RESEARCH_MIGRATIONS)["M201_bootstrap_progress"]
+        ddl = dict(RESEARCH_MIGRATIONS)["M201_research_bootstrap_progress"]
         assert "CHECK(phase IN (1, 2, 3))" in ddl
         assert BOOTSTRAP_PHASES == (1, 2, 3)
 

@@ -311,3 +311,82 @@ class TestCatalogOverStore:
                                  "2025-01-01T00:00:00.000Z"))
         assert result.status == CatalogStatus.INVALID
         assert result.reason == "PIT_FUTURE_AS_OF"
+
+
+class TestMissingOiIngest:
+    """The OI-less ingest path (wiring increment, T-DC-004 + Ch.4 DDL L14397).
+
+    Phase 1 pages klines only: those rows carry no OI series, so `oi_state` is
+    MISSING and `open_interest` cannot be a number. The frozen DDL declares the
+    column TEXT, so the canonical label is stored (never 0) and reads back as
+    `oi=None` — the same value `Catalog`/engines see for a missing series.
+    """
+
+    def test_missing_oi_row_ingests_and_reads_back_as_none(self, store):
+        obs = make_obs(oi=None)
+        event_id = run(store.ingest_raw(obs, "MISSING"))
+        assert event_id
+        cur = run(store.db.execute(
+            "SELECT oi, oi_state FROM raw_observation WHERE event_id=?",
+            (event_id,)))
+        assert run(cur.fetchone()) == (None, "MISSING")   # nullable canonical pair
+        cur = run(store.db.execute(
+            "SELECT open_interest FROM market_observation "
+            "WHERE raw_payload_hash=?", (ss.sha256_hex(obs.content_hash()),)))
+        assert run(cur.fetchone())[0] == "MISSING"        # never 0
+        window = run(store.get_window("BTCUSDT", "15m",
+                                      "2024-01-01T01:00:00.000Z", 5))
+        assert len(window) == 1 and window[0].oi is None
+
+    def test_missing_oi_row_is_still_deduplicated(self, store):
+        first = run(store.ingest_raw(make_obs(oi=None), "MISSING"))
+        second = run(store.ingest_raw(make_obs(oi=None), "MISSING"))
+        assert first == second
+        cur = run(store.db.execute(
+            "SELECT COUNT(*) FROM raw_observation WHERE symbol='BTCUSDT'"))
+        assert run(cur.fetchone())[0] == 1
+
+    def test_value_state_without_a_value_is_refused(self, store):
+        with pytest.raises(ValueError) as excinfo:
+            run(store.ingest_raw(make_obs(oi=None), "AVAILABLE"))
+        assert "OI_STATE_WITHOUT_VALUE" in str(excinfo.value)
+
+    def test_available_oi_is_unchanged(self, store):
+        run(store.ingest_raw(make_obs(oi=Decimal("500")), "AVAILABLE"))
+        window = run(store.get_window("BTCUSDT", "15m",
+                                      "2024-01-01T01:00:00.000Z", 5))
+        assert window[0].oi == Decimal("500")
+
+
+class TestWindowIsTheLatestBars:
+    """ISSUE-CP9-001: ``get_window`` must return the LAST `bars` rows at or
+    before ``as_of`` (the docstring always said so; the SQL returned the
+    oldest ones, which would starve every engine of its recent window)."""
+
+    def _seed(self, store, closes):
+        for index, close in enumerate(closes):
+            stamp = f"2024-01-01T{index:02d}:15:00.000Z"
+            run(store.ingest_raw(make_obs(c=close, ts=stamp, o=close,
+                                          h=close + 1, l=close - 1),
+                                 "AVAILABLE"))
+
+    def test_last_bars_are_returned_in_ascending_order(self, store):
+        self._seed(store, [100, 101, 102, 103, 104])
+        window = run(store.get_window("BTCUSDT", "15m",
+                                      "2024-01-01T04:15:00.000Z", 3))
+        assert [str(o.close) for o in window] == ["102", "103", "104"]
+        assert [o.timestamp for o in window] == [
+            "2024-01-01T02:15:00.000Z", "2024-01-01T03:15:00.000Z",
+            "2024-01-01T04:15:00.000Z"]
+
+    def test_the_as_of_boundary_is_still_respected(self, store):
+        self._seed(store, [100, 101, 102])
+        window = run(store.get_window("BTCUSDT", "15m",
+                                      "2024-01-01T01:15:00.000Z", 5))
+        assert [str(o.close) for o in window] == ["100", "101"]
+
+    def test_a_short_history_returns_what_exists(self, store):
+        self._seed(store, [100])
+        window = run(store.get_window("BTCUSDT", "15m",
+                                      "2024-01-01T00:15:00.000Z", 10))
+        assert [str(o.close) for o in window] == ["100"]
