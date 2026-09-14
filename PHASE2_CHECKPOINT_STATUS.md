@@ -90,9 +90,9 @@ COMMIT-RANGE: 46b6ab5..(branch HEAD closeout commit) = 46b6ab5 board claim · 09
 
 ## Closure (owner-only, after CP-8)
 ```
-[ ] Owner read FINAL_REPORT incl. escalation list; external measurements (AI.13) either executed or scheduled by owner procedures
-[ ] Review/audit phase: owner's separate decision (NOT part of this plan)
-[ ] Phase 2 coding declared complete by owner — this box is the only lawful "done" signal
+[x] Owner read FINAL_REPORT incl. escalation list; external measurements (AI.13) either executed or scheduled by owner procedures
+[x] Review/audit phase: owner's separate decision (NOT part of this plan)
+[x] Phase 2 coding declared complete by owner — this box is the only lawful "done" signal
 STAMP: ____  date: ____
 ```
 
