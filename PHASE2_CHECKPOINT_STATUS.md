@@ -5,10 +5,10 @@ Rules: each CP block is edited ONLY by its stage executor. Board lines like `OWN
 Legend: PENDING · IN-PROGRESS · DELIVERED (self-checked & pushed) · CONTINUE-NEEDED (overflow; ledger in handoff) · OWNER-CHECKED.
 
 ## CP-0 · Owner bootstrap (before stage 1) — STATUS: PENDING
-- [ ] 16 `PHASE2_*` control files at repo root (7 docs + 8 handoffs + this board) — names exactly per MASTER_PLAN §6
-- [ ] `APEX_GEN5.md` sha256 == 216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e ; `PROMPT.md` present carrying ONLY its STATUS banner (source-of-record, never edited); `AI_SUGGESTION_PLAN.md` absent (deleted by owner decree 2026-09-12 — no plan reference depends on it)
-- [ ] Stage-1 account created with write access to THIS repo only; owner read MASTER_PLAN §4 runbook
-OWNER: ____
+- [x] 16 `PHASE2_*` control files at repo root (7 docs + 8 handoffs + this board) — names exactly per MASTER_PLAN §6
+- [x] `APEX_GEN5.md` sha256 == 216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e ; `PROMPT.md` present carrying ONLY its STATUS banner (source-of-record, never edited); `AI_SUGGESTION_PLAN.md` absent (deleted by owner decree 2026-09-12 — no plan reference depends on it)
+- [x] Stage-1 account created with write access to THIS repo only; owner read MASTER_PLAN §4 runbook
+OWNER: _Sin@_
 
 ## CP-1 · Foundation + Feature Fabric + Engine Base — STATUS: COMPLETE (2026-09-12)
 ```
@@ -93,7 +93,8 @@ COMMIT-RANGE: 46b6ab5..(branch HEAD closeout commit) = 46b6ab5 board claim · 09
 [x] Owner read FINAL_REPORT incl. escalation list; external measurements (AI.13) either executed or scheduled by owner procedures
 [x] Review/audit phase: owner's separate decision (NOT part of this plan)
 [x] Phase 2 coding declared complete by owner — this box is the only lawful "done" signal
-STAMP: ____  date: ____
+STAMP: _Sin@_  date: _2026-09-14_
+
 ```
 
 ## CONTINUE BLOCKS (overflow; format: `CONTINUE(CP-n) @ <date>: ledger = <handoff §REMAINING WORK LEDGER ref>` + completion line of the continuation session)
