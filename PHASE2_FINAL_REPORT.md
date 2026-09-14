@@ -133,6 +133,7 @@ engine and once per shared window in the four integration modules.
 | Session run 1 | 2553 passed in 64.73 s | includes the 368 CP-8 tests |
 | Session run 2 | 2553 passed in 65.67 s | identical counts ⇒ **no nondeterminism finding** |
 | Fresh clone (branch `arena/01a09fcd-upstage`, 41deb78) | 2553 passed in 71.18 s | README commands executed with their documented exit codes |
+| Closeout-tree run (this PR's head, docs-only diff) | 2553 passed in 66.65 s | re-confirms the green state at the commit that carries this report |
 | CP-8 module slice | 368 passed in 3.91 s | 11 test modules |
 
 **CP-8 test inventory (368 tests):** `test_research_proxies.py` 35 ·
