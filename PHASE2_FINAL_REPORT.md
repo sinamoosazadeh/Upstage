@@ -310,3 +310,30 @@ measurement was taken, and no AI.13 external gate is claimed closed. The
 are owner procedures listed in §7.
 
 `CP-8 closeout complete — 2026-09-14T12:49Z — commits 0957633..41deb78 + the closeout commit at branch HEAD (arena/01a09fcd-upstage) — suite: 2553 passed / 0 failed / 3 harness-open (T-NFR-001..003 are owner target-device measurements; every other external gate is an owner procedure per §7)`
+
+---
+
+## CP-9 Addendum — Operational Wiring Continuation (CP-8 addendum, in-session)
+
+**Status:** DELIVERED (local, in-session) — the three wiring pieces the delivered analysis named as missing are in-tree and green, plus the canonical mirror fix (ISSUE-CP9-007). Full suite **2627 passed** (was 2553 at CP-8 closeout; +74 tests: 72 wiring +2 canonical mirror). Nothing reaches a network in any test.
+
+**Delivered increment (this session):**
+- `apex/ops/bootstrap_service.py` — long-run Phase-1 command (W.6) + canonical mirror `CanonicalMirroredCheckpoints`/`mirror_bootstrap_progress`/`_canonical_upsert`/`CANONICAL_PROGRESS_STATUS`/`_ms_to_iso`/`_utc_now_iso` (ISSUE-CP9-007 / W.6 L17101, Ch.5 DDL L14575), fixed-width ISO, MAX cursor, SUM bars, COALESCE last_error, 6× locked retry.
+- `apex/telegram/gateway.py` — inbound `getUpdates` gateway (OWNER-only, BOOTSTRAP_CONTROL words).
+- `apex/ops/paper_loop.py` — 24/7 PAPER runtime (140-cell scheduler, 9 stages/cell, budget/storage/watchdog).
+- `scripts/run_apex.py` — composition root: `bootstrap`/`status`/`serve` on top of CP-8 commands.
+- `tests/unit/test_ops_bootstrap_service.py` (20), `tests/unit/test_ops_telegram_gateway.py` (28), `tests/integration/test_ops_paper_loop.py` (19) + OI/window fixes (ISSUE-CP9-001/005).
+
+**Data-changes this increment:**
+- `research_bootstrap_progress` (M201) research table distinct from frozen Ch.5 `bootstrap_progress` (ISSUE-CP9-002); frozen DDLs byte-identical.
+- `market_observation.open_interest` stores `MISSING`/`INVALID` label for OI-less bars (ISSUE-CP9-005, T-DC-004).
+- Canonical mirror on every research checkpoint (ISSUE-CP9-007): phase='P1', MAX `cursor_open_time`, SUM `bars_written`, `SKIPPED→ERROR+PHASE1_VERIFICATION_SKIPPED`.
+
+**Tests:** `pytest -q` ⇒ 2627 passed; `test_ops_paper_loop` 19, `test_ops_bootstrap_service` 20, `test_ops_telegram_gateway` 28. Mirror proven by `test_complete_run_mirrors_canonical_done_and_cursor` (P1 DONE bars≥3 ISO equality) and `test_budget_paused_mirrors_canonical_running_and_cursor` (RUNNING|PAUSED).
+
+**Deviations:** None; plan bridge remains declared seam INFO OPEN ISSUE-CP9-006.
+
+**Commits this continuation:** board claim `92107e5` + wiring `9a13e7a` + docs/closeout (this file) — branch `arena/01a0a23a-upstage`, PR #9 continuation.
+
+`CP-9 addendum delivered — 2026-09-14T23:25:26Z — suite 2627 passed / 0 failed`
+
