@@ -1,0 +1,539 @@
+{
+  "_meta": {
+    "contract": "CP-7 Toobit adapter conformance — golden request/response pairs",
+    "cite": "APEX_GEN5.md Ch.16 L16843–16910; AI.3 L18398–18430; AI.8 L18749–18810; ISSUE-CP7-001/002",
+    "producer": "tests/fake_toobit_responder.py (test double only — no network, no credentials)",
+    "case_count": 19,
+    "cases_sha256": "cd1ba3488bd610c1b89a7d7869b9a653458d3b3b1ad956fc27818da8fea29c17"
+  },
+  "cases": [
+    {
+      "id": "C-01",
+      "cite": "Ch.16 L16848–16851 (clientOrderId=intent_id), L16896 (Entry LIMIT/IOC), L16898 (success = HTTP 200 + code 0/200)",
+      "operation": "submit_order",
+      "scenario": {
+        "fill_mode": "none"
+      },
+      "call": {
+        "intent_id": "intent-ack-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "LONG",
+        "quantity": "0.1",
+        "price": "100"
+      },
+      "expect": {
+        "endpoint": "POST /api/v1/futures/order",
+        "ok": true,
+        "classification": "OK",
+        "outcome": "ACKNOWLEDGED",
+        "business_code": 0,
+        "http_status": 200,
+        "reconcile_required": false,
+        "resubmitted": false,
+        "attempts": 1,
+        "cached": false
+      },
+      "expect_venue": {
+        "posts_to_order_endpoint": 1,
+        "signature_violations": 0,
+        "request_params": {
+          "symbol": "BTC-SWAP-USDT",
+          "side": "BUY_OPEN",
+          "type": "LIMIT",
+          "timeInForce": "IOC",
+          "clientOrderId": "intent-ack-1",
+          "positionMode": "ONE_WAY"
+        }
+      }
+    },
+    {
+      "id": "C-02",
+      "cite": "Ch.16 L16858–16860 exchange status → outcome (FILLED)",
+      "operation": "submit_order",
+      "scenario": {
+        "fill_mode": "immediate",
+        "fill_price": "100"
+      },
+      "call": {
+        "intent_id": "intent-fill-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "LONG",
+        "quantity": "0.1",
+        "price": "100"
+      },
+      "expect": {
+        "endpoint": "POST /api/v1/futures/order",
+        "ok": true,
+        "classification": "OK",
+        "outcome": "FILLED",
+        "attempts": 1,
+        "reconcile_required": false
+      }
+    },
+    {
+      "id": "C-03",
+      "cite": "Ch.16 L16858–16860 exchange status → outcome (PARTIALLY_FILLED → PARTIAL)",
+      "operation": "submit_order",
+      "scenario": {
+        "fill_mode": "partial",
+        "fill_price": "100"
+      },
+      "call": {
+        "intent_id": "intent-part-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "LONG",
+        "quantity": "0.2",
+        "price": "100"
+      },
+      "expect": {
+        "endpoint": "POST /api/v1/futures/order",
+        "ok": true,
+        "classification": "OK",
+        "outcome": "PARTIAL",
+        "attempts": 1
+      }
+    },
+    {
+      "id": "C-04",
+      "cite": "T_ADAPTER_DUPLICATE; Ch.16 L16796–16798 a repeated idempotency key returns the previously recorded response and NEVER resubmits",
+      "operation": "submit_order",
+      "scenario": {
+        "fill_mode": "none"
+      },
+      "calls": [
+        {
+          "intent_id": "intent-dup-1",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "direction": "LONG",
+          "quantity": "0.1",
+          "price": "100"
+        },
+        {
+          "intent_id": "intent-dup-1",
+          "symbol": "BTCUSDT",
+          "timeframe": "1h",
+          "direction": "LONG",
+          "quantity": "0.1",
+          "price": "100"
+        }
+      ],
+      "expect": {
+        "endpoint": "POST /api/v1/futures/order",
+        "ok": true,
+        "classification": "OK",
+        "outcome": "ACKNOWLEDGED",
+        "cached": true,
+        "attempts": 1,
+        "attempt_sources": [
+          "CACHE"
+        ]
+      },
+      "expect_venue": {
+        "posts_to_order_endpoint": 1,
+        "signature_violations": 0
+      }
+    },
+    {
+      "id": "C-05",
+      "cite": "T_ADAPTER_LOST_ACK; Ch.16 L16898 timeout → UNKNOWN, reconcile, NO resubmit",
+      "operation": "submit_order",
+      "scenario": {
+        "timeouts": 1,
+        "record_before_timeout": true
+      },
+      "call": {
+        "intent_id": "intent-lost-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "LONG",
+        "quantity": "0.1",
+        "price": "100"
+      },
+      "expect": {
+        "endpoint": "POST /api/v1/futures/order",
+        "ok": false,
+        "classification": "UNKNOWN",
+        "outcome": "UNKNOWN",
+        "reconcile_required": true,
+        "resubmitted": false,
+        "attempts": 1
+      },
+      "expect_venue": {
+        "posts_to_order_endpoint": 1,
+        "venue_recorded_client_order_id": "intent-lost-1"
+      }
+    },
+    {
+      "id": "C-06",
+      "cite": "Ch.16 L16898 −1003 → backoff 1s/2s/4s, 3 attempts, unique idempotency key per attempt; retries are never silent (AI.8 L18806–18810)",
+      "operation": "submit_order",
+      "scenario": {
+        "fail_with": -1003,
+        "fail_times": 2
+      },
+      "call": {
+        "intent_id": "intent-backoff-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "LONG",
+        "quantity": "0.1",
+        "price": "100"
+      },
+      "expect": {
+        "endpoint": "POST /api/v1/futures/order",
+        "ok": true,
+        "classification": "OK",
+        "outcome": "ACKNOWLEDGED",
+        "attempts": 3,
+        "resubmitted": true,
+        "unique_idempotency_keys": true
+      },
+      "expect_venue": {
+        "posts_to_order_endpoint": 3
+      }
+    },
+    {
+      "id": "C-07",
+      "cite": "Ch.16 L16898 −1022 abort (no retry)",
+      "operation": "submit_order",
+      "scenario": {
+        "fail_with": -1022,
+        "fail_times": 1
+      },
+      "call": {
+        "intent_id": "intent-abort-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "LONG",
+        "quantity": "0.1",
+        "price": "100"
+      },
+      "expect": {
+        "endpoint": "POST /api/v1/futures/order",
+        "ok": false,
+        "classification": "ABORT",
+        "outcome": "REJECTED",
+        "attempts": 1,
+        "resubmitted": false,
+        "reconcile_required": false
+      }
+    },
+    {
+      "id": "C-08",
+      "cite": "Ch.16 L16877 −1120 disables that timeframe for that symbol ONLY",
+      "operation": "submit_order",
+      "scenario": {
+        "fail_with": -1120,
+        "fail_times": 1
+      },
+      "call": {
+        "intent_id": "intent-1120-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1mo",
+        "direction": "LONG",
+        "quantity": "0.1",
+        "price": "100"
+      },
+      "expect": {
+        "endpoint": "POST /api/v1/futures/order",
+        "ok": false,
+        "classification": "INTERVAL_UNSUPPORTED",
+        "outcome": "REJECTED",
+        "attempts": 1,
+        "interval_disabled": {
+          "symbol": "BTCUSDT",
+          "timeframe": "1mo",
+          "business_code": -1120,
+          "handling": "DISABLE_TF_FOR_SYMBOL_ONLY",
+          "scope": "SYMBOL_TIMEFRAME_ONLY",
+          "universe_cells_remaining": 139
+        }
+      },
+      "expect_state": {
+        "disabled_intervals": {
+          "BTCUSDT": [
+            "1mo"
+          ]
+        }
+      }
+    },
+    {
+      "id": "C-09",
+      "cite": "ISSUE-CP7-001: −1021 is absent from the blueprint ⇒ UNMAPPED → UNKNOWN + RECOVERY_REQUIRED (L16861–16863); semantics are never invented",
+      "operation": "submit_order",
+      "scenario": {
+        "fail_with": -1021,
+        "fail_times": 1
+      },
+      "call": {
+        "intent_id": "intent-1021-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "LONG",
+        "quantity": "0.1",
+        "price": "100"
+      },
+      "expect": {
+        "endpoint": "POST /api/v1/futures/order",
+        "ok": false,
+        "classification": "UNMAPPED",
+        "outcome": "UNKNOWN",
+        "reconcile_required": true,
+        "resubmitted": false,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "C-10",
+      "cite": "ISSUE-CP7-001: −2026 is absent from the blueprint ⇒ UNMAPPED → UNKNOWN + RECOVERY_REQUIRED",
+      "operation": "submit_order",
+      "scenario": {
+        "fail_with": -2026,
+        "fail_times": 1
+      },
+      "call": {
+        "intent_id": "intent-2026-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "LONG",
+        "quantity": "0.1",
+        "price": "100"
+      },
+      "expect": {
+        "endpoint": "POST /api/v1/futures/order",
+        "ok": false,
+        "classification": "UNMAPPED",
+        "outcome": "UNKNOWN",
+        "reconcile_required": true,
+        "resubmitted": false,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "C-11",
+      "cite": "Ch.16 L16886 cancel keyed by clientOrderId=intent_id",
+      "operation": "cancel_order",
+      "scenario": {
+        "seed_orders": [
+          {
+            "intent_id": "intent-seed-1",
+            "symbol": "BTCUSDT",
+            "timeframe": "1h",
+            "direction": "LONG",
+            "quantity": "0.1",
+            "price": "100"
+          }
+        ]
+      },
+      "call": {
+        "symbol": "BTCUSDT",
+        "client_order_id": "intent-seed-1"
+      },
+      "expect": {
+        "endpoint": "DELETE /api/v1/futures/order",
+        "ok": true,
+        "classification": "OK",
+        "outcome": "CANCELLED",
+        "attempts": 1
+      }
+    },
+    {
+      "id": "C-12",
+      "cite": "Ch.21 §5.7 L3 CANCEL_ALL (up to 12) → protective cancel-all path; still ONE operation (ISSUE-CP7-002)",
+      "operation": "cancel_order",
+      "scenario": {
+        "seed_orders": [
+          {
+            "intent_id": "intent-seed-2",
+            "symbol": "BTCUSDT",
+            "timeframe": "1h",
+            "direction": "LONG",
+            "quantity": "0.1",
+            "price": "100"
+          }
+        ]
+      },
+      "call": {
+        "scope": "all",
+        "symbol": "BTCUSDT"
+      },
+      "expect": {
+        "endpoint": "DELETE /api/v1/futures/batchOrders",
+        "ok": true,
+        "classification": "OK",
+        "attempts": 1
+      }
+    },
+    {
+      "id": "C-13",
+      "cite": "Ch.16 L16849 every reconcile query is keyed by clientOrderId",
+      "operation": "query_order_state",
+      "scenario": {
+        "seed_orders": [
+          {
+            "intent_id": "intent-seed-3",
+            "symbol": "BTCUSDT",
+            "timeframe": "1h",
+            "direction": "LONG",
+            "quantity": "0.1",
+            "price": "100"
+          }
+        ]
+      },
+      "call": {
+        "client_order_id": "intent-seed-3",
+        "symbol": "BTCUSDT"
+      },
+      "expect": {
+        "endpoint": "GET /api/v1/futures/order",
+        "ok": true,
+        "classification": "OK",
+        "outcome": "ACKNOWLEDGED",
+        "attempts": 1
+      }
+    },
+    {
+      "id": "C-14",
+      "cite": "Ch.23 L18247–18249 RECONCILING reads the working-order book; bound to query_order_state (ISSUE-CP7-002)",
+      "operation": "query_order_state",
+      "scenario": {},
+      "call": {
+        "scope": "open",
+        "symbol": "BTCUSDT"
+      },
+      "expect": {
+        "endpoint": "GET /api/v1/futures/openOrders",
+        "ok": true,
+        "classification": "OK",
+        "attempts": 1
+      }
+    },
+    {
+      "id": "C-15",
+      "cite": "Ch.23 L18247–18249 RECONCILING reads fills; bound to query_order_state (ISSUE-CP7-002)",
+      "operation": "query_order_state",
+      "scenario": {},
+      "call": {
+        "scope": "fills",
+        "symbol": "BTCUSDT"
+      },
+      "expect": {
+        "endpoint": "GET /api/v1/futures/userTrades",
+        "ok": true,
+        "classification": "OK",
+        "attempts": 1
+      }
+    },
+    {
+      "id": "C-16",
+      "cite": "Ch.16 L16853–16856 operation 4/5 query open positions",
+      "operation": "query_open_positions",
+      "scenario": {
+        "seed_position": {
+          "symbol": "BTCUSDT",
+          "side": "LONG",
+          "quantity": "0.1",
+          "entry_price": "100"
+        }
+      },
+      "call": {},
+      "expect": {
+        "endpoint": "GET /api/v1/futures/positions",
+        "ok": true,
+        "classification": "OK",
+        "attempts": 1
+      }
+    },
+    {
+      "id": "C-17",
+      "cite": "Ch.16 L16892–16895 account setup (marginType ISOLATED, leverage min(all caps), commissionRate — store; do not invent a fee) bound to operation 5/5 (ISSUE-CP7-002)",
+      "operation": "query_account_margin_health",
+      "scenario": {},
+      "call": {
+        "margin_type_symbols": [
+          "BTCUSDT"
+        ],
+        "leverage_requests": [
+          {
+            "symbol": "BTCUSDT",
+            "timeframe": "1mo",
+            "owner_cap": 3
+          }
+        ],
+        "commission_symbols": [
+          "BTCUSDT"
+        ]
+      },
+      "expect": {
+        "endpoint": "GET /api/v1/futures/balance | POST /api/v1/futures/marginType | POST /api/v1/futures/leverage | GET /api/v1/futures/commissionRate",
+        "ok": true,
+        "classification": "OK",
+        "attempts": 4
+      },
+      "expect_venue": {
+        "leverage_sent_for_BTCUSDT": "3"
+      }
+    },
+    {
+      "id": "C-18",
+      "cite": "Ch.16 L16906–16910 min-notional gate; Y.3 numerical floor — refused locally, never sent",
+      "operation": "submit_order",
+      "scenario": {},
+      "call": {
+        "intent_id": "intent-notional-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "LONG",
+        "quantity": "0.001",
+        "price": "100"
+      },
+      "expect": {
+        "endpoint": "NONE",
+        "ok": false,
+        "classification": "REFUSED",
+        "outcome": "REJECTED",
+        "attempts": 1,
+        "error_code": "MIN_NOTIONAL_QX",
+        "attempt_sources": [
+          "REFUSED"
+        ]
+      },
+      "expect_venue": {
+        "posts_to_order_endpoint": 0
+      }
+    },
+    {
+      "id": "C-19",
+      "cite": "Ch.16 L16900 leverage = min(Y.2 TF cap, owner cap, exchange max) — a request above the cap is refused, never clamped silently",
+      "operation": "submit_order",
+      "scenario": {},
+      "call": {
+        "intent_id": "intent-lev-1",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "direction": "LONG",
+        "quantity": "0.1",
+        "price": "100",
+        "leverage": 50
+      },
+      "expect": {
+        "endpoint": "NONE",
+        "ok": false,
+        "classification": "REFUSED",
+        "outcome": "REJECTED",
+        "attempts": 1,
+        "error_code": "LEVERAGE_ABOVE_MIN_CAP",
+        "attempt_sources": [
+          "REFUSED"
+        ]
+      },
+      "expect_venue": {
+        "posts_to_order_endpoint": 0
+      }
+    }
+  ]
+}
