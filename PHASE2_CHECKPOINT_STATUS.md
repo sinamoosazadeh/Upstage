@@ -98,4 +98,4 @@ STAMP: _Sin@_  date: _2026-09-14_
 ```
 
 ## CONTINUE BLOCKS (overflow; format: `CONTINUE(CP-n) @ <date>: ledger = <handoff §REMAINING WORK LEDGER ref>` + completion line of the continuation session)
-(none)
+CONTINUE(CP-8 addendum CP-9) @ 2026-09-14: ledger = PHASE2_HANDOFF_CP9.md §REMAINING WORK LEDGER — IN-PROGRESS (branch arena/01a0a23a-upstage)
