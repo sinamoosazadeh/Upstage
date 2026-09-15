@@ -73,6 +73,7 @@ from apex.telegram import gateway as GW                        # noqa: E402
 from apex.telegram import signaling as SG                      # noqa: E402
 from apex.ops import bootstrap_service as BS                   # noqa: E402
 from apex.ops import paper_loop as PL                          # noqa: E402
+from apex.ops import plan_bridge as PB                          # noqa: E402
 from apex.ops import watchdog as WD                            # noqa: E402
 
 EXIT_READY = 0
@@ -600,11 +601,19 @@ async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
         watchdog = WD.Watchdog(telegram_plane=signaling,
                                recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
                                now=time.time)
+        # CP-9 bridge: the provider is registered at the composition root, so
+        # every PAPER cell now asks the governed store/context → pattern/setup
+        # → gates → forecast → risk/decision chain for a real plan.  Missing
+        # persisted engine context remains a named fail-closed refusal; the
+        # provider never falls back to a hand-built plan.
+        plan_bridge = PB.PaperPlanBridge(
+            store=runtime.store, environment=cfg.apex_env)
         driver = PL.PaperRuntime(
             config=cfg, store=runtime.store, ledger=ledger, bus=bus,
             adapter=adapter, signaling=signaling, control=control,
             gateway=gateway, watchdog=watchdog, clock=clock,
-            environment=cfg.apex_env, notifier=notifier)
+            environment=cfg.apex_env, notifier=notifier,
+            plan_provider=plan_bridge)
         _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
              "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
         drift = await C.measure_drift(
@@ -615,9 +624,10 @@ async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
              f"drift={drift['state']} ({drift.get('reason') or 'measured'})")
         if driver.plan_provider is None:
             _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
-                 "refusal NO_PLAN_PROVIDER (the engine → risk → plan bridge is "
-                 "a separate increment). The runtime is complete and honest: "
-                 "the moment a provider is registered, plan → FSM → venue runs")
+                 "refusal NO_PLAN_PROVIDER")
+        else:
+            _say("  plan seam: WIRED — governed PAPER store bridge "
+                 "(missing context refuses by name; no synthetic plan)")
         _say(f"  signal_source={driver.signal_source} · cells=140 · "
              f"max_trades_per_cycle={driver.max_trades_per_cycle} · "
              f"telegram={'WIRED' if gateway is not None else 'DISABLED (no token)'}")

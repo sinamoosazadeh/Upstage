@@ -2,9 +2,10 @@
 
 ## STATUS
 LAW-ACK: G1..G20 + P1..P21 read 2026-09-14T23:25:26Z
-DELIVERED (local, in-session): the three pieces the delivered analysis named as missing are
-in-tree and green. Full suite at close of this increment: **2627 passed** (was 2553 at the
-CP-8 closeout; +74 tests: 72 wiring +2 canonical mirror). Nothing reaches a network in any test.
+DELIVERED (historical CP-9 base, local): the three operational pieces are in-tree and green.
+The base suite at that close was **2627 passed** (was 2553 at the CP-8 closeout; +74 tests:
+72 wiring +2 canonical mirror). Nothing reaches a network in any test. ISSUE-CP9-006 is
+closed by the appended HANDOFF_BRIDGE increment below.
 
 ## DELIVERED
 | # | Artifact | What it is |
@@ -13,7 +14,7 @@ CP-8 closeout; +74 tests: 72 wiring +2 canonical mirror). Nothing reaches a netw
 | 2 | `apex/telegram/gateway.py` | the **inbound half** of the CP-7 telegram plane: `getUpdates` long-poll source (token from env only), update normalisation, `UpdateDeduplicator` replay guard, OWNER-only routing, and the `BOOTSTRAP_CONTROL` action (`start│pause│resume│stop│progress│eta│continuous on│off`). |
 | 3 | `apex/ops/paper_loop.py` | the **24/7 PAPER runtime**: one store + one ledger writer + the 140-cell scheduler + the execution FSM + exits. Nine stages per cell (`ingest → quality → features → engines → setup → gates → risk → decision → execution`), per-close cell de-duplication, cycle trade budget, storage guard, watchdog heartbeat, Telegram polling inside the loop, ledger-chain verification at the end of every run. |
 | 4 | `scripts/run_apex.py` | the **composition root**: `bootstrap`, `status` and `serve` commands added on top of the CP-8 `boot│grid│demo│alerts`; `serve` wires store+ledger+bus+scheduler+FSM+gateway+watchdog and registers the `BOOTSTRAP_CONTROL` handler. |
-| 5 | `tests/` | `tests/unit/test_ops_bootstrap_service.py` (20), `tests/unit/test_ops_telegram_gateway.py` (28), `tests/integration/test_ops_paper_loop.py` (19) + the store/OI/window fixes' tests. |
+| 5 | `tests/` | `tests/unit/test_ops_bootstrap_service.py` (20), `tests/unit/test_ops_telegram_gateway.py` (28), `tests/integration/test_ops_paper_loop.py` (20), `tests/unit/test_plan_bridge.py` (3) + the store/OI/window fixes' tests. |
 
 ## INTERFACES
 - `BootstrapService(config=None, *, cells=None, notifier=None, fetcher=None, store=None, now=None, continuous=False, max_pages_per_cell=…)` →
@@ -50,8 +51,7 @@ prints it. The canonical mirror (ISSUE-CP9-007) is not a deviation: it restores 
 requirement that `bootstrap_progress` be checkpointed and never rewound.
 
 ## OPEN-ISSUES
-- ISSUE-CP9-006 (INFO, OPEN, owner-visible): the engine → fabric → setup → forecast → risk → plan
-  bridge is the next increment; the runtime is complete up to the provider it does not yet own.
+- ISSUE-CP9-006 is CLOSED by HANDOFF_BRIDGE below.
 - carried over from CP-8: the owner-only escalations (ISSUE-CP8-006) and the AI.13 gates.
 
 ## HOW-TO-RUN
@@ -75,5 +75,62 @@ APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 TELEGRAM_BOT_TOKEN=... TELEGRAM_OWNER_CHAT_ID
 Exit codes: `0` READY · `1` error · `2` stopped/degraded (resumable or credentials missing) · `3` recovery required.
 
 ## REMAINING WORK LEDGER
-1. the plan bridge (ISSUE-CP9-006) — inject a provider; no other runtime change is needed;
-2. owner-side: real Telegram token/chat id, a live-network Phase-1 catch-up, and the CP-8 escalations.
+1. owner-side: real Telegram token/chat id, a live-network Phase-1 catch-up, and the CP-8 escalations.
+
+## HANDOFF_BRIDGE
+LAW-ACK: G1..G20 + P1..P21 read 2026-09-15T01:39:42Z
+STATUS: COMPLETE — ISSUE-CP9-006 is closed on the environment-pinned branch `arena/01a0a2a1-upstage`.
+
+### CLAIM
+The frozen fabric → pattern/setup → gates → forecast → risk/veto → decision chain is now
+registered as `PaperRuntime.plan_provider` by `scripts/run_apex.py serve`. `PaperPlanBridge`
+is PAPER-only and fail-closed: it does not import execution, write the ledger, contact a
+venue, or invent raw-store evidence. The existing FSM remains the only venue path and the
+existing ledger writer remains the only ledger writer.
+
+### DELIVERED
+- `apex/ops/plan_bridge.py`: consumes a complete governed context or complete persisted
+  ACTIVE evidence, assembles SL-14 Evidence Fabric/conflict/context, admits the frozen
+  pattern, runs `EL_SWEEP_RECLAIM_FVG` and all 13 setup gates, builds the bootstrap PAPER
+  forecast, strategy proposal/arbitration, all 14 Risk Kernel vetoes before sizing, and
+  the frozen `PaperRuntime` plan mapping; it materializes `setup_candidate` before runtime
+  admission. E11 IC inputs, history windows, `W=(9,8)`, `b=(9,)`, and regime context are
+  required and shape-checked, not recomputed or defaulted.
+- `scripts/run_apex.py`: composition root registers one bridge instance as
+  `plan_provider`; a missing store context is a named refusal, never `NO_PLAN_PROVIDER`
+  or a synthetic plan.
+- `tests/integration/test_ops_paper_loop.py`: raw GF-shaped bars are ingested into the
+  fixture SQLite store; a bootstrap-style store-double context supplies complete ACTIVE
+  evidence and engine-owned outputs; fixture-clock scripted venue proves plan → gates →
+  FSM → fill → protection → target exit → outcome → reconcile and byte-stable bridge
+  replay.
+- `tests/unit/test_plan_bridge.py`: PAPER-only, raw-store/context-unavailable, and
+  reduced-persisted-evidence refusal contracts.
+
+### INTERFACES
+- `PaperPlanBridge(store, environment="PAPER", context_source=None)` is an async
+  callable `(symbol, timeframe, as_of) -> Mapping | None`, with `refusals`, `plans`, and
+  `traces` audit views. A context source may be sync or awaitable and must provide
+  `REQUIRED_CONTEXT_KEYS` plus `REQUIRED_RISK_KEYS`.
+- The store seam checks `get_bridge_context`, `get_engine_context`,
+  `read_bridge_context`, `read_engine_context`, then `bridge_contexts`; no raw SQL row is
+  promoted to a governed event.
+- The plan mapping remains the CP-7 `PaperRuntime` contract; no frozen DDL columns or
+  parameter YAML values were changed.
+
+### DATA-CHANGES
+None. No migration, frozen DDL, parameter YAML, `APEX_GEN5.md`, or `PROMPT.md` was edited.
+Setup materialization writes the existing frozen `setup_candidate` row only.
+
+### TESTS
+- `python -m pytest -q tests/unit/test_plan_bridge.py tests/integration/test_ops_paper_loop.py::test_governed_bridge_drives_fixture_paper_lifecycle` — 4 passed.
+- `python -m pytest -q` — 2631 passed / 0 failed, repeated twice deterministically.
+- `sha256sum APEX_GEN5.md` — `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
+
+### DEVIATIONS
+None. Missing engine context/evidence remains a named refusal; this increment does not
+turn raw bars into ungoverned evidence or create a live adapter path.
+
+### OPEN-ISSUES
+No executor-actionable ISSUE-CP9-006 item remains. Owner-only Telegram/live-network and
+CP-8 escalation procedures are carried in the base CP-9 ledger.
