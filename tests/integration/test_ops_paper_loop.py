@@ -23,12 +23,17 @@ import pytest
 
 from apex.bus import EventBus
 from apex.config import Config
-from apex.data_catalog.contracts import MarketObservation
+from apex.data_catalog.contracts import MarketObservation, parse_utc_ms
 from apex.data_catalog.store import sqlite_store as ss
 from apex.execution.toobit_adapter import AdapterResult, AttemptRecord
+from apex.fabric.evidence import FabricEvidenceRef
+from apex.forecast.logistic import X_FEATURES
 from apex.ledger import store as LS
 from apex.ops import paper_loop as PL
+from apex.ops.plan_bridge import PaperPlanBridge
 from apex.scheduler import clock as C
+from tests.integration.test_context_to_trade_paper import (
+    gf_bars, real_active_refs, synth_refs, sweep_bars)
 
 START = "2026-01-01T00:00:00.000Z"
 START_MS = 1767225600000            # 2026-01-01T00:00:00Z
@@ -265,6 +270,114 @@ async def seed_bars(store, closes: Tuple[str, ...], *, start_ms: int = START_MS)
     for index, close in enumerate(closes):
         await store.ingest_raw(observation(close, start_ms + index * HOUR,
                                            oi=Decimal("500")), "AVAILABLE")
+
+
+async def seed_bridge_sweep(store, *, start_ms: int = START_MS) -> None:
+    """Ingest the real GF-shaped PAPER window used by the bridge provider."""
+    for index, bar in enumerate(sweep_bars()):
+        ts = start_ms + index * HOUR
+        stamp = _ms_to_iso(ts)
+        obs = MarketObservation(
+            symbol=SYMBOL, timeframe=TF, open=Decimal(repr(bar["o"])),
+            high=Decimal(repr(bar["h"])), low=Decimal(repr(bar["l"])),
+            close=Decimal(repr(bar["c"])), volume=Decimal(repr(bar["v"])),
+            oi=Decimal("500"), timestamp=stamp, sequence=index,
+            status="CLOSED", availability_time=stamp)
+        await store.ingest_raw(obs, "AVAILABLE")
+
+
+async def bridge_context(store: Any, symbol: str, timeframe: str,
+                         as_of: str) -> Dict[str, Any]:
+    """Return complete persisted-style engine context for one real store cell.
+
+    The candles are read by ``PaperPlanBridge`` through ``get_window``. The
+    source supplies the non-raw E01/E02/E05/E09/E11/E12 context and complete
+    ACTIVE evidence refs, including the actual observation lineage ids. This
+    is intentionally a store-double seam: no plan price, score, or risk
+    decision is hard-coded in the provider itself.
+    """
+    cursor = await store.db.execute(
+        "SELECT observation_id FROM market_observation WHERE symbol=? AND "
+        "timeframe=? ORDER BY open_time", (symbol, timeframe))
+    rows = await cursor.fetchall()
+    raw_ids = [str(row[0]) for row in rows]
+    assert raw_ids, "the bootstrap-style store double must contain raw bars"
+    base_refs = getattr(store, "_bridge_engine_refs", None)
+    if base_refs is None:
+        _, engine_bars = gf_bars()
+        base_refs = tuple(real_active_refs(engine_bars) + synth_refs())
+        store._bridge_engine_refs = base_refs
+    as_of_ms = int(parse_utc_ms(as_of).timestamp() * 1000)
+    refs = []
+    for ref in base_refs:
+        refs.append(FabricEvidenceRef(
+            evidence_id=ref.evidence_id, engine_id=ref.engine_id,
+            symbol=symbol, timeframe=timeframe, state=ref.state,
+            direction=ref.direction, quality=ref.quality,
+            resolution_class=ref.resolution_class, age_bars=0.0,
+            as_of=as_of_ms, snapshot_id=ref.snapshot_id,
+            lineage=(raw_ids[-1],), parent_ids=ref.parent_ids))
+    components = ("structure", "liquidity", "fvg", "trend", "regime",
+                  "temporal", "orderblock", "momentum")
+    return {
+        "events": refs, "raw_observation_ids": raw_ids,
+        "data_trust": 0.9, "q_raw": 0.9,
+        "market_regime": "TREND", "mtf_state": "ALIGNED",
+        "utc_window_state": "UTC_W2", "is_overlap": True,
+        "volatility_state": "NORMAL", "structure_state": "BOS_UP",
+        "regime_confidence": 0.7, "regime_uncertainty": 0.2,
+        "divergence_magnitude": 0.1, "temporal_window_validity": 0.9,
+        "atr": 1.0,
+        "fvg_zones": [{"index": 24, "filled": False,
+                        "low": 99.0, "high": 100.0}],
+        "bos": {"s_struct": 0.6, "direction": 1},
+        "regime_state": "TREND",
+        "e11_context": {
+            "ic_inputs": {"trendiness_raw": 0.7, "vol_ratio": 1.0,
+                          "expansion_raw": 0.5, "level_density": 0.5,
+                          "participation_raw": 0.6, "structure_score": 0.6,
+                          "momentum_state_raw": "NEUTRAL", "bias_per_TF":
+                          {"H4": 0.5, "H1": 0.5, "M15": 0.5}, "atr_z": 0.0},
+            "history_windows": {"trend": [0.5], "vol": [0.5],
+                                "exp": [0.5], "liq": [0.5], "part": [0.5],
+                                "sq": [0.5]},
+            "classifier_W": [[0.0] * 8 for _ in range(9)],
+            "classifier_b": [0.0] * 9, "regime_state": "TREND",
+        },
+        "direction": 1,
+        "pattern_id": "PAT-WYC-001",
+        "x": {key: 0.5 for key in X_FEATURES},
+        "forecast_quality": "Q3", "forecast_rr": 3.0,
+        "forecast_cost_r": 0.05, "h_norm": 0.4,
+        "window_qualities": [(1.0, 0.0)] * 25,
+        "temporal_quality": "Q2", "volatility_quality": "Q2",
+        "s_i": {key: 1.0 for key in components},
+        "q_i": {key: 0.9 for key in components},
+        "package": {"package_version": 1, "parameter_package_id": "pkg-1"},
+        "p_min_tf": 0.5, "c_min": 0.5, "freshness_ok": True,
+        "risk_state": "LowRisk", "family_status": "ACTIVE",
+        "arbitration": {
+            "composite_weights": {"quality": 0.4, "alignment": 0.3,
+                                   "recency": 0.3},
+            "regime_window": ["TREND", "TREND_EXPANSION"],
+            "alignment": 0.5, "recency": 0.5,
+        },
+        "risk": {
+            "capital": 10000.0, "portfolio_exposure": 100.0,
+            "proposed_notional": 50.0, "capital_hard_cap": 1_000_000.0,
+            "circuit_breaker_engaged": False, "emergency_state": "NORMAL",
+            "per_symbol_exposure": 100.0, "symbol_cap": 1000.0,
+            "portfolio_cap": 1_000_000.0, "staleness_seconds": 1.0,
+            "freshness_sla_seconds": 30.0, "oi_lag_seconds": 5.0,
+            "oi_lag_threshold_seconds": 60.0, "is_risk_increase": False,
+            "uncertainty_is_rising": False,
+            "realized_daily_loss_fraction": 0.0,
+            "realized_weekly_loss_fraction": 0.0, "consecutive_losses": 0,
+            "time_to_expiry_days": 40.0, "margin_health_fraction": 0.9,
+            "min_quantity": 0.001, "contract_multiplier": 1.0,
+            "risk_state": "LowRisk",
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -662,6 +775,77 @@ def test_last_closed_price_is_pit_safe(harness):
                                                _ms_to_iso(START_MS + HOUR))
             assert price == "105"
             assert await PL.last_closed_price(h.store, "ETHUSDT", TF, START) is None
+        finally:
+            await shutdown(h)
+
+    run(scenario())
+
+
+def test_governed_bridge_drives_fixture_paper_lifecycle(harness):
+    """ISSUE-CP9-006: the provider is real, not an injected plan mapping.
+
+    Raw bars are ingested into the same SQLite store the runtime reads. The
+    context source is a bootstrap-style store double carrying complete ACTIVE
+    evidence and engine-owned derived inputs; every downstream authority then
+    runs before the existing FSM/venue double owns execution.
+    """
+    async def scenario():
+        h = await harness()
+        try:
+            await seed_bridge_sweep(h.store)
+
+            async def source(symbol, timeframe, as_of):
+                return await bridge_context(h.store, symbol, timeframe, as_of)
+
+            bridge = PaperPlanBridge(store=h.store, context_source=source)
+            h.runtime.plan_provider = bridge
+            first = await h.runtime.run_cycle(now_ms=START_MS + 24 * HOUR)
+
+            assert first["cells_complete"] == 1
+            assert first["cells_halted"] == 0
+            assert not bridge.refusals
+            plan = bridge.plans[f"{SYMBOL}:{TF}"]
+            assert plan["decision"] == "ALLOW"
+            assert plan["environment"] == "PAPER"
+            assert plan["direction"] == "LONG"
+            assert bridge.traces[f"{SYMBOL}:{TF}"]["evaluation"].status == "EMITTED"
+            assert all(result["passed"] for result in
+                       bridge.traces[f"{SYMBOL}:{TF}"]["evaluation"].gate_block["results"].values())
+            assert bridge.traces[f"{SYMBOL}:{TF}"]["risk"]["veto_evaluation_order"] == list(range(1, 15))
+            replay = await bridge(SYMBOL, TF, _ms_to_iso(START_MS + 24 * HOUR))
+            assert replay == plan              # T-DR bridge plan bytes are stable
+
+            trade = h.runtime.trades[-1]
+            assert trade["submitted"] is True
+            assert trade["fill"]["filled"] is True
+            assert trade["protected"] is True
+            assert h.runtime.working
+
+            setup = await h.store.db.execute(
+                "SELECT setup_id, symbol, timeframe, direction, pattern_ids, "
+                "validity, authority FROM setup_candidate WHERE setup_id=?",
+                (plan["setup_id"],))
+            setup_row = await setup.fetchone()
+            assert setup_row is not None
+            assert tuple(setup_row)[1:] == (
+                SYMBOL, TF, "BULLISH", "PAT-WYC-001", 1, "SETUP_ENGINE")
+
+            # A later ingested close crosses the governed target. Calling the
+            # runtime manager directly avoids asking a later close to create a
+            # second setup while the first position is being flattened.
+            await seed_bars(h.store, ("111",), start_ms=START_MS + 25 * HOUR)
+            actions = await h.runtime.manage_positions(
+                as_of=_ms_to_iso(START_MS + 25 * HOUR))
+            assert len(actions) == 1
+            assert actions[0]["exit_reason"] == "TARGET_1"
+            assert actions[0]["filled"] is True
+            assert actions[0]["reconciled"] is True
+            assert h.runtime.working == {}
+            events = {event.event_type for event in await h.ledger.read_ledger()}
+            assert {"TRADE_PLAN", "FILL", "OUTCOME"} <= events
+            assert {order["kind"] for order in h.adapter.submitted} >= {
+                "entry", "stop", "target", "exit"}
+            assert (await h.ledger.verify_chain())["intact"] is True
         finally:
             await shutdown(h)
 
