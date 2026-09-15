@@ -134,3 +134,8 @@ turn raw bars into ungoverned evidence or create a live adapter path.
 ### OPEN-ISSUES
 No executor-actionable ISSUE-CP9-006 item remains. Owner-only Telegram/live-network and
 CP-8 escalation procedures are carried in the base CP-9 ledger.
+
+### PUSH RECORD
+`d115709` was pushed to `origin/arena/01a0a2a1-upstage`; GitHub PR **#11** is open
+(`main` ← `arena/01a0a2a1-upstage`) for the owner's plain merge. The immutable
+`APEX_GEN5.md` hash was rechecked immediately before push: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
