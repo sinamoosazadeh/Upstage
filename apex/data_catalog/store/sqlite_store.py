@@ -393,6 +393,21 @@ class SQLiteStore:
         event_id = self._new_event_id()
         content_hash = obs.content_hash()
         obs_id = "obs-" + event_id
+        # ISSUE-CP9-005: Ch.4 DDL (L14397) declares
+        # market_observation.open_interest TEXT with
+        # CHECK(typeof(open_interest)='text'), so an OI-less observation cannot
+        # be stored as SQL NULL there; T-DC-004 forbids substituting 0. The
+        # canonical availability label is stored instead (never a number) and
+        # `_row_to_obs` maps it back to oi=None. raw_observation keeps the
+        # nullable pair (oi NULL + oi_state), which is the canonical raw form.
+        if obs.oi is not None:
+            oi_text = str(obs.oi)
+        elif oi_state in ("MISSING", "INVALID"):
+            oi_text = oi_state
+        else:
+            raise ValueError(
+                f"OI_STATE_WITHOUT_VALUE: oi_state={oi_state!r} with no "
+                "open_interest value (T-DC-004: never substitute 0)")
         from apex.identity.uuid_v7 import uuid_v7
         await self.db.execute(
             "INSERT OR IGNORE INTO raw_observation "
@@ -423,7 +438,7 @@ class SQLiteStore:
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (obs_id, obs.symbol, obs.timeframe, str(obs.open),
              str(obs.high), str(obs.low), str(obs.close), str(obs.volume),
-             str(obs.oi) if obs.oi is not None else None,
+             oi_text,
              obs.timestamp, obs.timestamp, _utc_now_ms_iso(),
              "CLOSED" if obs.status == "CLOSED" else "PARTIAL",
              "Q0", obs.source, "v1", sha256_hex(content_hash)))
@@ -481,16 +496,24 @@ class SQLiteStore:
     # -- WindowProvider (catalog.get backend; engines never SQL) ------------
     async def get_window(self, symbol: str, timeframe: str, as_of: str,
                          bars: int) -> List[MarketObservation]:
-        """CLOSED observations with open_time <= as_of, ascending, last
-        `bars` rows (PIT-safe by construction)."""
+        """CLOSED observations with open_time <= as_of, ascending, the LAST
+        `bars` rows (PIT-safe by construction).
+
+        The inner query takes the newest `bars` rows at or before `as_of` and
+        the outer one restores ascending order — the docstring's "last `bars`
+        rows", which an ``ORDER BY open_time ASC LIMIT`` alone would invert
+        (ISSUE-CP9-001: engines must see the most recent window, never the
+        oldest one).
+        """
         cur = await self.db.execute(
-            "SELECT observation_id, symbol, timeframe, open_price, "
-            " high_price, low_price, close_price, volume, open_interest, "
-            " open_time, retrieved_at, candle_status, quality_state, "
-            " source, raw_payload_hash "
-            "FROM market_observation WHERE symbol=? AND timeframe=? "
-            "AND candle_status IN ('CLOSED','CORRECTED') "
-            "AND open_time<=? ORDER BY open_time ASC LIMIT ?",
+            "SELECT * FROM (SELECT observation_id, symbol, timeframe, "
+            " open_price, high_price, low_price, close_price, volume, "
+            " open_interest, open_time, retrieved_at, candle_status, "
+            " quality_state, source, raw_payload_hash "
+            " FROM market_observation WHERE symbol=? AND timeframe=? "
+            " AND candle_status IN ('CLOSED','CORRECTED') "
+            " AND open_time<=? ORDER BY open_time DESC LIMIT ?) "
+            "ORDER BY open_time ASC",
             (symbol, timeframe, as_of, bars))
         rows = await cur.fetchall()
         result: List[MarketObservation] = []
@@ -512,14 +535,22 @@ class SQLiteStore:
 
     @staticmethod
     def _row_to_obs(row: tuple, seq: int) -> MarketObservation:
-        from decimal import Decimal
+        from decimal import Decimal, InvalidOperation
         (obs_id, symbol, timeframe, o, h, l, c, v, oi, open_time,
          retrieved, status, qstate, source, payload_hash) = row
+        oi_value: Optional[Decimal] = None
+        if oi is not None:
+            try:
+                oi_value = Decimal(oi)
+            except (InvalidOperation, ValueError):
+                # T-DC-004: the canonical availability label is not a number —
+                # it reads back as MISSING (never 0).
+                oi_value = None
         return MarketObservation(
             symbol=symbol, timeframe=timeframe,
             open=Decimal(o), high=Decimal(h), low=Decimal(l),
             close=Decimal(c), volume=Decimal(v),
-            oi=Decimal(oi) if oi is not None else None,
+            oi=oi_value,
             timestamp=open_time, sequence=seq, status=status,
             source=source, availability_time=retrieved,
         )

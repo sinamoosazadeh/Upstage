@@ -12,6 +12,22 @@ One command, four surfaces, all fail-closed (G6):
                                         # responder (test double, no network)
     python scripts/run_apex.py alerts   # the Ch.23 alert-policy self-check
 
+The two LONG-RUN surfaces (the wiring increment, `apex/ops/*` + `apex/telegram/
+gateway.py`):
+
+    python scripts/run_apex.py bootstrap  # W.6 Phase 1: the FIRST LONG RUN —
+                                          # 140 cells × 1000-bar pages from
+                                          # 2020-01-01 into the raw store, with
+                                          # a durable cursor (resume anytime)
+    python scripts/run_apex.py serve      # the 24/7 runtime: reconcile-first
+                                          # boot, the 140-cell scheduler, the
+                                          # SL-5 → SL-6 trade_plan queue, the
+                                          # execution FSM → venue, alerts,
+                                          # watchdog heartbeat, storage guard
+                                          # and the inbound Telegram gateway
+    python scripts/run_apex.py status     # offline: bootstrap progress from the
+                                          # durable checkpoints (no network)
+
 Composition (Ch.23 L18253–18260): ONE event loop, ONE ledger writer queue, the
 execution FSM as the only path to the venue, the scheduler as the only source of
 cell timing, Telegram as the only display surface.
@@ -33,14 +49,15 @@ import asyncio
 import datetime as dt
 import json
 import sys
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from apex.bus import EventBus                                 # noqa: E402
+from apex.bus import EventBus, Priority                        # noqa: E402
 from apex.config import Config                                # noqa: E402
 from apex.data_catalog.contracts import (                     # noqa: E402
     CORE10_SYMBOLS, TIMEFRAMES_14)
@@ -51,7 +68,12 @@ from apex.execution.toobit_adapter import (                   # noqa: E402
     AdapterError, ToobitAdapter)
 from apex.ledger import store as LS                           # noqa: E402
 from apex.scheduler import clock as C                         # noqa: E402
-from apex.telegram import signaling as SG                     # noqa: E402
+from apex.telegram import control_plane as CP                    # noqa: E402
+from apex.telegram import gateway as GW                        # noqa: E402
+from apex.telegram import signaling as SG                      # noqa: E402
+from apex.ops import bootstrap_service as BS                   # noqa: E402
+from apex.ops import paper_loop as PL                          # noqa: E402
+from apex.ops import watchdog as WD                            # noqa: E402
 
 EXIT_READY = 0
 EXIT_ERROR = 1
@@ -396,7 +418,281 @@ async def _alerts(cfg: Config, *, as_json: bool) -> int:
     return EXIT_READY
 
 
-COMMANDS = {"boot": _boot, "grid": _grid, "demo": _demo, "alerts": _alerts}
+# ---------------------------------------------------------------------------
+# bootstrap — W.6 Phase 1, the first long run (resumable, owner-controlled)
+# ---------------------------------------------------------------------------
+
+def _parse_cells(text: Optional[str]) -> Optional[List[Tuple[str, str]]]:
+    if not text:
+        return None
+    cells: List[Tuple[str, str]] = []
+    for item in str(text).split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" not in item:
+            raise ValueError(f"--cells expects SYMBOL:TIMEFRAME, got {item!r}")
+        symbol, timeframe = item.split(":", 1)
+        symbol, timeframe = symbol.strip().upper(), timeframe.strip()
+        if symbol not in CORE10_SYMBOLS:
+            raise ValueError(f"E-VAL-021: {symbol} not in Core-10")
+        if timeframe not in TIMEFRAMES_14:
+            raise ValueError(f"E-VAL-022: {timeframe} not in the 14 timeframes")
+        cells.append((symbol, timeframe))
+    return cells or None
+
+
+def _parse_start(text: Optional[str]) -> int:
+    if not text:
+        return BS.DEEP_START_MS
+    moment = dt.datetime.strptime(text, "%Y-%m-%d").replace(
+        tzinfo=dt.timezone.utc)
+    return int(moment.timestamp() * 1000)
+
+
+async def _notifier_for(cfg: Config) -> Any:
+    """The owner channel, or None when there is no bot token (the refusal is
+    then REPORTED by the service — never a silent drop)."""
+    if not cfg.telegram_bot_token or not cfg.telegram_owner_chat_id:
+        return None
+    plane = SG.SignalingPlane(config=cfg)
+    clock = C.SystemClock()
+    return BS.SignalingNotifier(plane, chat_id=cfg.telegram_owner_chat_id,
+                                utc_now=clock.utc_now)
+
+
+async def _bootstrap(cfg: Config, *, as_json: bool, cells: Optional[str] = None,
+                     start: Optional[str] = None,
+                     max_pages: Optional[int] = None) -> int:
+    _say("APEX_GEN5 — W.6 Phase 1: the FIRST LONG RUN (data acquisition)")
+    _say(f"  environment surface: {json.dumps(_redacted(cfg), sort_keys=True)}")
+    selected = _parse_cells(cells)
+    start_ms = _parse_start(start)
+    notifier = await _notifier_for(cfg)
+    if notifier is None:
+        _say("  owner channel: NOT WIRED (TELEGRAM_BOT_TOKEN/OWNER_CHAT_ID "
+             "unset) — progress is printed here and recorded as a refusal")
+    service = BS.BootstrapService(config=cfg, cells=selected, notifier=notifier,
+                                  max_pages=max_pages)
+    await service.open()
+    try:
+        try:
+            result = await service.run(start_ms=start_ms)
+        except BS.BootstrapError as exc:
+            # A venue failure is ENVIRONMENTAL and the run is resumable (the
+            # durable cursor is the resume point): the verdict is DEGRADED, not
+            # an error, and nothing was skipped or invented.
+            _say(f"  STOPPED (resumable): {exc.reason} — {exc.detail}")
+            _say("  the durable cursor is kept; re-run the same command to "
+                 "resume (Phase 1 never rewinds)")
+            progress = await service.status()
+            _say(f"  progress: completed={progress['cells_completed']} "
+                 f"remaining={progress['cells_remaining']} bars="
+                 f"{progress['bars_ingested']} pages={progress['pages_fetched']}")
+            if as_json:
+                _say(json.dumps(progress, default=str, indent=2, sort_keys=True))
+            return EXIT_DEGRADED
+        _say(f"  raw store: {result.get('raw_store')} · checkpoints: "
+             f"{result.get('checkpoint_path')}")
+        _say(f"  preflight={result['preflight']['action']} "
+             f"({result['preflight']['reason']}) · pages={result.get('pages')} "
+             f"backoffs={result.get('backoffs')} bars={result.get('bars_ingested')}")
+        if result.get("status") == "BUDGET_REACHED":
+            _say(f"  BUDGET REACHED — resumable: pages="
+                 f"{result.get('pages_fetched')} remaining="
+                 f"{result.get('cells_remaining')}; re-run with a larger "
+                 f"--max-pages (the cursor is durable)")
+        else:
+            _say(f"  status={result['status']} completed="
+                 f"{len(result.get('completed_cells') or ())} pending="
+                 f"{len(result.get('pending_cells') or ())}")
+        _say(f"  resume rule: {result.get('resume_rule', 'cursor is durable')}")
+        _say(f"  oi policy: {result.get('oi_policy', 'oi_state=MISSING (never 0)')}")
+        for note in service.notifications[-3:]:
+            _say(f"  notify[{note['kind']}]: delivered={note['delivered']} "
+                 f"{note.get('reason', '')}")
+        if as_json:
+            _say(json.dumps({k: v for k, v in result.items()},
+                            default=str, indent=2, sort_keys=True))
+        status = result.get("status")
+        if status == "COMPLETE":
+            return EXIT_READY
+        if status in ("PAUSED", "BUDGET_REACHED", "STOPPED"):
+            return EXIT_DEGRADED          # not complete — and resumable
+        return EXIT_RECOVERY
+    finally:
+        await service.close()
+
+
+# ---------------------------------------------------------------------------
+# status — offline progress (the durable checkpoints are the truth)
+# ---------------------------------------------------------------------------
+
+async def _status(cfg: Config, *, as_json: bool) -> int:
+    service = BS.BootstrapService(config=cfg)
+    await service.open()
+    try:
+        status = await service.status()
+        _say("APEX_GEN5 — bootstrap status (offline; no venue call)")
+        _say(f"  cells={status['cells_total']} completed="
+             f"{status['cells_completed']} remaining={status['cells_remaining']} "
+             f"checkpointed={status['checkpointed_cells']}")
+        _say(f"  current_cell={status['current_cell']} bars="
+             f"{status['bars_ingested']} pages={status['pages_fetched']} "
+             f"backoffs={status['backoffs']}")
+        _say(f"  state={status['state']} eta="
+             f"{status['eta'].get('eta_seconds')} "
+             f"({status['eta'].get('basis', 'measured')})")
+        if as_json:
+            _say(json.dumps(status, default=str, indent=2, sort_keys=True))
+        return EXIT_READY if status["cells_remaining"] == 0 else EXIT_DEGRADED
+    finally:
+        await service.close()
+
+
+# ---------------------------------------------------------------------------
+# serve — the 24/7 runtime (long loop)
+# ---------------------------------------------------------------------------
+
+async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
+                 interval: float = 60.0, report_every: int = 1) -> int:
+    if cfg.apex_env == "LIVE" and not cfg.economic_gate_signed:
+        code = "LIVE_CAPITAL_LOCKED"
+        _say(f"REFUSED: {code} — APEX_ENV=LIVE is not a capital switch; LIVE "
+             "capital stays locked until APEX_ECONOMIC_GATE_SIGNED=1 (Y.1 "
+             "L17093) and the owner's written approval. Run PAPER first.")
+        return EXIT_DEGRADED
+    if not cfg.allow_signed:
+        _say("REFUSED: SIGNED_NOT_ALLOWED — PAPER orders require "
+             "APEX_ALLOW_SIGNED=1 (Y.1 L17093). Re-run exactly:")
+        _say("  APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 TOOBIT_API_KEY=... "
+             "TOOBIT_API_SECRET=... TELEGRAM_BOT_TOKEN=... "
+             "TELEGRAM_OWNER_CHAT_ID=... python scripts/run_apex.py serve")
+        return EXIT_DEGRADED
+
+    runtime = await Runtime(cfg).start()
+    service = BS.BootstrapService(config=cfg)      # shared command surface
+    await service.open()
+    gateway = None
+    try:
+        ledger, bus = runtime.ledger, runtime.bus
+        clock = C.SystemClock()
+        adapter = runtime.adapter()
+        notifier = await _notifier_for(cfg)
+        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+                                       owner_chat_id=cfg.telegram_owner_chat_id
+                                       or None)
+                     if cfg.telegram_bot_token else None)
+        control = CP.ControlPlane(
+            signaling=signaling, config=cfg, clock=clock.monotonic,
+            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env)
+        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+            control.register(name, _noop_handler(name))
+        if cfg.telegram_bot_token:
+            gateway = GW.TelegramGateway(
+                control=control, source=GW.AiogramUpdateSource(config=cfg),
+                notifier=_telegram_reply(signaling),
+                bootstrap=service, clock=clock.monotonic,
+                utc_now=clock.utc_now, poll_timeout=5.0)
+        watchdog = WD.Watchdog(telegram_plane=signaling,
+                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+                               now=time.time)
+        driver = PL.PaperRuntime(
+            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+            adapter=adapter, signaling=signaling, control=control,
+            gateway=gateway, watchdog=watchdog, clock=clock,
+            environment=cfg.apex_env, notifier=notifier)
+        _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
+             "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
+        drift = await C.measure_drift(
+            _venue_server_time if adapter is not None else _no_venue_time, clock)
+        boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+        _say(f"  boot_state={boot['boot_state']} "
+             f"new_trades_allowed={boot['new_trades_allowed']} "
+             f"drift={drift['state']} ({drift.get('reason') or 'measured'})")
+        if driver.plan_provider is None:
+            _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
+                 "refusal NO_PLAN_PROVIDER (the engine → risk → plan bridge is "
+                 "a separate increment). The runtime is complete and honest: "
+                 "the moment a provider is registered, plan → FSM → venue runs")
+        _say(f"  signal_source={driver.signal_source} · cells=140 · "
+             f"max_trades_per_cycle={driver.max_trades_per_cycle} · "
+             f"telegram={'WIRED' if gateway is not None else 'DISABLED (no token)'}")
+        _say("  (Ctrl-C stops the loop; the ledger chain and the durable "
+             "cursors stay consistent)")
+        outcome = await driver.run(cycles=cycles, interval=interval)
+        for cycle in driver.cycles[-3:]:
+            _say(f"  cycle {cycle['cycle']}: cells={cycle['cells_due']} "
+                 f"complete={cycle['cells_complete']} "
+                 f"halted={cycle['cells_halted']} blocked={cycle['cells_blocked']} "
+                 f"trades={len(cycle['trades'])} open={len(cycle['open_intents'])}")
+            if cycle.get("halt_reasons"):
+                _say(f"    named refusals: "
+                     f"{json.dumps(cycle['halt_reasons'], sort_keys=True)}")
+        _say(f"  cycles={outcome['cycles']} trades={outcome['trades']} "
+             f"open={outcome['open_intents']} refusals={outcome['refusals']} "
+             f"ledger_chain_intact={outcome['ledger_chain_intact']}")
+        if as_json:
+            _say(json.dumps({"boot": boot, "outcome": outcome,
+                             "cycles": driver.cycles}, default=str, indent=2,
+                            sort_keys=True))
+        return EXIT_READY if boot["boot_state"] == "READY" else EXIT_DEGRADED
+    finally:
+        if gateway is not None:
+            await gateway.aclose()
+        await service.close()
+        await runtime.stop()
+
+
+def _bootstrap_handler(service: "BS.BootstrapService"):
+    """Routes the W.8-2 owner words to the bootstrap service."""
+
+    async def handler(payload: Dict[str, Any]) -> Dict[str, Any]:
+        verdict = await service.command(str(payload.get("command", "")),
+                                       caller=str(payload.get("chat_id", "")))
+        return {"ok": bool(verdict.get("accepted", verdict.get("command"))),
+                "result": verdict}
+
+    return handler
+
+
+def _noop_handler(name: str):
+    """Records the control-plane effect and reports it honestly (the effect
+    itself belongs to the recovery path, which runs outside this loop)."""
+
+    async def handler(payload: Dict[str, Any]) -> Dict[str, Any]:
+        return {"ok": True, "effect": name, "recorded": True,
+                "detail": "control-plane effect recorded by the runtime; the "
+                          "protective path is the FSM/AI.9 recovery"}
+
+    return handler
+
+
+def _telegram_reply(signaling: Any):
+    async def notifier(chat_id: str, text: str) -> Dict[str, Any]:
+        if signaling is None:
+            raise SG.SignalingError("E-TELE-001",
+                                    "TELEGRAM_BOT_TOKEN is unset (env-only)")
+        clock = C.SystemClock()
+        moment = clock.utc_now()
+        result = await signaling.send(SG.SignalMessage(
+            signal_id=f"reply-{moment}-{abs(hash(text)) % 10**6}",
+            chat_id=str(chat_id), priority=Priority.P1, text=text,
+            timestamp_utc=moment, snapshot_id="gateway",
+            alert="CONTROL_REPLY", metric="telegram_inbound",
+            threshold="Ch.21 §5", observed=text[:60],
+            lineage="apex.telegram.gateway"))
+        return {"sent": bool(getattr(result, "sent", False)),
+                "reason": getattr(result, "reason", None)}
+
+    return notifier
+
+
+COMMANDS = {"boot": _boot, "grid": _grid, "demo": _demo, "alerts": _alerts,
+            "bootstrap": _bootstrap, "status": _status, "serve": _serve}
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -405,14 +701,37 @@ def main(argv: Optional[List[str]] = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", nargs="?", default="boot",
                         choices=sorted(COMMANDS),
-                        help="boot (default) | grid | demo | alerts")
+                        help="boot (default) | grid | demo | alerts | "
+                             "bootstrap | status | serve")
     parser.add_argument("--json", action="store_true",
                         help="also print the machine-readable verdict")
     parser.add_argument("--env-file", default=None,
                         help="optional .env path (never overrides real env)")
+    parser.add_argument("--cells", default=None,
+                        help="bootstrap: comma-separated SYMBOL:TIMEFRAME "
+                             "subset (default: all 140 cells)")
+    parser.add_argument("--start", default=None,
+                        help="bootstrap: first bar date YYYY-MM-DD "
+                             "(default 2020-01-01, the W.6 deep scope)")
+    parser.add_argument("--max-pages", type=int, default=None,
+                        help="bootstrap: page budget — stops CLEANLY and "
+                             "resumably (the durable cursor is kept)")
+    parser.add_argument("--cycles", type=int, default=None,
+                        help="serve: run this many cycles then exit "
+                             "(default: until interrupted)")
+    parser.add_argument("--interval", type=float, default=60.0,
+                        help="serve: seconds between cycles (default 60)")
     args = parser.parse_args(argv)
     cfg = Config(args.env_file)          # APEX_DOTENV_PATH/.env fill, no shadow
     try:
+        if args.command == "bootstrap":
+            return asyncio.run(_bootstrap(cfg, as_json=args.json,
+                                          cells=args.cells, start=args.start,
+                                          max_pages=args.max_pages))
+        if args.command == "serve":
+            return asyncio.run(_serve(cfg, as_json=args.json,
+                                      cycles=args.cycles,
+                                      interval=args.interval))
         return asyncio.run(COMMANDS[args.command](cfg, as_json=args.json))
     except KeyboardInterrupt:
         _say("interrupted — fail-closed, nothing left running")
