@@ -462,3 +462,12 @@ Additive-file rule: any file outside §9.5's list traces to a DECISION_LOG ADR o
 
 **Result:** PASS(2026-09-15, 2631 passed / 0 failed on each of two `pytest -q` runs; final hash/push/PR recorded in the bridge handoff and board continuation line).
 
+### CP-10 — HOTFIX: Toobit public response-shape unwrap + named error-code fail-closed
+
+| Artifact | Owner | Requirement → evidence |
+|---|---|---|
+| `apex/data_catalog/ingest/toobit_public.py` | CP-10 | Ch.16 public wire ingest: single client choke-point unwrap (`unwrap_toobit_response`) supporting bare array/object shapes (`/quote/v1/klines`, `/quote/v1/openInterest`, `/quote/v1/depth`, `/api/v1/futures/fundingRate`) and wrapped envelopes; fail-closed named `ToobitPublicError` on non-zero error codes (preserving `-1003` for `bootstrap_service` backoff and preventing silent cell completion on error bodies); tolerant kline row parsing (list and dict rows) preserved; legitimate 200 `[]` end-of-history preserved → `tests/unit/test_toobit_public.py` (33 passed: 13 baseline + 20 new tests covering bare arrays, wrapped dicts, verbatim real device probe fixtures, -1003-on-200, non-zero code fail-closed, bootstrap backoff seam) |
+
+**Result:** PASS(2026-09-16, 2651 passed / 0 failed on each of two `pytest -q` runs; commit range and PR recorded in board and handoff note).
+
+

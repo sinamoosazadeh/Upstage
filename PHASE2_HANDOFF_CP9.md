@@ -139,3 +139,57 @@ CP-8 escalation procedures are carried in the base CP-9 ledger.
 `d115709` was pushed to `origin/arena/01a0a2a1-upstage`; GitHub PR **#11** is open
 (`main` ← `arena/01a0a2a1-upstage`) for the owner's plain merge. The immutable
 `APEX_GEN5.md` hash was rechecked immediately before push: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
+
+## HANDOFF_CP10_HOTFIX
+LAW-ACK: G1..G20 + P1..P21 read 2026-09-16T00:25:00Z
+STATUS: COMPLETE — ISSUE-CP10-001 is closed on the environment-pinned branch `arena/01a0a796-upstage`.
+
+### CLAIM
+Public Toobit client (`apex/data_catalog/ingest/toobit_public.py`) response-shape bug is fixed at a single client choke point (`unwrap_toobit_response` in `_get`). Handles bare-array (`/quote/v1/klines`) and bare-object (`/quote/v1/openInterest`) shapes discovered during owner device live probe as well as wrapped dict envelopes. HTTP-200 non-zero error codes raise `ToobitPublicError` preserving numeric code and message; `-1003` is mapped to rate limit backoff by `bootstrap_service` (W.6 preserved), and non-rate-limit errors fail closed rather than collapsing to empty rows (silent-completion hole eliminated). Legitimate HTTP 200 `[]` preserved as end-of-history for that cell.
+
+### DELIVERED
+- `apex/data_catalog/ingest/toobit_public.py`:
+  - `unwrap_toobit_response(body, endpoint)` choke-point unwrap function.
+  - `ToobitPublicClient._get`: calls `unwrap_toobit_response(body, endpoint=path)`.
+  - `ToobitPublicClient.get_klines`: consumes unwrapped responses; supports both bare lists and wrapped envelopes; handles list rows and dict rows via `parse_kline_to_observation`; never collapses non-zero error dicts into empty rows; legitimate `[]` returns `[]`.
+  - `ToobitPublicClient.get_open_interest`: consumes bare objects, bare dicts, and wrapped envelopes; returns `Decimal` or `None` (MISSING, never 0; T-DC-004).
+  - `ToobitPublicClient.get_depth`: consumes bare objects and wrapped envelopes.
+  - `ToobitPublicClient.get_funding_rate`: consumes bare arrays and wrapped envelopes without AttributeError.
+  - Module docstring documents response shapes and live probe findings without touching frozen `params/*.yaml`.
+- `tests/unit/test_toobit_public.py`:
+  - 20 new tests (33 total passed):
+  - Verbatim real device probe fixtures for klines, openInterest, depth, and fundingRate.
+  - Both bare-array and wrapped-dict shapes for `get_klines` and `get_open_interest`.
+  - Legitimate empty list `[]` on HTTP 200.
+  - `-1003` on HTTP 200 raises `ToobitPublicError` containing `-1003` and message.
+  - Seam test: `ToobitKlineSource` from `bootstrap_service` maps `-1003` on HTTP 200 to backoff (`{"code": -1003, "rows": [], "next_cursor_ms": None}`).
+  - Non-zero error codes (-1120, 1001) fail closed as `BootstrapError("FETCH_FAILED")`, never empty rows.
+  - Direct contract tests for `unwrap_toobit_response`.
+
+### INTERFACES
+- `unwrap_toobit_response(body: Any, endpoint: str = "") -> Any`:
+  - bare list -> returns `body`
+  - dict with non-zero "code" -> raises `ToobitPublicError(endpoint, f"code={code} msg={msg}")`
+  - dict with "data" -> returns `body["data"]`
+  - bare dict without "data" or error "code" -> returns `body`
+- `ToobitPublicClient._get(path: str, params: Optional[Dict[str, Any]] = None) -> Any`
+- `ToobitPublicClient.get_klines(...) -> List[MarketObservation]`
+
+### DATA-CHANGES
+None. No migration, frozen DDL, parameter YAML (`params/*.yaml` FROZEN), `APEX_GEN5.md`, or `PROMPT.md` was edited.
+
+### TESTS
+- `python -m pytest tests/unit/test_toobit_public.py -q` — 33 passed (13 baseline + 20 hotfix).
+- `python -m pytest tests/unit/test_ops_bootstrap_service.py -q` — 20 passed.
+- `python -m pytest tests -q` — 2651 passed / 0 failed, repeated twice deterministically (was 2631 passed; +20 tests).
+- `sha256sum APEX_GEN5.md` — `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
+
+### DEVIATIONS
+None. Frozen CP-1 bug-fix authorized under the ISSUE-CP9-001 precedent.
+
+### OPEN-ISSUES
+None. ISSUE-CP10-001 is CLOSED-with-evidence.
+
+### PUSH RECORD
+Commit range `cbed6cc..HEAD` (dbbfbf7 implementation + tests · docs closeout) pushed to `origin/arena/01a0a796-upstage`; PR opened (`main` ← `arena/01a0a796-upstage`). The immutable `APEX_GEN5.md` hash was rechecked immediately before push: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
+
