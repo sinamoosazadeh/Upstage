@@ -109,6 +109,6 @@ CONTINUE(CP-8 BRIDGE INCREMENT) COMPLETED 2026-09-15T01:39:42Z: CLAIM→COMPLETE
 CONTINUE(CP-10 HOTFIX) @ 2026-09-16T00:45:00Z: CLAIM — executor = Arena Agent Mode on the environment-pinned branch `arena/01a0a796-upstage`; Toobit public response-shape unwrap + named error-code fail-closed hotfix (ISSUE-CP10-001). Entry gate re-verified: CP-1..CP-8 delivered/owner-checked, CP-9 wiring addendum and plan bridge delivered/owner-checked, `sha256(APEX_GEN5.md) == 216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`; no edits to params/*.yaml, APEX_GEN5.md, or PROMPT.md. LAW-ACK: G1..G20 + P1..P21 read 2026-09-16T00:25:00Z.
 [x] CLAIM: client choke-point unwrap for bare arrays and wrapped envelopes, -1003-on-200 backoff preservation, named non-zero error-code fail-closed, verbatim device probe fixtures, and full suite green.
 [x] CLAIM→COMPLETE: `apex/data_catalog/ingest/toobit_public.py` + `tests/unit/test_toobit_public.py` (33 passed: 13 baseline + 20 hotfix tests); full suite `pytest -q` twice = 2651 passed / 0 failed each; MATRIX/DECISION_LOG/HANDOFF_CP10_HOTFIX updated.
-CONTINUE(CP-10 HOTFIX) COMPLETED 2026-09-16T01:10:00Z: commit range cbed6cc..HEAD = dbbfbf7 (implementation + tests) · docs closeout — suite 2651 passed — OWNER-CHECKED: [ ]
+CONTINUE(CP-10 HOTFIX) COMPLETED 2026-09-16T01:10:00Z: commit range cbed6cc..HEAD = dbbfbf7 (implementation + tests) · docs closeout — suite 2651 passed — OWNER-CHECKED: [x]
 
 
