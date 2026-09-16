@@ -193,3 +193,45 @@ None. ISSUE-CP10-001 is CLOSED-with-evidence.
 ### PUSH RECORD
 Commit range `cbed6cc..HEAD` (dbbfbf7 implementation + tests · docs closeout) pushed to `origin/arena/01a0a796-upstage`; PR opened (`main` ← `arena/01a0a796-upstage`). The immutable `APEX_GEN5.md` hash was rechecked immediately before push: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
 
+## HANDOFF_CP11_HOTFIX
+LAW-ACK: G1..G20 + P1..P21 read 2026-09-16T03:20:00Z
+STATUS: COMPLETE — ISSUE-CP11-001 is closed on the environment-pinned branch `arena/01a0a838-upstage`.
+
+### CLAIM
+`ToobitKlineSource` (wiring layer, `apex/ops/bootstrap_service.py`) is now venue-adaptive for tail-aligned Toobit public klines. The frozen W.6 runner (`apex/research/bootstrap.py`) is byte-untouched. On the first page call per `(symbol, timeframe)` the source walks the venue BACKWARD from `end_ms`, collects the retained history (dedup-guarded), then serves the runner ASCENDING `PAGE_LIMIT` chunks filtered by the durable cursor. Empty-first-page zero-bar COMPLETE (owner pilot: `completed=1 pages=0 bars=0`) is closed. `--max-pages` still counts runner-facing pages; walk-internal −1003/429 uses bounded exponential backoff; non-rate-limit errors remain named fail-closed; resume-with-forward-cursor does not re-ingest already-collected bars.
+
+### DELIVERED
+- `apex/ops/bootstrap_service.py`:
+  - `ToobitKlineSource._walk_backward` / `_get_klines_with_walk_backoff` / per-cell `_history` cache.
+  - Ascending serve with `open_time < cursor` filter; empty-page shape `next_cursor_ms=end_ms` on exhaustion.
+  - `WALK_BACKOFF_SECONDS=(5.0, 15.0, 60.0)` injected by `BootstrapService._ensure_source`; default empty backoff preserves the CP-10 −1003 surface-to-runner seam.
+  - `pages_served` = runner-facing only; `walk_pages` / `rate_limited` counters for observability.
+- `tests/unit/test_ops_bootstrap_service.py`:
+  - `TailAlignedVenue` fake session emulating owner-probe shapes (startTime ignored; short historical window → `[]`; rolling retention tail).
+  - `TestTailAlignedSource`: full-walk ascending; empty-first-page recovers tail; budget on facing pages; backoff inside walk; dedup-stop; resume-with-cursor; resume-across-restart; non-rate-limit fail-closed.
+  - Service pilot-regression `test_tail_aligned_pilot_regression_completes_with_bars`.
+  - Existing 20 wiring tests retained/adapted (30 total).
+
+### INTERFACES
+- `ToobitKlineSource(..., walk_backoff_seconds: Optional[Sequence[float]] = None)` — default `()` surfaces −1003 immediately; production path passes `WALK_BACKOFF_SECONDS`.
+- Frozen fetcher contract unchanged: `{"rows", "next_cursor_ms", "code", "oi_available"}`.
+- `BootstrapService` source factory injects `walk_backoff_seconds=WALK_BACKOFF_SECONDS`.
+
+### DATA-CHANGES
+None. No migration, frozen DDL, parameter YAML, `research/bootstrap.py`, `APEX_GEN5.md`, or `PROMPT.md` was edited.
+
+### TESTS
+- `python -m pytest tests/unit/test_ops_bootstrap_service.py -q` — 30 passed.
+- `python -m pytest tests/unit/test_toobit_public.py tests/unit/test_ops_bootstrap_service.py -q` — 63 passed (CP-10 seam preserved).
+- `python -m pytest tests -q` — 2661 passed / 0 failed, repeated twice deterministically (was 2651; +10 CP-11 tests).
+- `sha256sum APEX_GEN5.md` — `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
+
+### DEVIATIONS
+None. Frozen runner law preserved; adaptation is wiring-only under the ISSUE-CP9-001 bug-fix precedent.
+
+### OPEN-ISSUES
+None. ISSUE-CP11-001 is CLOSED-with-evidence.
+
+### PUSH RECORD
+Implementation + tests + docs closeout pushed to `origin/arena/01a0a838-upstage`; PR opened (`main` ← `arena/01a0a838-upstage`). The immutable `APEX_GEN5.md` hash was rechecked immediately before push: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
+

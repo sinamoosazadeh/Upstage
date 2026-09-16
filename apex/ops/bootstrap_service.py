@@ -40,6 +40,7 @@ import datetime as dt
 import shutil
 import subprocess
 import threading
+import time
 from decimal import Decimal
 from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -66,8 +67,16 @@ CANONICAL_PROGRESS_STATUS: Dict[str, str] = {
 #: signal (both mean "back off, do not skip").
 RATE_LIMIT_MARKERS: Tuple[str, ...] = ("-1003", "429")
 
+#: Default bounded exponential backoff for venue −1003/429 *inside* the
+#: CP-11 backward walk (never a skip, never a fabricated page).
+WALK_BACKOFF_SECONDS: Tuple[float, ...] = (5.0, 15.0, 60.0)
+
 #: Termux battery probe (W.6 names the command; a missing API never skips).
 TERMUX_BATTERY_COMMAND: Tuple[str, ...] = ("termux-battery-status",)
+
+
+class _RateLimitSurfaced(Exception):
+    """Internal: bounded walk retries exhausted → surface −1003 to the runner."""
 
 
 class BootstrapServiceError(RuntimeError):
@@ -144,18 +153,58 @@ class ToobitKlineSource:
     Returns ``{"rows", "next_cursor_ms", "code", "oi_available"}`` exactly as
     the frozen protocol documents. ``code == -1003`` means the venue asked us to
     back off: the runner retries the same cursor and never skips the cell.
+
+    CP-11 venue-adaptive backfill (ISSUE-CP11-001)
+    ----------------------------------------------
+    Toobit public klines are **tail-aligned**: for any ``[startTime, endTime]``
+    window the venue returns the LAST ``limit`` bars at/before ``endTime``
+    (``startTime`` ignored). A head-aligned forward page from ``DEEP_START``
+    therefore lands in a dead retention window on many intervals and would
+    COMPLETE the cell with zero bars under the frozen empty-page law.
+
+    Adaptation (wiring layer only — ``research/bootstrap.py`` is frozen):
+
+    * on the runner's **first** page call for a ``(symbol, timeframe)``, walk
+      the venue **backward** from ``end_ms`` (``endTime`` stepping to
+      ``oldest_open − 1``), collecting raw rows;
+    * stop on any empty page, or when a page re-returns its own first row
+      (dedup-guard — venue stuck on the same window);
+    * then serve the runner **ascending** chunks of ``limit`` (``PAGE_LIMIT``)
+      bars, filtering out any row with ``open_time < cursor`` (``start_ms``);
+    * subsequent page calls keep serving the next ascending chunk from the
+      walked cache; when exhausted, return the empty-page shape
+      (``next_cursor_ms=end_ms``) so the frozen law completes the cell honestly;
+    * ``--max-pages`` counts **runner-facing** pages only (walk traffic is free
+      against the budget); ``PAGE_BUDGET_REACHED`` semantics are preserved;
+    * inside the walk, ``−1003``/``429`` → bounded exponential backoff retries
+      (never a skip, never a fabricated page); anything else → named
+      fail-closed (``FETCH_FAILED``); the durable cursor stays valid;
+    * resume: a forward cursor filters already-collected bars so they are not
+      re-ingested (store ``content_hash`` dedup remains the safety net).
     """
 
     def __init__(self, *, client: Optional[ToobitPublicClient] = None,
                  bridge: Optional[AsyncBridge] = None,
                  session: Any = None, max_pages: Optional[int] = None,
-                 timeout_seconds: float = 60.0) -> None:
+                 timeout_seconds: float = 60.0,
+                 walk_backoff_seconds: Optional[Sequence[float]] = None
+                 ) -> None:
         self._bridge = bridge
         self._max_pages = int(max_pages) if max_pages else None
         self._timeout = float(timeout_seconds)
         self._session = session
+        # Default empty: first −1003 surfaces to the runner immediately
+        # (CP-10 seam). Production BootstrapService injects WALK_BACKOFF_SECONDS
+        # so the backward walk itself retries with bounded exponential backoff.
+        if walk_backoff_seconds is None:
+            self._walk_backoff = ()
+        else:
+            self._walk_backoff = tuple(float(x) for x in walk_backoff_seconds)
         self.pages_served = 0
         self.rate_limited = 0
+        self.walk_pages = 0
+        #: Per-(symbol, timeframe) ascending history from the backward walk.
+        self._history: Dict[Tuple[str, str], List[Any]] = {}
         if client is not None:
             self._client = client
         else:
@@ -193,9 +242,16 @@ class ToobitKlineSource:
             raise BootstrapError(
                 "PAGE_BUDGET_REACHED",
                 f"{self.pages_served} pages fetched (--max-pages budget)")
+        key = (str(symbol), str(timeframe))
         try:
-            observations = self._get_klines(symbol, timeframe, start_ms,
-                                            end_ms, limit)
+            if key not in self._history:
+                self._history[key] = self._walk_backward(
+                    str(symbol), str(timeframe), int(end_ms))
+        except _RateLimitSurfaced:
+            # Bounded walk retries exhausted — same shape the runner already
+            # understands: back off, retry the same cursor, never skip.
+            return {"rows": [], "next_cursor_ms": None, "code": -1003,
+                    "oi_available": False}
         except ToobitPublicError as exc:
             message = f"{exc}"
             if any(marker in message for marker in RATE_LIMIT_MARKERS):
@@ -203,18 +259,110 @@ class ToobitKlineSource:
                 return {"rows": [], "next_cursor_ms": None, "code": -1003,
                         "oi_available": False}
             raise BootstrapError("FETCH_FAILED", message) from exc
+        except BootstrapError:
+            raise
+
+        history = self._history[key]
+        cursor = int(start_ms)
+        end = int(end_ms)
+        page_limit = int(limit) if limit else PAGE_LIMIT
+        # Ascending serve: drop anything already behind the durable cursor
+        # (resume speed-net) and anything at/after the run end bound.
+        eligible = [
+            obs for obs in history
+            if cursor <= _iso_to_ms(obs.timestamp) < end
+        ]
+        chunk = eligible[:page_limit]
         self.pages_served += 1
-        if not observations:
-            # The venue has no more history for this cell → the cell is done.
-            return {"rows": [], "next_cursor_ms": int(end_ms), "code": None,
+        if not chunk:
+            # Walked history exhausted (or empty venue) → frozen empty-page
+            # shape so the runner completes the cell honestly.
+            return {"rows": [], "next_cursor_ms": end, "code": None,
                     "oi_available": False}
-        last_open_ms = _iso_to_ms(observations[-1].timestamp)
+        last_open_ms = _iso_to_ms(chunk[-1].timestamp)
         step = BootstrapRunner._ms_per_bar(timeframe)
-        next_cursor = max(last_open_ms + step, int(start_ms))
+        next_cursor = max(last_open_ms + step, cursor)
         # oi_available is False by construction: klines carry no OI series and
         # the ingest labels the rows oi_state=MISSING (never a fabricated 0).
-        return {"rows": list(observations), "next_cursor_ms": next_cursor,
+        return {"rows": list(chunk), "next_cursor_ms": next_cursor,
                 "code": None, "oi_available": False}
+
+    # -- CP-11 backward walk -------------------------------------------------
+    def _walk_backward(self, symbol: str, timeframe: str,
+                       end_ms: int) -> List[Any]:
+        """Collect the venue's full available history for one cell, ascending.
+
+        Walks ``endTime`` backward from ``end_ms``. Dedup-guarded: an empty
+        page or a page whose first row repeats the previous page's first row
+        ends the walk. Rate-limit errors retry with bounded exponential
+        backoff inside the walk; any other venue error fails closed.
+        """
+        collected: Dict[int, Any] = {}
+        walk_end = int(end_ms)
+        prev_first_ms: Optional[int] = None
+        # startTime is ignored by the tail-aligned venue; pass DEEP_START so a
+        # head-aligned double (tests) still has a lawful lower bound.
+        walk_start = int(DEEP_START_MS)
+
+        while walk_end >= walk_start:
+            page = self._get_klines_with_walk_backoff(
+                symbol, timeframe, walk_start, walk_end, PAGE_LIMIT)
+            self.walk_pages += 1
+            if not page:
+                break
+            first_ms = _iso_to_ms(page[0].timestamp)
+            # Dedup-stop: venue re-returned the same window (own first row).
+            if prev_first_ms is not None and first_ms == prev_first_ms:
+                break
+            prev_first_ms = first_ms
+            new_any = False
+            oldest_ms = first_ms
+            for obs in page:
+                open_ms = _iso_to_ms(obs.timestamp)
+                if open_ms < oldest_ms:
+                    oldest_ms = open_ms
+                if open_ms not in collected:
+                    collected[open_ms] = obs
+                    new_any = True
+            if not new_any:
+                break
+            # Step endTime to just before the oldest bar of this page.
+            next_end = oldest_ms - 1
+            if next_end >= walk_end:
+                break                            # no backward progress
+            walk_end = next_end
+
+        return [collected[k] for k in sorted(collected.keys())]
+
+    def _get_klines_with_walk_backoff(self, symbol: str, timeframe: str,
+                                      start_ms: int, end_ms: int,
+                                      limit: int) -> List[Any]:
+        """Venue page fetch with bounded −1003/429 retries (walk-internal).
+
+        ``walk_backoff_seconds=()`` (default) means: surface −1003 to the
+        runner on the first rate-limit hit (CP-10 seam). A non-empty sequence
+        is the production walk path: one initial try + one retry per slot.
+        """
+        backoffs = self._walk_backoff            # may be empty — do NOT coerce
+        attempts = len(backoffs) + 1             # initial try + one per slot
+        last_message = ""
+        for attempt in range(attempts):
+            try:
+                return self._get_klines(symbol, timeframe, start_ms,
+                                        end_ms, limit)
+            except ToobitPublicError as exc:
+                message = f"{exc}"
+                if not any(m in message for m in RATE_LIMIT_MARKERS):
+                    raise BootstrapError("FETCH_FAILED", message) from exc
+                self.rate_limited += 1
+                last_message = message
+                if attempt >= len(backoffs):
+                    break                        # no (more) walk-internal slots
+                delay = float(backoffs[attempt])
+                if delay > 0:
+                    time.sleep(delay)
+        # Bounded retries exhausted — surface −1003 to the frozen runner.
+        raise _RateLimitSurfaced(last_message)
 
     def _get_klines(self, symbol: str, timeframe: str, start_ms: int,
                     end_ms: int, limit: int) -> List[Any]:
@@ -480,7 +628,10 @@ class BootstrapService:
         if not self.cells:
             raise BootstrapServiceError("NO_CELLS")
         self.source = source
-        self._source_factory_args = {"max_pages": max_pages}
+        self._source_factory_args = {
+            "max_pages": max_pages,
+            "walk_backoff_seconds": WALK_BACKOFF_SECONDS,
+        }
         self.runner: Optional[BootstrapRunner] = None
         self.notifications: List[Dict[str, Any]] = []
         self._now = now
