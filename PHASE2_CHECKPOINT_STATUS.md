@@ -114,6 +114,6 @@ CONTINUE(CP-10 HOTFIX) COMPLETED 2026-09-16T01:10:00Z: commit range cbed6cc..HEA
 CONTINUE(CP-11 HOTFIX) @ 2026-09-16T03:30:00Z: CLAIM — executor = Arena Agent Mode on the environment-pinned branch `arena/01a0a838-upstage`; venue-adaptive backfill source for tail-aligned Toobit public klines (ISSUE-CP11-001). Entry gate re-verified: CP-1..CP-8 delivered/owner-checked, CP-9 wiring + bridge + CP-10 response-shape hotfix delivered/owner-checked, `sha256(APEX_GEN5.md) == 216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`; no edits to params/*.yaml, research/bootstrap.py, APEX_GEN5.md, or PROMPT.md. LAW-ACK: G1..G20 + P1..P21 read 2026-09-16T03:20:00Z.
 [x] CLAIM: ToobitKlineSource backward-walk + ascending serve per (symbol,timeframe); empty-first-page zero-bar COMPLETE regression closed; PAGE_BUDGET_REACHED on runner-facing pages; −1003/429 walk-internal backoff; dedup-stop; resume-with-cursor filter; full suite green.
 [x] CLAIM→COMPLETE: `apex/ops/bootstrap_service.py` + `tests/unit/test_ops_bootstrap_service.py` (30 passed: 20 baseline + 10 CP-11); full suite `pytest -q` twice = 2661 passed / 0 failed each; MATRIX/DECISION_LOG/HANDOFF_CP11_HOTFIX updated.
-CONTINUE(CP-11 HOTFIX) COMPLETED 2026-09-16T04:00:00Z: suite 2661 passed — OWNER-CHECKED: [ ]
+CONTINUE(CP-11 HOTFIX) COMPLETED 2026-09-16T04:00:00Z: suite 2661 passed — OWNER-CHECKED: [x]
 
 
