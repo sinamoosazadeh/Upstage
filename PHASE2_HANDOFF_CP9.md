@@ -235,3 +235,47 @@ None. ISSUE-CP11-001 is CLOSED-with-evidence.
 ### PUSH RECORD
 Implementation + tests + docs closeout pushed to `origin/arena/01a0a838-upstage`; PR opened (`main` ← `arena/01a0a838-upstage`). The immutable `APEX_GEN5.md` hash was rechecked immediately before push: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
 
+## HANDOFF_CP12_HOTFIX
+LAW-ACK: G1..G20 + P1..P21 read 2026-09-16T05:00:00Z
+STATUS: COMPLETE — ISSUE-CP12-001 is closed on the environment-pinned branch `arena/01a0a890-upstage`.
+
+### CLAIM
+`ToobitKlineSource` (wiring layer, `apex/ops/bootstrap_service.py`) is now venue-data-hygienic. The owner's first long post-CP-11 run advanced ~25 cells / 76,366 clean bars and then died named-fail-closed at `BTCUSDT:1d` with `IntegrityError: CHECK constraint failed: CAST(high_price AS REAL)>=max(open,close) AND low<=min(open,close) AND high>=low` — the frozen store DDL meeting Toobit's legacy Huobi-era 1d candles. The owner's read-only venue probe (2026-09-16, walking every interval backward exactly as this source does) measured `1m`=0, `5m`=0, `15m`=0, `1h`=0, `4h`=0 violations and `1d`=2 of 1747 rows. Repairing/clipping a venue value is fabrication (forbidden) and a silent skip breaks W.6's never-skip law, so the sanctioned interim behavior is drop-with-observable-evidence at the single boundary where a walked row is appended into the per-cell history. The frozen runner (`apex/research/bootstrap.py`), the frozen client (`toobit_public.py`), the store DDL, `params/*.yaml` and `APEX_GEN5.md` are byte-untouched.
+
+### DELIVERED
+- `apex/ops/bootstrap_service.py`:
+  - `_ohlc_violation` / `_kline_ohlc_fields` / `_decimal_or_none`: the frozen DDL law clause-for-clause (OHLC numeric-parseable, `high>=max(open,close)`, `low<=min(open,close)`, `high>=low`) judged over observation, raw-list and raw-dict row shapes; volume/quote-volume/trade-count fields are never judged, so the frozen client's tolerant parse of them stays as-is.
+  - `ToobitKlineSource._walk_backward`: the gate sits on the append boundary into `_history` (fresh walks and cursor-filtered resume passes both pass through it); a failing row is counted and never enters the history, so it can never be served to the runner nor reach the store.
+  - Walk-stop conditions unchanged and still venue-owned (empty page / repeated first row / no backward progress); every returned open time counts as seen, so a page whose rows are ALL invalid drops them without ending the walk or completing the cell.
+  - Evidence: `invalid_dropped` (per source), `invalid_by_cell`, `invalid_reasons`, `invalid_offenders` capped at `INVALID_BAR_OFFENDER_RETENTION=20` per cell as `(symbol, timeframe, open_time_ms, repr(row)[:160])` with named reasons; `cell_prints` + `drain_cell_complete_prints()`.
+  - Wiring print: `bootstrap Phase 1 cell complete: cell=SYMBOL:TF pages=<facing> bars=<served> dropped=<n>` plus `offenders=[…] reasons=[…]` when `n>0`, drained by `BootstrapService._flush_cell_complete_prints` (per ingest and at run end) into the existing owner report path.
+  - Mirrors: `status()["invalid_bars_dropped"]` (offline, read-only, 0 until a source exists) and `run()` result `invalid_bars_dropped` + `invalid_offenders`.
+- `tests/unit/test_ops_bootstrap_service.py`:
+  - `TestOhlcLaw`: both verbatim poison rows judged in every row shape; a 625-case table proving keep/drop equals the frozen DDL predicate; unparseable OHLC named per field; rows without OHLC not judged.
+  - `TestVenueDataHygiene`: (a) both verbatim rows dropped with valid neighbours served and `dropped=2` in the print; (b) an all-poison page that neither ends the walk nor completes the cell, and an all-poison cell completing at zero bars with 20-of-25 offenders retained; (c) hostile volume/quote/trades kept; (d) poison never re-served across a resume or a restart re-walk; (e) −1003 inside a poisoned walk backs off and never skips; (f) a −1120-class venue error still fails closed as `FETCH_FAILED`. Unparseable volume stays the client's named failure, never a drop.
+  - `TestVenueDataHygieneService`: against the REAL frozen store — cell `COMPLETE` at 48 bars, `IntegrityError` unreachable, untouched DDL still refuses the verbatim bar, prints/mirrors carry the evidence, clean cell reports `dropped=0`, budget stop keeps the evidence, offline status reports 0.
+  - Existing 30 wiring tests retained (fakes extended additively via `HygieneVenue`); 49 total.
+
+### INTERFACES
+- `ToobitKlineSource` fetcher contract unchanged: `{"rows", "next_cursor_ms", "code", "oi_available"}`.
+- New source attributes (read-only for the owner/scripts): `invalid_dropped`, `invalid_by_cell`, `invalid_reasons`, `invalid_offenders`, `drain_cell_complete_prints()`, `cell_prints`.
+- `BootstrapService.status()` adds `invalid_bars_dropped`; `run()` result adds `invalid_bars_dropped` and `invalid_offenders`. `scripts/run_apex.py status|bootstrap --json` surface both without any change to the CLI file.
+- Module constants: `INVALID_BAR_OFFENDER_RETENTION=20`, `INVALID_BAR_ROW_REPR_CHARS=160`, reason names `REASON_HIGH_BELOW_MAX_OPEN_CLOSE` / `REASON_LOW_ABOVE_MIN_OPEN_CLOSE` / `REASON_HIGH_BELOW_LOW` / `REASON_OHLC_NOT_PARSEABLE`.
+
+### DATA-CHANGES
+None. No migration, no frozen DDL, no `params/*.yaml`, no `apex/research/bootstrap.py`, no `apex/data_catalog/**`, no `APEX_GEN5.md`/`PROMPT.md` edit. The raw store keeps every value exactly as the venue gave it — the gate changes what is served, never what is recorded.
+
+### TESTS
+- `python -m pytest tests/unit/test_ops_bootstrap_service.py -q` — 49 passed (30 baseline + 19 CP-12).
+- `python -m pytest tests/unit/test_toobit_public.py tests/unit/test_ops_bootstrap_service.py -q` — 82 passed (CP-10 seam preserved).
+- `python -m pytest tests -q` twice — 2680 passed / 0 failed each run (baseline 2661 + 19), deterministic.
+- `sha256sum APEX_GEN5.md` — `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e` (re-checked immediately before push).
+
+### DEVIATIONS
+None beyond the owner-authorized hotfix scope: reliability only (a poison bar can no longer abort a long run), no behavior change to the frozen law, no new product rule. The cell-complete print is emitted even when `announce=False`, because drop evidence is never suppressible.
+
+### OPEN-ISSUES
+None blocking. ISSUE-CP12-001 is CLOSED-with-evidence and asks one owner confirmation: accept drop-with-evidence for `1d` (this hotfix), or decree the venue-faithful alternative (store the bar, gate it downstream) — the latter needs a frozen-file change and was therefore NOT implemented here.
+
+### PUSH RECORD
+Implementation + tests + docs closeout pushed to `origin/arena/01a0a890-upstage`; PR opened (`main` ← `arena/01a0a890-upstage`), not merged. The immutable `APEX_GEN5.md` hash was rechecked immediately before push: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
