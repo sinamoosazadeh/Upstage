@@ -12,6 +12,7 @@ used by the service-level wiring tests (full history fits one walk page).
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 from typing import Optional
 
 import pytest
@@ -127,6 +128,57 @@ class TailAlignedVenue:
             row = [open_ms, "100", "101", "99", "100.5", "10",
                    open_ms + self.step_ms - 1]
             out.append(parse_kline_to_observation(symbol, interval, row, i))
+        return out
+
+
+# ---------------------------------------------------------------------------
+# CP-12 fixtures — the verbatim poison rows of the owner's read-only venue
+# probe (2026-09-16, BTCUSDT 1d). Quoted byte-for-byte; NEVER repaired.
+# ---------------------------------------------------------------------------
+
+DAY = 86_400_000
+POISON_OPEN_A = 1_673_395_200_000      # 2023-01-11: low 17551.51 > open 17440.25
+POISON_OPEN_B = 1_677_196_800_000      # 2023-02-24: high 23193.77 < open 23940.6
+
+POISON_ROW_A = [1673395200000, "17440.25", "17995.03", "17551.51", "17942.82",
+                "1630.364436157643853256", 0, "28460372.187496166962904175",
+                710123, "0", "0"]
+POISON_ROW_B = [1677196800000, "23940.6", "23193.77", "23183.93", "23185.29",
+                "1077.358111833780842094", 0, "25386566.469458050508191797",
+                4573900, "0", "0"]
+POISON_OHLC = {POISON_OPEN_A: POISON_ROW_A, POISON_OPEN_B: POISON_ROW_B}
+
+
+def poison_row_for(open_ms: int) -> list:
+    """A geometrically impossible 1d row at ``open_ms`` (same defect class)."""
+    return [open_ms, "100", "99", "101", "98", "1", open_ms + DAY - 1,
+            "2", 3, "0", "0"]
+
+
+class HygieneVenue(TailAlignedVenue):
+    """Tail-aligned venue that serves caller-supplied rows for given opens.
+
+    The rows go through the frozen ``parse_kline_to_observation`` exactly as the
+    real client converts them, so a poison row reaches the wiring layer with the
+    venue's own values — the same path the owner's long run died on.
+    """
+
+    def __init__(self, *, rows_by_open: Optional[dict] = None, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.rows_by_open = dict(rows_by_open or {})
+
+    async def get_klines(self, symbol, interval, start_ms, end_ms, limit=None):
+        served = await super().get_klines(symbol, interval, start_ms, end_ms,
+                                          limit)
+        out = []
+        for obs in served:
+            open_ms = BS._iso_to_ms(obs.timestamp)
+            raw = self.rows_by_open.get(open_ms)
+            if raw is None:
+                out.append(obs)
+            else:
+                out.append(parse_kline_to_observation(symbol, interval, raw,
+                                                       obs.sequence))
         return out
 
 
@@ -725,5 +777,444 @@ class TestService:
             finally:
                 await service.close()
                 bridge.close()
+
+        run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# CP-12 — venue-data-hygienic backfill source (ISSUE-CP12-001)
+#
+# Toobit's legacy Huobi-era 1d candles carry geometrically impossible OHLC,
+# which aborts the run inside the frozen raw-store DDL CHECK. The raw store
+# stays venue-faithful (no repair, no clip — that would be fabrication) and
+# W.6 forbids a silent skip, so the wiring gate DROPS the row and reports it.
+# ---------------------------------------------------------------------------
+
+class TestOhlcLaw:
+    """The gate measures exactly the frozen DDL law, nothing else."""
+
+    def test_verbatim_poison_rows_are_measured_in_every_row_shape(self):
+        for raw, reason in ((POISON_ROW_A, "LOW_ABOVE_MIN_OPEN_CLOSE"),
+                            (POISON_ROW_B, "HIGH_BELOW_MAX_OPEN_CLOSE")):
+            obs = parse_kline_to_observation("BTCUSDT", "1d", raw, 0)
+            as_dict = {"open_time": raw[0], "open": raw[1], "high": raw[2],
+                       "low": raw[3], "close": raw[4], "volume": raw[5]}
+            assert BS._ohlc_violation(obs) == reason
+            assert BS._ohlc_violation(raw) == reason
+            assert BS._ohlc_violation(as_dict) == reason
+
+    def test_valid_and_degenerate_candles_pass(self):
+        ok = [POISON_OPEN_A, "100", "101", "99", "100.5", "10",
+              POISON_OPEN_A + DAY - 1]
+        flat = [POISON_OPEN_A, "100", "100", "100", "100", "0",
+                POISON_OPEN_A + DAY - 1]
+        assert BS._ohlc_violation(ok) is None
+        # high == low == open == close is geometric legal (the DDL agrees).
+        assert BS._ohlc_violation(flat) is None
+        assert BS._ohlc_violation(poison_row_for(POISON_OPEN_A)) is not None
+
+    def test_verdict_equals_the_frozen_ddl_predicate(self):
+        """Our verdict is the frozen DDL CHECK, clause for clause: the law is a
+        conjunction, so the first failing clause names the drop reason while
+        the retained predicate decides keep/drop exactly as the store does."""
+        from itertools import product
+
+        for o, h, l, c in product(("100", "101", "99", "102", "90"),
+                                   ("100", "101", "99", "102", "90"),
+                                   ("100", "101", "99", "102", "90"),
+                                   ("100", "101", "99", "102", "90")):
+            open_, high, low, close = (Decimal(o), Decimal(h), Decimal(l),
+                                       Decimal(c))
+            ddl_ok = (high >= max(open_, close) and low <= min(open_, close)
+                      and high >= low)
+            row = [POISON_OPEN_A, o, h, l, c, "10", POISON_OPEN_A + DAY - 1]
+            assert (BS._ohlc_violation(row) is None) == ddl_ok, row
+
+    def test_high_below_low_is_a_violation(self):
+        # A high<low bar always trips an earlier clause too; the reason names
+        # the first failing clause, the verdict is the conjunction.
+        row = [POISON_OPEN_A, "100", "101", "102", "100.5", "10",
+               POISON_OPEN_A + DAY - 1]
+        assert BS._ohlc_violation(row) in ("LOW_ABOVE_MIN_OPEN_CLOSE",
+                                           "HIGH_BELOW_LOW")
+        assert BS._ohlc_violation(row) is not None
+
+    def test_unparseable_ohlc_is_named_per_field(self):
+        class Bare:
+            open, high, low, close = None, "101", "99", "nope"
+
+        assert BS._ohlc_violation(Bare()) == "OHLC_NOT_PARSEABLE:open"
+        assert BS._ohlc_violation({"open": "NaN", "high": "1", "low": "0",
+                                   "close": "1"}) == "OHLC_NOT_PARSEABLE:open"
+
+    def test_rows_without_ohlc_are_not_judged(self):
+        """No measurement ⇒ no verdict (the frozen client already fails closed
+        on unexpected shapes; the hygiene gate never invents one)."""
+        class NotACandle:
+            symbol = "BTCUSDT"
+
+        assert BS._ohlc_violation(NotACandle()) is None
+        assert BS._ohlc_violation([1673395200000, "100"]) is None
+        assert BS._ohlc_violation({"open_time": 1673395200000}) is None
+
+
+class TestVenueDataHygiene:
+    """(a)–(f): the drop happens at the one boundary into the per-cell history."""
+
+    def _poisoned_1d_venue(self, **kwargs):
+        """50 aligned 1d bars; the two VERBATIM poison opens are series[0]/[44]."""
+        return HygieneVenue(step_ms=DAY, retention=50, limit_cap=1000,
+                            now_ms=POISON_OPEN_B + 5 * DAY,
+                            rows_by_open=POISON_OHLC, **kwargs)
+
+    def test_poison_rows_dropped_and_valid_neighbours_ingested(self):
+        """(a) both verbatim rows among valid neighbours: dropped, counted,
+        reported; every valid neighbour still served, ascending."""
+        venue = self._poisoned_1d_venue()
+        assert venue.series[0] == POISON_OPEN_A
+        assert venue.series[44] == POISON_OPEN_B
+        source, bridge = source_for(venue)
+        try:
+            end = venue.newest_ms + DAY
+            page = source("BTCUSDT", "1d", DEEP_START_MS, end, limit=1000)
+            opens = [BS._iso_to_ms(row.timestamp) for row in page["rows"]]
+            assert page["code"] is None
+            assert len(opens) == 48                      # 50 served − 2 dropped
+            assert opens == sorted(opens)
+            assert POISON_OPEN_A not in opens and POISON_OPEN_B not in opens
+            assert opens[:2] == venue.series[1:3]        # neighbours kept
+            assert source.invalid_dropped == 2
+            assert source.invalid_by_cell[("BTCUSDT", "1d")] == 2
+            offenders = source.invalid_offenders[("BTCUSDT", "1d")]
+            assert [entry[2] for entry in offenders] == [POISON_OPEN_A,
+                                                          POISON_OPEN_B]
+            assert all(entry[0] == "BTCUSDT" and entry[1] == "1d"
+                       for entry in offenders)
+            assert all(len(entry[3]) <= 160 for entry in offenders)
+            assert "17440.25" in offenders[0][3]         # venue values, verbatim
+            assert "23940.6" in offenders[1][3]
+            assert source.invalid_reasons[("BTCUSDT", "1d")] == {
+                "LOW_ABOVE_MIN_OPEN_CLOSE": 1, "HIGH_BELOW_MAX_OPEN_CLOSE": 1}
+            # The cell-complete wiring print carries the evidence.
+            done = source("BTCUSDT", "1d", page["next_cursor_ms"], end,
+                          limit=1000)
+            assert done["rows"] == [] and done["next_cursor_ms"] == end
+            lines = source.drain_cell_complete_prints()
+            assert len(lines) == 1
+            assert "cell=BTCUSDT:1d" in lines[0]
+            assert "dropped=2" in lines[0]
+            assert (f"offenders=[BTCUSDT:1d@{POISON_OPEN_A}; "
+                    f"BTCUSDT:1d@{POISON_OPEN_B}]") in lines[0]
+            assert "HIGH_BELOW_MAX_OPEN_CLOSE=1" in lines[0]
+            assert "LOW_ABOVE_MIN_OPEN_CLOSE=1" in lines[0]
+            assert source.drain_cell_complete_prints() == []   # drained once
+        finally:
+            run(source.aclose())
+            bridge.close()
+
+    def test_page_of_only_poison_rows_never_ends_the_walk_early(self):
+        """(b) a whole venue page of poison: no exception, the walk keeps going
+        and the cell completes only on the walk's own empty-page signal."""
+        venue = HygieneVenue(step_ms=DAY, retention=6, limit_cap=3,
+                             now_ms=POISON_OPEN_B)
+        venue.rows_by_open = {ms: poison_row_for(ms) for ms in venue.series[3:]}
+        source, bridge = source_for(venue)
+        try:
+            end = venue.newest_ms + DAY
+            page = source("BTCUSDT", "1d", DEEP_START_MS, end, limit=1000)
+            opens = [BS._iso_to_ms(row.timestamp) for row in page["rows"]]
+            assert page["code"] is None
+            assert opens == venue.series[:3]              # older valid window
+            assert source.invalid_dropped == 3
+            assert source.walk_pages >= 2                 # walk continued
+            assert len(venue.calls) >= 3
+            done = source("BTCUSDT", "1d", page["next_cursor_ms"], end,
+                          limit=1000)
+            assert done["rows"] == [] and done["next_cursor_ms"] == end
+            line = source.drain_cell_complete_prints()[0]
+            assert "dropped=3" in line and "bars=3" in line
+        finally:
+            run(source.aclose())
+            bridge.close()
+
+    def test_all_poison_cell_completes_with_zero_bars_and_full_evidence(self):
+        """Every retained bar is poison ⇒ 0 bars served, and the cell still
+        completes through the walk (never by the drop logic itself)."""
+        venue = HygieneVenue(step_ms=DAY, retention=25, limit_cap=1000,
+                             now_ms=POISON_OPEN_B)
+        venue.rows_by_open = {ms: poison_row_for(ms) for ms in venue.series}
+        source, bridge = source_for(venue)
+        try:
+            end = venue.newest_ms + DAY
+            page = source("BTCUSDT", "1d", DEEP_START_MS, end, limit=1000)
+            assert page["rows"] == []
+            assert page["next_cursor_ms"] == end          # the ONLY completion signal
+            assert source.invalid_dropped == 25
+            assert source.invalid_by_cell[("BTCUSDT", "1d")] == 25
+            assert len(source.invalid_offenders[("BTCUSDT", "1d")]) == 20
+            line = source.drain_cell_complete_prints()[0]
+            assert "dropped=25" in line and "bars=0" in line
+            assert "+16 more" in line   # 20 retained, 4 summarised
+        finally:
+            run(source.aclose())
+            bridge.close()
+
+    def test_weird_volume_and_trade_fields_are_never_a_drop_reason(self):
+        """(c) OHLC legal, everything else hostile ⇒ the bar is kept as-is."""
+        venue = HygieneVenue(step_ms=DAY, retention=4, limit_cap=1000,
+                             now_ms=POISON_OPEN_B)
+        weird_open = venue.series[2]
+        venue.rows_by_open = {weird_open: [
+            weird_open, "100", "101", "99", "100.5", "1.5e2",
+            weird_open + DAY - 1, "quote-vol:28460372.187496166962904175",
+            "4.5739e+06", "", None, "junk"]}
+        source, bridge = source_for(venue)
+        try:
+            end = venue.newest_ms + DAY
+            page = source("BTCUSDT", "1d", DEEP_START_MS, end, limit=1000)
+            opens = [BS._iso_to_ms(row.timestamp) for row in page["rows"]]
+            assert opens == venue.series                    # nothing dropped
+            assert source.invalid_dropped == 0
+            kept = page["rows"][opens.index(weird_open)]
+            assert str(kept.volume) == "1.5E+2"              # tolerant parse kept
+        finally:
+            run(source.aclose())
+            bridge.close()
+
+    def test_unparseable_volume_stays_the_frozen_clients_named_failure(self):
+        """The gate is OHLC-only: a bad volume is still the client's own named
+        failure (FETCH_FAILED), never laundered into a silent drop."""
+        venue = HygieneVenue(step_ms=DAY, retention=4, limit_cap=1000,
+                             now_ms=POISON_OPEN_B)
+        venue.rows_by_open = {venue.series[1]: [venue.series[1], "100", "101",
+                                                 "99", "100.5", "not-a-number",
+                                                 venue.series[1] + DAY - 1]}
+        source, bridge = source_for(venue)
+        try:
+            with pytest.raises(BootstrapError) as excinfo:
+                source("BTCUSDT", "1d", DEEP_START_MS, venue.newest_ms + DAY,
+                       limit=1000)
+            assert excinfo.value.reason == "FETCH_FAILED"
+            assert source.invalid_dropped == 0
+        finally:
+            run(source.aclose())
+            bridge.close()
+
+    def test_resume_past_a_poison_region_never_reserves_the_poison(self):
+        """(d) the poison stays out of every served page — across the resume
+        boundary and across a process restart (re-walk)."""
+        venue = HygieneVenue(step_ms=DAY, retention=10, limit_cap=1000,
+                             now_ms=POISON_OPEN_B)
+        poisoned = {venue.series[4]: poison_row_for(venue.series[4]),
+                    venue.series[5]: poison_row_for(venue.series[5])}
+        venue.rows_by_open = poisoned
+        expected = [ms for ms in venue.series if ms not in poisoned]
+        served_all = []
+        source, bridge = source_for(venue)
+        try:
+            end = venue.newest_ms + DAY
+            cursor = DEEP_START_MS
+            first = source("BTCUSDT", "1d", cursor, end, limit=3)
+            served_all += [BS._iso_to_ms(row.timestamp) for row in first["rows"]]
+            cursor = first["next_cursor_ms"]
+            second = source("BTCUSDT", "1d", cursor, end, limit=3)
+            served_all += [BS._iso_to_ms(row.timestamp) for row in second["rows"]]
+            cursor = second["next_cursor_ms"]
+            assert source.invalid_dropped == 2
+        finally:
+            run(source.aclose())
+            bridge.close()
+        # Process restart: a brand-new source re-walks and re-drops the same
+        # rows — it must still never serve them.
+        source2, bridge2 = source_for(venue)
+        try:
+            resumed = source2("BTCUSDT", "1d", cursor, end, limit=3)
+            served_all += [BS._iso_to_ms(row.timestamp) for row in resumed["rows"]]
+            assert source2.invalid_dropped == 2
+            assert source2.invalid_by_cell[("BTCUSDT", "1d")] == 2
+        finally:
+            run(source2.aclose())
+            bridge2.close()
+        assert served_all == expected
+        assert not set(served_all) & set(poisoned)
+        assert served_all == sorted(served_all)
+
+    def test_rate_limit_inside_the_walk_still_backoffs_and_never_skips(self):
+        """(e) −1003 during a poisoned walk: bounded backoff, no skip, and the
+        poison is still dropped (not "recovered" by the retry)."""
+        venue = self._poisoned_1d_venue(rate_limit_times=2)
+        source, bridge = source_for(venue, walk_backoff_seconds=(0.0, 0.0, 0.0))
+        try:
+            page = source("BTCUSDT", "1d", DEEP_START_MS,
+                          venue.newest_ms + DAY, limit=1000)
+            assert page["code"] is None
+            assert len(page["rows"]) == 48
+            assert source.rate_limited == 2
+            assert source.invalid_dropped == 2
+            assert len(venue.calls) >= 3      # the limited attempts were retried
+        finally:
+            run(source.aclose())
+            bridge.close()
+
+    def test_non_rate_limit_error_during_a_poisoned_walk_is_named_fail_closed(
+            self):
+        """(f) a −1120-class venue error is still BootstrapError(FETCH_FAILED);
+        drops already recorded stay visible and never complete the cell."""
+        venue = HygieneVenue(step_ms=DAY, retention=6, limit_cap=1000,
+                             now_ms=POISON_OPEN_B, fail_after_walks=1,
+                             fail_message="code=-1120 bad interval")
+        venue.rows_by_open = {ms: poison_row_for(ms) for ms in venue.series[:2]}
+        source, bridge = source_for(venue)
+        try:
+            with pytest.raises(BootstrapError) as excinfo:
+                source("BTCUSDT", "1d", DEEP_START_MS, venue.newest_ms + DAY,
+                       limit=1000)
+            assert excinfo.value.reason == "FETCH_FAILED"
+            assert "-1120" in str(excinfo.value)
+            assert source.invalid_dropped == 2          # evidence, not a mask
+            assert ("BTCUSDT", "1d") not in source._history
+            assert source.cell_prints == []             # no cell completed
+        finally:
+            run(source.aclose())
+            bridge.close()
+
+
+class TestVenueDataHygieneService:
+    """The evidence reaches the owner: wiring print + status/run mirror."""
+
+    def _service(self, tmp_path, source, **kwargs):
+        return BS.BootstrapService(
+            config=Config(), cells=[("BTCUSDT", "1d")], source=source,
+            db_path=str(tmp_path / "apex.sqlite3"),
+            checkpoint_path=str(tmp_path / "apex.sqlite3"), **kwargs)
+
+    def test_poison_never_reaches_the_store_and_the_cell_completes(self,
+                                                                    tmp_path):
+        """The owner's failure mode (IntegrityError at BTCUSDT:1d) is gone: the
+        frozen DDL CHECK stays the last line of defence and is unreachable."""
+        async def scenario():
+            venue = HygieneVenue(step_ms=DAY, retention=50, limit_cap=1000,
+                                 now_ms=POISON_OPEN_B + 5 * DAY,
+                                 rows_by_open=POISON_OHLC)
+            source, bridge = source_for(venue)
+            sent = []
+
+            async def notifier(text):
+                sent.append(text)
+                return {"sent": True}
+
+            service = self._service(tmp_path, source, notifier=notifier)
+            await service.open()
+            try:
+                result = await service.run(start_ms=DEEP_START_MS,
+                                           end_ms=venue.newest_ms + 100 * DAY,
+                                           announce=False)
+                assert result["status"] == "COMPLETE"
+                assert result["completed_cells"] == ["BTCUSDT:1d"]
+                assert result["bars_ingested"] == 48
+                assert result["invalid_bars_dropped"] == 2
+                assert [row[2] for row in result["invalid_offenders"]] == [
+                    POISON_OPEN_A, POISON_OPEN_B]
+                cursor = await service._store.db.execute(
+                    "SELECT COUNT(*), COUNT(DISTINCT open) FROM raw_observation "
+                    "WHERE symbol='BTCUSDT' AND timeframe='1d'")
+                count, distinct_opens = await cursor.fetchone()
+                assert count == 48 and distinct_opens == 1     # only sane bars
+                status = await service.status()
+                assert status["invalid_bars_dropped"] == 2
+                line = [note for note in service.notifications
+                        if note["kind"] == "CELL_COMPLETE"]
+                assert line and "dropped=2" in line[0]["text"]
+                assert any("dropped=2" in text for text in sent)
+            finally:
+                await service.close()
+                bridge.close()
+
+        run(scenario())
+
+    def test_clean_cell_reports_zero_drops(self, tmp_path):
+        async def scenario():
+            venue = HygieneVenue(step_ms=DAY, retention=4, limit_cap=1000,
+                                 now_ms=POISON_OPEN_B)
+            source, bridge = source_for(venue)
+            service = self._service(tmp_path, source)
+            await service.open()
+            try:
+                result = await service.run(
+                    start_ms=DEEP_START_MS,
+                    end_ms=venue.newest_ms + 100 * DAY, announce=False)
+                assert result["status"] == "COMPLETE"
+                assert result["bars_ingested"] == 4
+                assert result["invalid_bars_dropped"] == 0
+                assert result["invalid_offenders"] == []
+                notes = [note for note in service.notifications
+                         if note["kind"] == "CELL_COMPLETE"]
+                assert len(notes) == 1 and "dropped=0" in notes[0]["text"]
+                assert "offenders" not in notes[0]["text"]
+                assert (await service.status())["invalid_bars_dropped"] == 0
+            finally:
+                await service.close()
+                bridge.close()
+
+        run(scenario())
+
+    def test_budget_stop_keeps_the_drop_evidence(self, tmp_path):
+        """A clean --max-pages stop still reports what was dropped (nothing is
+        lost, nothing is skipped: the durable cursor stays the resume point)."""
+        async def scenario():
+            venue = HygieneVenue(step_ms=DAY, retention=50, limit_cap=1000,
+                                 now_ms=POISON_OPEN_B + 5 * DAY,
+                                 rows_by_open=POISON_OHLC)
+            source, bridge = source_for(venue, max_pages=1)
+            service = self._service(tmp_path, source)
+            await service.open()
+            try:
+                result = await service.run(
+                    start_ms=DEEP_START_MS,
+                    end_ms=venue.newest_ms + 100 * DAY, announce=False)
+                assert result["status"] == "BUDGET_REACHED"
+                assert result["resumable"] is True
+                assert result["pages_fetched"] == 1
+                assert result["invalid_bars_dropped"] == 2
+                assert not [note for note in service.notifications
+                            if note["kind"] == "CELL_COMPLETE"]
+            finally:
+                await service.close()
+                bridge.close()
+
+        run(scenario())
+
+    def test_offline_status_reports_zero_drops(self, tmp_path):
+        """`run_apex.py status` is offline and read-only: no source ⇒ 0."""
+        async def scenario():
+            service = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1d")],
+                db_path=str(tmp_path / "apex.sqlite3"),
+                checkpoint_path=str(tmp_path / "apex.sqlite3"))
+            await service.open()
+            try:
+                status = await service.status()
+                assert service.source is None
+                assert status["invalid_bars_dropped"] == 0
+            finally:
+                await service.close()
+
+        run(scenario())
+
+    def test_frozen_store_ddl_check_still_rejects_the_poison_row(self, tmp_path):
+        """The store was NOT touched: the DDL CHECK still refuses the venue's
+        poison bar — which is exactly why the gate must run upstream."""
+        async def scenario():
+            store = ss.SQLiteStore(str(tmp_path / "apex.sqlite3"))
+            await store.open()
+            try:
+                obs = parse_kline_to_observation("BTCUSDT", "1d", POISON_ROW_A,
+                                                 0)
+                assert BS._ohlc_violation(obs) is not None
+                with pytest.raises(Exception) as excinfo:
+                    await store.ingest_raw(obs, "MISSING")
+                assert "CHECK constraint failed" in str(excinfo.value)
+            finally:
+                await store.close()
 
         run(scenario())

@@ -22,6 +22,9 @@ path: no order, no adapter operation, no ledger write — only the raw store.
 
 Fail-closed rules kept from the frozen stage:
 
+* a venue bar whose OHLC is geometrically impossible (the frozen ``raw_observation``
+  DDL CHECK law) is DROPPED in this wiring layer — never repaired, never clipped,
+  never silently skipped past — with observable evidence (CP-12, ISSUE-CP12-001);
 * a fetch failure that is NOT the venue rate-limit code stops the run with a
   named reason (the durable cursor is the resume point) — it never skips a cell;
 * a page budget (`--max-pages`) stops the run *cleanly* with
@@ -41,8 +44,8 @@ import shutil
 import subprocess
 import threading
 import time
-from decimal import Decimal
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from decimal import Decimal, InvalidOperation
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from apex.config import Config
 from apex.data_catalog.contracts import CORE10_SYMBOLS, TIMEFRAMES_14
@@ -73,6 +76,93 @@ WALK_BACKOFF_SECONDS: Tuple[float, ...] = (5.0, 15.0, 60.0)
 
 #: Termux battery probe (W.6 names the command; a missing API never skips).
 TERMUX_BATTERY_COMMAND: Tuple[str, ...] = ("termux-battery-status",)
+
+#: CP-12 (ISSUE-CP12-001) — venue-data hygiene. The frozen ``raw_observation``
+#: DDL CHECK law (``high>=max(open,close) AND low<=min(open,close) AND
+#: high>=low``) is enforced at the single wiring boundary BEFORE a walked row
+#: can be served to the runner (never in the frozen store, never in the frozen
+#: client): Toobit's legacy Huobi-era ``1d`` candles carry geometrically
+#: impossible OHLC (owner probe 2026-09-16: ``1m/5m/15m/1h/4h`` violations=0,
+#: ``1d`` violations=2 of 1747 rows). Repairing/clipping a venue value is
+#: fabrication (forbidden) and silently skipping violates W.6's never-skip law,
+#: so the sanctioned interim behavior is DROP WITH OBSERVABLE EVIDENCE.
+#:
+#: Offender evidence retained per cell (symbol, timeframe, open_time_ms,
+#: repr(row) truncated) — the counter itself is never capped.
+INVALID_BAR_OFFENDER_RETENTION = 20
+INVALID_BAR_ROW_REPR_CHARS = 160
+
+#: Named drop reasons (observable, never a bare count).
+REASON_OHLC_NOT_PARSEABLE = "OHLC_NOT_PARSEABLE"
+REASON_HIGH_BELOW_MAX_OPEN_CLOSE = "HIGH_BELOW_MAX_OPEN_CLOSE"
+REASON_LOW_ABOVE_MIN_OPEN_CLOSE = "LOW_ABOVE_MIN_OPEN_CLOSE"
+REASON_HIGH_BELOW_LOW = "HIGH_BELOW_LOW"
+
+#: The four fields the frozen OHLC law measures (never volume/quote/trades).
+_OHLC_NAMES: Tuple[str, ...] = ("open", "high", "low", "close")
+
+
+def _decimal_or_none(value: Any) -> Optional[Decimal]:
+    """Tolerant numeric parse for the OHLC law only (``None`` = unparseable)."""
+    if isinstance(value, Decimal):
+        parsed = value
+    else:
+        try:
+            parsed = Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+    if parsed.is_nan() or parsed.is_infinite():
+        return None
+    return parsed
+
+
+def _kline_ohlc_fields(row: Any) -> Optional[Tuple[Any, Any, Any, Any]]:
+    """``(open, high, low, close)`` of a walked row, as the venue gave them.
+
+    Understands the parsed ``MarketObservation`` (the production shape, since
+    the frozen client converts before the source sees the page), a raw wire
+    list ``[open_time, open, high, low, close, volume, ...]`` and a raw wire
+    dict. ``None`` ⇒ the row carries no OHLC at all and is NOT judged here:
+    the frozen client already fails closed on an unexpected shape, and the
+    hygiene gate never invents a verdict (a verdict needs a measurement).
+    """
+    if isinstance(row, Mapping):
+        if not any(name in row for name in _OHLC_NAMES):
+            return None
+        return tuple(row.get(name) for name in _OHLC_NAMES)
+    if isinstance(row, (list, tuple)):
+        if len(row) < 5:
+            return None
+        return (row[1], row[2], row[3], row[4])
+    present = [name for name in _OHLC_NAMES if hasattr(row, name)]
+    if not present:
+        return None
+    return tuple(getattr(row, name, None) for name in _OHLC_NAMES)
+
+
+def _ohlc_violation(row: Any) -> Optional[str]:
+    """The frozen OHLC law over one venue row; ``None`` when the row is sane.
+
+    Only OHLC is judged — volume/quote-volume/trade-count fields are NEVER a
+    drop reason (the frozen client keeps parsing them tolerantly). A row that
+    is geometrically impossible is returned with the named reason so the
+    caller can drop it with evidence instead of reaching the DDL CHECK.
+    """
+    fields = _kline_ohlc_fields(row)
+    if fields is None:
+        return None
+    parsed = [_decimal_or_none(value) for value in fields]
+    for name, value in zip(_OHLC_NAMES, parsed):
+        if value is None:
+            return f"{REASON_OHLC_NOT_PARSEABLE}:{name}"
+    open_, high, low, close = parsed
+    if high < max(open_, close):
+        return REASON_HIGH_BELOW_MAX_OPEN_CLOSE
+    if low > min(open_, close):
+        return REASON_LOW_ABOVE_MIN_OPEN_CLOSE
+    if high < low:
+        return REASON_HIGH_BELOW_LOW
+    return None
 
 
 class _RateLimitSurfaced(Exception):
@@ -181,6 +271,38 @@ class ToobitKlineSource:
       fail-closed (``FETCH_FAILED``); the durable cursor stays valid;
     * resume: a forward cursor filters already-collected bars so they are not
       re-ingested (store ``content_hash`` dedup remains the safety net).
+
+    CP-12 venue-data hygiene (ISSUE-CP12-001)
+    -----------------------------------------
+    Toobit's legacy Huobi-era ``1d`` candles carry geometrically impossible
+    OHLC (owner read-only venue probe 2026-09-16, walking every interval
+    backward exactly as this source does: ``1m/5m/15m/1h/4h`` violations=0,
+    ``1d`` violations=2 of 1747 rows). Such a row aborts the run inside the
+    frozen ``raw_observation`` DDL CHECK
+    (``high>=max(open,close) AND low<=min(open,close) AND high>=low``).
+
+    The raw store must stay venue-faithful, so repairing/clipping the values is
+    fabrication (FORBIDDEN) and silently skipping the row is forbidden by W.6's
+    never-skip law. The sanctioned interim behavior is therefore
+    **drop-with-observable-evidence**, applied at the single boundary where a
+    walked row is appended into the per-cell history (so a fresh walk and a
+    cursor-filtered resume pass both pass through it):
+
+    * OHLC must be numeric-parseable and must satisfy the frozen law above;
+      volume/quote-volume/trade-count fields are NEVER a drop reason;
+    * a failing row never enters the history, so it can never be served to the
+      runner and can never reach the store;
+    * ``invalid_dropped`` counts every drop, up to
+      ``INVALID_BAR_OFFENDER_RETENTION`` offenders per cell are retained as
+      ``(symbol, timeframe, open_time_ms, repr(row)[:160])``, the per-cell
+      wiring print carries ``dropped=<n>`` plus the offenders summary, and the
+      service status mirror carries ``invalid_bars_dropped``;
+    * an all-invalid venue page drops its rows but does NOT end the walk and
+      does NOT complete a cell early — the empty-page shape stays the only
+      completion signal.
+
+    DROPPING IS NOT REPAIRING: no value is altered, no row is re-ordered, and
+    nothing is invented — the offender is recorded and reported instead.
     """
 
     def __init__(self, *, client: Optional[ToobitPublicClient] = None,
@@ -203,6 +325,20 @@ class ToobitKlineSource:
         self.pages_served = 0
         self.rate_limited = 0
         self.walk_pages = 0
+        #: CP-12 — venue-data-hygiene evidence (never silent, never capped).
+        self.invalid_dropped = 0
+        #: Per-cell drop counts (the counter keeps counting past the cap below).
+        self.invalid_by_cell: Dict[Tuple[str, str], int] = {}
+        #: Per-cell named reasons → how often each one fired.
+        self.invalid_reasons: Dict[Tuple[str, str], Dict[str, int]] = {}
+        #: Per-cell offenders, capped at INVALID_BAR_OFFENDER_RETENTION:
+        #: ``(symbol, timeframe, open_time_ms, repr(row)[:160])``.
+        self.invalid_offenders: Dict[Tuple[str, str], List[Tuple[str, str, int, str]]] = {}
+        #: Pending CP-12 cell-complete wiring prints (drained by the service).
+        self.cell_prints: List[str] = []
+        #: Runner-facing bars/pages served per cell (for the wiring print).
+        self._cell_bars: Dict[Tuple[str, str], int] = {}
+        self._cell_pages: Dict[Tuple[str, str], int] = {}
         #: Per-(symbol, timeframe) ascending history from the backward walk.
         self._history: Dict[Tuple[str, str], List[Any]] = {}
         if client is not None:
@@ -267,16 +403,23 @@ class ToobitKlineSource:
         end = int(end_ms)
         page_limit = int(limit) if limit else PAGE_LIMIT
         # Ascending serve: drop anything already behind the durable cursor
-        # (resume speed-net) and anything at/after the run end bound.
+        # (resume speed-net) and anything at/after the run end bound. CP-12:
+        # the history itself is already venue-hygienic (invalid rows never
+        # entered it), so a poisoned bar can never be served to the runner.
         eligible = [
             obs for obs in history
             if cursor <= _iso_to_ms(obs.timestamp) < end
         ]
         chunk = eligible[:page_limit]
         self.pages_served += 1
+        self._cell_pages[key] = self._cell_pages.get(key, 0) + 1
+        self._cell_bars[key] = self._cell_bars.get(key, 0) + len(chunk)
         if not chunk:
             # Walked history exhausted (or empty venue) → frozen empty-page
-            # shape so the runner completes the cell honestly.
+            # shape so the runner completes the cell honestly. This stays the
+            # ONLY completion signal: a page whose rows were all invalid
+            # dropped nothing here and completes no cell by itself.
+            self._queue_cell_complete(key, str(symbol), str(timeframe))
             return {"rows": [], "next_cursor_ms": end, "code": None,
                     "oi_available": False}
         last_open_ms = _iso_to_ms(chunk[-1].timestamp)
@@ -296,8 +439,20 @@ class ToobitKlineSource:
         page or a page whose first row repeats the previous page's first row
         ends the walk. Rate-limit errors retry with bounded exponential
         backoff inside the walk; any other venue error fails closed.
+
+        CP-12: the walk ends at the append boundary below — every row that is
+        about to become part of the per-cell history passes the frozen OHLC
+        law, and a row that fails it is dropped with evidence (never served,
+        never stored, never silently skipped). Dropping never ends the walk:
+        the stop conditions stay the venue's own (empty page / no new row /
+        no backward progress), so a fully poisoned page cannot complete a cell.
         """
         collected: Dict[int, Any] = {}
+        # Every open time the venue has returned for this cell, valid or not:
+        # the walk's "no new row" stop is about the VENUE repeating itself, so
+        # a dropped row still counts as seen (and cannot stop the walk).
+        seen_ms: Set[int] = set()
+        key = (str(symbol), str(timeframe))
         walk_end = int(end_ms)
         prev_first_ms: Optional[int] = None
         # startTime is ignored by the tail-aligned venue; pass DEEP_START so a
@@ -321,9 +476,16 @@ class ToobitKlineSource:
                 open_ms = _iso_to_ms(obs.timestamp)
                 if open_ms < oldest_ms:
                     oldest_ms = open_ms
+                if open_ms not in seen_ms:
+                    seen_ms.add(open_ms)
+                    new_any = True
+                # -- CP-12 hygiene gate: THE single boundary into the history --
+                reason = _ohlc_violation(obs)
+                if reason is not None:
+                    self._record_invalid_bar(key, open_ms, obs, reason)
+                    continue
                 if open_ms not in collected:
                     collected[open_ms] = obs
-                    new_any = True
             if not new_any:
                 break
             # Step endTime to just before the oldest bar of this page.
@@ -333,6 +495,59 @@ class ToobitKlineSource:
             walk_end = next_end
 
         return [collected[k] for k in sorted(collected.keys())]
+
+    # -- CP-12 drop evidence -------------------------------------------------
+    def _record_invalid_bar(self, key: Tuple[str, str], open_ms: int,
+                            row: Any, reason: str) -> None:
+        """Count and retain one dropped venue bar (drops are never silent)."""
+        self.invalid_dropped += 1
+        self.invalid_by_cell[key] = self.invalid_by_cell.get(key, 0) + 1
+        reasons = self.invalid_reasons.setdefault(key, {})
+        reasons[reason] = reasons.get(reason, 0) + 1
+        offenders = self.invalid_offenders.setdefault(key, [])
+        if len(offenders) < INVALID_BAR_OFFENDER_RETENTION:
+            offenders.append((key[0], key[1], int(open_ms),
+                             repr(row)[:INVALID_BAR_ROW_REPR_CHARS]))
+
+    def _offenders_summary(self, key: Tuple[str, str]) -> str:
+        """Compact per-cell offender summary for the wiring print."""
+        offenders = self.invalid_offenders.get(key) or []
+        if not offenders:
+            return ""
+        bits = [f"{symbol}:{tf}@{open_ms}"
+                for (symbol, tf, open_ms, _row_repr) in offenders[:4]]
+        hidden = len(offenders) - len(bits)
+        text = "; ".join(bits)
+        if hidden > 0:
+            text += f"; +{hidden} more"
+        reasons = "; ".join(f"{name}={count}" for name, count
+                            in sorted((self.invalid_reasons.get(key)
+                                       or {}).items()))
+        return f" offenders=[{text}] reasons=[{reasons}]"
+
+    def _queue_cell_complete(self, key: Tuple[str, str], symbol: str,
+                             timeframe: str) -> None:
+        """One wiring print per completed cell, in the existing print style.
+
+        ``dropped=<n>`` is always present; the offender evidence follows only
+        when n > 0. The service drains these lines into its owner report.
+        """
+        dropped = int(self.invalid_by_cell.get(key, 0))
+        line = (f"bootstrap Phase 1 cell complete: cell={symbol}:{timeframe} "
+                f"pages={self._cell_pages.get(key, 0)} "
+                f"bars={self._cell_bars.get(key, 0)} dropped={dropped}")
+        if dropped:
+            line += self._offenders_summary(key)
+        self.cell_prints.append(line)
+
+    def drain_cell_complete_prints(self) -> List[str]:
+        """Pop the pending per-cell wiring prints (CP-12 drop evidence)."""
+        if not self.cell_prints:
+            return []
+        lines = list(self.cell_prints)
+        self.cell_prints.clear()
+        return lines
+
 
     def _get_klines_with_walk_backoff(self, symbol: str, timeframe: str,
                                       start_ms: int, end_ms: int,
@@ -698,7 +913,24 @@ class BootstrapService:
     # -- ingest hop ----------------------------------------------------------
     async def _ingest(self, rows: Sequence[Any], symbol: str,
                       timeframe: str) -> Dict[str, Any]:
-        return await ingest_observations(self._store, rows, symbol, timeframe)
+        result = await ingest_observations(self._store, rows, symbol,
+                                           timeframe)
+        # CP-12: the per-cell wiring prints (with the `dropped=<n>` evidence)
+        # stream out as the run progresses, next to the ingest they describe.
+        await self._flush_cell_complete_prints()
+        return result
+
+    async def _flush_cell_complete_prints(self) -> None:
+        """Publish every pending cell-complete wiring print (CP-12).
+
+        A drop is never silent: the wiring layer reports the cell, the drop
+        count and the retained offender evidence on the owner channel.
+        """
+        drain = getattr(self.source, "drain_cell_complete_prints", None)
+        if drain is None:
+            return
+        for line in drain():
+            await self.report(line, kind="CELL_COMPLETE")
 
     # -- reporting -----------------------------------------------------------
     async def report(self, text: str, *, kind: str = "INFO",
@@ -750,6 +982,10 @@ class BootstrapService:
                 "bars_ingested": progress["bars_ingested"],
                 "pages_fetched": progress["pages_fetched"],
                 "backoffs": getattr(self.runner.state, "backoffs", 0),
+                # CP-12 (ISSUE-CP12-001): venue bars dropped by the hygiene
+                # gate. Offline (no source yet) reports 0 — never invented.
+                "invalid_bars_dropped": int(
+                    getattr(self.source, "invalid_dropped", 0) or 0),
                 "percent_complete": progress["percent_complete"],
                 "state": progress["state"],
                 "eta": self.runner.eta(),
@@ -785,6 +1021,7 @@ class BootstrapService:
                 start_ms=start_ms, end_ms=end_ms, free_disk_mb=free_disk_mb(),
                 battery=battery, backoff_seconds=backoff_seconds)
         except BootstrapError as exc:
+            await self._flush_cell_complete_prints()
             # PAGE_BUDGET_REACHED is a CLEAN stop (durable cursor = resume point)
             if exc.reason != "PAGE_BUDGET_REACHED":
                 await self.report(f"bootstrap Phase 1 STOPPED: {exc.reason} "
@@ -794,9 +1031,16 @@ class BootstrapService:
             result = {"phase": 1, "status": "BUDGET_REACHED",
                       "reason": exc.reason, "detail": exc.detail,
                       "resumable": True, **status}
+        else:
+            await self._flush_cell_complete_prints()
         result = {**result, "preflight": preflight,
                   "source_pages": getattr(self.source, "pages_served", None),
                   "rate_limited": getattr(self.source, "rate_limited", None),
+                  # CP-12 evidence mirror (the status mirror above carries the
+                  # same total so `run_apex.py status` surfaces it offline).
+                  "invalid_bars_dropped": int(
+                      getattr(self.source, "invalid_dropped", 0) or 0),
+                  "invalid_offenders": _offender_rows(self.source),
                   "checkpoint_path": self._checkpoint_path,
                   "raw_store": self._db_path}
         if announce:
@@ -884,6 +1128,19 @@ def _phase2_line(result: Mapping[str, Any]) -> str:
     return (f"Phase 2 {result.get('status')}: deterministic="
             f"{result.get('deterministic')} defaults_active="
             f"{result.get('defaults_active')}")
+
+
+def _offender_rows(source: Any) -> List[List[Any]]:
+    """Flatten the CP-12 per-cell offender evidence for the run report.
+
+    Entries are exactly what the source retained: ``(symbol, timeframe,
+    open_time_ms, repr(row)[:160])`` — venue values, never repaired values.
+    """
+    offenders = getattr(source, "invalid_offenders", None) or {}
+    rows: List[List[Any]] = []
+    for key in sorted(offenders.keys()):
+        rows.extend([list(entry) for entry in offenders[key]])
+    return rows
 
 
 def _plain(value: Any) -> Any:
