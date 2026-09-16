@@ -9,7 +9,7 @@ params/toobit_wire_v1.yaml):
 - GET /quote/v1/klines (limit 1000)
 - GET /quote/v1/openInterest (failure → OI MISSING — never 0, T-DC-004)
 - GET /api/v1/futures/fundingRate (alert only if |rate| ≥ 0.001; not a
-  15th veto)
+  15th veto, Ch.16)
 
 Base https://api.toobit.com, header X-BB-APIKEY. Internal symbol → wire
 symbol (BTCUSDT → BTC-SWAP-USDT); interval 1mo → 1M; others identical. If
@@ -20,6 +20,29 @@ Retry discipline: 3 attempts, exponential backoff 1s/2s/4s
 ToobitPublicError — no fabricated data, no silent substitutes. The
 signed Wave-In surface belongs to the execution adapter (CP-7); this
 module never sends signed requests.
+
+Response-Shape Documentation (CP-10 Hotfix):
+--------------------------------------------
+Live probes on the target device verify:
+1. GET /quote/v1/klines returns a bare JSON array `[[...], ...]`, NOT wrapped
+   in a `{"code": ..., "data": ...}` envelope on HTTP 200 success.
+2. GET /quote/v1/openInterest returns a bare JSON object `{"openInterest": ...}`,
+   NOT wrapped in a `{"code": ..., "data": ...}` envelope on HTTP 200 success.
+3. Errors on HTTP 200 or 4xx return an object containing a non-zero "code" and
+   "msg", e.g. `{"code": -1003, "msg": "Too many requests"}`.
+
+Client choke-point unwrap rule (`unwrap_toobit_response`):
+- Bare list: it IS the data (returned as-is, including legitimate empty list `[]`
+  signaling end of history for that cell).
+- Dict with non-zero "code": fails closed by raising `ToobitPublicError` whose
+  message includes the numeric code and error msg. This preserves the `-1003`
+  rate limit marker so `bootstrap_service` executes its backoff path, and ensures
+  any other non-zero code causes a named failure rather than collapsing into empty
+  rows (which would cause silent completion).
+- Dict with "data": unwraps and returns `data` (handles wrapped success envelopes).
+- Bare dict without "data" or error "code": it IS the data.
+- Tolerant row parsing accepts both list rows and dict rows in klines.
+- HTTP 429 folding and retry discipline remain intact.
 """
 
 from __future__ import annotations
@@ -43,6 +66,42 @@ class ToobitPublicError(RuntimeError):
         super().__init__(f"TOOBIT_PUBLIC {endpoint}: {detail}")
         self.endpoint = endpoint
         self.detail = detail
+
+
+def unwrap_toobit_response(body: Any, endpoint: str = "") -> Any:
+    """Unwrap Toobit public response at the client choke point.
+
+    Handles both bare-array/bare-object shapes and wrapped envelopes:
+    - bare list -> it IS the data;
+    - dict with non-zero "code" -> ToobitPublicError whose message contains
+      the numeric code and msg (so RATE_LIMIT_MARKERS "-1003" keeps matching
+      for bootstrap backoff; any other non-zero code raises a named failure
+      and never empty rows);
+    - dict with "data" -> data;
+    - bare dict without "data" or error "code" -> it IS the data.
+    """
+    if isinstance(body, list):
+        return body
+    if isinstance(body, dict):
+        if "code" in body and body["code"] is not None:
+            code = body["code"]
+            try:
+                num_code = int(code)
+            except (ValueError, TypeError):
+                num_code = None
+            if num_code is not None:
+                if num_code != 0:
+                    msg = body.get("msg") or body.get("message") or ""
+                    raise ToobitPublicError(
+                        endpoint, f"code={num_code} msg={msg}")
+            elif str(code).strip() not in ("0", ""):
+                msg = body.get("msg") or body.get("message") or ""
+                raise ToobitPublicError(
+                    endpoint, f"code={code} msg={msg}")
+        if "data" in body:
+            return body["data"]
+        return body
+    return body
 
 
 def to_wire_symbol(symbol: str) -> str:
@@ -135,7 +194,7 @@ class ToobitPublicClient:
         return aiohttp.ClientSession()
 
     async def _get(self, path: str, params: Optional[Dict[str, Any]] = None,
-                   ) -> Dict[str, Any]:
+                   ) -> Any:
         """GET with the frozen retry discipline (3 attempts, 1s/2s/4s
         backoff). Persistent failure → ToobitPublicError (fail-closed)."""
         import aiohttp
@@ -155,7 +214,7 @@ class ToobitPublicClient:
                         raise ToobitPublicError(
                             path, f"HTTP {resp.status}")
                     body = await resp.json(content_type=None)
-                    return body
+                    return unwrap_toobit_response(body, endpoint=path)
             except (aiohttp.ClientError, asyncio.TimeoutError,
                     ToobitPublicError, ValueError) as exc:
                 last_exc = exc
@@ -171,18 +230,30 @@ class ToobitPublicClient:
     # -- endpoints ----------------------------------------------------------
     async def get_server_time(self) -> Dict[str, Any]:
         """GET /api/v1/time."""
-        return await self._get("/api/v1/time")
+        data = await self._get("/api/v1/time")
+        if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
+            return data["data"]
+        return data
 
     async def get_exchange_info(self) -> Dict[str, Any]:
         """GET /api/v1/exchangeInfo — live filters win vs the Trading
         Universe for quantization (Ch.16)."""
-        return await self._get("/api/v1/exchangeInfo")
+        data = await self._get("/api/v1/exchangeInfo")
+        if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
+            return data["data"]
+        return data
 
     async def get_depth(self, symbol: str, limit: int = 100) -> Dict[str, Any]:
         """GET /quote/v1/depth (wire symbol)."""
-        return await self._get("/quote/v1/depth",
+        data = await self._get("/quote/v1/depth",
                                params={"symbol": to_wire_symbol(symbol),
                                        "limit": limit})
+        if isinstance(data, dict):
+            if "data" in data and isinstance(data["data"], dict):
+                data = data["data"]
+            return data
+        raise ToobitPublicError(
+            "depth", f"unexpected response shape: {type(data).__name__}")
 
     async def get_klines(self, symbol: str, interval: str,
                          start_ms: int, end_ms: int,
@@ -195,16 +266,29 @@ class ToobitPublicClient:
         if limit > self.klines_limit:
             raise ToobitPublicError(
                 "klines", f"limit {limit} exceeds {self.klines_limit}")
-        body = await self._get("/quote/v1/klines", params={
+        raw = await self._get("/quote/v1/klines", params={
             "symbol": to_wire_symbol(symbol),
             "interval": to_wire_interval(interval),
             "startTime": start_ms, "endTime": end_ms, "limit": limit,
         })
-        rows = body.get("data", body)
+        rows = raw
         if isinstance(rows, dict):
-            rows = rows.get("list", rows.get("klines", []))
+            if "code" in rows and rows["code"] is not None:
+                try:
+                    num_code = int(rows["code"])
+                except (ValueError, TypeError):
+                    num_code = None
+                if num_code is not None and num_code != 0:
+                    msg = rows.get("msg") or rows.get("message") or ""
+                    raise ToobitPublicError(
+                        "klines", f"code={num_code} msg={msg}")
+            if "data" in rows:
+                rows = rows["data"]
+            if isinstance(rows, dict):
+                rows = rows.get("list", rows.get("klines"))
         if not isinstance(rows, list):
-            raise ToobitPublicError("klines", "unexpected response shape")
+            raise ToobitPublicError(
+                "klines", f"unexpected response shape: {type(rows).__name__}")
         result: List[MarketObservation] = []
         for i, row in enumerate(rows):
             result.append(parse_kline_to_observation(symbol, interval, row, i))
@@ -221,9 +305,16 @@ class ToobitPublicClient:
             })
         except ToobitPublicError:
             return None  # OI MISSING (fail-closed, never substituted)
-        data = body.get("data", body)
+        data = body
         if isinstance(data, dict):
-            data = data.get("openInterest", data.get("oi"))
+            if "data" in data and isinstance(data["data"], (dict, list, str, int, float, Decimal)):
+                data = data["data"]
+            if isinstance(data, dict):
+                data = data.get("openInterest", data.get("oi"))
+        elif isinstance(data, list) and data:
+            data = data[-1]
+            if isinstance(data, dict):
+                data = data.get("openInterest", data.get("oi"))
         if data is None or data == "":
             return None
         try:
@@ -235,9 +326,10 @@ class ToobitPublicClient:
                                ) -> Tuple[Optional[Decimal], bool]:
         """GET /api/v1/futures/fundingRate. Returns (rate, alert_flag);
         alert_only: |rate| ≥ 0.001 → alert (not a 15th veto, Ch.16)."""
-        body = await self._get("/api/v1/futures/fundingRate", params={
+        data = await self._get("/api/v1/futures/fundingRate", params={
             "symbol": to_wire_symbol(symbol)})
-        data = body.get("data", body)
+        if isinstance(data, dict) and "data" in data:
+            data = data["data"]
         if isinstance(data, list) and data:
             data = data[-1]
         if isinstance(data, dict):
