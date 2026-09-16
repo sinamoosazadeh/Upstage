@@ -470,4 +470,13 @@ Additive-file rule: any file outside §9.5's list traces to a DECISION_LOG ADR o
 
 **Result:** PASS(2026-09-16, 2651 passed / 0 failed on each of two `pytest -q` runs; commit range and PR recorded in board and handoff note).
 
+### CP-11 — HOTFIX: venue-adaptive backfill source (tail-aligned Toobit)
+
+| Artifact | Owner | Requirement → evidence |
+|---|---|---|
+| `apex/ops/bootstrap_service.py` (`ToobitKlineSource`) | CP-11 | W.6 Phase-1 wiring adaptation (frozen `research/bootstrap.py` untouched): venue-adaptive backward walk from `end_ms` per `(symbol,timeframe)` against tail-aligned Toobit public klines (owner probe 2026-09-16: startTime ignored; 2020→2020+7d=`[]`; 2020→now=last 1000; retention ~3500 bars; oldest 1d 2021-12-05 · 4h 2025-02-09 · 1h 2026-04-23 · 15m 2026-08-10 · 5m 2026-09-03 · 1m 2026-09-13); ascending `PAGE_LIMIT` serve with `open_time < cursor` filter; empty-page shape `next_cursor_ms=end_ms` on exhaustion; `--max-pages` counts runner-facing pages only (`PAGE_BUDGET_REACHED` preserved); walk-internal −1003/429 bounded backoff (`WALK_BACKOFF_SECONDS`); non-rate-limit → `FETCH_FAILED`; dedup-stop on repeated first row; resume-never-rewind via cursor filter + store content_hash → `tests/unit/test_ops_bootstrap_service.py` (30 passed: TestTailAlignedSource full-walk/empty-first-page/budget/backoff/dedup/resume + pilot-regression service test) |
+
+**Result:** PASS(2026-09-16, 2661 passed / 0 failed on each of two `pytest -q` runs; commit range and PR recorded in board and handoff note).
+
+
 
