@@ -25,6 +25,18 @@ Fail-closed rules kept from the frozen stage:
 * a venue bar whose OHLC is geometrically impossible (the frozen ``raw_observation``
   DDL CHECK law) is DROPPED in this wiring layer — never repaired, never clipped,
   never silently skipped past — with observable evidence (CP-12, ISSUE-CP12-001);
+* a venue bar that has not yet closed at the run's end bound is NEVER served to
+  the runner (CP-13 closed-bar law, ISSUE-CP13-001): the venue's tail-aligned
+  klines return the currently-open candle as their last row and the frozen
+  client labels every row CLOSED, so the wiring serves a walked row only when
+  ``close_time_ms(open) <= end_ms`` — an excluded open bar is never counted,
+  never stored, and is reported as ``open_excluded=1`` with its open_time;
+* the serve decision no longer trusts the durable cursor (CP-13 cursor-trap
+  fix): it serves ``open_time > store_frontier AND open_time > served_upto AND
+  close_time <= end_ms``, where the frontier is MAX(as_of) read once per run —
+  so a bar that was open at the previous run's end is ingested exactly once
+  after it closes (no hole, no duplicate) and CURSOR_NOT_ADVANCING stays
+  unreachable (``next_cursor_ms`` is always > the incoming cursor);
 * a fetch failure that is NOT the venue rate-limit code stops the run with a
   named reason (the durable cursor is the resume point) — it never skips a cell;
 * a page budget (`--max-pages`) stops the run *cleanly* with
@@ -40,6 +52,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import shutil
 import subprocess
 import threading
@@ -163,6 +176,47 @@ def _ohlc_violation(row: Any) -> Optional[str]:
     if high < low:
         return REASON_HIGH_BELOW_LOW
     return None
+
+
+#: CP-13 (ISSUE-CP13-001) — fixed bar lengths in milliseconds for the
+#: closed-bar law. ``1w`` is exactly 7 days. ``1mo`` is deliberately ABSENT:
+#: it is the first instant of the next calendar month in UTC (variable
+#: 28–31 days), never the 30-day approximation — see ``close_time_ms``.
+#: ``BootstrapRunner._ms_per_bar`` is NOT used here (its ``1mo`` entry is the
+#: 30-day approximation, which would misjudge month boundaries).
+_CLOSE_FIXED_MS: Dict[str, int] = {
+    "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000,
+    "30m": 1_800_000, "1h": 3_600_000, "2h": 7_200_000,
+    "4h": 14_400_000, "6h": 21_600_000, "8h": 28_800_000,
+    "12h": 43_200_000, "1d": 86_400_000, "1w": 604_800_000,
+}
+
+
+def close_time_ms(open_ms: int, timeframe: str) -> int:
+    """The bar's close instant in ms (CP-13 closed-bar law, wiring layer).
+
+    Fixed intervals add their exact length; ``1w`` adds 7 days; ``1mo`` is
+    the first instant of the NEXT CALENDAR MONTH in UTC containing ``open_ms``
+    (December rolls to January of the next year; February follows the real
+    calendar, leap years included). ``open_ms`` need not be bar-aligned: the
+    month is read from the UTC calendar date of ``open_ms`` and the close is
+    the next month's ``01T00:00:00.000Z``. Unknown timeframes fail closed with
+    ``BootstrapError(\"TIMEFRAME_QX\")``, matching the frozen runner's law.
+    """
+    tf = str(timeframe)
+    if tf in _CLOSE_FIXED_MS:
+        return int(open_ms) + _CLOSE_FIXED_MS[tf]
+    if tf == "1mo":
+        moment = dt.datetime.fromtimestamp(int(open_ms) / 1000,
+                                           tz=dt.timezone.utc)
+        if moment.month == 12:
+            nxt = dt.datetime(moment.year + 1, 1, 1,
+                              tzinfo=dt.timezone.utc)
+        else:
+            nxt = dt.datetime(moment.year, moment.month + 1, 1,
+                              tzinfo=dt.timezone.utc)
+        return int(nxt.timestamp() * 1000)
+    raise BootstrapError("TIMEFRAME_QX", tf)
 
 
 class _RateLimitSurfaced(Exception):
@@ -303,6 +357,58 @@ class ToobitKlineSource:
 
     DROPPING IS NOT REPAIRING: no value is altered, no row is re-ordered, and
     nothing is invented — the offender is recorded and reported instead.
+
+    CP-13 closed-bar law + cursor-trap fix (ISSUE-CP13-001)
+    -------------------------------------------------------
+    The venue's tail-aligned klines return the CURRENTLY OPEN candle as their
+    last row and the frozen client labels every row ``status=CLOSED``. Serving
+    that snapshot stores a partial bar as an immutable CLOSED row (owner
+    measurement 2026-09-16: 91 stored bars differ from the venue's final
+    closed bar; every one has ``created_at`` strictly earlier than its bar
+    close). The wiring therefore serves a walked row only when
+    ``close_time_ms(open) <= end_ms`` (the run's end bound the runner passes
+    to the fetcher). Boundary choice: the SERVE boundary in ``__call__``
+    (next to the CP-12-hygienic history), NOT the CP-12 append boundary —
+    because the decision is TEMPORAL (it depends on the run's ``end_ms``)
+    while the history is the venue's retained series (hygiene is a permanent
+    data defect, openness is a temporary timing fact). Keeping the still-open
+    bar in the history (venue-faithful) and filtering at serve keeps every
+    serve decision — frontier, served-upto, close — in one place, uses the
+    runner's authoritative per-page ``end_ms`` rather than the walk-time end,
+    and stays correct when ``end_ms`` advances within one process (the cached
+    history is re-walked on demand so a newly closed bar is always fetched
+    fresh — a cached open-bar snapshot is never served as closed).
+
+    THE CURSOR TRAP: the frozen completion signal is the empty page with
+    ``next_cursor_ms=end_ms`` and the runner then saves ``cursor=end_ms``. If
+    the open bar were merely filtered out, the next run would receive
+    ``cursor=previous_end`` and the CP-11 resume filter ``cursor <= open_time``
+    would exclude the (now closed) bar whose ``open_time < previous_end``
+    forever — a permanent hole — while returning ``next_cursor_ms == cursor``
+    is impossible (frozen ``CURSOR_NOT_ADVANCING``). The wiring therefore no
+    longer trusts the durable cursor to decide what to serve. It serves bars
+    with ``open_time > store_frontier(cell) AND open_time >
+    served_upto_this_process(cell) AND close_time <= end_ms``, where
+    ``store_frontier`` is ``MAX(as_of)`` of ``raw_observation`` for that cell
+    read ONCE by the service at the start of ``run()`` and handed over via
+    ``set_frontiers`` (STRICT ``>``: a stored bar, partial or not, is never
+    re-served — repairs go only through the governed ``partial_bar_repair``
+    path) and ``served_upto`` is this source's own per-cell high-water mark
+    of ``open_time`` served in this process (so pages within one run continue
+    correctly and a ``--max-pages`` stop resumes correctly). ``next_cursor_ms``
+    stays ``max(close_time_ms(last_served_open), cursor + 1)`` — i.e. the
+    historical ``max(last_served_open + step, cursor)`` shape with the step
+    calendar-aware for ``1mo`` (the frozen ``_ms_per_bar`` 30-day
+    approximation would break the guarantee for 31-day months) and hardened
+    with ``+ 1`` for the exact-equality edge — and is therefore always
+    strictly greater than the incoming cursor in every branch (fresh run,
+    resume after completion with a newly closed bar, resume with nothing new
+    closed, budget resume), so ``CURSOR_NOT_ADVANCING`` is unreachable. The
+    empty-page shape stays the only completion signal. When frontiers were
+    never set (direct source use bypassing ``BootstrapService``, as in unit
+    tests), the source falls back to the incoming cursor as the frontier so
+    those callers keep the pre-CP-13 resume contract; production always sets
+    frontiers, so the cursor is never trusted there.
     """
 
     def __init__(self, *, client: Optional[ToobitPublicClient] = None,
@@ -341,6 +447,26 @@ class ToobitKlineSource:
         self._cell_pages: Dict[Tuple[str, str], int] = {}
         #: Per-(symbol, timeframe) ascending history from the backward walk.
         self._history: Dict[Tuple[str, str], List[Any]] = {}
+        #: CP-13 — ``end_ms`` each cached walk was taken from. A page call
+        #: whose ``end_ms`` advances past it re-walks the venue so newly
+        #: closed bars are always fetched fresh (a cached open-bar snapshot
+        #: is never served as closed — see the serve-boundary note above).
+        self._history_end: Dict[Tuple[str, str], int] = {}
+        #: CP-13 — store frontier per cell (``MAX(as_of)`` in ms, ``None`` =
+        #: no stored rows). Set once per run via ``set_frontiers``. A missing
+        #: key means frontiers were never set (direct source use bypassing
+        #: the service) — ``__call__`` then falls back to the cursor.
+        self._frontiers: Dict[Tuple[str, str], Optional[int]] = {}
+        #: CP-13 — this process's per-cell high-water mark of ``open_time``
+        #: served (pages within one run + ``--max-pages`` resume).
+        self._served_upto: Dict[Tuple[str, str], int] = {}
+        #: CP-13 — per-cell still-open bars excluded on the latest page call
+        #: (list of ``open_ms``; 0/1 in practice — bars partition time).
+        self._open_excluded: Dict[Tuple[str, str], List[int]] = {}
+        #: CP-13 — per-cell open-excluded counts (latest page call).
+        self.open_excluded_by_cell: Dict[Tuple[str, str], int] = {}
+        #: CP-13 — total open bars excluded (sum of the latest per cell).
+        self.open_bars_excluded: int = 0
         if client is not None:
             self._client = client
         else:
@@ -369,6 +495,24 @@ class ToobitKlineSource:
         except Exception:                        # pragma: no cover - teardown
             pass
 
+    # -- CP-13 frontier handoff ----------------------------------------------
+    def set_frontiers(self, frontiers: Mapping[Tuple[str, str], Optional[int]]
+                      ) -> None:
+        """Hand the per-cell store frontier to the source (CP-13).
+
+        ``frontiers[(symbol, timeframe)]`` is ``MAX(as_of)`` of
+        ``raw_observation`` for that cell in ms, or ``None`` when the cell
+        has no stored rows. Read ONCE by ``BootstrapService.run()`` before
+        ``run_phase1``. ``_served_upto`` is deliberately NOT cleared here:
+        it is the within-process high-water mark that keeps a
+        ``--max-pages`` stop resumable in the same process. History is NOT
+        cleared either — ``__call__`` re-walks on demand when ``end_ms``
+        advances past the cached walk's end (fresh venue values, never a
+        stale open-bar snapshot).
+        """
+        self._frontiers = {tuple(key): (None if value is None else int(value))
+                           for key, value in dict(frontiers).items()}
+
     # -- the frozen contract -------------------------------------------------
     def __call__(self, symbol: str, timeframe: str, start_ms: int, end_ms: int,
                  limit: int = PAGE_LIMIT) -> Dict[str, Any]:
@@ -379,10 +523,18 @@ class ToobitKlineSource:
                 "PAGE_BUDGET_REACHED",
                 f"{self.pages_served} pages fetched (--max-pages budget)")
         key = (str(symbol), str(timeframe))
+        tf_name = str(timeframe)
         try:
-            if key not in self._history:
+            cached_end = self._history_end.get(key)
+            # Re-walk when the run end advances past the cached walk's end so
+            # newly closed bars are fetched fresh (never a stale snapshot).
+            if key not in self._history or (
+                    cached_end is not None and int(end_ms) > int(cached_end)):
                 self._history[key] = self._walk_backward(
-                    str(symbol), str(timeframe), int(end_ms))
+                    str(symbol), tf_name, int(end_ms))
+                self._history_end[key] = int(end_ms)
+            elif key not in self._history_end:
+                self._history_end[key] = int(end_ms)
         except _RateLimitSurfaced:
             # Bounded walk retries exhausted — same shape the runner already
             # understands: back off, retry the same cursor, never skip.
@@ -402,29 +554,68 @@ class ToobitKlineSource:
         cursor = int(start_ms)
         end = int(end_ms)
         page_limit = int(limit) if limit else PAGE_LIMIT
-        # Ascending serve: drop anything already behind the durable cursor
-        # (resume speed-net) and anything at/after the run end bound. CP-12:
-        # the history itself is already venue-hygienic (invalid rows never
-        # entered it), so a poisoned bar can never be served to the runner.
-        eligible = [
-            obs for obs in history
-            if cursor <= _iso_to_ms(obs.timestamp) < end
-        ]
+        # CP-13 serve boundary (THE single closed-bar boundary — see the
+        # class docstring for why serve, not the CP-12 append boundary):
+        # serve ``open_time > store_frontier AND open_time > served_upto AND
+        # close_time <= end_ms``. CP-12: the history itself is already
+        # venue-hygienic (invalid rows never entered it), so a poisoned bar
+        # can never be served to the runner. The durable cursor is NOT a
+        # serve filter anymore (cursor-trap fix) — it only shapes
+        # ``next_cursor_ms`` below. Fallback: when frontiers were never set
+        # (direct source use bypassing the service), the cursor stands in as
+        # the frontier so those callers keep the pre-CP-13 resume contract.
+        if key in self._frontiers:
+            frontier_ms: Optional[int] = self._frontiers[key]
+        else:
+            frontier_ms = cursor - 1
+        served_upto = self._served_upto.get(key)
+        eligible: List[Any] = []
+        excluded_open_ms: List[int] = []
+        for obs in history:
+            open_ms = _iso_to_ms(obs.timestamp)
+            if frontier_ms is not None and open_ms <= frontier_ms:
+                continue
+            if served_upto is not None and open_ms <= served_upto:
+                continue
+            if close_time_ms(open_ms, tf_name) <= end:
+                eligible.append(obs)
+            elif open_ms <= end:
+                # Started but not yet closed at the run end — the still-open
+                # bar. Future bars (open > end) are ignored, never counted.
+                excluded_open_ms.append(open_ms)
         chunk = eligible[:page_limit]
         self.pages_served += 1
         self._cell_pages[key] = self._cell_pages.get(key, 0) + 1
         self._cell_bars[key] = self._cell_bars.get(key, 0) + len(chunk)
+        if chunk:
+            last_chunk_open = _iso_to_ms(chunk[-1].timestamp)
+            prev_upto = self._served_upto.get(key)
+            if prev_upto is None or last_chunk_open > prev_upto:
+                self._served_upto[key] = last_chunk_open
+        # Latest open-exclusion per cell (overwritten every page call; the
+        # run end is constant within one run, so this is stable per run).
+        self._open_excluded[key] = list(excluded_open_ms)
+        self.open_excluded_by_cell[key] = len(excluded_open_ms)
+        self.open_bars_excluded = sum(self.open_excluded_by_cell.values())
         if not chunk:
-            # Walked history exhausted (or empty venue) → frozen empty-page
-            # shape so the runner completes the cell honestly. This stays the
-            # ONLY completion signal: a page whose rows were all invalid
-            # dropped nothing here and completes no cell by itself.
-            self._queue_cell_complete(key, str(symbol), str(timeframe))
+            # Walked history exhausted (or empty venue, or only the still-open
+            # bar remains) → frozen empty-page shape so the runner completes
+            # the cell honestly. This stays the ONLY completion signal: a page
+            # whose rows were all invalid dropped nothing here and completes
+            # no cell by itself, and an excluded open bar completes no cell
+            # by itself either (it is reported, then served on a later run
+            # once closed — no hole thanks to the frontier rule above).
+            self._queue_cell_complete(key, str(symbol), tf_name)
             return {"rows": [], "next_cursor_ms": end, "code": None,
                     "oi_available": False}
         last_open_ms = _iso_to_ms(chunk[-1].timestamp)
-        step = BootstrapRunner._ms_per_bar(timeframe)
-        next_cursor = max(last_open_ms + step, cursor)
+        # ``next_cursor_ms`` is always STRICTLY greater than the incoming
+        # cursor (frozen CURSOR_NOT_ADVANCING stays unreachable): the close
+        # is calendar-aware for ``1mo`` (the frozen ``_ms_per_bar`` 30-day
+        # approximation would break the guarantee for 31-day months) and the
+        # ``+ 1`` hardens the exact-equality edge (close == cursor).
+        close_last = close_time_ms(last_open_ms, tf_name)
+        next_cursor = close_last if close_last > cursor else cursor + 1
         # oi_available is False by construction: klines carry no OI series and
         # the ingest labels the rows oi_state=MISSING (never a fabricated 0).
         return {"rows": list(chunk), "next_cursor_ms": next_cursor,
@@ -530,12 +721,20 @@ class ToobitKlineSource:
         """One wiring print per completed cell, in the existing print style.
 
         ``dropped=<n>`` is always present; the offender evidence follows only
-        when n > 0. The service drains these lines into its owner report.
+        when n > 0. CP-13 adds ``open_excluded=<n>`` (always present; 0/1 in
+        practice) with the excluded bar's ``open_time`` when n > 0. The
+        service drains these lines into its owner report.
         """
         dropped = int(self.invalid_by_cell.get(key, 0))
+        open_n = int(self.open_excluded_by_cell.get(key, 0) or 0)
+        # The open bar's open_time: the latest excluded list (stable per run).
+        open_ms_list = self._open_excluded.get(key) or []
         line = (f"bootstrap Phase 1 cell complete: cell={symbol}:{timeframe} "
                 f"pages={self._cell_pages.get(key, 0)} "
-                f"bars={self._cell_bars.get(key, 0)} dropped={dropped}")
+                f"bars={self._cell_bars.get(key, 0)} dropped={dropped} "
+                f"open_excluded={open_n}")
+        if open_n and open_ms_list:
+            line += f" open_time={_ms_to_iso(int(open_ms_list[0]))}"
         if dropped:
             line += self._offenders_summary(key)
         self.cell_prints.append(line)
@@ -680,11 +879,26 @@ class CanonicalMirroredCheckpoints:
     """Delegates to ResearchCheckpointStore and mirrors every save_bootstrap to the canonical table.
 
     None canonical → pure delegation (keeps offline status working).
+
+    CP-13 (ISSUE-CP13-003): when a cell reaches COMPLETE, the cell's dropped
+    count and reasons are merged into the checkpoint ``payload`` mapping (the
+    research store already accepts and stores ``payload_json`` — read, not
+    changed). ``drop_source`` is the ``ToobitKlineSource`` (or a callable
+    returning it) that holds the per-cell ``invalid_by_cell`` evidence; when
+    no walk happened for the cell in this process (e.g. a re-run with an
+    unchanged end that never calls the fetcher), the previously persisted
+    payload is preserved instead of being overwritten with zero.
     """
 
-    def __init__(self, checkpoints: ResearchCheckpointStore, canonical_store: Any) -> None:
+    def __init__(self, checkpoints: ResearchCheckpointStore, canonical_store: Any,
+                 drop_source: Any = None) -> None:
         self._checkpoints = checkpoints
         self._canonical = canonical_store
+        self._drop_source = drop_source
+
+    def set_drop_source(self, source: Any) -> None:
+        """Point the COMPLETE-payload merge at the live source (CP-13)."""
+        self._drop_source = source
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._checkpoints, name)
@@ -706,6 +920,69 @@ class CanonicalMirroredCheckpoints:
         oi_available: bool = False,
         payload: Optional[Mapping[str, Any]] = None,
     ) -> None:
+        merged: Dict[str, Any] = dict(payload or {})
+        if status == "COMPLETE":
+            try:
+                old_row = await self._checkpoints.load_bootstrap(cell_id)
+                old_payload: Dict[str, Any] = dict(
+                    (old_row or {}).get("payload") or {})
+                old_dropped = int(old_payload.get("invalid_bars_dropped", 0)
+                                  or 0)
+                old_reasons: Dict[str, int] = dict(
+                    old_payload.get("invalid_reasons", {}) or {})
+                src = self._drop_source
+                if callable(src):
+                    try:
+                        src = src()
+                    except Exception:
+                        src = None
+                walked = False
+                cur_dropped = 0
+                cur_reasons: Dict[str, int] = {}
+                if src is not None:
+                    hist = getattr(src, "_history", None) or {}
+                    walked = (str(symbol), str(timeframe)) in hist
+                    if walked:
+                        by_cell = getattr(src, "invalid_by_cell", None) or {}
+                        cur_dropped = int(
+                            by_cell.get((str(symbol), str(timeframe)), 0)
+                            or 0)
+                        reasons = getattr(src, "invalid_reasons", None) or {}
+                        cur_reasons = dict(
+                            reasons.get((str(symbol), str(timeframe)), {})
+                            or {})
+                if walked:
+                    # The current walk saw the full retained history, so its
+                    # count is authoritative — except when retention slid an
+                    # old poison bar out of the window (current < old), in
+                    # which case the old evidence is preserved (max).
+                    if cur_dropped >= old_dropped:
+                        new_dropped, new_reasons = cur_dropped, cur_reasons
+                    else:
+                        new_dropped, new_reasons = old_dropped, old_reasons
+                else:
+                    new_dropped, new_reasons = old_dropped, old_reasons
+                merged = {**old_payload, **merged,
+                          "invalid_bars_dropped": int(new_dropped),
+                          "invalid_reasons": dict(new_reasons)}
+            except Exception:
+                pass                           # evidence never breaks a checkpoint
+        else:
+            # Non-COMPLETE saves carry previously persisted evidence keys
+            # forward instead of wiping them: the frozen runner re-saves
+            # IN_PROGRESS with ``payload=None`` on every re-run — even for an
+            # already-complete cell, immediately before its COMPLETE save —
+            # so a pass-through save would destroy the evidence the COMPLETE
+            # merge is about to read back as ``old`` (same-end re-run).
+            # First-run budget stops are unaffected (no old keys exist yet).
+            try:
+                old_row = await self._checkpoints.load_bootstrap(cell_id)
+                old_payload = dict((old_row or {}).get("payload") or {})
+                for key in ("invalid_bars_dropped", "invalid_reasons"):
+                    if key not in merged and key in old_payload:
+                        merged[key] = old_payload[key]
+            except Exception:
+                pass                           # evidence never breaks a checkpoint
         await self._checkpoints.save_bootstrap(
             cell_id=cell_id,
             symbol=symbol,
@@ -715,7 +992,7 @@ class CanonicalMirroredCheckpoints:
             cursor_ms=cursor_ms,
             bars_ingested=bars_ingested,
             oi_available=oi_available,
-            payload=payload,
+            payload=merged,
         )
         if self._canonical is None:
             return
@@ -864,8 +1141,12 @@ class BootstrapService:
         # that `status`/owner commands work offline, with no HTTP session.
         # Canonical mirror per W.6 / ISSUE-CP9-002: every research checkpoint
         # is mirrored to bootstrap_progress (phase='P1', MAX cursor, SUM bars).
+        # CP-13: the COMPLETE-payload merge reads the live source through a
+        # callable, so the lazily created source needs no re-registration.
         if self._store is not None:
-            runner_store: Any = CanonicalMirroredCheckpoints(self._checkpoints, self._store)
+            runner_store: Any = CanonicalMirroredCheckpoints(
+                self._checkpoints, self._store,
+                drop_source=lambda: self.source)
         else:
             runner_store = self._checkpoints
         self.runner = BootstrapRunner(
@@ -969,11 +1250,94 @@ class BootstrapService:
         await self.report(_command_line(text, verdict), kind="COMMAND")
         return {"caller": caller, **verdict}
 
+    # -- CP-13 frontier + durable-evidence helpers ------------------------------
+    async def _read_frontiers(self) -> Dict[Tuple[str, str], Optional[int]]:
+        """MAX(as_of) per cell in ms (None = no stored rows), read ONCE per run.
+
+        CP-13 cursor-trap fix: the source serves ``open_time > frontier``,
+        never ``open_time >= cursor``. The query reads the store this service
+        already owns; a cell with no rows (or an unreadable store) reports
+        ``None`` (fail-open to serve — the store's content_hash dedup stays
+        the safety net against duplicates).
+        """
+        frontiers: Dict[Tuple[str, str], Optional[int]] = {}
+        if self._store is None:
+            return {cell: None for cell in self.cells}
+        for symbol, timeframe in self.cells:
+            try:
+                cursor = await self._store.db.execute(
+                    "SELECT MAX(as_of) FROM raw_observation "
+                    "WHERE symbol=? AND timeframe=?",
+                    (symbol, timeframe))
+                row = await cursor.fetchone()
+                max_asof = row[0] if row else None
+                frontiers[(symbol, timeframe)] = (
+                    None if max_asof is None else _iso_to_ms(str(max_asof)))
+            except Exception:
+                frontiers[(symbol, timeframe)] = None
+        return frontiers
+
+    async def _durable_drop_evidence(self) -> Tuple[int, Dict[str, int]]:
+        """Durable drop evidence from checkpoint payloads (CP-13, offline).
+
+        Returns ``(total, by_cell_id)`` parsed from ``payload_json``. A
+        missing/unreadable store reports zero — never invented.
+        """
+        total = 0
+        by_cell: Dict[str, int] = {}
+        if self._checkpoints is None:
+            return total, by_cell
+        try:
+            rows = await self._checkpoints.bootstrap_rows()
+        except Exception:
+            return total, by_cell
+        for row in rows:
+            try:
+                raw_payload = row.get("payload_json") or "{}"
+                parsed = (json.loads(raw_payload)
+                          if isinstance(raw_payload, str)
+                          else dict(raw_payload or {}))
+                count = int(parsed.get("invalid_bars_dropped", 0) or 0)
+            except Exception:
+                continue
+            if count:
+                cell_id = str(row.get("cell_id") or "")
+                by_cell[cell_id] = count
+                total += count
+        return total, by_cell
+
+    async def _complete_cell_ids(self) -> Set[str]:
+        """Cell ids whose durable status is COMPLETE (payload authoritative)."""
+        if self._checkpoints is None:
+            return set()
+        try:
+            rows = await self._checkpoints.bootstrap_rows()
+        except Exception:
+            return set()
+        return {str(row.get("cell_id"))
+                for row in rows if row.get("status") == "COMPLETE"}
+
     # -- status --------------------------------------------------------------
     async def status(self) -> Dict[str, Any]:
         if self.runner is None:
             raise BootstrapServiceError("SERVICE_NOT_OPEN")
         progress = await self.runner.progress_async()
+        # CP-13 (ISSUE-CP13-003): offline-persisted drop evidence. Completed
+        # cells read from the durable checkpoint payload (never re-counted
+        # from the live source, so a just-completed cell is not doubled);
+        # cells not yet COMPLETE read from the live source of this process
+        # (their evidence is not durable yet). Offline (no source) the second
+        # term is zero and the durable sum stands alone.
+        durable_total, _durable_by_cell = await self._durable_drop_evidence()
+        complete_ids = await self._complete_cell_ids()
+        source_extra = 0
+        by_cell = getattr(self.source, "invalid_by_cell", None) or {}
+        for (symbol, timeframe), count in dict(by_cell).items():
+            if f"{symbol}:{timeframe}" not in complete_ids:
+                try:
+                    source_extra += int(count or 0)
+                except (TypeError, ValueError):
+                    continue
         return {"cells_total": progress["cells_total"],
                 "cells_completed": progress["cells_completed"],
                 "cells_remaining": progress["cells_remaining"],
@@ -982,10 +1346,13 @@ class BootstrapService:
                 "bars_ingested": progress["bars_ingested"],
                 "pages_fetched": progress["pages_fetched"],
                 "backoffs": getattr(self.runner.state, "backoffs", 0),
-                # CP-12 (ISSUE-CP12-001): venue bars dropped by the hygiene
-                # gate. Offline (no source yet) reports 0 — never invented.
-                "invalid_bars_dropped": int(
-                    getattr(self.source, "invalid_dropped", 0) or 0),
+                # CP-12 gate total, CP-13 durable: completed cells from the
+                # checkpoint payload, incomplete cells from this process.
+                "invalid_bars_dropped": int(durable_total + source_extra),
+                # CP-13: still-open bars excluded on the latest page per cell
+                # (temporal, never persisted — offline reports 0).
+                "open_bars_excluded": int(
+                    getattr(self.source, "open_bars_excluded", 0) or 0),
                 "percent_complete": progress["percent_complete"],
                 "state": progress["state"],
                 "eta": self.runner.eta(),
@@ -1006,6 +1373,16 @@ class BootstrapService:
         if self.runner is None:
             raise BootstrapServiceError("SERVICE_NOT_OPEN")
         self._ensure_source()
+        # CP-13: the store frontier is read ONCE per run (async, before the
+        # frozen runner starts paging) and handed to the source. Sources that
+        # do not implement the frontier handoff (test doubles) keep their own
+        # contract — the handoff is best-effort and never breaks them.
+        try:
+            setter = getattr(self.source, "set_frontiers", None)
+            if setter is not None:
+                setter(await self._read_frontiers())
+        except Exception:
+            pass
         battery = read_battery()
         preflight = hardware_preflight(free_disk_mb=free_disk_mb(),
                                        battery=battery,
@@ -1036,11 +1413,16 @@ class BootstrapService:
         result = {**result, "preflight": preflight,
                   "source_pages": getattr(self.source, "pages_served", None),
                   "rate_limited": getattr(self.source, "rate_limited", None),
-                  # CP-12 evidence mirror (the status mirror above carries the
-                  # same total so `run_apex.py status` surfaces it offline).
+                  # CP-12 evidence mirror (this run's process total; the
+                  # status mirror above carries the durable total so
+                  # `run_apex.py status` surfaces it offline — CP-13).
                   "invalid_bars_dropped": int(
                       getattr(self.source, "invalid_dropped", 0) or 0),
                   "invalid_offenders": _offender_rows(self.source),
+                  # CP-13: still-open bars excluded on the latest page per
+                  # cell (temporal, per-run — never persisted).
+                  "open_bars_excluded": int(
+                      getattr(self.source, "open_bars_excluded", 0) or 0),
                   "checkpoint_path": self._checkpoint_path,
                   "raw_store": self._db_path}
         if announce:
@@ -1156,7 +1538,8 @@ def _plain(value: Any) -> Any:
 
 
 __all__ = [
-    "AsyncBridge", "BootstrapService", "BootstrapServiceError", "CONTRACT_VERSION",
-    "RATE_LIMIT_MARKERS", "SignalingNotifier", "TERMUX_BATTERY_COMMAND",
-    "ToobitKlineSource", "free_disk_mb", "ingest_observations", "read_battery",
+    "AsyncBridge", "BootstrapService", "BootstrapServiceError",
+    "CONTRACT_VERSION", "CanonicalMirroredCheckpoints", "RATE_LIMIT_MARKERS",
+    "SignalingNotifier", "TERMUX_BATTERY_COMMAND", "ToobitKlineSource",
+    "close_time_ms", "free_disk_mb", "ingest_observations", "read_battery",
 ]
