@@ -1218,3 +1218,619 @@ class TestVenueDataHygieneService:
                 await store.close()
 
         run(scenario())
+# ---------------------------------------------------------------------------
+# CP-13 — closed-bar law + cursor-trap fix + drop-evidence persistence
+# (ISSUE-CP13-001 / ISSUE-CP13-003). Appended; no existing test above changed.
+# ---------------------------------------------------------------------------
+
+
+
+
+class MonthlyVenue:
+    """Tail-aligned 1mo venue with an explicit calendar-aligned series.
+
+    ``series`` is a sorted list of open_ms (month starts in UTC). For any
+    ``endTime`` the venue returns the LAST ``limit`` opens at/before it
+    (``startTime`` ignored) — the owner-measured tail shape. Rows go through
+    the frozen ``parse_kline_to_observation`` with a realistic close_time
+    (next month start − 1 ms; the close law never reads this slot — it uses
+    ``close_time_ms`` — so the F4 venue-sends-0 fact needs no emulation).
+    """
+
+    def __init__(self, series):
+        self.series = sorted(int(t) for t in series)
+        self.calls = []
+        self.oldest_ms = self.series[0]
+        self.newest_ms = self.series[-1]
+
+    async def get_klines(self, symbol, interval, start_ms, end_ms, limit=None):
+        self.calls.append((symbol, interval, int(start_ms), int(end_ms), limit))
+        cap = int(limit) if limit else 1000
+        eligible = [t for t in self.series if t <= int(end_ms)]
+        window = eligible[-cap:]
+        out = []
+        for i, open_ms in enumerate(window):
+            close_ms = BS.close_time_ms(open_ms, interval) - 1
+            row = [open_ms, "100", "101", "99", "100.5", "10", close_ms]
+            out.append(parse_kline_to_observation(symbol, interval, row, i))
+        return out
+
+
+class TestCloseTimeMs:
+    """A1 — the wiring-layer close law for all 14 timeframes."""
+
+    def test_fixed_intervals_add_their_exact_length(self):
+        anchor = BS._iso_to_ms("2023-01-01T00:00:00.000Z")
+        expected = {"1m": 60_000, "3m": 180_000, "5m": 300_000,
+                    "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000,
+                    "2h": 7_200_000, "4h": 14_400_000, "6h": 21_600_000,
+                    "8h": 28_800_000, "12h": 43_200_000, "1d": 86_400_000,
+                    "1w": 604_800_000}
+        assert set(expected) == set(t for t in (
+            "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h",
+            "12h", "1d", "1w"))
+        for tf, step in expected.items():
+            assert BS.close_time_ms(anchor, tf) == anchor + step, tf
+
+    def test_1mo_is_the_next_calendar_month_december_to_january(self):
+        dec = BS._iso_to_ms("2023-12-01T00:00:00.000Z")
+        jan = BS._iso_to_ms("2024-01-01T00:00:00.000Z")
+        assert BS.close_time_ms(dec, "1mo") == jan
+        # And January (31 days) closes on February 1, not +30 days.
+        feb = BS._iso_to_ms("2024-02-01T00:00:00.000Z")
+        assert BS.close_time_ms(jan, "1mo") == feb
+        assert feb - jan == 31 * DAY
+
+    def test_1mo_february_follows_the_real_calendar(self):
+        feb23 = BS._iso_to_ms("2023-02-01T00:00:00.000Z")
+        mar23 = BS._iso_to_ms("2023-03-01T00:00:00.000Z")
+        assert BS.close_time_ms(feb23, "1mo") == mar23
+        assert mar23 - feb23 == 28 * DAY            # non-leap
+        feb24 = BS._iso_to_ms("2024-02-01T00:00:00.000Z")
+        mar24 = BS._iso_to_ms("2024-03-01T00:00:00.000Z")
+        assert BS.close_time_ms(feb24, "1mo") == mar24
+        assert mar24 - feb24 == 29 * DAY            # leap year
+        apr = BS._iso_to_ms("2023-04-01T00:00:00.000Z")
+        may = BS._iso_to_ms("2023-05-01T00:00:00.000Z")
+        assert BS.close_time_ms(apr, "1mo") == may
+        assert may - apr == 30 * DAY
+
+    def test_1mo_unaligned_open_still_closes_next_month(self):
+        mid_jan = BS._iso_to_ms("2023-01-15T12:00:00.000Z")
+        feb = BS._iso_to_ms("2023-02-01T00:00:00.000Z")
+        assert BS.close_time_ms(mid_jan, "1mo") == feb
+
+    def test_unknown_timeframe_fails_closed(self):
+        with pytest.raises(BootstrapError) as excinfo:
+            BS.close_time_ms(1672531200000, "3d")
+        assert excinfo.value.reason == "TIMEFRAME_QX"
+
+
+class TestClosedBarLaw:
+    """A2/A4 — the open bar is excluded, then ingested once after close."""
+
+    def _service(self, tmp_path, source, cells, **kwargs):
+        return BS.BootstrapService(
+            config=Config(), cells=cells, source=source,
+            db_path=str(tmp_path / "apex.sqlite3"),
+            checkpoint_path=str(tmp_path / "apex.sqlite3"), **kwargs)
+
+    async def _stored_opens(self, store, symbol, timeframe):
+        cur = await store.db.execute(
+            "SELECT as_of FROM raw_observation WHERE symbol=? AND timeframe=? "
+            "ORDER BY as_of",
+            (symbol, timeframe))
+        return [row[0] for row in await cur.fetchall()]
+
+    def test_open_bar_is_not_stored_closed_ones_are(self, tmp_path):
+        """(i) the still-open bar never reaches the store; closed bars do."""
+        async def scenario():
+            venue = TailAlignedVenue(retention=5, limit_cap=1000)
+            newest_iso = BS._ms_to_iso(venue.newest_ms)
+            end1 = venue.newest_ms + 30 * 60_000      # 30 min into the next bar
+            source, bridge = source_for(venue)
+            service = self._service(tmp_path, source, [("BTCUSDT", "1h")])
+            await service.open()
+            try:
+                result = await service.run(start_ms=DEEP_START_MS,
+                                           end_ms=end1, announce=False)
+                assert result["status"] == "COMPLETE"
+                assert result["bars_ingested"] == 4
+                assert result["open_bars_excluded"] == 1
+                assert result["invalid_bars_dropped"] == 0
+                stored = await self._stored_opens(service._store,
+                                                  "BTCUSDT", "1h")
+                assert len(stored) == 4
+                assert newest_iso not in stored
+                notes = [n for n in service.notifications
+                         if n["kind"] == "CELL_COMPLETE"]
+                assert len(notes) == 1
+                assert "open_excluded=1" in notes[0]["text"]
+                assert newest_iso in notes[0]["text"]
+                assert "dropped=0" in notes[0]["text"]
+                status = await service.status()
+                assert status["open_bars_excluded"] == 1
+                assert status["invalid_bars_dropped"] == 0
+            finally:
+                await service.close()
+                bridge.close()
+        run(scenario())
+
+    def test_two_runs_ingest_the_newly_closed_bar_once_restart(self, tmp_path):
+        """(ii) restart: the bar open at end1 is stored exactly once at end2."""
+        async def scenario():
+            venue = TailAlignedVenue(retention=5, limit_cap=1000)
+            end1 = venue.newest_ms + 30 * 60_000
+            end2 = venue.newest_ms + HOUR + 30 * 60_000
+            db = str(tmp_path / "apex.sqlite3")
+            source1, bridge1 = source_for(venue)
+            svc1 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1h")], source=source1,
+                db_path=db, checkpoint_path=db)
+            await svc1.open()
+            try:
+                r1 = await svc1.run(start_ms=DEEP_START_MS, end_ms=end1,
+                                    announce=False)
+                assert r1["status"] == "COMPLETE" and r1["bars_ingested"] == 4
+                assert r1["open_bars_excluded"] == 1
+            finally:
+                await svc1.close()
+                bridge1.close()
+            source2, bridge2 = source_for(venue)
+            svc2 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1h")], source=source2,
+                db_path=db, checkpoint_path=db)
+            await svc2.open()
+            try:
+                r2 = await svc2.run(start_ms=DEEP_START_MS, end_ms=end2,
+                                    announce=False)
+                assert r2["status"] == "COMPLETE"
+                assert r2["bars_ingested"] == 1       # exactly the newly closed bar
+                assert r2["open_bars_excluded"] == 0
+                cur = await svc2._store.db.execute(
+                    "SELECT COUNT(*), COUNT(DISTINCT as_of) FROM raw_observation "
+                    "WHERE symbol='BTCUSDT' AND timeframe='1h'")
+                count, distinct = await cur.fetchone()
+                assert (count, distinct) == (5, 5)    # no hole, no duplicate
+                cur2 = await svc2._store.db.execute(
+                    "SELECT as_of, COUNT(*) FROM raw_observation "
+                    "WHERE symbol='BTCUSDT' AND timeframe='1h' "
+                    "GROUP BY symbol, timeframe, as_of HAVING COUNT(*) > 1")
+                assert await cur2.fetchall() == []
+            finally:
+                await svc2.close()
+                bridge2.close()
+        run(scenario())
+
+    def test_two_runs_ingest_the_newly_closed_bar_once_same_process(self, tmp_path):
+        """(ii) same process: re-walk on end advance + served_upto, no dup."""
+        async def scenario():
+            venue = TailAlignedVenue(retention=5, limit_cap=1000)
+            end1 = venue.newest_ms + 30 * 60_000
+            end2 = venue.newest_ms + HOUR + 30 * 60_000
+            source, bridge = source_for(venue)
+            service = self._service(tmp_path, source, [("BTCUSDT", "1h")])
+            await service.open()
+            try:
+                r1 = await service.run(start_ms=DEEP_START_MS, end_ms=end1,
+                                       announce=False)
+                assert r1["bars_ingested"] == 4
+                # The cached walk was from end1: the second run must re-walk
+                # from end2 (fresh venue values, never a stale snapshot).
+                assert source._history_end[("BTCUSDT", "1h")] == end1
+                r2 = await service.run(start_ms=DEEP_START_MS, end_ms=end2,
+                                       announce=False)
+                assert source._history_end[("BTCUSDT", "1h")] == end2
+                # Same runner: bars_ingested accumulates across runs.
+                assert r2["bars_ingested"] - r1["bars_ingested"] == 1
+                cur = await service._store.db.execute(
+                    "SELECT COUNT(*) FROM raw_observation "
+                    "WHERE symbol='BTCUSDT' AND timeframe='1h'")
+                assert (await cur.fetchone())[0] == 5
+            finally:
+                await service.close()
+                bridge.close()
+        run(scenario())
+
+    def test_run_seconds_later_stores_nothing_and_completes(self, tmp_path):
+        """(iii) nothing new closed: COMPLETE, no write, no CURSOR error."""
+        async def scenario():
+            venue = TailAlignedVenue(retention=3, limit_cap=1000)
+            end1 = venue.newest_ms + HOUR
+            end2 = end1 + 5_000
+            db = str(tmp_path / "apex.sqlite3")
+            source1, bridge1 = source_for(venue)
+            svc1 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1h")], source=source1,
+                db_path=db, checkpoint_path=db)
+            await svc1.open()
+            try:
+                r1 = await svc1.run(start_ms=DEEP_START_MS, end_ms=end1,
+                                    announce=False)
+                assert r1["status"] == "COMPLETE" and r1["bars_ingested"] == 3
+            finally:
+                await svc1.close()
+                bridge1.close()
+            source2, bridge2 = source_for(venue)
+            svc2 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1h")], source=source2,
+                db_path=db, checkpoint_path=db)
+            await svc2.open()
+            try:
+                r2 = await svc2.run(start_ms=DEEP_START_MS, end_ms=end2,
+                                    announce=False)
+                assert r2["status"] == "COMPLETE"     # no CURSOR_NOT_ADVANCING
+                assert r2["bars_ingested"] == 0
+                assert r2["open_bars_excluded"] == 0
+                cur = await svc2._store.db.execute(
+                    "SELECT COUNT(*) FROM raw_observation")
+                assert (await cur.fetchone())[0] == 3
+            finally:
+                await svc2.close()
+                bridge2.close()
+        run(scenario())
+
+    def test_budget_stop_midcell_resumes_from_the_frontier(self, tmp_path):
+        """(iv) --max-pages stop after 1000 bars; resume stores the last one."""
+        async def scenario():
+            venue = TailAlignedVenue(retention=1001, limit_cap=1000)
+            end = venue.newest_ms + HOUR
+            db = str(tmp_path / "apex.sqlite3")
+            source1, bridge1 = source_for(venue, max_pages=1)
+            svc1 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1h")], source=source1,
+                db_path=db, checkpoint_path=db)
+            await svc1.open()
+            try:
+                r1 = await svc1.run(start_ms=DEEP_START_MS, end_ms=end,
+                                    announce=False)
+                assert r1["status"] == "BUDGET_REACHED"
+                assert r1["bars_ingested"] == 1000
+            finally:
+                await svc1.close()
+                bridge1.close()
+            source2, bridge2 = source_for(venue)
+            svc2 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1h")], source=source2,
+                db_path=db, checkpoint_path=db)
+            await svc2.open()
+            try:
+                r2 = await svc2.run(start_ms=DEEP_START_MS, end_ms=end,
+                                    announce=False)
+                assert r2["status"] == "COMPLETE"
+                assert r2["bars_ingested"] == 1
+                cur = await svc2._store.db.execute(
+                    "SELECT COUNT(*), COUNT(DISTINCT as_of) FROM raw_observation "
+                    "WHERE symbol='BTCUSDT' AND timeframe='1h'")
+                assert await cur.fetchone() == (1001, 1001)
+            finally:
+                await svc2.close()
+                bridge2.close()
+        run(scenario())
+
+    def test_1mo_calendar_close_across_the_year_boundary(self, tmp_path):
+        """(v) Dec 1m bar closes Jan 1 (31 days, not 30): excluded, then once."""
+        async def scenario():
+            nov = BS._iso_to_ms("2023-11-01T00:00:00.000Z")
+            dec = BS._iso_to_ms("2023-12-01T00:00:00.000Z")
+            jan = BS._iso_to_ms("2024-01-01T00:00:00.000Z")
+            assert BS.close_time_ms(dec, "1mo") == jan
+            venue = MonthlyVenue([nov, dec, jan])
+            end1 = BS._iso_to_ms("2024-01-15T00:00:00.000Z")
+            end2 = BS._iso_to_ms("2024-02-15T00:00:00.000Z")
+            db = str(tmp_path / "apex.sqlite3")
+            source1, bridge1 = source_for(venue)
+            svc1 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1mo")], source=source1,
+                db_path=db, checkpoint_path=db)
+            await svc1.open()
+            try:
+                r1 = await svc1.run(start_ms=DEEP_START_MS, end_ms=end1,
+                                    announce=False)
+                assert r1["status"] == "COMPLETE"
+                assert r1["bars_ingested"] == 2
+                assert r1["open_bars_excluded"] == 1
+                notes = [n for n in svc1.notifications
+                         if n["kind"] == "CELL_COMPLETE"]
+                assert "open_time=2024-01-01T00:00:00.000Z" in notes[0]["text"]
+            finally:
+                await svc1.close()
+                bridge1.close()
+            source2, bridge2 = source_for(venue)
+            svc2 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1mo")], source=source2,
+                db_path=db, checkpoint_path=db)
+            await svc2.open()
+            try:
+                r2 = await svc2.run(start_ms=DEEP_START_MS, end_ms=end2,
+                                    announce=False)
+                assert r2["status"] == "COMPLETE"
+                assert r2["bars_ingested"] == 1
+                stored = await self._stored_opens(svc2._store, "BTCUSDT", "1mo")
+                assert stored == ["2023-11-01T00:00:00.000Z",
+                                  "2023-12-01T00:00:00.000Z",
+                                  "2024-01-01T00:00:00.000Z"]
+            finally:
+                await svc2.close()
+                bridge2.close()
+        run(scenario())
+
+    def test_1mo_long_month_next_cursor_still_advances(self):
+        """The 31-day trap: Dec1+30d (frozen approx) would equal the cursor."""
+        venue = MonthlyVenue([BS._iso_to_ms("2023-11-01T00:00:00.000Z"),
+                              BS._iso_to_ms("2023-12-01T00:00:00.000Z")])
+        source, bridge = source_for(venue)
+        try:
+            nov = venue.series[0]
+            end1 = BS._iso_to_ms("2023-12-31T12:00:00.000Z")
+            source.set_frontiers({("BTCUSDT", "1mo"): nov})
+            page = source("BTCUSDT", "1mo", DEEP_START_MS, end1, limit=1000)
+            # Dec is still open at end1 → nothing servable → empty page.
+            assert page["rows"] == [] and page["next_cursor_ms"] == end1
+            assert source.open_bars_excluded == 1
+            # After close: Dec is served and the cursor advances past end1.
+            end2 = BS._iso_to_ms("2024-01-15T00:00:00.000Z")
+            page2 = source("BTCUSDT", "1mo", end1, end2, limit=1000)
+            assert [BS._iso_to_ms(r.timestamp) for r in page2["rows"]] == [
+                BS._iso_to_ms("2023-12-01T00:00:00.000Z")]
+            assert page2["next_cursor_ms"] > end1
+            assert page2["next_cursor_ms"] == BS._iso_to_ms(
+                "2024-01-01T00:00:00.000Z")
+        finally:
+            bridge.close()
+
+
+class TestCursorAlwaysAdvances:
+    """A3 — next_cursor_ms > cursor in every branch (no CURSOR_NOT_ADVANCING)."""
+
+    def test_fresh_run_advances_on_every_page(self):
+        venue = TailAlignedVenue(retention=5, limit_cap=1000)
+        source, bridge = source_for(venue)
+        try:
+            source.set_frontiers({("BTCUSDT", "1h"): None})
+            end = venue.newest_ms + HOUR
+            cursor = DEEP_START_MS
+            collected = []
+            while cursor < end:
+                page = source("BTCUSDT", "1h", cursor, end, limit=2)
+                assert page["next_cursor_ms"] > cursor
+                if not page["rows"]:
+                    assert page["next_cursor_ms"] == end
+                    break
+                collected.extend(BS._iso_to_ms(r.timestamp)
+                                 for r in page["rows"])
+                cursor = page["next_cursor_ms"]
+            assert collected == venue.series
+        finally:
+            bridge.close()
+
+    def test_resume_with_a_newly_closed_bar_advances(self):
+        venue = TailAlignedVenue(retention=5, limit_cap=1000)
+        end1 = venue.newest_ms + 30 * 60_000
+        end2 = venue.newest_ms + HOUR + 30 * 60_000
+        source1, bridge1 = source_for(venue)
+        try:
+            source1.set_frontiers({("BTCUSDT", "1h"): None})
+            first = source1("BTCUSDT", "1h", DEEP_START_MS, end1, limit=1000)
+            assert len(first["rows"]) == 4
+            assert first["next_cursor_ms"] > DEEP_START_MS
+            done = source1("BTCUSDT", "1h", first["next_cursor_ms"], end1,
+                           limit=1000)
+            assert done["rows"] == [] and done["next_cursor_ms"] == end1
+            assert done["next_cursor_ms"] > first["next_cursor_ms"]
+        finally:
+            bridge1.close()
+        source2, bridge2 = source_for(venue)
+        try:
+            source2.set_frontiers({("BTCUSDT", "1h"): venue.series[3]})
+            page = source2("BTCUSDT", "1h", end1, end2, limit=1000)
+            assert [BS._iso_to_ms(r.timestamp) for r in page["rows"]] == [
+                venue.newest_ms]
+            assert page["next_cursor_ms"] > end1
+            tail = source2("BTCUSDT", "1h", page["next_cursor_ms"], end2,
+                           limit=1000)
+            assert tail["rows"] == [] and tail["next_cursor_ms"] == end2
+            assert tail["next_cursor_ms"] > page["next_cursor_ms"]
+        finally:
+            bridge2.close()
+
+    def test_resume_with_nothing_new_closed_advances(self):
+        venue = TailAlignedVenue(retention=3, limit_cap=1000)
+        end1 = venue.newest_ms + HOUR
+        end2 = end1 + 5_000
+        source, bridge = source_for(venue)
+        try:
+            source.set_frontiers({("BTCUSDT", "1h"): venue.newest_ms})
+            page = source("BTCUSDT", "1h", end1, end2, limit=1000)
+            assert page["rows"] == []
+            assert page["next_cursor_ms"] == end2
+            assert page["next_cursor_ms"] > end1
+        finally:
+            bridge.close()
+
+    def test_budget_resume_advances(self):
+        venue = TailAlignedVenue(retention=5, limit_cap=1000)
+        end = venue.newest_ms + HOUR
+        source1, bridge1 = source_for(venue)
+        try:
+            source1.set_frontiers({("BTCUSDT", "1h"): None})
+            first = source1("BTCUSDT", "1h", DEEP_START_MS, end, limit=2)
+            assert len(first["rows"]) == 2
+            assert first["next_cursor_ms"] > DEEP_START_MS
+            cursor = first["next_cursor_ms"]
+            served = [BS._iso_to_ms(r.timestamp) for r in first["rows"]]
+        finally:
+            bridge1.close()
+        source2, bridge2 = source_for(venue)
+        try:
+            source2.set_frontiers({("BTCUSDT", "1h"): served[-1]})
+            page = source2("BTCUSDT", "1h", cursor, end, limit=1000)
+            rest = [BS._iso_to_ms(r.timestamp) for r in page["rows"]]
+            assert rest == venue.series[2:]
+            assert page["next_cursor_ms"] > cursor
+        finally:
+            bridge2.close()
+
+
+class TestDropEvidencePersistence:
+    """C — COMPLETE payload (durable) + offline status sum + CLI prints."""
+
+    def _poisoned(self, **kwargs):
+        return HygieneVenue(step_ms=DAY, retention=50, limit_cap=1000,
+                            now_ms=POISON_OPEN_B + 5 * DAY,
+                            rows_by_open=POISON_OHLC, **kwargs)
+
+    def test_complete_cell_persists_drop_evidence_in_payload(self, tmp_path):
+        async def scenario():
+            venue = self._poisoned()
+            source, bridge = source_for(venue)
+            service = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1d")], source=source,
+                db_path=str(tmp_path / "apex.sqlite3"),
+                checkpoint_path=str(tmp_path / "apex.sqlite3"))
+            await service.open()
+            try:
+                result = await service.run(
+                    start_ms=DEEP_START_MS,
+                    end_ms=venue.newest_ms + 100 * DAY, announce=False)
+                assert result["status"] == "COMPLETE"
+                assert result["invalid_bars_dropped"] == 2
+                row = await service._checkpoints.load_bootstrap("BTCUSDT:1d")
+                assert row is not None and row["status"] == "COMPLETE"
+                assert row["payload"]["invalid_bars_dropped"] == 2
+                assert row["payload"]["invalid_reasons"] == {
+                    "LOW_ABOVE_MIN_OPEN_CLOSE": 1,
+                    "HIGH_BELOW_MAX_OPEN_CLOSE": 1}
+            finally:
+                await service.close()
+                bridge.close()
+        run(scenario())
+
+    def test_offline_status_sums_the_durable_payload(self, tmp_path):
+        async def scenario():
+            venue = self._poisoned()
+            db = str(tmp_path / "apex.sqlite3")
+            source, bridge = source_for(venue)
+            svc1 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1d")], source=source,
+                db_path=db, checkpoint_path=db)
+            await svc1.open()
+            try:
+                await svc1.run(start_ms=DEEP_START_MS,
+                               end_ms=venue.newest_ms + 100 * DAY,
+                               announce=False)
+            finally:
+                await svc1.close()
+                bridge.close()
+            svc2 = BS.BootstrapService(config=Config(),
+                                       cells=[("BTCUSDT", "1d")],
+                                       db_path=db, checkpoint_path=db)
+            await svc2.open()
+            try:
+                assert svc2.source is None          # offline: no venue, no bridge
+                status = await svc2.status()
+                assert status["invalid_bars_dropped"] == 2
+                assert status["open_bars_excluded"] == 0
+            finally:
+                await svc2.close()
+        run(scenario())
+
+    def test_budget_stop_reports_live_drops_but_persists_nothing(self, tmp_path):
+        async def scenario():
+            venue = self._poisoned()
+            source, bridge = source_for(venue, max_pages=1)
+            service = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1d")], source=source,
+                db_path=str(tmp_path / "apex.sqlite3"),
+                checkpoint_path=str(tmp_path / "apex.sqlite3"))
+            await service.open()
+            try:
+                result = await service.run(
+                    start_ms=DEEP_START_MS,
+                    end_ms=venue.newest_ms + 100 * DAY, announce=False)
+                assert result["status"] == "BUDGET_REACHED"
+                assert result["invalid_bars_dropped"] == 2
+                row = await service._checkpoints.load_bootstrap("BTCUSDT:1d")
+                assert row is not None and row["status"] != "COMPLETE"
+                assert row["payload"].get("invalid_bars_dropped", 0) == 0
+                # Incomplete cells read from the live source of this process.
+                assert (await service.status())["invalid_bars_dropped"] == 2
+            finally:
+                await service.close()
+                bridge.close()
+        run(scenario())
+
+    def test_rerun_with_same_end_preserves_the_payload(self, tmp_path):
+        async def scenario():
+            venue = self._poisoned()
+            end = venue.newest_ms + 100 * DAY
+            db = str(tmp_path / "apex.sqlite3")
+            source1, bridge1 = source_for(venue)
+            svc1 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1d")], source=source1,
+                db_path=db, checkpoint_path=db)
+            await svc1.open()
+            try:
+                await svc1.run(start_ms=DEEP_START_MS, end_ms=end,
+                               announce=False)
+            finally:
+                await svc1.close()
+                bridge1.close()
+            source2, bridge2 = source_for(venue)
+            svc2 = BS.BootstrapService(
+                config=Config(), cells=[("BTCUSDT", "1d")], source=source2,
+                db_path=db, checkpoint_path=db)
+            await svc2.open()
+            try:
+                # Same end: no page call, no walk — the merge must keep 2.
+                assert source2._history == {}
+                await svc2.run(start_ms=DEEP_START_MS, end_ms=end,
+                               announce=False)
+                assert source2._history == {}
+                row = await svc2._checkpoints.load_bootstrap("BTCUSDT:1d")
+                assert row["payload"]["invalid_bars_dropped"] == 2
+                assert (await svc2.status())["invalid_bars_dropped"] == 2
+            finally:
+                await svc2.close()
+                bridge2.close()
+        run(scenario())
+
+    def test_cell_complete_evidence_detector(self):
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]
+                               / "scripts"))
+        import run_apex
+        clean = ("bootstrap Phase 1 cell complete: cell=BTCUSDT:1h pages=2 "
+                 "bars=4 dropped=0 open_excluded=0")
+        assert run_apex._cell_complete_has_evidence(clean) is False
+        assert run_apex._cell_complete_has_evidence(
+            clean.replace("dropped=0", "dropped=2")) is True
+        assert run_apex._cell_complete_has_evidence(
+            clean.replace("open_excluded=0", "open_excluded=1")) is True
+        assert run_apex._cell_complete_has_evidence("unrelated") is False
+
+    def test_every_evidence_line_is_printed(self, capsys):
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]
+                               / "scripts"))
+        import run_apex
+        notes = [
+            {"kind": "CELL_COMPLETE",
+             "text": "bootstrap Phase 1 cell complete: cell=A:1h pages=1 "
+                     "bars=1 dropped=0 open_excluded=0"},
+            {"kind": "CELL_COMPLETE",
+             "text": "bootstrap Phase 1 cell complete: cell=B:1h pages=1 "
+                     "bars=1 dropped=2 open_excluded=0 offenders=[B:1h@1]"},
+            {"kind": "CELL_COMPLETE",
+             "text": "bootstrap Phase 1 cell complete: cell=C:1h pages=1 "
+                     "bars=1 dropped=0 open_excluded=1 open_time=2024-01-01T00:00:00.000Z"},
+            {"kind": "INFO", "text": "dropped=9 but not a cell line"},
+        ]
+        run_apex._print_cell_complete_evidence(notes)
+        out = capsys.readouterr().out
+        assert "cell=B:1h" in out and "dropped=2" in out
+        assert "cell=C:1h" in out and "open_excluded=1" in out
+        assert "cell=A:1h" not in out
+        assert "not a cell line" not in out

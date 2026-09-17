@@ -27,6 +27,10 @@ gateway.py`):
                                           # and the inbound Telegram gateway
     python scripts/run_apex.py status     # offline: bootstrap progress from the
                                           # durable checkpoints (no network)
+    python scripts/run_apex.py repair-partial  # CP-13: governed repair of
+                                          # partial bars stored before close
+                                          # (dry-run by default; --apply
+                                          # writes via frozen correct_raw)
 
 Composition (Ch.23 L18253–18260): ONE event loop, ONE ledger writer queue, the
 execution FSM as the only path to the venue, the scheduler as the only source of
@@ -73,6 +77,7 @@ from apex.telegram import gateway as GW                        # noqa: E402
 from apex.telegram import signaling as SG                      # noqa: E402
 from apex.ops import bootstrap_service as BS                   # noqa: E402
 from apex.ops import paper_loop as PL                          # noqa: E402
+from apex.ops import partial_bar_repair as PR                  # noqa: E402
 from apex.ops import plan_bridge as PB                          # noqa: E402
 from apex.ops import watchdog as WD                            # noqa: E402
 
@@ -462,6 +467,33 @@ async def _notifier_for(cfg: Config) -> Any:
                                 utc_now=clock.utc_now)
 
 
+def _cell_complete_has_evidence(text: str) -> bool:
+    """True when a CELL_COMPLETE line carries drop/open evidence (CP-13)."""
+    import re
+    try:
+        dropped = re.search(r"dropped=(\d+)", str(text or ""))
+        opened = re.search(r"open_excluded=(\d+)", str(text or ""))
+        return ((int(dropped.group(1)) > 0 if dropped else False)
+                or (int(opened.group(1)) > 0 if opened else False))
+    except (ValueError, TypeError):
+        return False
+
+
+def _print_cell_complete_evidence(notifications: List[Dict[str, Any]]) -> None:
+    """Print EVERY CELL_COMPLETE line with evidence (CP-13, ISSUE-CP13-003).
+
+    Without Telegram only the last three notifications reached the screen and
+    the per-cell ``dropped=<n> offenders=...`` prints were lost (F5). Every
+    evidence-carrying line is now printed in full, not just counted.
+    """
+    for note in list(notifications or []):
+        if note.get("kind") != "CELL_COMPLETE":
+            continue
+        text = str(note.get("text") or "")
+        if _cell_complete_has_evidence(text):
+            _say(f"  cell: {text}")
+
+
 async def _bootstrap(cfg: Config, *, as_json: bool, cells: Optional[str] = None,
                      start: Optional[str] = None,
                      max_pages: Optional[int] = None) -> int:
@@ -490,6 +522,9 @@ async def _bootstrap(cfg: Config, *, as_json: bool, cells: Optional[str] = None,
             _say(f"  progress: completed={progress['cells_completed']} "
                  f"remaining={progress['cells_remaining']} bars="
                  f"{progress['bars_ingested']} pages={progress['pages_fetched']}")
+            _print_cell_complete_evidence(service.notifications)
+            _say(f"  invalid_bars_dropped={progress.get('invalid_bars_dropped', 0)} "
+                 f"open_bars_excluded={progress.get('open_bars_excluded', 0)}")
             if as_json:
                 _say(json.dumps(progress, default=str, indent=2, sort_keys=True))
             return EXIT_DEGRADED
@@ -509,6 +544,9 @@ async def _bootstrap(cfg: Config, *, as_json: bool, cells: Optional[str] = None,
                  f"{len(result.get('pending_cells') or ())}")
         _say(f"  resume rule: {result.get('resume_rule', 'cursor is durable')}")
         _say(f"  oi policy: {result.get('oi_policy', 'oi_state=MISSING (never 0)')}")
+        _print_cell_complete_evidence(service.notifications)
+        _say(f"  invalid_bars_dropped={result.get('invalid_bars_dropped', 0)} "
+             f"open_bars_excluded={result.get('open_bars_excluded', 0)}")
         for note in service.notifications[-3:]:
             _say(f"  notify[{note['kind']}]: delivered={note['delivered']} "
                  f"{note.get('reason', '')}")
@@ -541,6 +579,8 @@ async def _status(cfg: Config, *, as_json: bool) -> int:
         _say(f"  current_cell={status['current_cell']} bars="
              f"{status['bars_ingested']} pages={status['pages_fetched']} "
              f"backoffs={status['backoffs']}")
+        _say(f"  invalid_bars_dropped={status.get('invalid_bars_dropped', 0)} "
+             f"open_bars_excluded={status.get('open_bars_excluded', 0)}")
         _say(f"  state={status['state']} eta="
              f"{status['eta'].get('eta_seconds')} "
              f"({status['eta'].get('basis', 'measured')})")
@@ -549,6 +589,84 @@ async def _status(cfg: Config, *, as_json: bool) -> int:
         return EXIT_READY if status["cells_remaining"] == 0 else EXIT_DEGRADED
     finally:
         await service.close()
+
+
+# ---------------------------------------------------------------------------
+# repair-partial — CP-13 governed repair of partial bars (dry-run by default)
+# ---------------------------------------------------------------------------
+
+async def _repair_partial(cfg: Config, *, as_json: bool,
+                          evidence: Optional[List[str]] = None,
+                          apply: bool = False,
+                          cells: Optional[str] = None) -> int:
+    _say("APEX_GEN5 — CP-13 repair-partial: governed repair of partial bars")
+    _say(f"  environment surface: {json.dumps(_redacted(cfg), sort_keys=True)}")
+    selected = _parse_cells(cells)
+    evidence_paths: List[str] = []
+    for item in list(evidence or []):
+        if isinstance(item, (list, tuple)):
+            evidence_paths.extend(str(p) for p in item)
+        elif item:
+            evidence_paths.append(str(item))
+    if evidence_paths:
+        _say(f"  evidence: {', '.join(evidence_paths)}")
+    else:
+        _say("  evidence: none (LIVE venue only)")
+    _say(f"  mode: {'APPLY (corrections will be written)' if apply else 'DRY-RUN (writes nothing)'}")
+    store = ss.SQLiteStore(cfg.sqlite_path)
+    await store.open()
+    try:
+        import aiohttp
+        from apex.data_catalog.ingest.toobit_public import ToobitPublicClient
+        async with aiohttp.ClientSession() as session:
+            client = ToobitPublicClient(session=session)
+            try:
+                report = await PR.run_repair(
+                    store, client=client, evidence_paths=evidence_paths,
+                    apply=apply, cells=selected)
+            except FileNotFoundError as exc:
+                _say(f"  REFUSED: {exc}")
+                return EXIT_ERROR
+            except ValueError as exc:
+                _say(f"  REFUSED: {exc}")
+                return EXIT_ERROR
+        for row in report["candidates"]:
+            _say(f"  {row['symbol']} {row['timeframe']} "
+                 f"open={row['open_time']} created={row['created_at']} "
+                 f"verdict={row['verdict']} "
+                 f"store_close={row['store_close']} "
+                 f"store_vol={row['store_volume']} "
+                 f"repl_close={row.get('repl_close') or '-'} "
+                 f"repl_vol={row.get('repl_volume') or '-'} "
+                 f"source={row.get('replacement') or '-'}")
+        counts = report["counts"]
+        _say(f"  summary: candidates={counts['candidates']} "
+             f"verified={counts['verified']} corrected={counts['corrected']} "
+             f"unrepairable={counts['unrepairable']} refused={counts['refused']}")
+        data_dir = REPO_ROOT / "data"
+        try:
+            data_dir.mkdir(parents=True, exist_ok=True)
+            leaf = PR.report_filename()
+            with open(str(data_dir / leaf), "w", encoding="utf-8") as handle:
+                json.dump({"captured_at": dt.datetime.now(dt.timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%S.000Z"), "apply": bool(apply),
+                    "evidence": evidence_paths,
+                    "cells": ([f"{s}:{t}" for s, t in selected]
+                              if selected else None),
+                    **report}, handle, indent=2, sort_keys=True, default=str)
+            _say(f"  report: data/{leaf}")
+        except OSError as exc:
+            _say(f"  report: UNWRITABLE ({exc}) — counts above still stand")
+        if as_json:
+            _say(json.dumps(report, default=str, indent=2, sort_keys=True))
+        # Exit 0 when nothing is left unrepaired (spec wording "nothing is
+        # left unrepairable" read strictly: both UNREPAIRABLE and REFUSED
+        # leave the row partial and untouched, so both need owner attention).
+        if counts["unrepairable"] == 0 and counts["refused"] == 0:
+            return EXIT_READY
+        return EXIT_DEGRADED
+    finally:
+        await store.close()
 
 
 # ---------------------------------------------------------------------------
@@ -702,7 +820,8 @@ def _telegram_reply(signaling: Any):
 
 
 COMMANDS = {"boot": _boot, "grid": _grid, "demo": _demo, "alerts": _alerts,
-            "bootstrap": _bootstrap, "status": _status, "serve": _serve}
+            "bootstrap": _bootstrap, "status": _status, "serve": _serve,
+            "repair-partial": _repair_partial}
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -712,14 +831,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("command", nargs="?", default="boot",
                         choices=sorted(COMMANDS),
                         help="boot (default) | grid | demo | alerts | "
-                             "bootstrap | status | serve")
+                             "bootstrap | status | serve | repair-partial")
     parser.add_argument("--json", action="store_true",
                         help="also print the machine-readable verdict")
     parser.add_argument("--env-file", default=None,
                         help="optional .env path (never overrides real env)")
     parser.add_argument("--cells", default=None,
-                        help="bootstrap: comma-separated SYMBOL:TIMEFRAME "
-                             "subset (default: all 140 cells)")
+                        help="bootstrap/repair-partial: comma-separated "
+                             "SYMBOL:TIMEFRAME subset (default: all 140 cells)")
     parser.add_argument("--start", default=None,
                         help="bootstrap: first bar date YYYY-MM-DD "
                              "(default 2020-01-01, the W.6 deep scope)")
@@ -731,6 +850,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                              "(default: until interrupted)")
     parser.add_argument("--interval", type=float, default=60.0,
                         help="serve: seconds between cycles (default 60)")
+    parser.add_argument("--evidence", action="append", default=None,
+                        help="repair-partial: owner evidence JSON file "
+                             "(repeatable; F6a/F6b shapes)")
+    parser.add_argument("--apply", action="store_true",
+                        help="repair-partial: perform corrections "
+                             "(default is dry-run, writes nothing)")
     args = parser.parse_args(argv)
     cfg = Config(args.env_file)          # APEX_DOTENV_PATH/.env fill, no shadow
     try:
@@ -742,6 +867,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             return asyncio.run(_serve(cfg, as_json=args.json,
                                       cycles=args.cycles,
                                       interval=args.interval))
+        if args.command == "repair-partial":
+            return asyncio.run(_repair_partial(
+                cfg, as_json=args.json, evidence=args.evidence,
+                apply=args.apply, cells=args.cells))
         return asyncio.run(COMMANDS[args.command](cfg, as_json=args.json))
     except KeyboardInterrupt:
         _say("interrupted — fail-closed, nothing left running")

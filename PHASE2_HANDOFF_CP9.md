@@ -279,3 +279,66 @@ None blocking. ISSUE-CP12-001 is CLOSED-with-evidence and asks one owner confirm
 
 ### PUSH RECORD
 Implementation + tests + docs closeout pushed to `origin/arena/01a0a890-upstage`; PR opened (`main` ← `arena/01a0a890-upstage`), not merged. The immutable `APEX_GEN5.md` hash was rechecked immediately before push: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
+
+## HANDOFF_CP13_HOTFIX
+LAW-ACK: G1..G20 + P1..P21 read 2026-09-16T23:43:28Z
+STATUS: COMPLETE — ISSUE-CP13-001 and ISSUE-CP13-003 are closed, ISSUE-CP13-002 is filed (frozen), on the environment-pinned branch `arena/01a0ac9a-upstage`.
+
+### CLAIM
+The venue's tail-aligned klines return the CURRENTLY OPEN candle as their last row, the frozen client labels every row `status=CLOSED`, and the pre-CP-13 wiring served it — so every run stored a snapshot of an open bar as an immutable CLOSED row (owner measurement 2026-09-16: 91 stored bars differ from the venue's final closed bar, each with `created_at` strictly earlier than its bar close; the CP12-001 OWNER DECISION files 45 confirmed mismatches). Re-running bootstrap can never heal them (the durable cursor is already past them; resume-never-rewind). Worse, merely filtering the open bar would hole it forever: the next run's `cursor=previous_end` fails the `cursor <= open_time` resume filter for the now-closed bar, while `next_cursor_ms == cursor` is frozen-impossible (`CURSOR_NOT_ADVANCING`). This hotfix (a) serves a walked row only when `close_time_ms(open) <= end_ms` (wiring-layer close law, `1mo` calendar-aware) and reports the excluded open bar instead of storing it; (b) resumes from the store frontier (`open > MAX(as_of) AND open > served_upto AND close <= end`) so the bar ingests exactly once after close with the cursor trap unreachable; (c) heals the stored partials through a governed `repair-partial` path (LIVE-first, owner-evidence fallback, frozen `correct_raw` only); (d) prints every evidence-carrying cell line without Telegram and persists drop evidence in the COMPLETE checkpoint payload for offline `status`. The frozen runner, client, store DDL, `params/*.yaml`, `APEX_GEN5.md` and `PROMPT.md` are byte-untouched.
+
+### DELIVERED
+- `apex/ops/bootstrap_service.py`:
+  - `close_time_ms(open_ms, timeframe)`: the wiring-layer close law over all 14 timeframes — fixed intervals add their exact length, `1w` adds 7 days, `1mo` is the first instant of the next calendar month in UTC (December rolls the year; February follows the real calendar incl. leap years; unaligned opens close at the next month start); unknown timeframes fail closed with `BootstrapError("TIMEFRAME_QX")`. The frozen runner's 30-day `1mo` approximation is never used here.
+  - `ToobitKlineSource.set_frontiers` + `__call__` frontier rule: serves `open_time > store_frontier AND open_time > served_upto AND close_time_ms(open) <= end_ms`; bars with `open <= end` but `close > end` are excluded (never served, never counted) and the newest is reported; future bars (`open > end`) are ignored. The cached walk is re-walked whenever `end_ms` advances past the cached walk's end, so a stale open-bar snapshot is never served as closed. Direct-source callers that never set frontiers keep the pre-CP-13 cursor contract.
+  - `next_cursor_ms = max(close_time_ms(last_served_open), cursor + 1)`: strictly greater than the incoming cursor in every branch (fresh, newly-closed resume, nothing-new resume, budget resume) — `CURSOR_NOT_ADVANCING` is unreachable; the empty page stays the only completion signal.
+  - Cell-complete print extended: `… dropped=<n> open_excluded=<m>` plus `open_time=<iso>` when `m>0`, drained through the existing owner-report path.
+  - `CanonicalMirroredCheckpoints.save_bootstrap`: COMPLETE payload merge (`invalid_bars_dropped`/`invalid_reasons` from the current walk, max-preserved when retention slid or no walk ran) and evidence-key carry-forward on non-COMPLETE saves (the frozen runner re-saves `IN_PROGRESS`/`payload=None` before COMPLETE on re-runs).
+  - `BootstrapService.run`: frontier handoff once per run (best-effort, doubles unaffected); result adds `open_bars_excluded`. `status()`: durable COMPLETE-payload sum + live-source counters for incomplete cells only; `open_bars_excluded` is the live temporal total.
+- `apex/ops/partial_bar_repair.py` (NEW — ADR-P2-003, this handoff is the DELIVERED record):
+  - B1 `find_candidates`: store-only detection — market `CLOSED` rows with `created_at < close_time_ms(open) + 5 s` (`SKEW_MARGIN_SECONDS`; errs toward checking), optional `--cells` filter; SUPERSEDED/CORRECTED rows never resurface (idempotent).
+  - B2 `fetch_live_bar` + `repair_one`: LIVE first via the frozen client (`endTime=close-1`, `LIVE_FETCH_LIMIT=5`, returned `open_time` must equal the candidate's), else F6a (`differs`) / F6b (`rows`) `--evidence` entries matched by `(symbol, timeframe, open)` and accepted only on Decimal-equal store OHLCV; the replacement is parsed with the frozen `parse_kline_to_observation` and judged by the CP-12 `_ohlc_violation` law.
+  - B3 `run_repair` + `report_filename`: ordered run with `counts={candidates, verified, corrected, unrepairable, refused}`; writes only under `--apply` via frozen `store.correct_raw(event_id, replacement, "MISSING", reason, actor="OPS_REPAIR_CP13")` with `reason="PARTIAL_BAR_STORED_BEFORE_CLOSE created_at=<iso> close_time=<iso> replacement=VENUE_LIVE|EVIDENCE_FILE:<basename>"`.
+  - B4 audit (module docstring): every direct `raw_observation` reader reviewed for the two-rows-one-`as_of` shape — `raw_store_current` shows both (FROZEN, filed, read by no production code); engines/`get_window` see exactly the corrected bar.
+  - Verdicts `VERIFIED_CLOSED` / `CORRECTED` (+`dry_run` when not applied) / `UNREPAIRABLE_VENUE_WINDOW_PASSED` / `REFUSED_OHLC_*` / `REFUSED_EVIDENCE_MISMATCH` / `REFUSED_PARSE`; exit 0 iff `unrepairable==0` and `refused==0` (a refused row is also left partial, so it also needs the owner).
+- `scripts/run_apex.py`:
+  - `bootstrap` prints EVERY `CELL_COMPLETE` line carrying evidence (`_print_cell_complete_evidence`, F5 fix) plus the final `invalid_bars_dropped=<n> open_bars_excluded=<m>` line on success and on resumable stop; `status` prints both counters.
+  - NEW `repair-partial` command (dry-run default; `--evidence` repeatable, `--apply`, `--cells`, `--json`): per-candidate lines, summary counts, `data/repair_partial_report_<UTC>.json`, exit 0/1/2 mapping.
+- `tests/unit/test_ops_bootstrap_service.py` (+22, 71 total, no existing line changed):
+  - `TestCloseTimeMs` (5): all 14 fixed lengths, Dec→Jan, leap/non-leap February, unaligned opens, unknown-timeframe fail-closed.
+  - `TestClosedBarLaw` (7): (i) open excluded/closed stored; (ii) newly closed ingested exactly once across a restart AND in one process (re-walk + `served_upto`, no dup); (iii) seconds-later no-op COMPLETE; (iv) 1001-bar `--max-pages` frontier resume; (v) `1mo` year boundary; the 31-day next-cursor trap the frozen approximation would spring.
+  - `TestCursorAlwaysAdvances` (4): `next_cursor_ms > cursor` on every page of a fresh run, a newly-closed resume, a nothing-new resume and a budget resume.
+  - `TestDropEvidencePersistence` (6): COMPLETE payload content, offline durable sum, budget-stop live-only reporting with nothing persisted, same-end re-run preservation, the evidence-line detector + print-every tests.
+- `tests/unit/test_ops_partial_bar_repair.py` (NEW, 20 — ADR-P2-003): B1 detection incl. the exact skew boundary; B2 LIVE-first (`endTime=close-1`, limit 5) + F6a/F6b fallback incl. open-mismatch and store-mismatch gates; B3 `correct_raw` lineage (actor/reason/SUPERSEDED/CORRECTED, `get_window` sees one corrected bar) + idempotent re-apply; B4 untouched-unrepairable; B5 named refusals + malformed-evidence fail-closed; CLI exit mapping hermetic (`APEX_SQLITE_PATH`+`REPO_ROOT` on tmp, LIVE stubbed).
+
+### INTERFACES
+- `ToobitKlineSource` fetcher contract unchanged: `{"rows", "next_cursor_ms", "code", "oi_available"}`; `-1003` surface, `PAGE_BUDGET_REACHED` on runner-facing pages, `FETCH_FAILED` — all unchanged.
+- New: `close_time_ms`, `set_frontiers(frontiers)`, read-only `open_bars_excluded` / `open_excluded_by_cell`; `BootstrapService.status()` adds `open_bars_excluded` (durable `invalid_bars_dropped` semantics: COMPLETE payloads + live incomplete extra); `run()` result adds `open_bars_excluded`.
+- New module `apex.ops.partial_bar_repair`: `find_candidates`, `fetch_live_bar`, `repair_one`, `run_repair`, `load_evidence_files`, `report_filename`; constants `SKEW_MARGIN_SECONDS=5`, `REPAIR_ACTOR="OPS_REPAIR_CP13"`, `LIVE_FETCH_LIMIT=5`, verdict names.
+- CLI: `repair-partial [--evidence F …] [--apply] [--cells S:T,…] [--json]` → exit 0 (nothing unrepairable/refused) / 1 (refused invocation) / 2 (attention needed); report `data/repair_partial_report_<UTC>.json`.
+
+### DATA-CHANGES
+No migration, no frozen DDL, no `params/*.yaml`, no `apex/research/bootstrap.py`, no `apex/data_catalog/**`, no `APEX_GEN5.md`/`PROMPT.md` edit, nothing written under `data/` by this change itself. Two governed data effects at RUNTIME only: (a) checkpoint `payload_json` gains `invalid_bars_dropped`/`invalid_reasons` on COMPLETE rows (the research store already accepts `payload` — read, not changed); (b) `repair-partial --apply` appends correction rows through the frozen `correct_raw` (original immutable, `raw_revision` + `retention_event` with `OPS_REPAIR_CP13`, market SUPERSEDED/CORRECTED) — no other writer is added.
+
+### TESTS
+- `python -m pytest tests/unit/test_ops_bootstrap_service.py -q` — 71 passed (49 baseline + 22 CP-13).
+- `python -m pytest tests/unit/test_ops_partial_bar_repair.py -q` — 20 passed (new module).
+- `python -m pytest tests -q` twice — 2722 passed / 0 failed each run (baseline 2680 + 42), deterministic.
+- `sha256sum APEX_GEN5.md` — `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e` (re-checked immediately before push).
+
+### DEVIATIONS
+None beyond the owner-authorized hotfix scope: reliability + governed repair only, no behavior change to any frozen law, no new product rule. Two judgment calls of record: (1) exit 0 requires BOTH `unrepairable==0` and `refused==0` — the brief's "nothing is left unrepairable" read strictly, because a `REFUSED_*` row is likewise left partial and untouched and needs the owner; (2) the 1001-bar frontier-resume test walks two facing pages of real ingests (~seconds) rather than a toy cell, so the `--max-pages` mid-cell resume is proven, not mocked.
+
+### OPEN-ISSUES
+None blocking. (a) ISSUE-CP13-002 (`availability_time` 1970, venue `close_time=0`) is FILED and asks one owner decree: want a wiring-layer derivation or accept the venue's stamp (a change needs a frozen-file edit — NOT implemented). (b) The 91 stored partials: `repair-partial` heals LIVE-visible bars automatically; window-passed bars need owner `--evidence` captures (F6a/F6b). (c) `raw_store_current` shows both rows of a corrected `as_of` (FROZEN, filed in the B4 audit; no production reader).
+
+### DEVICE-RUNBOOK
+On the owner device (Termux), from the repo root, after pulling this branch:
+1. Resume the harvest (nothing special — the law is automatic): `python scripts/run_apex.py bootstrap` — the still-open bar of each cell is now EXCLUDED and reported (`open_excluded=1 open_time=…`), never stored; re-running later ingests it exactly once after close. Resume rule unchanged: the cursor is durable, never rewinds.
+2. Check progress offline any time: `python scripts/run_apex.py status` — prints `invalid_bars_dropped=<durable+live> open_bars_excluded=<this-process>`; drops for completed cells survive restarts.
+3. Preview partial-bar repair (writes nothing): `python scripts/run_apex.py repair-partial --evidence <capture.json>` (repeat `--evidence` for several captures) — prints one line per candidate (`VERIFIED_CLOSED` / `CORRECTED` dry-run / `UNREPAIRABLE_VENUE_WINDOW_PASSED` / `REFUSED_*`), summary counts, and `data/repair_partial_report_<UTC>.json`. No `--evidence` = LIVE venue only.
+4. Apply after reviewing the report: add `--apply` — corrections append via the frozen path (originals immutable, `raw_revision` actor `OPS_REPAIR_CP13`); re-running is a no-op. Exit 0 = nothing left unrepairable/refused; 2 = attention needed (names printed); 1 = refused invocation (e.g. missing evidence file).
+5. Narrow any step to cells: append `--cells BTCUSDT:1h,ETHUSDT:1d`. Telegram is optional throughout — every evidence line is printed locally.
+
+### PUSH RECORD
+Implementation + tests + docs closeout pushed to `origin/arena/01a0ac9a-upstage`; PR opened (`main` ← `arena/01a0ac9a-upstage`), not merged. The immutable `APEX_GEN5.md` hash was rechecked immediately before push: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
