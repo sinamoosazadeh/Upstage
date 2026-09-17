@@ -342,3 +342,101 @@ On the owner device (Termux), from the repo root, after pulling this branch:
 
 ### PUSH RECORD
 Implementation + tests + docs closeout pushed to `origin/arena/01a0ac9a-upstage`; PR opened (`main` ← `arena/01a0ac9a-upstage`), not merged. The immutable `APEX_GEN5.md` hash was rechecked immediately before push: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
+
+---
+
+## HANDOFF_CP13.1_HOTFIX — repair-partial close-time-vs-now guard (ISSUE-CP13-004)
+
+### STATUS
+- CLAIM — executor = Arena Agent Mode, same environment-pinned workspace/branch family rule as every prior handoff, 2026-09-17; LAW-ACK: G1..G20 + P1..P21 (re-read before editing, same session).
+- Device evidence (owner dry-run 2026-09-17T04:33:03Z, report `data/repair_partial_report_20260917T043303Z.json`, kept off-repo): `candidates=163 corrected=163 unrepairable=0 refused=0`, all replacements `VENUE_LIVE` — but **20 of the 163 candidates are the CURRENT still-open 1w/1mo bars of all 10 symbols** (1w open 2026-09-15T00:00Z closes 2026-09-22T00:00Z; 1mo open 2026-09-01T00:00Z closes 2026-10-01T00:00Z): without a close-time-vs-now guard, an `--apply` run would replace a partial bar with another partial bar on every run. Root cause: spec omission in the CP-13 repair spec (detection law stated, close-time guard missing). `--apply` has NOT been run by the owner and must remain unused until this fix is merged (ISSUE-CP13-004, MAJOR).
+- CP-13.1 delivers the guard: a candidate whose bar has not closed by `now_ms - SKEW_MARGIN_SECONDS*1000` is SKIPPED_STILL_OPEN — never fetched, never repaired, never counted as unrepairable or refused, never degrading the exit code — and listed with `closes_at` so the owner sees exactly the 20 still-open bars and when they become repairable. CONTRACT_VERSION 4.0.0 → 4.1.0 (backward-compatible minor). Full suite twice: 2728 passed / 0 failed (was 2722; +6).
+
+### CLAIM
+1. `run_repair` (and only it) takes an explicit `now_ms` (int, UTC epoch milliseconds; `None` → `int(time.time()*1000)`, the single wall-clock read of the repair path; tests inject it). A candidate with `close_ms > now_ms - SKEW_MARGIN_SECONDS*1000` (strict `>`) is NOT repaired and NO live fetch is made for it — report row: `verdict=SKIPPED_STILL_OPEN`, `replacement` null, `closes_at` = ISO-8601 UTC millisecond string of `close_ms` — counted under the NEW counts bucket `skipped_still_open` (present whenever ≥1), never as unrepairable, never as refused.
+2. `repair-partial` exit semantics unchanged: READY (0) iff `unrepairable == 0` and `refused == 0`; skipped rows never degrade it. Summary line carries `skipped_still_open=N`; a skipped row prints `verdict=SKIPPED_STILL_OPEN closes_at=<iso>`. After all 143 repairable bars of the 163 are corrected, the next `--apply` run shows `corrected=0` and exactly 20 `SKIPPED_STILL_OPEN` rows remaining — and must exit 0.
+3. This hotfix stays inside the CP-13 allowed set: only `apex/ops/partial_bar_repair.py`, the `repair-partial` summary/row print of `scripts/run_apex.py`, the repair test file (append-only), and the control docs (`PHASE2_CHECKPOINT_STATUS.md`, `PHASE2_DECISION_LOG.md`, `PHASE2_HANDOFF_CP9.md`, `PHASE2_TRACEABILITY_MATRIX.md`) are touched. Everything frozen is untouched: `apex/research/bootstrap.py`, `apex/data_catalog/**` (including `toobit_public.py` and the store DDL), `params/*.yaml`, `APEX_GEN5.md`, `PROMPT.md`, `data/`. `find_candidates` / `repair_one` / `report_filename` / the frozen `correct_raw` usage are byte-untouched (the guard is applied at candidate iteration inside `run_repair`, before any fetch or write).
+
+### DELIVERED
+| file | change |
+|---|---|
+| `apex/ops/partial_bar_repair.py` | `CONTRACT_VERSION` 4.0.0 → 4.1.0; new verdict constant `VERDICT_SKIPPED_STILL_OPEN` ("SKIPPED_STILL_OPEN") next to the existing verdict constants and exported; `run_repair(..., now_ms=None)` — single wall-clock read, skip guard before `repair_one`, skipped rows carry `closes_at`, new `skipped_still_open` counts bucket (added when ≥1); `find_candidates`/`repair_one`/`report_filename` unchanged. |
+| `scripts/run_apex.py` | `repair-partial` row print: skipped rows show `closes_at=<iso>` after the verdict; summary line appends `skipped_still_open=N`; exit mapping untouched (READY iff nothing unrepairable/refused). |
+| `tests/unit/test_ops_partial_bar_repair.py` | Appended `TestSkippedStillOpen` (6 tests: (a) still-open skipped + ZERO live-fetch calls; (b) after close+skew processed normally; (c) 4 s future / 3 s past / 4 999 ms past all still open, exact boundary not skipped; (d) `--apply` writes nothing for skipped rows; (e) mixed 1 skipped + 1 corrected + 1 verified counts + JSON round-trip; (f) CLI summary `skipped_still_open=1` + exit 0 when only skipped rows, live-fetch patched to raise). All 20 CP-13 tests untouched. |
+
+### INTERFACES
+- `PR.VERDICT_SKIPPED_STILL_OPEN = "SKIPPED_STILL_OPEN"` — exported in `__all__`:
+  ```python
+  f"{symbol} {timeframe} open=... created=... verdict=SKIPPED_STILL_OPEN "
+  f"closes_at=2026-09-22T00:00:00.000Z store_close=... source=-"
+  ```
+- `run_repair` signature (all new/changed names pinned):
+  ```python
+  await PR.run_repair(store, client=<source>, evidence_paths=(...),
+                      apply=<bool>, cells=None, now_ms=None)  ->  report_dict
+  ```
+  - report row extra: `closes_at` (present exactly on skipped rows; ISO-8601 UTC ms string of `close_ms`);
+  - `counts["skipped_still_open"]` — present whenever at least one candidate was still open.
+- CLI: `python scripts/run_apex.py repair-partial [--evidence f.json ...] [--apply] [--json]` — same as CP-13; summary now ends `... refused=N skipped_still_open=M`; exit 0 when everything is verified/corrected/skipped.
+
+### DATA-CHANGES
+- None new beyond CP-13: skipped rows produce NO writes at all (no `correct_raw`, no `INSERT`, no `raw_revision`); corrected rows keep the CP-13 path exactly (`store.correct_raw(..., actor="OPS_REPAIR_CP13")` — raw stays APPEND-only, `new_status=CORRECTED`, lineage `corrects_event_id`). After a full `--apply` the only remaining candidates are the 20 still-open bars, which stay raw-untouched until after `closes_at + 5 s`.
+
+### TESTS
+- `tests/unit/test_ops_partial_bar_repair.py` — 26 passed (20 baseline untouched + 6 `TestSkippedStillOpen`); (a) asserts ZERO `get_klines` calls on the stub for a still-open 1w candidate — the no-live-fetch law is wired and asserted;
+- `tests/unit/test_ops_bootstrap_service.py` — 71 passed (untouched);
+- Full suite twice: 2728 passed / 0 failed in each run.
+
+### DEVIATIONS
+- None beyond ISSUE-CP13-004 itself; no frozen file touched; counts bucket `skipped_still_open` is additive-when-present (absent when 0) — that keeps every CP-13 exact-dict-equality test byte-valid while still NAMING the metric in every printed summary and on every non-zero report.
+
+### OPEN-ISSUES
+- The 20 still-open bars become repairable after their closes (+5 s skew): ten 1w from 2026-09-22T00:00:05.000Z, ten 1mo from 2026-10-01T00:00:05.000Z. Until then any `repair-partial` run (dry-run or `--apply`) shows exactly `skipped_still_open=20` and exit 0. The owner's `--apply` remains BLOCKED until this hotfix is merged and the runbook below is executed with the fixed code.
+
+### DEVICE-RUNBOOK
+Executed on the owner's phone (Termux + proot Ubuntu), working tree at `~/Upstage`, checkout synced to this hotfix (`git pull` after the PR is merged to `main` and the device fast-forwards to it).
+
+1. Environment:
+   ```bash
+   proot-distro login ubuntu
+   cd ~/Upstage
+   git pull
+   .venv/bin/python -m pytest tests/unit/test_ops_partial_bar_repair.py tests/unit/test_ops_bootstrap_service.py -q
+   # EXPECTED: 97 passed   (26 repair + 71 bootstrap)
+   ```
+2. Dry-run repair with BOTH `--evidence` captures used for the 04:33:03Z report (`data/partial_bar_evidence_20260916T223404Z.json` is the documented one; substitute the owner's second capture path for `<second-capture>` — i.e. the same `--evidence` file list used for the 04:33:03Z dry-run):
+   ```bash
+   .venv/bin/python scripts/run_apex.py repair-partial \
+     --evidence data/partial_bar_evidence_20260916T223404Z.json \
+     --evidence data/<second-capture>.json
+   # EXPECTED (same inputs as the 04:33:03Z run):
+   #   20 rows:   verdict=SKIPPED_STILL_OPEN closes_at=2026-09-22T00:00:00.000Z  (10× 1w)
+   #              verdict=SKIPPED_STILL_OPEN closes_at=2026-10-01T00:00:00.000Z (10× 1mo)
+   #   no live fetch happens for those 20 (their report rows show source=-)
+   #   summary: candidates=163 verified=0 corrected=143 unrepairable=0 refused=0 skipped_still_open=20
+   #   EXIT: 0 (READY)
+   #   report: data/repair_partial_report_<UTC>.json (counts include skipped_still_open)
+   ```
+3. Only after the dry-run above prints `skipped_still_open=20` and exit 0 — apply with the same two `--evidence` captures:
+   ```bash
+   .venv/bin/python scripts/run_apex.py repair-partial \
+     --evidence data/partial_bar_evidence_20260916T223404Z.json \
+     --evidence data/<second-capture>.json --apply
+   # EXPECTED:
+   #   143 rows verdict=CORRECTED (or VERIFIED_CLOSED if a bar matched exactly), dry_run absent
+   #   20 rows  verdict=SKIPPED_STILL_OPEN closes_at=... (untouched, source=-)
+   #   summary: candidates=163 ... corrected=143 ... skipped_still_open=20 ... EXIT: 0
+   ```
+4. Re-run WITHOUT `--apply` (healing must be idempotent; nothing left to correct):
+   ```bash
+   .venv/bin/python scripts/run_apex.py repair-partial
+   # EXPECTED:
+   #   NO verdict=CORRECTED rows at all (corrected=0)
+   #   exactly the 20 still-open bars remain, all verdict=SKIPPED_STILL_OPEN
+   #   summary: candidates=20 verified=0 corrected=0 unrepairable=0 refused=0 skipped_still_open=20
+   #   EXIT: 0
+   ```
+5. Confirm no writes happened for the 20: in the step-3/4 reports every skipped row shows `source=-`; the store's `raw_revision` contains only the 143 CP-13 corrections with `actor=OPS_REPAIR_CP13`.
+
+### PUSH RECORD
+- Branch `arena/01a0adc6-upstage` → PR pending (number/URL recorded in the CP-13.1 checkpoint board line and the executor's report) — `[CP-13.1] HOTFIX close-time-vs-now guard for repair-partial — ISSUE-CP13-004`. Suite twice: 2728 passed / 0 failed. Suite file counts: 67 unit + 9 integration + 1 e2e + 4 perf files; 95 node API tests (unchanged).
