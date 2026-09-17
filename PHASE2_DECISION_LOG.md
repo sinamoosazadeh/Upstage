@@ -212,7 +212,7 @@ Recorded verbatim by the owner after a full gap review of main @ 9da8566. These 
 ### ADR-SESSION-A (binding notes for CP-14 / CP-15; Session A created no code, no tests, no YAML, no new files)
 - **ADR-SA-001 — PAPER capital is 10000.0.** The executor brief draft said `capital_usdt: 1000.0`; owner D4 says `10000`, corroborated by the control-plane constructor default `"10000"` (`apex/telegram/control_plane.py` L458). Owner decision wins: P7 specifies `capital_usdt: 10000.0`.
 - **ADR-SA-002 — D9 is split: doc now, code later.** P6 adds `CIRCUIT_OPEN` to the Ch.7 registry; the matching `apex/errors.py` one-liner is deferred to CP-14 (Session A scope is doc-only per its brief).
-- **ADR-SA-003 — Named-but-uncreated files.** `params/paper_account_v1.yaml` and `params/e11_classifier_v4.json` are named by P7/P2 as CP-14 additive files under ADR-P2-003; Session A created neither.
+- **ADR-SA-003 — Named-but-uncreated files.** `params/paper_account_v1.yaml` and `params/e11_classifier_v1.yaml` are named by P7/P2 as CP-14 additive files under ADR-P2-003; Session A created neither. (Session-A F2 2026-09-17: renamed from `e11_classifier_v4.json` — YAML-only parameter surface per ISSUE-CP2-006.)
 - **ADR-SA-004 — No risk-threshold fork.** Per D8, `params/risk_defaults_v1.yaml` stays authoritative for `budget_per_trade`/`k_attn`/loss limits; P7's paper-account YAML holds only `capital_usdt` + simulated-margin inputs and references risk_defaults, never duplicates it.
 
 ### ISSUEs filed by Session A (doc-vs-code conflicts the patch had to resolve; doc line numbers are pre-patch)
@@ -225,7 +225,7 @@ Recorded verbatim by the owner after a full gap review of main @ 9da8566. These 
 - [ISSUE-SESSION-A-002] severity: MAJOR | status: CLOSED(doc-side; code follow-up = CP-14)
   A: "using initial weights trained with logistic regression over 6 months of delayed labels" (APEX_GEN5.md E11 §3.3, L11831)  # no artifact, no procedure, no seed
   B: `_validate_e11_context` hard-requires `classifier_W` shape (9,8) + `classifier_b` shape (9,) (apex/ops/plan_bridge.py L432-457); engine raises `CONFIGURATION_INVALID` without W/b (apex/engines/e11_regime/engine.py L409)
-  Rule applied: D3 — P2 names `params/e11_classifier_v4.json` + the deterministic training procedure + degenerate-class refusal.
+  Rule applied: D3 — P2 names `params/e11_classifier_v1.yaml` + the deterministic training procedure + degenerate-class refusal (renamed Session-A F2 2026-09-17).
   Interim behavior: bridge still raises `E11_CONTEXT_INVALID` until CP-14 trains the artifact.
   Needs from owner: none (CP-14 trains per P2).
 - [ISSUE-SESSION-A-003] severity: MINOR | status: CLOSED(doc-side; code follow-up = CP-14 one-liner)

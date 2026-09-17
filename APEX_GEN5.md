@@ -11832,15 +11832,29 @@ using initial weights trained with logistic regression over 6 months of delayed 
 
 **Session-A P2 (2026-09-17; D2/D3 — normative, owns the classifier-weight
 artifact and its training procedure; no formula rewritten):** the logits
-above consume the persisted artifact **`params/e11_classifier_v4.json`**
-`{W: (9,8), b: (9,), seed, sha256, label_delay: 48, K: 9}` (additive file,
-ADR-P2-003; CP-14 writes it). **Training procedure (deterministic):**
+above consume the persisted artifact **`params/e11_classifier_v1.yaml`**
+(YAML: the document and `apex/config.py load_params()` know only
+`params/*.yaml` — ISSUE-CP2-006 kept the YAML set as the only parameter
+surface; Session-A F2 2026-09-17; additive file, ADR-P2-003; CP-14 writes
+it). **YAML schema (normative):**
+```yaml
+W: [[...8 floats...], ...9 rows...]   # 9x8 classifier weights
+b: [...9 floats...]                   # 9 biases
+K: 9
+label_delay_candles: 48
+seed: <int>                           # fixed training seed
+training_window: {start: <ISO-8601>, end: <ISO-8601>}
+sample_count: <int>
+training_query_sha256: <hex>          # sha256 of the training query text
+artifact_sha256: <hex>                # sha256 of canonical_json({W, b, seed})
+```
+**Training procedure (deterministic):**
 labels come from the §3.2 rule tree applied to harvested-store CLOSED
 bars, finalized at `t+48` by the §3.4 BOS/CHoCH confirmation rule, and
 training consumes only data `≤ t−48` (PIT); features are the §2 `X_t`
 vectors; the optimizer uses a fixed recorded `seed`; the artifact's
-`sha256` covers the canonical JSON of `{W, b, seed}` and is recorded in
-the snapshot `param_hash` (E11 §6 governance). Weights are **never zeros,
+`artifact_sha256` is recorded in the snapshot `param_hash` (E11 §6
+governance). Weights are **never zeros,
 never random at runtime**. **Degenerate-class handling:** if any of the 9
 classes has zero delayed-label members in the training window, training
 **refuses** — no synthetic members, no class dropped, `K` stays 9 — and no
@@ -16940,6 +16954,28 @@ authorizes a venue packet (ISSUE-SESSION-A-004). Constructing a signed
 packet in PAPER is a defect; in LIVE the signed Wave-In wire above is the
 only transport.
 
+**Session-A F3 (2026-09-17 — normative PAPER simulator fill law, CP-15
+builds it; nothing here is guessed):** (a) an entry fills at the last
+CLOSED store bar's close at submit time, adjusted by the frozen cost
+model — fee `0.02 %` per side (`apex/research/backtest.py`
+`FEE_FRACTION = 0.0002`) plus `alpha_spread` slippage
+(`alpha_spread = 0.25`, same file), the same constants the frozen
+backtest cost model uses; (b) protective stop and target orders are
+evaluated against each subsequent CLOSED bar with the X.4 precedence
+hard stop → target → time stop (`_resolve_exit`: a bar touching the stop
+is a stop-out, never a target fill), filled at the stop/target price —
+a gap-through fills at the bar open; (c) `query_open_positions`,
+`query_order_state` (scope `open` | `fills`), and
+`query_account_margin_health` answer from the simulator's own durable
+state, so `reconcile_boot` reaches READY without any network; (d) balance
+= `params/paper_account_v1.yaml` `capital_usdt` + realised P/L from the
+ledger; margin health = simulated from that balance and open notional per
+the P7 `simulated_margin` fractions; (e) simulator state is persisted in
+the same SQLite file under the additive table `paper_sim_state`
+(ADR-P2-003 additive migration; CP-15 defines its columns against the
+five-op surface above), so a restart reconciles against it; (f) LIVE is
+unchanged — the signed Wave-In wire stays the only LIVE transport.
+
 
 **Rollover policy (normative).** For quarterly contracts: no new entry is
 permitted when time-to-expiry is below a governed threshold (default 7
@@ -20284,7 +20320,7 @@ params/quality_weights_v1.yaml
 params/toobit_wire_v1.yaml
 params/e11_params_v4.yaml
 params/paper_account_v1.yaml
-params/e11_classifier_v4.json
+params/e11_classifier_v1.yaml
 tests/unit/
 tests/integration/
 tests/fixtures/gf_sc_01.json
@@ -20331,7 +20367,7 @@ authoritative in `params/risk_defaults_v1.yaml` (D8).
 **Algorithm/YAML twin rule:** algorithm identity numbers (W, θ_H, λ, K,
 delays, windows) stay in the engine §6 tables; the engine's
 `params/*.yaml` holds only the governed twin consumed at runtime
-(`e11_params_v4.yaml` for θ_H/λ/W-180d; `e11_classifier_v4.json` for W/b
+(`e11_params_v4.yaml` for θ_H/λ/W-180d; `e11_classifier_v1.yaml` for W/b
 per P2). On any mismatch the §6 table wins and the twin is corrected by
 governed change — never the reverse.
 
@@ -20378,8 +20414,13 @@ contract, and the wiring staleness law):**
    `SQLiteStore` public methods (`get_window`, `max_availability_time`,
    `insert_evidence`, `insert_snapshot`, `ingest_raw`, `correct_raw`,
    `write_manifest`, `retention_purge`, `table_names`); `events` are the
-   persisted `evidence_event` SQL rows read back after insert — no
-   in-memory substitution. The store's explicitly named
+   complete persisted EvidenceEvent payloads (the full canonical event,
+   lineage and lifecycle state included) as written by `insert_evidence`
+   and read back through the producer's `get_bridge_context` reader
+   (Session-A F4 2026-09-17, matching `apex/ops/plan_bridge.py`); a
+   reduced column projection of `evidence_event` is refused by the bridge
+   (`PERSISTED_EVIDENCE_INCOMPLETE`) and must never be substituted. The
+   store's explicitly named
    `get_bridge_context`/`get_engine_context` reader is the CP-14
    interface: the bridge probes `get_bridge_context` →
    `get_engine_context` → `read_bridge_context` → `read_engine_context`
@@ -20388,7 +20429,7 @@ contract, and the wiring staleness law):**
 
    | Context key | Authoritative producer |
    |---|---|
-   | `events` | E01–E12 versioned event channels, persisted via `insert_evidence`, read back as SQL rows |
+   | `events` | E01–E12 versioned event channels: complete EvidenceEvent payloads via `insert_evidence`, read back through `get_bridge_context` (reduced projections refused) |
    | `data_trust` | quality plane (§2.1): data-trust derivation over the window quality vectors |
    | `q_raw` | quality plane (§2.1 Q_raw tables; `params/quality_weights_v1.yaml` governed twin) |
    | `market_regime` | E11 `regime_state` label (§3.2 rule tree + hysteresis) |
@@ -20772,11 +20813,5 @@ Engine v4.0.0 formula bodies were not rewritten.
 **Honestly still open (protocol only):** those six measurement items; running `apex/` code; ECONOMIC_GATE checkbox.
 
 **GC-D1..D16** remain: FSM=SL-6; SQLite; Q_oi 0.5; E04 1e-12; Core-10; dual leverage min(); 14 veto names only; Gate 11 lineage; LIVE env ≠ capital; NFR three meanings; Williams k=2; budget 0.005 / k_attn 0.25; E11 class vs forecast; depth fail no partial; engine body > AI.11; adaptive ATR deferred.
-
-End of merged document.
- fail no partial; engine body > AI.11; adaptive ATR deferred.
-
-End of merged document.
-
 
 End of merged document.
