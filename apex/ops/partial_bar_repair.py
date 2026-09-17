@@ -75,7 +75,21 @@ original immutable + correction; frozen ``raw_store_current`` view and
   exactly one bar per ``as_of``; unaffected (this is the designed
   correction visibility).
 
-CONTRACT_VERSION 4.0.0.
+CP-13.1 (ISSUE-CP13-004, CONTRACT_VERSION 4.1.0): the B1 selection
+(``created_at < close + skew``) has no guard that the bar has actually
+closed — on the owner's 2026-09-17T04:33:03Z dry-run it selected the 20
+CURRENTLY OPEN 1w/1mo bars of all ten symbols, and an ``--apply`` run would
+have replaced a partial bar with another partial bar (and re-done so on
+every subsequent run). The repair loop therefore takes an explicit
+``now_ms`` (single wall-clock read at one place; tests inject it) and any
+candidate whose ``close_ms > now_ms - SKEW_MARGIN_SECONDS*1000`` is NOT
+repaired and NO live fetch is made for it: it is listed with verdict
+``SKIPPED_STILL_OPEN``, ``replacement`` null and ``closes_at`` (ISO-8601 UTC
+millisecond string of ``close_ms``), counted under
+``skipped_still_open`` — never as unrepairable, never as refused, never
+degrading the exit code.
+
+CONTRACT_VERSION 4.1.0.
 """
 
 from __future__ import annotations
@@ -83,6 +97,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import time
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -91,7 +106,7 @@ from apex.data_catalog.ingest.toobit_public import (
 from apex.ops.bootstrap_service import (
     _ms_to_iso, _ohlc_violation, close_time_ms)
 
-CONTRACT_VERSION = "4.0.0"
+CONTRACT_VERSION = "4.1.0"
 
 #: Detection skew margin (B1): a candidate that turns out identical is a
 #: harmless no-op, so the margin only errs toward checking.
@@ -107,6 +122,11 @@ UNREPAIRABLE_VENUE_WINDOW_PASSED = "UNREPAIRABLE_VENUE_WINDOW_PASSED"
 REFUSED_OHLC_PREFIX = "REFUSED_OHLC_"
 REFUSED_EVIDENCE_MISMATCH = "REFUSED_EVIDENCE_MISMATCH"
 REFUSED_PARSE = "REFUSED_PARSE"
+#: CP-13.1 (ISSUE-CP13-004) verdict: ``close_ms > now_ms - skew`` — the bar
+#: has not closed yet; it is never fetched, never repaired, never counted as
+#: unrepairable or refused; the report row carries ``closes_at`` so the
+#: owner sees exactly when it becomes repairable.
+VERDICT_SKIPPED_STILL_OPEN = "SKIPPED_STILL_OPEN"
 
 #: LIVE fetch limit (B2: "limit small").
 LIVE_FETCH_LIMIT = 5
@@ -437,20 +457,50 @@ async def repair_one(store: Any, candidate: Mapping[str, Any], *,
 async def run_repair(store: Any, *, client: Any,
                      evidence_paths: Sequence[str] = (),
                      apply: bool = False,
-                     cells: Optional[Sequence[Tuple[str, str]]] = None
+                     cells: Optional[Sequence[Tuple[str, str]]] = None,
+                     now_ms: Optional[int] = None
                      ) -> Dict[str, Any]:
     """Find every candidate and repair (or dry-run) it, in open_time order.
 
     Returns ``{"candidates": [...rows...], "counts": {...}, "apply": ...}``
     with ``counts = {candidates, verified, corrected, unrepairable,
-    refused}``. ``refused`` groups every ``REFUSED_*`` verdict. Writes happen
-    only when ``apply`` is true (one frozen ``correct_raw`` per corrected
-    row); dry-run writes nothing.
+    refused}`` plus ``skipped_still_open`` when any candidate is skipped
+    still-open (CP-13.1). ``refused`` groups every ``REFUSED_*``
+    verdict. ``now_ms`` (int, UTC epoch milliseconds) is the one and only
+    wall-clock read of the repair path: ``None`` resolves to
+    ``int(time.time() * 1000)`` here, tests inject it, and no other
+    production line reads the clock. A candidate whose bar has not closed by
+    ``now_ms - SKEW_MARGIN_SECONDS*1000`` (CP-13.1 / ISSUE-CP13-004) is NOT
+    repaired and NO live fetch is made for it — it is listed with verdict
+    ``SKIPPED_STILL_OPEN``, ``replacement`` null and ``closes_at`` (the
+    ISO-8601 UTC millisecond string of ``close_ms``) and counted under
+    ``skipped_still_open`` only. Writes happen only when ``apply`` is true
+    (one frozen ``correct_raw`` per corrected row); dry-run writes nothing.
     """
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)      # the single wall-clock read
     evidence = load_evidence_files(evidence_paths or [])
     found = await find_candidates(store, cells)
     rows: List[Dict[str, Any]] = []
     for candidate in found:
+        if int(candidate["close_ms"]) > (int(now_ms)
+                                         - SKEW_MARGIN_SECONDS * 1000):
+            # CP-13.1 (ISSUE-CP13-004): still open — never fetched, never
+            # repaired; listed with closes_at so the owner sees exactly
+            # which bars become repairable later, and when.
+            rows.append({"symbol": str(candidate["symbol"]),
+                         "timeframe": str(candidate["timeframe"]),
+                         "open_time": str(candidate["as_of"]),
+                         "created_at": str(candidate["created_at"]),
+                         "store_close": str(candidate["close"]),
+                         "store_volume": str(candidate["volume"]),
+                         "repl_close": None, "repl_volume": None,
+                         "replacement": None,
+                         "closes_at": _ms_to_iso(int(candidate["close_ms"])),
+                         "verdict": VERDICT_SKIPPED_STILL_OPEN,
+                         "detail": ("bar still open at now_ms; repairable "
+                                    "from closes_at + skew onward")})
+            continue
         rows.append(await repair_one(store, candidate, client=client,
                                     evidence=evidence, apply=apply))
     counts = {"candidates": len(rows),
@@ -462,6 +512,12 @@ async def run_repair(store: Any, *, client: Any,
                                    UNREPAIRABLE_VENUE_WINDOW_PASSED),
               "refused": sum(1 for r in rows
                              if str(r["verdict"]).startswith("REFUSED"))}
+    skipped = sum(1 for r in rows
+                  if r["verdict"] == VERDICT_SKIPPED_STILL_OPEN)
+    if skipped:
+        # Additive bucket (CP-13.1): present whenever at least one candidate
+        # is still open; the printed summary always shows the metric.
+        counts["skipped_still_open"] = skipped
     return {"candidates": rows, "counts": counts, "apply": bool(apply),
             "evidence_files": [os.path.basename(p)
                                for p in list(evidence_paths or [])],
@@ -481,7 +537,8 @@ __all__ = [
     "CONTRACT_VERSION", "CORRECTED", "LIVE_FETCH_LIMIT",
     "REFUSED_EVIDENCE_MISMATCH", "REFUSED_OHLC_PREFIX", "REFUSED_PARSE",
     "REPAIR_ACTOR", "SKEW_MARGIN_SECONDS",
-    "UNREPAIRABLE_VENUE_WINDOW_PASSED", "VERIFIED_CLOSED",
+    "UNREPAIRABLE_VENUE_WINDOW_PASSED", "VERDICT_SKIPPED_STILL_OPEN",
+    "VERIFIED_CLOSED",
     "fetch_live_bar", "find_candidates", "load_evidence_files",
     "repair_one", "report_filename", "run_repair",
 ]

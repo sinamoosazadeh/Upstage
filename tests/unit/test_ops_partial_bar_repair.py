@@ -563,3 +563,206 @@ class TestRepairPartialCli:
             assert "REFUSED" in capsys.readouterr().out
         self._patch_cli(monkeypatch, tmp_path)
         run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# CP-13.1 (ISSUE-CP13-004) — SKIPPED_STILL_OPEN guard on still-open bars
+# ---------------------------------------------------------------------------
+
+
+class TestSkippedStillOpen:
+    """The close-time-vs-now guard: a bar that has not closed by
+    ``now_ms - SKEW_MARGIN_SECONDS*1000`` is never fetched and never
+    repaired, never counts as unrepairable/refused, and is listed with
+    ``closes_at`` so the owner sees when it becomes repairable."""
+
+    def test_a_still_open_weekly_bar_skipped_no_live_fetch(self, tmp_path):
+        async def scenario():
+            store = await open_store(tmp_path / "apex.sqlite3")
+            try:
+                assert PR.CONTRACT_VERSION == "4.1.0"
+                assert PR.VERDICT_SKIPPED_STILL_OPEN == "SKIPPED_STILL_OPEN"
+                close0 = BS.close_time_ms(T0, "1w")
+                await seed(store, T0, tf="1w",
+                           created_iso=BS._ms_to_iso(T0 + 1_000))
+                client = StubLiveClient([])
+                report = await PR.run_repair(store, client=client,
+                                             apply=False,
+                                             now_ms=T0 + 1_000)
+                row = report["candidates"][0]
+                assert row["verdict"] == PR.VERDICT_SKIPPED_STILL_OPEN
+                assert row["closes_at"] == BS._ms_to_iso(close0)
+                assert row["replacement"] is None
+                counts = report["counts"]
+                assert counts["candidates"] == 1
+                assert counts["skipped_still_open"] == 1
+                assert counts["unrepairable"] == 0
+                assert counts["refused"] == 0
+                assert counts["verified"] == 0
+                assert counts["corrected"] == 0
+                assert client.calls == []
+            finally:
+                await store.close()
+        run(scenario())
+
+    def test_b_after_close_plus_skew_processed_normally(self, tmp_path):
+        async def scenario():
+            store = await open_store(tmp_path / "apex.sqlite3")
+            try:
+                close0 = BS.close_time_ms(T0, "1w")
+                await seed(store, T0, tf="1w",
+                           created_iso=BS._ms_to_iso(T0 + 1_000))
+                client = StubLiveClient([live_obs("BTCUSDT", "1w", T0)])
+                report = await PR.run_repair(store, client=client,
+                                             apply=False,
+                                             now_ms=close0 + 5_000)
+                row = report["candidates"][0]
+                assert row["verdict"] == PR.VERIFIED_CLOSED
+                assert row["replacement"] == "VENUE_LIVE"
+                assert "closes_at" not in row
+                counts = report["counts"]
+                assert counts["verified"] == 1
+                assert "skipped_still_open" not in counts
+                assert client.calls == [
+                    ("BTCUSDT", "1w", T0, close0 - 1, PR.LIVE_FETCH_LIMIT)]
+            finally:
+                await store.close()
+        run(scenario())
+
+    def test_c_close_within_skew_window_before_now_is_still_open(
+            self, tmp_path):
+        async def scenario():
+            store = await open_store(tmp_path / "apex.sqlite3")
+            try:
+                close0 = BS.close_time_ms(T0, "1h")
+                await seed(store, T0, created_iso=BS._ms_to_iso(T0 + 1_000))
+                client = StubLiveClient([live_obs("BTCUSDT", "1h", T0)])
+                # Close inside the 5 s skew window before now (and 4 s in
+                # the future) is treated as still open — no fetch at all.
+                for now_ms in (close0 - 4_000, close0 + 3_000, close0 + 4_999):
+                    report = await PR.run_repair(store, client=client,
+                                                 apply=False, now_ms=now_ms)
+                    assert report["candidates"][0]["verdict"] == \
+                        PR.VERDICT_SKIPPED_STILL_OPEN
+                    assert report["counts"]["skipped_still_open"] == 1
+                assert client.calls == []
+                # The exact boundary is NOT skipped (strict >).
+                report = await PR.run_repair(store, client=client,
+                                             apply=False,
+                                             now_ms=close0 + 5_000)
+                assert report["candidates"][0]["verdict"] == \
+                    PR.VERIFIED_CLOSED
+                assert report["counts"]["verified"] == 1
+                assert client.calls == [
+                    ("BTCUSDT", "1h", T0, close0 - 1, PR.LIVE_FETCH_LIMIT)]
+            finally:
+                await store.close()
+        run(scenario())
+
+    def test_d_apply_skipped_row_writes_nothing(self, tmp_path):
+        async def scenario():
+            store = await open_store(tmp_path / "apex.sqlite3")
+            try:
+                await seed(store, T0, tf="1w",
+                           created_iso=BS._ms_to_iso(T0 + 1_000))
+                client = StubLiveClient([])
+                report = await PR.run_repair(store, client=client, apply=True,
+                                             now_ms=T0 + 1_000)
+                assert report["candidates"][0]["verdict"] == \
+                    PR.VERDICT_SKIPPED_STILL_OPEN
+                assert report["counts"]["skipped_still_open"] == 1
+                # --apply semantics: no correct_raw, content byte-identical.
+                assert await raw_count(store) == 1
+                cur = await store.db.execute(
+                    "SELECT close FROM raw_observation")
+                assert (await cur.fetchone())[0] == "100.5"
+                cur = await store.db.execute(
+                    "SELECT candle_status FROM market_observation")
+                assert (await cur.fetchone())[0] == "CLOSED"
+                cur = await store.db.execute(
+                    "SELECT COUNT(*) FROM raw_revision")
+                assert (await cur.fetchone())[0] == 0
+                assert client.calls == []
+            finally:
+                await store.close()
+        run(scenario())
+
+    def test_e_mixed_run_counts_and_json_round_trip(self, tmp_path):
+        async def scenario():
+            store = await open_store(tmp_path / "apex.sqlite3")
+            try:
+                close_h2 = BS.close_time_ms(T0 + HOUR, "1h")
+                now_ms = close_h2 + 6_000       # past close+skew for both 1h
+                await seed(store, T0, symbol="SOLUSDT", tf="1w",
+                           created_iso=BS._ms_to_iso(T0 + 1_000))
+                await seed(store, T0, symbol="BTCUSDT", tf="1h",
+                           created_iso=BS._ms_to_iso(T0 + 1_000))
+                await seed(store, T0 + HOUR, symbol="ETHUSDT", tf="1h",
+                           created_iso=BS._ms_to_iso(T0 + HOUR + 1_000))
+                client = StubLiveClient([
+                    live_obs("BTCUSDT", "1h", T0, c="100.9", v="11"),
+                    live_obs("ETHUSDT", "1h", T0 + HOUR)])
+                report = await PR.run_repair(store, client=client,
+                                             apply=False, now_ms=now_ms)
+                assert report["counts"] == {
+                    "candidates": 3, "verified": 1, "corrected": 1,
+                    "unrepairable": 0, "refused": 0, "skipped_still_open": 1}
+                by_symbol = {row["symbol"]: row
+                             for row in report["candidates"]}
+                assert by_symbol["SOLUSDT"]["verdict"] == \
+                    PR.VERDICT_SKIPPED_STILL_OPEN
+                assert by_symbol["SOLUSDT"]["replacement"] is None
+                assert by_symbol["SOLUSDT"]["closes_at"] == \
+                    BS._ms_to_iso(BS.close_time_ms(T0, "1w"))
+                assert by_symbol["BTCUSDT"]["verdict"] == PR.CORRECTED
+                assert by_symbol["BTCUSDT"]["dry_run"] is True
+                assert by_symbol["ETHUSDT"]["verdict"] == PR.VERIFIED_CLOSED
+                assert len(client.calls) == 2
+                assert {call[0] for call in client.calls} == {
+                    "BTCUSDT", "ETHUSDT"}
+                assert json.loads(json.dumps(report, default=str)) == report
+            finally:
+                await store.close()
+        run(scenario())
+
+    def test_f_cli_summary_skipped_and_exit_ready_when_only_skipped(
+            self, tmp_path, monkeypatch, capsys):
+        async def scenario():
+            import time as _time
+            # A 1w bar opened one day ago at wall clock: it is the CURRENT
+            # still-open bar for ~6 more days, whatever the sandbox date is.
+            open_ms = int(_time.time() * 1000) - 86_400_000
+            store = await open_store(tmp_path / "apex.sqlite3")
+            try:
+                await seed(store, open_ms, tf="1w",
+                           created_iso=BS._ms_to_iso(open_ms + 1_000))
+            finally:
+                await store.close()
+
+            async def live_must_not_be_called(*args, **kwargs):
+                raise AssertionError(
+                    "live fetch must not run for still-open bars")
+
+            monkeypatch.setattr(PR, "fetch_live_bar", live_must_not_be_called)
+            code = await run_apex._repair_partial(
+                Config(), as_json=False, evidence=None, apply=True,
+                cells=None)
+            assert code == run_apex.EXIT_READY == 0
+            out = capsys.readouterr().out
+            assert "verdict=SKIPPED_STILL_OPEN" in out
+            assert "closes_at=" in out
+            assert "skipped_still_open=1" in out
+            assert "corrected=0" in out
+            reports = list((tmp_path / "data").glob(
+                "repair_partial_report_*.json"))
+            assert len(reports) == 1
+            saved = json.loads(reports[0].read_text(encoding="utf-8"))
+            assert saved["counts"]["skipped_still_open"] == 1
+            assert saved["counts"]["corrected"] == 0
+            row = saved["candidates"][0]
+            assert row["verdict"] == "SKIPPED_STILL_OPEN"
+            assert row["replacement"] is None
+            assert row["closes_at"] == BS._ms_to_iso(open_ms + 604_800_000)
+        monkeypatch.setattr(run_apex, "REPO_ROOT", tmp_path)
+        monkeypatch.setenv("APEX_SQLITE_PATH", str(tmp_path / "apex.sqlite3"))
+        run(scenario())

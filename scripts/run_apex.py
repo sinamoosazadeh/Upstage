@@ -631,18 +631,22 @@ async def _repair_partial(cfg: Config, *, as_json: bool,
                 _say(f"  REFUSED: {exc}")
                 return EXIT_ERROR
         for row in report["candidates"]:
-            _say(f"  {row['symbol']} {row['timeframe']} "
-                 f"open={row['open_time']} created={row['created_at']} "
-                 f"verdict={row['verdict']} "
-                 f"store_close={row['store_close']} "
-                 f"store_vol={row['store_volume']} "
-                 f"repl_close={row.get('repl_close') or '-'} "
-                 f"repl_vol={row.get('repl_volume') or '-'} "
-                 f"source={row.get('replacement') or '-'}")
+            line = (f"  {row['symbol']} {row['timeframe']} "
+                    f"open={row['open_time']} created={row['created_at']} "
+                    f"verdict={row['verdict']} ")
+            if row["verdict"] == PR.VERDICT_SKIPPED_STILL_OPEN:
+                line += f"closes_at={row.get('closes_at') or '-'} "
+            _say(line
+                 + f"store_close={row['store_close']} "
+                 + f"store_vol={row['store_volume']} "
+                 + f"repl_close={row.get('repl_close') or '-'} "
+                 + f"repl_vol={row.get('repl_volume') or '-'} "
+                 + f"source={row.get('replacement') or '-'}")
         counts = report["counts"]
         _say(f"  summary: candidates={counts['candidates']} "
              f"verified={counts['verified']} corrected={counts['corrected']} "
-             f"unrepairable={counts['unrepairable']} refused={counts['refused']}")
+             f"unrepairable={counts['unrepairable']} refused={counts['refused']} "
+             f"skipped_still_open={counts.get('skipped_still_open', 0)}")
         data_dir = REPO_ROOT / "data"
         try:
             data_dir.mkdir(parents=True, exist_ok=True)
