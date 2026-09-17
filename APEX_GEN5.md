@@ -11830,6 +11830,40 @@ Logits:
 $$z_r = W_r^T X_t + b_r,\quad W \in \mathbb{R}^{K\times 8},\ b\in\mathbb{R}^K$$
 using initial weights trained with logistic regression over 6 months of delayed labels.
 
+**Session-A P2 (2026-09-17; D2/D3 — normative, owns the classifier-weight
+artifact and its training procedure; no formula rewritten):** the logits
+above consume the persisted artifact **`params/e11_classifier_v1.yaml`**
+(YAML: the document and `apex/config.py load_params()` know only
+`params/*.yaml` — ISSUE-CP2-006 kept the YAML set as the only parameter
+surface; Session-A F2 2026-09-17; additive file, ADR-P2-003; CP-14 writes
+it). **YAML schema (normative):**
+```yaml
+W: [[...8 floats...], ...9 rows...]   # 9x8 classifier weights
+b: [...9 floats...]                   # 9 biases
+K: 9
+label_delay_candles: 48
+seed: <int>                           # fixed training seed
+training_window: {start: <ISO-8601>, end: <ISO-8601>}
+sample_count: <int>
+training_query_sha256: <hex>          # sha256 of the training query text
+artifact_sha256: <hex>                # sha256 of canonical_json({W, b, seed})
+```
+**Training procedure (deterministic):**
+labels come from the §3.2 rule tree applied to harvested-store CLOSED
+bars, finalized at `t+48` by the §3.4 BOS/CHoCH confirmation rule, and
+training consumes only data `≤ t−48` (PIT); features are the §2 `X_t`
+vectors; the optimizer uses a fixed recorded `seed`; the artifact's
+`artifact_sha256` is recorded in the snapshot `param_hash` (E11 §6
+governance). Weights are **never zeros,
+never random at runtime**. **Degenerate-class handling:** if any of the 9
+classes has zero delayed-label members in the training window, training
+**refuses** — no synthetic members, no class dropped, `K` stays 9 — and no
+artifact is written. **Runtime without a valid artifact** (missing file,
+hash mismatch, wrong shape) fails closed with
+`CONFIGURATION_INVALID`/`FAIL_CLOSED` (the bridge's `e11_context`
+validation requires exactly `classifier_W (9,8)` + `classifier_b (9)`);
+ISSUE-SESSION-A-002.
+
 PIT-safe softmax:
 $$p_{r,t}= \frac{\exp(z_{r,t} - \max_k z_{k,t})}{\sum_j \exp(z_{j,t} - \max_k z_{k,t})}$$
 subtracting the max for numerical stability.
@@ -14665,8 +14699,15 @@ The catalogue is the 74-feature registry in §3.12 together with the completenes
 | QX INVALID | QX INVALID | QX Degraded - High<Low -> QX INVALID - (high-low)<1e-12 -> DEGRADED - NaN Inf -0 missing -> BLOCK QX |
 | VETO_FRESHNESS_SLA | Freshness SLA Veto | Hard veto - Data stale -> REJECT even P=0.99 |
 | VETO_OI_LAG | OI Lag Veto | Hard veto - OI lag -> QUARANTINED - Q_oi AVAILABLE=1.0 STALE=0.5 Not 0.9 - veto_OI_lag hard quarantine Not soft |
+| CIRCUIT_OPEN | Aggregate-loss vetoes 10-12 tripped (daily / weekly / consecutive) | Block new trades per the veto 10-12 table (Ch.15); Telegram immediate + OWNER escalation; reset time-based / OWNER-review only, never automatic on new data |
 | TOO_MAUTC_W2_REQUESTS | Too Many Requests | TokenBucket queue - Retry exponential 1s,2s,4s max 3 |
 | UNAUTHORIZED | Unauthorized | IP whitelist HMAC SHA256 recvWindow 5000ms |
+
+**Session-A P6 (2026-09-17; D9):** the `CIRCUIT_OPEN` row above joins this
+registry so Ch.15 vetoes 10–12 (`DAILY_LOSS_LIMIT`, `WEEKLY_LOSS_LIMIT`,
+`CONSECUTIVE_LOSSES`) carry a code; the veto semantics stay owned by the
+Ch.15 registry (ISSUE-SESSION-A-003). The matching `apex/errors.py`
+one-line addition is deferred to CP-14 (Session A is doc-only).
 
 
 ## 8. Evidence Fabric, Conflict, and Cross-Domain
@@ -16899,6 +16940,42 @@ Success HTTP 200 and business code in {0,200}. Timeout/−1006/−1007/−1146/�
 
 Account: ISOLATED, ONE_WAY. Leverage `min(Y.2 TF cap, owner cap, exchange max)`. Never send 125x.
 
+**Session-A P3 (2026-09-17; D1/D2 — normative, owns the PAPER execution
+transport):** in PAPER the venue wire above is replaced by the **PAPER
+simulator**: the same five-operation surface (`submit_order`,
+`cancel_order`, `query_order_state`, `query_open_positions`,
+`query_account_margin_health`) off the same `fsm.submit`/`seal` path and
+the same ledger, FSM, and reconcile-first law — but the `Transport` seam
+is a simulator with **no network packet and no signature** (fills from
+last-closed prices; the fake-responder path shape is the test double, not
+the venue). The W.6 Phase-2 line "PAPER orders require
+`APEX_ALLOW_SIGNED=1`" permits the PAPER loop to run; it **never**
+authorizes a venue packet (ISSUE-SESSION-A-004). Constructing a signed
+packet in PAPER is a defect; in LIVE the signed Wave-In wire above is the
+only transport.
+
+**Session-A F3 (2026-09-17 — normative PAPER simulator fill law, CP-15
+builds it; nothing here is guessed):** (a) an entry fills at the last
+CLOSED store bar's close at submit time, adjusted by the frozen cost
+model — fee `0.02 %` per side (`apex/research/backtest.py`
+`FEE_FRACTION = 0.0002`) plus `alpha_spread` slippage
+(`alpha_spread = 0.25`, same file), the same constants the frozen
+backtest cost model uses; (b) protective stop and target orders are
+evaluated against each subsequent CLOSED bar with the X.4 precedence
+hard stop → target → time stop (`_resolve_exit`: a bar touching the stop
+is a stop-out, never a target fill), filled at the stop/target price —
+a gap-through fills at the bar open; (c) `query_open_positions`,
+`query_order_state` (scope `open` | `fills`), and
+`query_account_margin_health` answer from the simulator's own durable
+state, so `reconcile_boot` reaches READY without any network; (d) balance
+= `params/paper_account_v1.yaml` `capital_usdt` + realised P/L from the
+ledger; margin health = simulated from that balance and open notional per
+the P7 `simulated_margin` fractions; (e) simulator state is persisted in
+the same SQLite file under the additive table `paper_sim_state`
+(ADR-P2-003 additive migration; CP-15 defines its columns against the
+five-op surface above), so a restart reconciles against it; (f) LIVE is
+unchanged — the signed Wave-In wire stays the only LIVE transport.
+
 
 **Rollover policy (normative).** For quarterly contracts: no new entry is
 permitted when time-to-expiry is below a governed threshold (default 7
@@ -17091,6 +17168,19 @@ Per each bundle-cell (symbol × timeframe pair): download and store sufficient h
 
 **Phase 2 — Frozen-Default Validation:**
 Deterministic replay of default parameter package (provided by owner or auto-initialized per SL-12 governance). Health-check run confirms no critical failures. Defaults activate immediately upon Phase 2 completion. Phases govern **parameter quality only**. **Y.1 / coding freeze:** `APEX_ENV=RESEARCH|PAPER|LIVE` is not a capital switch. LIVE **capital** remains locked until `APEX_ECONOMIC_GATE_SIGNED=1`. PAPER orders require `APEX_ALLOW_SIGNED=1`. Phase 1 catch-up MAY run outside 03:00–05:00 UTC. Nightly 03:00–05:00 UTC is for Phase 3 + heavy jobs after Phase 1. `continuous on` (Telegram) runs 24/7 (48-hour charge use-case).
+
+**Session-A P4 (2026-09-17; D2/D6/D7 — normative, owns the Phase-2 replay
+CLI contract; CP-15 builds it, run once before PAPER):** Phase 2 is the
+CLI **`scripts/run_apex.py replay`** over the whole local store through
+the frozen backtest engine's deterministic path (`deterministic_double_run`;
+X.4 exit precedence STOP→TARGET→TIME_STOP; fee `0.0002`; `α_spread`
+`0.25`). Per cell it emits the canonical hash
+`SHA256(canonical_json(replay_outcome))` over that cell's replayed
+decisions and ledger outcomes; the verdict is **byte-identical hashes on
+the deterministic double run plus zero exceptions**; the run prints an
+envelope `{cells, per_cell_hash, exceptions, duration_ms, verdict}` whose
+verdict line is the handoff evidence consumed by G-PAPER-001. No capital,
+no venue packet, no parameter write.
 
 **Phase 3 — Scheduled Optimization Cycles:**
 Execute per W.3–W.5: generate, replay, rank, validate, inject (on schedule per W.4). Phase 3 completes when all symbol×timeframe cells have been swept at least once with approved parameter packages (or when owner halts bootstrap explicitly).
@@ -18222,14 +18312,20 @@ The DDL columns `authority` / `authority_scope` and the contract field
 
 **Deployment model.** The production deployment is a single personal device
 (Termux/Android). This model is accepted only with the safeguards below;
-without them, LIVE mode is forbidden.
+without them, LIVE mode is forbidden. **Session-A P8 (2026-09-17;
+D17/D19):** the 24/7 host is the owner's phone (Termux + proot,
+Termux:Boot); repository set to PRIVATE. Secrets (bot token, chat ids,
+venue key/secret) live **only** in the phone's git-ignored `.env` (the
+§2.5 device custody, narrowed) — never committed, never pasted in chat,
+never printed by any command.
 
 **Safeguards (all mandatory for LIVE):**
 1. **Watchdog peer:** a second always-on process on a separate device or VPS
    that (a) receives a signed heartbeat every 60 seconds, (b) on 3 missed
    heartbeats sends an OWNER alert via an independent channel, and
    (c) can trigger the exchange-side reduce-only/cancel-all path using a
-   restricted API key (no withdrawal permission).
+   restricted API key (no withdrawal permission). The watchdog chat is the
+   owner chat (Session-A P8 2026-09-17, D20).
 2. **Automated backup:** the ledger, parameter packages, emergency-ladder
    state, and open-position snapshot are exported encrypted, every hour and
    on every state transition of the execution FSM, to off-device storage
@@ -19064,13 +19160,14 @@ Owner-approval gates to pass.
 | **G-TOOBIT-001** | Toobit Core-10 Listing | Verify 10+ symbols listed on Toobit exchange | 10+ symbols with active 24h volume | One-hour timestamped snapshot per symbol; API response + network timestamp + response hash | **OPEN/UNVERIFIED** | Placeholder; must measure one hour before deployment |
 | **G-TOOBIT-002** | Toobit Depth (USDT) | Verify order-book depth > 500,000 USDT for each symbol | > 500k USDT bid+ask combined for each symbol tested | Toobit REST /depth API snapshot, timestamp, hash of response; one measurement per symbol | **OPEN/UNVERIFIED** | Existing entry filter threshold; re-verify one hour before go-live |
 | **G-TOOBIT-003** | Toobit Rate Limit Headroom | Verify API rate limit capacity > 120 req/sec average needed | Toobit not rate-limiting at 100 req/sec avg (our planned usage) | 10-minute production-like load test (candle fetches, position queries); measure request/sec; log response codes | **OPEN/UNVERIFIED** | Run on day-of deployment; if rate limit hit, halt and notify Toobit support |
+| **G-TOOBIT-004** | Toobit Key Custody & Rotation Evidence | Keys live only in the phone's git-ignored .env; rotation log shows ≤ 90-day cadence + immediate rotation on suspected exposure | Zero secrets in git/chat/prints; rotation log complete | Custody attestation + rotation log (SL-12 governed change per rotation) | **OPEN/UNVERIFIED** | Session-A P8 2026-09-17, D17; pre-LIVE checklist (D6) |
 | **G-TARGET-DEVICE-001** | Target Device Specification | Document device where system will run (CPU, RAM, disk, OS, build tools) | Device must meet minimum: 2 GHz CPU, 1 GB RAM, 50 GB disk, NTP capable | Device model, OS version, compiler version, build output, boot-time confirmation | **OPEN/UNVERIFIED** | Specify device before Phase 1 completion |
 | **G-CAPACITY-001** | Capacity Load Test (p95 latency) | Measure p95 analysis latency (feature → decision) on target device under 140 bundles/min load | p95 latency ≤ 400 ms; 30% headroom recommended (p95 ≤ 280 ms) | Load test results: 1000+ decisions sampled; p50, p95, p99 latencies; device/build/results logged | **OPEN/UNVERIFIED** | Run Phase 7; if p95 > 400 ms, redesign or upgrade device |
 | **G-CAPACITY-002** | Capacity Load Test (CPU/Memory) | Measure CPU and heap memory under sustained 140 bundles/min | CPU < 20% sustained; heap < 400 MB; peak < 50% CPU, < 500 MB heap | 60-minute steady-state run; monitor CPU%, heap GB; peak measurements logged | **OPEN/UNVERIFIED** | Run Phase 7 |
-| **G-ADAPTER-001** | Adapter Conformance | Verify E01–E12 v4.0.0 read-only migration adapters handle v2/v3 legacy data for research/backtest use only | Zero data loss; semantics preserved; outputs equivalent to direct v4.0.0 computation where applicable | 100 legacy data samples; adapter output vs. direct v4.0.0 output; byte-identical or documented equivalence | **OPEN/UNVERIFIED** | Run Phase 2.2 |
+| **G-ADAPTER-001** | Adapter Conformance | Verify E01–E12 v4.0.0 read-only migration adapters handle v2/v3 legacy data for research/backtest use only | Zero data loss; semantics preserved; outputs equivalent to direct v4.0.0 computation where applicable | 100 legacy data samples; adapter output vs. direct v4.0.0 output; byte-identical or documented equivalence | **N/A** | No legacy export exists (Session-A P5 2026-09-17, D6) |
 | **G-RESTORE-001** | Backup/Restore Drill | Execute full backup → restore cycle on production-like data volume | Restore completes in ≤ 30 minutes; hash-chain validation 100% pass; zero data loss | Backup at T0 (12-hour data set); restore at T0+30min; hash all records; log mismatch count (must be 0) | **OPEN/UNVERIFIED** | Run 2 weeks before go-live; repeat weekly |
-| **G-PAPER-001** | Paper Trading (Deterministic Replay) | Run strategy on 10 days of historical data; confirm zero execution errors | 100% of signals processed without exception; ledger reconciles with broker snapshot; P/L matches deterministic replay | 10-day backtest replay; compare live paper results to deterministic replay; log delta (must be 0 up to rounding) | **OPEN/UNVERIFIED** | Run Phase 7 (3 weeks before go-live) |
-| **G-PAPER-002** | Paper Trading (Drift Detection) | Run paper trading continuously for 5 days on the 24/7 crypto market; monitor for drift, clock, network issues | No unrecoverable errors; clock drift < 100 ms at all times; network uptime > 99.9% | 5-day live run logs; clock snapshots every 5 min; network error counts; all < thresholds | **OPEN/UNVERIFIED** | Run 2 weeks before go-live |
+| **G-PAPER-001** | Paper Trading (Deterministic Replay) | Run strategy on 10 days of historical data; confirm zero execution errors | 100% of signals processed without exception; ledger reconciles with broker snapshot; P/L matches deterministic replay | 10-day backtest replay; compare live paper results to deterministic replay; log delta (must be 0 up to rounding) | **OPEN/UNVERIFIED** | Phase-2 deterministic double run over the whole local store (byte-identical hashes, zero exceptions); entry gate to PAPER (Session-A P5 2026-09-17, D6) |
+| **G-PAPER-002** | Paper Trading (Drift Detection) | Run paper trading continuously for 5 days on the 24/7 crypto market; monitor for drift, clock, network issues | No unrecoverable errors; clock drift < 100 ms at all times; network uptime > 99.9% | 5-day live run logs; clock snapshots every 5 min; network error counts; all < thresholds | **OPEN/UNVERIFIED** | Measured passively during the first 5 days of normal PAPER use (5-min drift/uptime snapshots); exit gate towards LIVE, not entry to PAPER (Session-A P5 2026-09-17, D6) |
 | **G-RISK-001** | Risk Veto Autonomy Verification | Confirm Risk Kernel vetoes independently; no override possible from upstream | Test 20 scenarios where Decision says "BUY" but Risk says "VETO"; all result in NO TRADE | Test harness; Decision forced to propose trades; Risk veto log shows all rejections with reasons | **OPEN/UNVERIFIED** | Run Phase 5 |
 | **G-FALLBACK-001** | Fail-Closed Mode Drill | Simulate data corruption, lineage loss, broker mismatch; confirm system enters FAIL_CLOSED; new entries blocked | System blocks new entries; preserves protective orders; emits P0 alert; awaits manual override | Inject test failures; measure response time (must be < 5 sec); confirm protective orders in place | **OPEN/UNVERIFIED** | Run Phase 5 |
 | **G-LEDGER-001** | Ledger Immutability Verification | Attempt to overwrite a CLOSED ledger record; confirm rejection | Attempt UPDATE fails; only INSERT (correction) allowed | SQL test; attempt UPDATE on ledger table; verify error code | **OPEN/UNVERIFIED** | Run Phase 5 |
@@ -19079,8 +19176,17 @@ Owner-approval gates to pass.
 - **OPEN/UNVERIFIED:** gate condition not yet measured; must be completed before live deployment.
 - **CLOSED:** gate condition met; evidence collected and archived.
 - **BLOCKED:** gate condition not met; requires root-cause fix; deployment prohibited until resolved.
+- **N/A:** gate does not apply (G-ADAPTER-001: no legacy export exists); recorded, not measured (Session-A P5 2026-09-17, D6).
 
 **No claims of execution:** All gates listed above are **not yet executed**. The act of listing them is not a claim that measurements have been taken or that systems have been tested. This is a specification of what must be measured.
+
+**Session-A P5 (2026-09-17; D6 — normative sequencing; nothing deleted, the
+order changes):** G-PAPER-001 is satisfied by the W.6 Phase-2
+deterministic double run (entry gate to PAPER); G-PAPER-002 is measured
+passively during the first 5 days of normal PAPER use (exit gate towards
+LIVE, not entry to PAPER); G-TOOBIT-*, G-CAPACITY-*, G-RESTORE-001,
+G-RISK-001, G-FALLBACK-001, G-LEDGER-001 move to the pre-LIVE checklist;
+G-ADAPTER-001 is N/A (no legacy export exists).
 
 ---
 
@@ -19102,9 +19208,9 @@ Owner-approval gates to pass.
 | **E08 (Wyckoff) Chapters 2–4** | Layer 1 (reference) | REFERENCE (non-blocking) | Implementation uses Chapter 1 only; Chapters 2–4 are encyclopedic | **Chapters 2–4 are NON-BLOCKING REFERENCE GAP; live phase classification works with Chapter 1 logic** |
 | **Toobit Depth & Listing (AI.13)** | External | ✓ CLOSED AT CONTRACT LEVEL (verification spec) | Gates G-TOOBIT-001/002/003 defined | **Actual Toobit depth measurement for target symbols — OPEN (must execute before deployment)** |
 | **Target Device Capacity (AI.13)** | External | ✓ CLOSED AT CONTRACT LEVEL (spec) | Gate G-TARGET-DEVICE-001 defined | **Device specification and load-test results — OPEN (must execute before deployment)** |
-| **Adapter Conformance (AI.13)** | External | ✓ CLOSED AT CONTRACT LEVEL (spec) | Gate G-ADAPTER-001 defined | **Actual adapter testing on legacy data — OPEN (must execute Phase 2.2)** |
+| **Adapter Conformance (AI.13)** | External | ✓ CLOSED AT CONTRACT LEVEL (spec) | Gate G-ADAPTER-001 defined | **N/A — no legacy export exists (D6; Session-A P5 2026-09-17)** |
 | **Backup/Restore Drill (AI.13)** | External | ✓ CLOSED AT CONTRACT LEVEL (spec) | Gate G-RESTORE-001 defined | **Actual drill execution and RTO measurement — OPEN (must execute 2 weeks before go-live)** |
-| **Paper Trading Evidence (AI.13)** | External | ✓ CLOSED AT CONTRACT LEVEL (spec) | Gates G-PAPER-001, G-PAPER-002 defined | **Actual paper trading (5 days live, 10 days replay) — OPEN (must execute Phase 7)** |
+| **Paper Trading Evidence (AI.13)** | External | ✓ CLOSED AT CONTRACT LEVEL (spec) | Gates G-PAPER-001, G-PAPER-002 defined | **G-PAPER-001 by the Phase-2 double run (entry to PAPER); G-PAPER-002 by 5-day passive measurement (exit towards LIVE) — OPEN (D6; Session-A P5 2026-09-17)** |
 | **Risk Veto Autonomy & Fallback Drills (AI.13, AI.9)** | External | ✓ CLOSED AT CONTRACT LEVEL (spec) | Gates G-RISK-001, G-FALLBACK-001 defined | **Actual test execution on integrated system — OPEN (must execute Phase 5)** |
 
 **Closed items (contract level):**
@@ -19339,7 +19445,7 @@ All red lines identified for canonicalization are recorded as resolved or gated;
    - Duration: 2–3 weeks.
    - Activity: deterministic replay (10 days) + live paper trading (5 days).
    - Risk: none (no capital deployed).
-   - Exit gate: G-PAPER-001, G-PAPER-002 PASS (zero execution errors, clock drift < 100 ms).
+   - Exit gate: G-PAPER-001 PASS (the Phase-2 deterministic double run — entry to PAPER), then after PAPER runs, G-PAPER-002 PASS (5-day passive drift/uptime measurement — exit towards LIVE) (Session-A P5 2026-09-17, D6).
 
 2. **RESEARCH phase:**
    - Condition: PAPER phase passes.
@@ -19350,7 +19456,7 @@ All red lines identified for canonicalization are recorded as resolved or gated;
    - Exit gate: backtest results meet acceptance criteria; parameter packages versioned and locked.
 
 3. **LIVE phase:**
-   - Condition: All Phase 1–7 gates and all external gates (AI.13) PASS.
+   - Condition: All Phase 1–7 gates and all external gates (AI.13) PASS (G-TOOBIT-*, G-CAPACITY-*, G-RESTORE-001, G-RISK-001, G-FALLBACK-001, G-LEDGER-001 form the pre-LIVE checklist; Session-A P5 2026-09-17, D6).
    - Entrance gate: Owner written approval (the Promotion Protocol).
    - Activity: live capital deployment, order execution, ledger recording, Telegram alerts.
    - Risk: **real capital at stake**.
@@ -20213,6 +20319,8 @@ params/setup_weights_v1.yaml
 params/quality_weights_v1.yaml
 params/toobit_wire_v1.yaml
 params/e11_params_v4.yaml
+params/paper_account_v1.yaml
+params/e11_classifier_v1.yaml
 tests/unit/
 tests/integration/
 tests/fixtures/gf_sc_01.json
@@ -20239,11 +20347,161 @@ nightly_window_utc: {start: "03:00", end: "05:00"}
 
 **`params/e11_params_v4.yaml`:** K: 9, theta_H: 0.65, lambda_ewma: 0.94, hysteresis_candles: 3, dirichlet_alpha: 0.1, transition_delay_candles: 48, W_180d_H1: 4320.
 
+**Session-A P7 (2026-09-17; D2/D4/D8 — normative, owns the PAPER account
+inputs and the algorithm/YAML twin rule):**
+**`params/paper_account_v1.yaml`** (new, CP-14 writes it; additive file,
+ADR-P2-003):
+```yaml
+capital_usdt: 10000.0
+simulated_margin: {warning_fraction: 0.60, action_fraction: 0.40, liquidation_approach_fraction: 0.20}
+```
+`capital_usdt` is the authoritative PAPER balance: the Telegram control
+plane's `paper_balance` is fed from this YAML, never a second literal
+(ISSUE-SESSION-A-006); PAPER and LIVE stay separate everywhere they are
+measured or displayed (reports, backtest results, exports, balances).
+PAPER exposure, realized daily/weekly loss, consecutive losses, and margin
+health come from the ledger (margin health simulated from this account +
+positions). Risk thresholds (`budget_per_trade` 0.005, `k_attn` 0.25,
+daily 3%, weekly 6%, 4-loss halt) are **not** duplicated here — they stay
+authoritative in `params/risk_defaults_v1.yaml` (D8).
+**Algorithm/YAML twin rule:** algorithm identity numbers (W, θ_H, λ, K,
+delays, windows) stay in the engine §6 tables; the engine's
+`params/*.yaml` holds only the governed twin consumed at runtime
+(`e11_params_v4.yaml` for θ_H/λ/W-180d; `e11_classifier_v1.yaml` for W/b
+per P2). On any mismatch the §6 table wins and the twin is corrected by
+governed change — never the reverse.
+
  Event bus = in-process `asyncio.Queue` only. UUIDv7 RFC 9562 in-tree (no extra dep). `canonical_json`: sorted keys, no whitespace, Decimal as quantized JSON string, datetime `...Z`, forbid NaN/Inf. `snapshot_id = SHA256(canonical_json(payload))`.
 11. **FROZEN_BOOTSTRAP risk:** `budget_per_trade=0.005`, `k_attn=0.25`, daily 3%, weekly 6%, 4-loss halt, `cost_R_floor=0.05`, `R_penalty` 0.10/0.25, `max_candidates=3`, `correlation_cap=0.70`, margin ISOLATED, position ONE_WAY. Y.2 leverage 2/3/4/5 by TF group.
 12. **Env (names only):** `APEX_ENV`, `APEX_ALLOW_SIGNED`, `APEX_ECONOMIC_GATE_SIGNED`, `TOOBIT_API_KEY`, `TOOBIT_API_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID`, `TELEGRAM_WATCHDOG_CHAT_ID`, `APEX_SQLITE_PATH`. Parse `.env` without adding python-dotenv. GitHub token is not a runtime secret.
 13. **Secrets:** never in git, SQLite, exception strings, or Telegram message text. Encrypted SQLite backup is allowed; plaintext key dump to Saved Messages is forbidden.
 14. **Scheduler:** on each TF close, ingest→quality→features→engines→setup→gates→risk→decision→execution for **that** (symbol,TF). Semaphore 4. HTF consumed last-closed only.
+
+**Session-A P1 (2026-09-17; D2/D5/D14; CP-14 interface — normative, owns the
+per-close catch-up, the runtime engine order, the engine-context producer
+contract, and the wiring staleness law):**
+1. **Per-close catch-up (D5).** `serve` performs a per-cycle catch-up for
+   due cells through the CP-13 `ToobitKlineSource` frontier rule (closed
+   bars only: `open_time > store_frontier AND open_time > served_upto AND
+   close_time <= end_ms`) **before** the engines run — one process, one
+   writer (Ch.23 execution model). No engine input may be computed from a
+   cell whose catch-up has not completed for that close.
+2. **Runtime engine order (derived from the engine chapters' Dependencies
+   declarations; each engine's own declaration governs its inputs).**
+   Per close, engines run in this order:
+   `E01 → E02 → E12 → E04 → E03 → E10 → E09 → E05 → E06 → E11 → E07 → E08`.
+   Edges: E04 consumes E01 BOS (`EV_VLT_005`, E04 §1.3); E03 consumes the
+   E04 `ATR_20` scalar (E03 §1.3); E10's E09/E04 contexts are optional
+   (E10 §1.5) so E10 runs **before** E09 without `TrendContext` on the
+   pass; E09 consumes E01 + E04 + E10 (E09 deps); E05 consumes
+   E01+E02+E03+E04 (E05 deps); E06 consumes E01+E03+E04+E05 (E06 deps);
+   E11 consumes E02+E03+E04+E09+E10 (+ E01 `S_struct`, E11 §1.2/§2);
+   E07 consumes E01..E06 + E12 (E07 deps); E08 consumes E01+E03+E04 plus
+   E11 **event-driven only** (E08 deps), i.e. versioned E11 events of the
+   current close, never a direct call. E12's E02/E11 deps are
+   `required: false`, so E12 runs early. E02 runs on CLOSED OHLCV only:
+   its own "Dependencies: none" declaration governs its inputs; E01
+   §1.5's consumer advertisement does not impose an input on E02
+   (ISSUE-SESSION-A-005).
+3. **Engine-context producer contract (fills the `paper_loop`
+   `plan_provider(symbol, timeframe, as_of)` seam; without it the loop's
+   `features`/`engines` stages stay `DECLARED_SKIP` and `setup` halts
+   `NO_PLAN_PROVIDER`).** The producer runs the §9.5-14 nine stages per
+   due cell and assembles exactly `REQUIRED_CONTEXT_KEYS` (38) and
+   `REQUIRED_RISK_KEYS` (23) (`apex/ops/plan_bridge.py`); any missing key
+   fails closed (`ENGINE_CONTEXT_UNAVAILABLE` / `RISK_INPUT_INCOMPLETE`),
+   never defaults into permission. **Store seam:** the producer uses only
+   `SQLiteStore` public methods (`get_window`, `max_availability_time`,
+   `insert_evidence`, `insert_snapshot`, `ingest_raw`, `correct_raw`,
+   `write_manifest`, `retention_purge`, `table_names`); `events` are the
+   complete persisted EvidenceEvent payloads (the full canonical event,
+   lineage and lifecycle state included) as written by `insert_evidence`
+   and read back through the producer's `get_bridge_context` reader
+   (Session-A F4 2026-09-17, matching `apex/ops/plan_bridge.py`); a
+   reduced column projection of `evidence_event` is refused by the bridge
+   (`PERSISTED_EVIDENCE_INCOMPLETE`) and must never be substituted. The
+   store's explicitly named
+   `get_bridge_context`/`get_engine_context` reader is the CP-14
+   interface: the bridge probes `get_bridge_context` →
+   `get_engine_context` → `read_bridge_context` → `read_engine_context`
+   → `bridge_contexts`, and absence fails closed
+   (ISSUE-SESSION-A-007). The producer for every key:
+
+   | Context key | Authoritative producer |
+   |---|---|
+   | `events` | E01–E12 versioned event channels: complete EvidenceEvent payloads via `insert_evidence`, read back through `get_bridge_context` (reduced projections refused) |
+   | `data_trust` | quality plane (§2.1): data-trust derivation over the window quality vectors |
+   | `q_raw` | quality plane (§2.1 Q_raw tables; `params/quality_weights_v1.yaml` governed twin) |
+   | `market_regime` | E11 `regime_state` label (§3.2 rule tree + hysteresis) |
+   | `mtf_state` | MTF layer (Ch.8 §8.3 SL-8): HTF last-closed evidence per cell |
+   | `utc_window_state` | E12 canonical UTC window registry (E12 §3.5) |
+   | `is_overlap` | E12 derived-overlap semantics |
+   | `volatility_state` | E04 `VolatilityState.regime` |
+   | `structure_state` | E01 structure output (`APEX-CONTRACT-STRUCT-V4.0.0`) |
+   | `regime_confidence` | producer-derived from E11 `regime_state` probabilities (`p_max` at `as_of`) |
+   | `regime_uncertainty` | E11 entropy `H_t` (§3.3) |
+   | `divergence_magnitude` | E10 divergence outputs |
+   | `temporal_window_validity` | E12 window validity |
+   | `atr` | E04 ATR |
+   | `fvg_zones` | E05 FVG objects |
+   | `bos` | E01 BOS events |
+   | `regime_state` | E11 full `regime_state` object |
+   | `e11_context` | E11 IC inputs + classifier artifact + history windows (P2 contract) |
+   | `direction` | pattern layer (Ch.9): the detected pattern's direction |
+   | `pattern_id` | pattern layer catalogue (`apex/pattern/detect.py`) |
+   | `x` | producer-assembled forecast feature vector from `s_i`/`q_i` + fabric context (Ch.13 SL-3 inputs) |
+   | `forecast_quality` | forecast plane (Ch.13 SL-3) prior-cycle/bootstrap value for Setup Gates 10/12; the bridge builds the fresh forecast downstream |
+   | `forecast_rr` | producer-computed from family entry-logic geometry (entry/stop/target distances → RR) |
+   | `forecast_cost_r` | cost model in R (fee from `commissionRate` + `α_spread` slippage + funding; Ch.13/Ch.16) |
+   | `window_qualities` | quality plane: per-candle Q over the PIT window |
+   | `temporal_quality` | E12 output quality tier |
+   | `volatility_quality` | E04 output quality tier |
+   | `s_i` | setup engine (Ch.10): per-component evidence scores from engine evidence |
+   | `q_i` | setup engine (Ch.10): per-component quality weights |
+   | `package` | parameter governance (SL-12): active versioned parameter package id + `params/*.yaml` versions |
+   | `p_min_tf` | governed per-TF minimum probability (Ch.17 SL-12 `P_min(tf)`) |
+   | `c_min` | governed minimum process confidence (Ch.17 SL-12 `C_min`) |
+   | `freshness_ok` | wiring derivation: `staleness_seconds ≤ freshness_sla_seconds` (item 4) |
+   | `risk` | risk-input assembly: the full `REQUIRED_RISK_KEYS` mapping below |
+   | `risk_state` | risk ladder state (`apex_risk_ladder_state`) |
+   | `h_norm` | E11 normalized entropy `H/ln K` (§3.3) |
+   | `family_status` | setup family registry (SL-9) lifecycle status |
+   | `arbitration` | decision arbitration (Ch.12): composite weights, alignment, recency |
+
+   | Risk key | Authoritative producer |
+   |---|---|
+   | `capital` | `params/paper_account_v1.yaml` `capital_usdt` in PAPER (D4; P7) |
+   | `portfolio_exposure` | ledger: open positions marked-to-market |
+   | `proposed_notional` | decision proposal: `sized_quantity × reference price` of the candidate plan |
+   | `capital_hard_cap` | owner-set hard cap (static/owner, Ch.17 SL-12) |
+   | `circuit_breaker_engaged` | emergency ladder state (L1–L5 ratchet) |
+   | `emergency_state` | emergency ladder state |
+   | `per_symbol_exposure` | ledger per-symbol exposure |
+   | `symbol_cap` | governed `symbol_exposure_cap` (SL-12) |
+   | `portfolio_cap` | governed `portfolio_exposure_cap` (SL-12) |
+   | `staleness_seconds` | wiring derivation: `receipt_time − close_time_ms` (item 4, D14) |
+   | `freshness_sla_seconds` | governed `freshness_threshold_seconds` per TF (quality weights) |
+   | `oi_lag_seconds` | data plane: OI series lag measurement (OI availability vs `as_of`) |
+   | `oi_lag_threshold_seconds` | governed `oi_lag_threshold_seconds` (quality weights) |
+   | `is_risk_increase` | decision proposal: new proposal vs open positions comparison |
+   | `uncertainty_is_rising` | fabric conflict state + E11 entropy trend |
+   | `realized_daily_loss_fraction` | ledger: daily realized P/L ÷ capital |
+   | `realized_weekly_loss_fraction` | ledger: weekly realized P/L ÷ capital |
+   | `consecutive_losses` | ledger outcome streak |
+   | `time_to_expiry_days` | venue contract calendar (`exchangeInfo`) per symbol; perpetuals carry no expiry |
+   | `margin_health_fraction` | PAPER: simulated from paper account + positions (D4); LIVE: `query_account_margin_health` |
+   | `min_quantity` | universe `quantity_step`; live `exchangeInfo` filters win for quantization (Ch.16) |
+   | `contract_multiplier` | symbol catalog contract spec (Ch.5 trading universe) |
+   | `risk_state` | risk ladder state (same source as context `risk_state`) |
+4. **Wiring staleness law (D14).** Because the venue sends
+   `close_time=0`, staleness for the freshness veto and `Q_fresh` is
+   derived in the wiring layer as `staleness_seconds = max(0,
+   receipt_time − close_time_ms(open_time, timeframe))`, with
+   `close_time_ms` per the CP-13 law (fixed intervals add their length;
+   `1mo` = next calendar month in UTC); the frozen `availability_time`
+   column is **not** reinterpreted (the 1970 value stands as the venue's
+   own fact). `freshness_ok ⇔ staleness_seconds ≤
+   freshness_sla_seconds`; `Q_fresh` uses the same derivation.
 15. **Identity:** `intent_id` = UUIDv7. Fibonacci is `apex/pattern/fibonacci.py` (not a network service).
 
 ### 9.6 Round-2 re-freeze (owner decision integration)
@@ -20543,6 +20801,14 @@ Engine v4.0.0 formula bodies were not rewritten.
 | TRADE key, withdraw disabled | §2.5 + SL-6 |
 | Still NOT filled with invented numbers | live Toobit depth, device p95, Sharpe/winrate, fixture SHA-256, ECONOMIC_GATE costs, restore RTO |
 | Repo tree, YAML, P model p_raw=0.5, Q/OI tables, 7 invariants, pattern tolerances, GF_SC_01/02, depth protocol, ECONOMIC_GATE empty grid, signaling P0–P3, termux-battery-status, requirements.lock name | merged 2026-09-08 into G/U/AD/AE/SL-2/SL-3/SL-6/T/Y/O/W.6/§2.1/§9.5 |
+| P1: per-close catch-up + runtime engine order + engine-context producer contract + wiring staleness law (2026-09-17) | §9.5 item 14 (D2/D5/D14; CP-14 interface) |
+| P2: E11 classifier artifact + deterministic training procedure + degenerate-class handling (2026-09-17) | E11 §3.3 (D2/D3) |
+| P3: PAPER simulator transport + APEX_ALLOW_SIGNED reconciliation (2026-09-17) | Ch.16 Toobit wire (D1/D2) |
+| P4: Phase-2 replay CLI contract + per-cell hash + double-run verdict (2026-09-17) | Ch.18 W.6 Phase 2 (D2/D6/D7) |
+| P5: AI.13 sequencing + N/A + pre-LIVE checklist (2026-09-17) | AI.13/AI.14/Exact Remaining Gates (D6) |
+| P6: CIRCUIT_OPEN joins the error registry (2026-09-17) | Ch.7 (D9; errors.py deferred to CP-14) |
+| P7: paper account YAML + control-plane feed + twin rule (2026-09-17) | §9.5 repo tree + YAML items (D2/D4/D8) |
+| P8: 24/7 host + .env-only secrets + watchdog chat + rotation-evidence row (2026-09-17) | Ch.23 + AI.13 G-TOOBIT-004 (D17-D20) |
 
 **Honestly still open (protocol only):** those six measurement items; running `apex/` code; ECONOMIC_GATE checkbox.
 

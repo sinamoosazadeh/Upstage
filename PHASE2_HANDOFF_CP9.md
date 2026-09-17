@@ -440,3 +440,43 @@ Executed on the owner's phone (Termux + proot Ubuntu), working tree at `~/Upstag
 
 ### PUSH RECORD
 - Branch `arena/01a0adc6-upstage` → PR pending (number/URL recorded in the CP-13.1 checkpoint board line and the executor's report) — `[CP-13.1] HOTFIX close-time-vs-now guard for repair-partial — ISSUE-CP13-004`. Suite twice: 2728 passed / 0 failed. Suite file counts: 67 unit + 9 integration + 1 e2e + 4 perf files; 95 node API tests (unchanged).
+
+---
+
+## HANDOFF_SESSION_A — DESIGN PATCH (2026-09-17; doc-only)
+
+### SCOPE
+Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place `APEX_GEN5.md` patches P1–P8 per owner D1–D20, one Appendix AJ row per patch, record sha256 before/after. No code, no tests, no YAML, no new files. Owner D1–D20 block in DECISION_LOG untouched.
+
+### DELIVERED
+| # | Artifact | What it is |
+|---|---|---|
+| 1 | `APEX_GEN5.md` P1 (§9.5 item 14) | Per-close catch-up (D5) + runtime engine order `E01→E02→E12→E04→E03→E10→E09→E05→E06→E11→E07→E08` + engine-context producer contract (38 context + 23 risk keys, every key with its authoritative producer, store seam = public methods only, persisted-rows `events`) + wiring staleness law (D14). CP-14 interface. |
+| 2 | `APEX_GEN5.md` P2 (E11 §3.3) | `params/e11_classifier_v1.yaml` artifact (W 9×8, b 9, K 9, label_delay 48, seed, training window/count/query-sha, artifact_sha256; renamed Session-A F2 2026-09-17) + deterministic training procedure (§3.2 labels, 48-candle delay, fixed seed, never zeros/random) + degenerate-class refusal + fail-closed runtime. No formula rewritten. |
+| 3 | `APEX_GEN5.md` P3 (Ch.16) | PAPER simulator = same five-op surface off the same `fsm.submit`/`seal` path, no network packet, no signature; `APEX_ALLOW_SIGNED=1` permits the loop, never a packet (D1). |
+| 4 | `APEX_GEN5.md` P4 (W.6 Phase 2) | `scripts/run_apex.py replay` CLI contract: whole-store deterministic double run, per-cell canonical hash, byte-identical verdict + zero exceptions, printed envelope feeding G-PAPER-001. CP-15 builds it. |
+| 5 | `APEX_GEN5.md` P5 (AI.13/AI.14/Exact Remaining Gates) | D6 sequencing: G-PAPER-001 = Phase-2 double run (entry to PAPER); G-PAPER-002 = 5-day passive measurement (exit towards LIVE); G-TOOBIT-*/G-CAPACITY-*/G-RESTORE-001/G-RISK-001/G-FALLBACK-001/G-LEDGER-001 = pre-LIVE checklist; G-ADAPTER-001 = N/A. Nothing deleted. |
+| 6 | `APEX_GEN5.md` P6 (Ch.7) | `CIRCUIT_OPEN` joins the error registry (D9) so vetoes 10–12 carry a code; `apex/errors.py` one-liner deferred to CP-14. |
+| 7 | `APEX_GEN5.md` P7 (§9.5 tree + YAML items) | `params/paper_account_v1.yaml` (`capital_usdt: 10000.0` per D4 + simulated-margin inputs) feeds control-plane `paper_balance`; risk thresholds stay in `risk_defaults_v1.yaml` (D8); algorithm/YAML twin rule (§6 wins). |
+| 8 | `APEX_GEN5.md` P8 (Ch.23 + AI.13) | 24/7 host = owner phone (Termux+proot+Boot, D19); secrets only in phone `.env` (D17); watchdog chat = owner chat (D20); new G-TOOBIT-004 rotation-evidence row (pre-LIVE checklist). |
+| 9 | `APEX_GEN5.md` AJ rows (R.9) | 8 traceability rows, one per patch, dated 2026-09-17. |
+| 10 | `PHASE2_DECISION_LOG.md` §C | ADR-SA-001..004 + ISSUE-SESSION-A-001..007 (doc-vs-code conflicts the patch resolved, with line numbers). |
+| 11 | `PHASE2_CHECKPOINT_STATUS.md` | CONTINUE(Session A DESIGN PATCH) board line (this session). |
+| 12 | `PHASE2_TRACEABILITY_MATRIX.md` | 8 Session A rows (one per patch). |
+
+### RECORD
+- BEFORE `sha256(APEX_GEN5.md)` = `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e` (20551 lines; re-verified immediately pre-edit).
+- AFTER `sha256(APEX_GEN5.md)` = `132f702fafbb9cac99488427bf572c1168ad114d7666c85c64a548c9c9539989` (20782 lines; +231).
+- AFTER-2 (follow-up F1–F4, same branch/PR) `sha256(APEX_GEN5.md)` = `683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56` (20817 lines): F1 tail restored (GC paragraph + blank + one "End of merged document."); F2 artifact renamed to `params/e11_classifier_v1.yaml` + YAML schema; F3 simulator fill law (a)–(f); F4 events wording.
+- Suite: `python -m pytest tests -q` twice = 2728 passed / 0 failed each at AFTER, once more = 2728 passed / 0 failed at AFTER-2 (untouched code; pytest + requirements.lock installed into this sandbox only, no repo change).
+
+### INTERFACES (for CP-14 / CP-15)
+- CP-14: engine-context producer (P1 key tables are the contract) + `get_bridge_context` store reader + E11 training to `params/e11_classifier_v1.yaml` (P2) + `params/paper_account_v1.yaml` + YAML-fed `paper_balance` + wiring staleness + `CIRCUIT_OPEN` in `apex/errors.py`.
+- CP-15: PAPER simulator transport (P3 five ops, no packet) + `scripts/run_apex.py replay` CLI (P4 envelope) satisfying G-PAPER-001.
+
+### OPEN QUESTIONS
+1. D9's `apex/errors.py` one-liner and the two new `params/` files are CP-14's; confirm CP-14 owns all three (yes per Programme, but the errors.py split was the executor's call). — ANSWERED 2026-09-17: yes, CP-14 owns all three.
+2. The executor brief draft said `capital_usdt: 1000.0`; P7 specifies `10000.0` per owner D4 — confirm 10000 stands. — ANSWERED 2026-09-17: yes, 10000.0 stands.
+
+### PUSH RECORD
+- Branch `arena/01a0ae7b-upstage` → exactly ONE PR to `main` (number/URL recorded in the Session A checkpoint board line and the executor's report) — `[Session A] DESIGN PATCH P1–P8 per owner D1–D20`. Suite twice: 2728 passed / 0 failed.
