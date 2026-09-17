@@ -204,3 +204,57 @@ Recorded verbatim by the owner after a full gap review of main @ 9da8566. These 
 - D14 Freshness: because the venue sends close_time=0, staleness for the freshness veto and Q_fresh is derived in the wiring layer from close_time_ms(open_time, timeframe) and the store receipt time; the frozen availability_time column is not reinterpreted.
 - D17 Secrets (bot token, chat id, venue key/secret) live ONLY in the phone's .env (git-ignored); they are never committed, never pasted in chat, never printed by any command. D18 repository set to PRIVATE now. D19 24/7 host = the owner's phone (Termux + proot, Termux:Boot). D20 watchdog chat = owner chat.
 - Programme: Session A = APEX_GEN5.md patch (D2/D9/D14 + design text for D1/D3/D4/D5/D6/D7). CP-14 = engine-context producer + E11 training + live catch-up + PAPER account inputs + freshness. CP-15 = PAPER simulator transport + Phase-2 replay CLI (G-PAPER-001). Then device go-live.
+
+---
+
+## C. Session A — DESIGN PATCH (2026-09-17; doc-only; the owner D1–D20 block above is untouched)
+
+### ADR-SESSION-A (binding notes for CP-14 / CP-15; Session A created no code, no tests, no YAML, no new files)
+- **ADR-SA-001 — PAPER capital is 10000.0.** The executor brief draft said `capital_usdt: 1000.0`; owner D4 says `10000`, corroborated by the control-plane constructor default `"10000"` (`apex/telegram/control_plane.py` L458). Owner decision wins: P7 specifies `capital_usdt: 10000.0`.
+- **ADR-SA-002 — D9 is split: doc now, code later.** P6 adds `CIRCUIT_OPEN` to the Ch.7 registry; the matching `apex/errors.py` one-liner is deferred to CP-14 (Session A scope is doc-only per its brief).
+- **ADR-SA-003 — Named-but-uncreated files.** `params/paper_account_v1.yaml` and `params/e11_classifier_v4.json` are named by P7/P2 as CP-14 additive files under ADR-P2-003; Session A created neither.
+- **ADR-SA-004 — No risk-threshold fork.** Per D8, `params/risk_defaults_v1.yaml` stays authoritative for `budget_per_trade`/`k_attn`/loss limits; P7's paper-account YAML holds only `capital_usdt` + simulated-margin inputs and references risk_defaults, never duplicates it.
+
+### ISSUEs filed by Session A (doc-vs-code conflicts the patch had to resolve; doc line numbers are pre-patch)
+- [ISSUE-SESSION-A-001] severity: MAJOR | status: CLOSED(doc-side; code follow-up = CP-14)
+  A: "on each TF close, ingest→quality→features→engines→setup→gates→risk→decision→execution for **that** (symbol,TF)" (APEX_GEN5.md §9.5-14, L20246)
+  B: `_stage_features`/`_stage_engines` return `DECLARED_SKIP signal_source=DECISION_BRIDGE`, and `setup` halts `NO_PLAN_PROVIDER` without a plan (apex/ops/paper_loop.py L340-364, L381-394)  # the code cannot satisfy the nine-stage law until the producer exists
+  Rule applied: D2/D5 — P1 specifies the CP-14 engine-context producer contract (per-close catch-up, 38+23 keys, store seam).
+  Interim behavior: loop still skips/halts exactly as before; no code changed this session.
+  Needs from owner: none (CP-14 builds the producer).
+- [ISSUE-SESSION-A-002] severity: MAJOR | status: CLOSED(doc-side; code follow-up = CP-14)
+  A: "using initial weights trained with logistic regression over 6 months of delayed labels" (APEX_GEN5.md E11 §3.3, L11831)  # no artifact, no procedure, no seed
+  B: `_validate_e11_context` hard-requires `classifier_W` shape (9,8) + `classifier_b` shape (9,) (apex/ops/plan_bridge.py L432-457); engine raises `CONFIGURATION_INVALID` without W/b (apex/engines/e11_regime/engine.py L409)
+  Rule applied: D3 — P2 names `params/e11_classifier_v4.json` + the deterministic training procedure + degenerate-class refusal.
+  Interim behavior: bridge still raises `E11_CONTEXT_INVALID` until CP-14 trains the artifact.
+  Needs from owner: none (CP-14 trains per P2).
+- [ISSUE-SESSION-A-003] severity: MINOR | status: CLOSED(doc-side; code follow-up = CP-14 one-liner)
+  A: vetoes 10–12 error-code column reads "CIRCUIT_OPEN (Alert Policy)" (APEX_GEN5.md Ch.15, L16659-16661)
+  B: the Ch.7 registry (L14643-14671) has no CIRCUIT_OPEN row, and `apex/errors.py` ERROR_REGISTRY lacks the key  # vetoes cite a code that exists nowhere normative
+  Rule applied: D9 — P6 adds the Ch.7 row; veto semantics stay Ch.15-owned.
+  Interim behavior: doc resolved; `apex/errors.py` still lacks the key until CP-14.
+  Needs from owner: none.
+- [ISSUE-SESSION-A-004] severity: MAJOR | status: CLOSED
+  A: "PAPER orders require `APEX_ALLOW_SIGNED=1`" (APEX_GEN5.md W.6 Phase 2, L17093)  # reads as authorizing signed orders in PAPER
+  B: D1 — PAPER is the simulator; no venue packet is ever constructed in PAPER.
+  Rule applied: D1/D2 — P3 reconciles: the flag permits the PAPER loop to run; it never authorizes a packet.
+  Interim behavior: doc resolved; CP-15 builds the simulator transport.
+  Needs from owner: none.
+- [ISSUE-SESSION-A-005] severity: MINOR | status: CLOSED
+  A: E01 output "consumed by E02 Liquidity, E09 Trend, and E11 Regime" + consumers list incl. `E02_Liquidity` (APEX_GEN5.md L1296, L1327)
+  B: "Dependencies: none (zero inter-engine dependency)" (APEX_GEN5.md E02, L2792)
+  Rule applied: each engine's own Dependencies declaration governs its inputs (P1 runtime order runs E02 on CLOSED OHLCV only).
+  Interim behavior: doc resolved; no code impact.
+  Needs from owner: none.
+- [ISSUE-SESSION-A-006] severity: MINOR | status: CLOSED(doc-side; code follow-up = CP-14)
+  A: D4 — control-plane `paper_balance` is fed from the YAML, never a second literal.
+  B: `paper_balance: Any = "10000"` constructor default (apex/telegram/control_plane.py L458)
+  Rule applied: D4 — P7 names `params/paper_account_v1.yaml` authoritative; the constructor default stands only as a pre-YAML display fallback.
+  Interim behavior: doc resolved; CP-14 wires the YAML feed.
+  Needs from owner: none.
+- [ISSUE-SESSION-A-007] severity: MAJOR | status: CLOSED(doc-side; code follow-up = CP-14)
+  A: bridge probes `get_bridge_context → get_engine_context → read_bridge_context → read_engine_context → bridge_contexts`, absence ⇒ `ENGINE_CONTEXT_UNAVAILABLE` (apex/ops/plan_bridge.py L539-545)
+  B: `SQLiteStore` public methods (`open/close/db/ingest_raw/correct_raw/get_window/max_availability_time/insert_snapshot/insert_evidence/write_manifest/retention_purge/table_names`; apex/data_catalog/store/sqlite_store.py L342-667) include no `get_bridge_context`
+  Rule applied: D2/D5 — P1 names the explicitly named store reader as the CP-14 interface; until then the producer assembles context through the existing public methods.
+  Interim behavior: bridge still raises until CP-14 implements the reader.
+  Needs from owner: none.
