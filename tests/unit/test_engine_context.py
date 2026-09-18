@@ -1275,3 +1275,50 @@ def test_e01_atr_prefix_cache_uses_absolute_boundary_without_changing_failures()
         EC.E01.atr_sma(window[:20], idx=49)
     with pytest.raises(ValueError, match="INSUFFICIENT_HISTORY"):
         EC.E01.atr_sma(window[:5])
+
+
+def test_native_twelve_engine_bundle_persists_full_evidence(tmp_path):
+    from pathlib import Path
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "native.sqlite")).open()
+        try:
+            await _seed_full_training_fixture(store, symbols=("ETHUSDT",))
+            classifier = Path(__file__).parents[1] / "fixtures" / "e11_classifier_v1.yaml"
+            producer = EC.EngineContextProducer(store, classifier_path=classifier, environment="PAPER")
+            # Explicit E07 contract inputs: this test proves native assembly,
+            # not the still-unfinished 38-context/23-risk source projection.
+            bundle = await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-04T18:00:00.000Z",
+                rtm_context={"avg_quality": .9, "mtf_align": .5})
+            assert tuple(bundle["engine_order"]) == EC.ENGINE_ORDER
+            assert bundle["events"]
+            assert bundle["classifier_artifact_sha256"] == EC.load_classifier(classifier)["artifact_sha256"]
+            assert bundle["regime_state"]["vector"] == bundle["feature_vector"]
+            restored = await EC.read_complete_evidence(store, [event.evidence_id for event in bundle["events"]])
+            assert EC.canonical_json(restored) == EC.canonical_json(bundle["events"])
+            for event in restored:
+                event.validate_24_fields()
+                assert set(bundle["raw_observation_ids"]).issubset(event.lineage)
+                assert EC._iso_to_ms(event.availability_time) <= EC._iso_to_ms("2026-01-04T18:00:00.000Z")
+            assert bundle["regime_state"]["snapshot_id"]
+            # Actual native terminal QX cannot pass the frozen public-store
+            # validator. Refuse the entire later bundle before any writes;
+            # do not drop expired zones or relabel their resolution class.
+            before = (await (await store.db.execute("SELECT COUNT(*) FROM evidence_event")).fetchone())[0]
+            with pytest.raises(BridgeError, match="EVIDENCE_CONTEXT_INVALID: E05 resolution_class=QX"):
+                await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-08T12:00:00.000Z",
+                    rtm_context={"avg_quality": .9, "mtf_align": .5})
+            after = (await (await store.db.execute("SELECT COUNT(*) FROM evidence_event")).fetchone())[0]
+            assert before == after
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("context", [{}, {"avg_quality": .9}, {"avg_quality": .9, "mtf_align": None},
+                                    {"avg_quality": 1.1, "mtf_align": .5}, {"avg_quality": .9, "mtf_align": float("nan")}])
+def test_native_bundle_never_uses_e07_default_quality_or_alignment(context):
+    from pathlib import Path
+    artifact = EC.load_classifier(Path(__file__).parents[1] / "fixtures" / "e11_classifier_v1.yaml")
+    with pytest.raises(BridgeError, match="E07_CONTEXT_UNAVAILABLE"):
+        EC.complete_engine_bundle({}, "BTCUSDT", "1h", artifact, rtm_context=context)

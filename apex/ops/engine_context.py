@@ -819,9 +819,23 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     if volume.history_bars[-1]["ts"] != _iso_to_ms(end):
         raise BridgeError("ENGINE_CONTEXT_UNAVAILABLE", "E03 latest candle unavailable")
     vlt = volatility["states"][-1]
-    collect("E10", E10.E10MomentumEngine, {**base, "volatility_context": vars(vlt)})
-    momentum = E10.run_engine(bars, symbol=symbol, interval=timeframe,
-                             volatility_context=vars(vlt))["state"]
+    # E10's Candle contract distinguishes open/close. Its generic wrapper
+    # adds an interval to timestamp; feeding our close-stamped view would
+    # therefore postdate every event. Supply both boundaries explicitly,
+    # including calendar-month closes, to the unchanged native driver.
+    order.append("E10")
+    momentum_bars = [{**E10.observation_to_bar(raw, timeframe), "is_closed": True,
+                      "close_time": _iso_to_ms(closed.timestamp)}
+                     for raw, closed in zip(raw_window, window)]
+    momentum_result = E10.run_engine(momentum_bars, symbol=symbol, interval=timeframe,
+                                    volatility_context=vars(vlt))
+    momentum = momentum_result["state"]
+    if emit and "snapshot_id" in momentum:
+        emitter = E10.E10MomentumEngine()
+        emitter._last_n_bars = int(momentum_result["n_bars"])
+        quality = emitter._window_quality(window)
+        events.extend(emitter._to_evidence(event, symbol, timeframe, quality, momentum)
+                      for event in momentum_result["events"])
     swings = _trend_swings(structure, window)
     trend_context = {**base, "swings": swings, "atr": vlt.atr14_wilder,
                      "tf_seconds": duration, "bos_event": bos, "oi_state": vol.oi_state}
@@ -861,6 +875,136 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
             "projection_refusals": projection_refusals}
 
 
+def complete_engine_bundle(item: Mapping[str, Any], symbol: str, timeframe: str,
+                           artifact: Mapping[str, Any], *, rtm_context: Mapping[str, Any]) -> dict:
+    """Native twelve-engine assembly from the shared PIT feature timeline.
+
+    No fixture defaults, replacement indicator or incomplete EvidenceEvent.
+    Native warmup is represented by missing optional evidence, not invented
+    volume/ATR scalars. E06 starts at the actual joint dependency frontier.
+    """
+    from dataclasses import asdict
+    artifact = validate_classifier(artifact)
+    for key in ("avg_quality", "mtf_align"):
+        value = rtm_context.get(key)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or not 0 <= value <= 1:
+            raise BridgeError("E07_CONTEXT_UNAVAILABLE", key)
+    if "vector" not in item:
+        raise BridgeError("E11_CONTEXT_UNAVAILABLE", str(item.get("reason", "missing vector")))
+    original = item["frame"]
+    prior_atr = [state.atr14_wilder for state in original["volatility"]["states"][:-1]]
+    frame = upstream_frame(original["raw_window"], symbol, timeframe, emit=True,
+        atr14_history=prior_atr, structure_result=original["structure"],
+        volatility_stream=item["volatility_stream"])
+    # The timeline's IC/history is authoritative, including the full prior
+    # ATR reference; emission preparation must not replace it with a slice.
+    frame["ic"] = dict(item["ic"])
+    events, order = frame["events"], frame["engine_order"]
+    window, end = frame["window"], item["as_of"]
+    atr_by_idx = {i: value for i, value in enumerate(frame["atr14"]) if value is not None}
+    by_time = {_iso_to_ms(obs.timestamp): i for i, obs in enumerate(window)}
+    struct = {}
+    for event in frame["structural_events"]:
+        i = event["candle_index"]
+        direction = "UP" if "BULLISH" in event["event_type"] else "DOWN"
+        struct.setdefault(i, []).append({"idx": i, "dir": direction, "direction": direction,
+            "kind": "BOS" if event["event_type"].startswith(("EV_STR_007", "EV_STR_008")) else "CHoCH",
+            "valid_at_idx": i, "confirmed_at_idx": i, "source": event})
+    order.append("E05")
+    fvg = E05.run_engine([E05.observation_to_bar(o) for o in window], symbol=symbol,
+        tick_size=E01.resolve_tick_size(symbol), atr_by_idx=atr_by_idx, bos_by_idx=struct)
+    fvg_emitter = E05.E05FVGEngine()
+    objects = sorted(fvg["active"] + fvg["history"], key=lambda obj: obj.created_at_idx)
+    events.extend(fvg_emitter._to_evidence(obj, symbol, timeframe, fvg_emitter._window_quality(window)) for obj in objects)
+    fvg_by_idx = {}
+    for obj in objects:
+        fvg_by_idx.setdefault(obj.created_at_idx, []).append(asdict(obj))
+    volume_by_idx = {}
+    for evidence in frame["volume"].emitted:
+        source_index = evidence.pit_meta["history_len"]
+        source_time = frame["volume"].history_bars[source_index]["ts"]
+        volume_by_idx[by_time[source_time]] = dict(vars(evidence))
+    volatility_by_idx = {by_time[state.as_of]: {"atr_n": state.atr14_wilder,
+        "tr_method": "WILDER", "as_of": state.as_of, "snapshot_id": state.snapshot_id}
+        for state in frame["volatility"]["states"] if state.as_of in by_time}
+    order.append("E06")
+    joint = sorted(set(volume_by_idx) & set(volatility_by_idx))
+    if not joint or joint != list(range(joint[0], len(window))):
+        raise BridgeError("E06_DEPENDENCY_UNAVAILABLE", "no contiguous mature volume/volatility suffix")
+    first = joint[0]
+    ob_context = {"window": window[first:],
+        "volume_evidence": [volume_by_idx[i] for i in joint],
+        "volatility_evidence": [volatility_by_idx[i] for i in joint],
+        "struct_events_by_idx": {i-first: [{**e, "valid_at_idx": i-first} for e in es] for i, es in struct.items() if i >= first},
+        "fvg_by_idx": {i-first: es for i, es in fvg_by_idx.items() if i >= first}}
+    events.extend(E06.E06OrderBlockEngine().compute(symbol, timeframe, end, ob_context))
+    order.append("E11")
+    candle = E11.observation_to_candle(window[-1], dict(item["ic"]))
+    candle.update(prev_close=float(window[-2].close), atr_prev=frame["atr14"][-2],
+        timeframe_seconds=(close_time_ms(_iso_to_ms(original["raw_window"][-1].timestamp), timeframe)
+                           - _iso_to_ms(original["raw_window"][-1].timestamp)) // 1000)
+    regime_context = {"candles": [candle], "W": artifact["W"], "b": artifact["b"],
+        "classifier_artifact_sha256": artifact["artifact_sha256"], "history": item["history"],
+        "mu0": item["mu"], "Sigma0": item["Sigma"], "prev_mom": item["prev_mom"]}
+    regime_engine = E11.E11RegimeEngine()
+    events.extend(regime_engine.compute(symbol, timeframe, end, regime_context))
+    result = regime_engine._last_result
+    state = result["regime_state"]
+    if "snapshot_id" not in state:
+        raise BridgeError("E11_CONTEXT_UNAVAILABLE", str(state.get("reason", state.get("error", "invalid state"))))
+    order.append("E07")
+    direction = "UP" if frame["trend"]["bias"] >= 0 else "DOWN"
+    confirmations = []
+    def confirm(cid, stamp):
+        if stamp not in by_time:
+            raise BridgeError("E07_CONTEXT_UNAVAILABLE", "confirmation outside retained window")
+        confirmations.append({"cid": cid, "t_confirm_ms": stamp,
+                              "p_confirm": float(window[by_time[stamp]].close)})
+    for i, sources in struct.items():
+        for source in sources:
+            if source["direction"] == direction:
+                confirm(source["kind"].lower(), _iso_to_ms(window[i].timestamp))
+    for source in frame["liquidity"].events:
+        prerequisites = source.get("payload", {}).get("prereq", {})
+        if (source.get("event_type") in CONFIRMED_SWEEP_EVENT_TYPES
+                and SWEEP_PREREQUISITES.issubset(prerequisites)
+                and all(prerequisites[key] is True for key in SWEEP_PREREQUISITES)):
+            i = source["at_bar"]
+            if 0 <= i < len(window):
+                confirm("sweep", _iso_to_ms(window[i].timestamp))
+    for obj in objects:
+        if obj.direction == direction:
+            confirm("fvg", obj.created_at_ts)
+    for i, evidence in volume_by_idx.items():
+        if any(str(code).startswith("EV_VOL_001") for code in evidence["events"]):
+            confirm("vol_confirm", _iso_to_ms(window[i].timestamp))
+    events.extend(E07.E07RTMEngine().compute(symbol, timeframe, end, {
+        "window": window, "events": confirmations, "direction": direction,
+        "avg_quality": rtm_context["avg_quality"], "mtf_align": rtm_context["mtf_align"],
+        "as_of_ms": _iso_to_ms(end), "temporal_provider": E12.E12TemporalProvider()}))
+    order.append("E08")
+    events.extend(E08.E08WyckoffEngine().compute(symbol, timeframe, end, {"window": window,
+        "atr_by_idx": atr_by_idx,
+        "vol_ratio_by_idx": {i: ev["volume_ratio"] for i, ev in volume_by_idx.items()},
+        "evr_by_idx": {i: ev["evr"] for i, ev in volume_by_idx.items()},
+        "structure_by_idx": {i: ("BULL" if es[-1]["direction"] == "UP" else "BEAR") for i, es in struct.items()},
+        "bos_by_idx": {i: {"confirmed_at_idx": i, "direction": es[-1]["direction"]} for i, es in struct.items()}}))
+    for event in events:
+        try:
+            event.validate_24_fields()
+        except ValueError as exc:
+            raise BridgeError("EVIDENCE_CONTEXT_INVALID",
+                              f"{event.engine_id} resolution_class={event.resolution_class}: {exc}") from exc
+        if _iso_to_ms(event.availability_time) > _iso_to_ms(end):
+            raise BridgeError("BRIDGE_PIT_VIOLATION", event.engine_id)
+    return {**frame, "feature_vector": item["vector"], "rtm_confirmations": confirmations, "regime_state": state, "e11_result": result,
+        "e11_context": {"ic_inputs": dict(item["ic"]), "history_windows": item["history"],
+                        "classifier_W": artifact["W"], "classifier_b": artifact["b"],
+                        "classifier_artifact_sha256": artifact["artifact_sha256"], "regime_state": state},
+        "fvg_objects": objects, "struct_by_idx": struct,
+        "volume_by_idx": volume_by_idx, "volatility_by_idx": volatility_by_idx}
+
+
 CELL_QUERY = ("SELECT symbol,timeframe,MAX(open_time),COUNT(*) FROM market_observation "
               "WHERE candle_status IN ('CLOSED','CORRECTED') GROUP BY symbol,timeframe "
               "ORDER BY symbol,timeframe")
@@ -890,6 +1034,42 @@ class EngineContextProducer:
         self.diagnostics: dict[str, Any] = {}
         self._frames: dict[tuple, dict] = {}
         self._raw_lineage: dict[tuple, dict] = {}
+
+    async def prepare_engine_bundle(self, symbol: str, timeframe: str, as_of: str,
+                                    *, rtm_context: Mapping[str, Any]) -> dict:
+        """Compute and persist a complete native bundle before plan admission.
+
+        Final bridge/risk projection is separate; this method never presents
+        an engine-only bundle as all REQUIRED_CONTEXT_KEYS/REQUIRED_RISK_KEYS.
+        """
+        from dataclasses import replace
+        artifact = load_classifier(self.classifier_path)
+        rows = await (await self.store.db.execute(
+            "SELECT COUNT(*) FROM market_observation WHERE symbol=? AND timeframe=? "
+            "AND candle_status IN ('CLOSED','CORRECTED') AND open_time<=?",
+            (symbol, timeframe, as_of))).fetchone()
+        window = await self.window(symbol, timeframe, as_of, int(rows[0]))
+        if not window:
+            raise BridgeError("NO_MARKET_DATA", f"{symbol}:{timeframe}")
+        last = None
+        async for item in self.feature_timeline(symbol, timeframe, window):
+            last = item
+        if last is None or "vector" not in last:
+            raise BridgeError("E11_CONTEXT_UNAVAILABLE", str((last or {}).get("reason", "empty timeline")))
+        bundle = complete_engine_bundle(last, symbol, timeframe, artifact, rtm_context=rtm_context)
+        lineage = tuple(self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())]["observation_id"]
+                        for obs in bundle["raw_window"])
+        available = max([_iso_to_ms(bundle["window"][-1].timestamp)] + [_iso_to_ms(obs.availability_time) for obs in bundle["raw_window"]])
+        events = [replace(event, lineage=tuple(dict.fromkeys((*event.lineage, *lineage))),
+                          availability_time=_ms_to_iso(max(_iso_to_ms(event.availability_time), available)))
+                  for event in bundle["events"]]
+        bundle["events"] = await persist_complete_evidence(self.store, events)
+        bundle["raw_observation_ids"] = lineage
+        bundle["classifier_artifact_sha256"] = artifact["artifact_sha256"]
+        self.diagnostics[f"{symbol}:{timeframe}"] = {"status": "ENGINE_BUNDLE_PREPARED",
+            "engine_order": list(bundle["engine_order"]), "evidence_count": len(events),
+            "as_of": last["as_of"], "classifier_artifact_sha256": artifact["artifact_sha256"]}
+        return bundle
 
     async def decision_inputs(self, symbol: str, timeframe: str, as_of: str) -> dict:
         """D28 stored governance/venue inputs; not a fabricated complete context."""
