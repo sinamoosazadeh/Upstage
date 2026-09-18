@@ -245,10 +245,14 @@ def evaluate_vetoes(risk_input: Mapping[str, Any]) -> Dict[str, Any]:
           < float(risk_input.get("rollover_threshold_days",
                                 DEFAULT_CONTRACT_ROLLOVER_DAYS)),
           risk_input.get("time_to_expiry_days"))
-    check(14, float(risk_input.get("margin_health_fraction", 1.0))
-          <= float(risk_input.get("margin_health_action_fraction",
-                                 DEFAULT_MARGIN_HEALTH_ACTION)),
-          risk_input.get("margin_health_fraction"))
+    paper_proxy = (risk_input.get("environment") == "PAPER"
+                   and risk_input.get("margin_model") == "PAPER_RESERVATION_PROXY_D29")
+    if paper_proxy:
+        breach = margin_health_state(float(risk_input["margin_health_fraction"]), environment="PAPER")["veto"] == 14
+    else:
+        breach = float(risk_input.get("margin_health_fraction", 1.0)) <= float(
+            risk_input.get("margin_health_action_fraction", DEFAULT_MARGIN_HEALTH_ACTION))
+    check(14, breach, risk_input.get("margin_health_fraction"))
     if tuple(evaluated) != HARD_VETO_NUMBERS:
         # internal guard: the registry is evaluated complete and in order
         raise RiskError("VETO_REGISTRY_INCOMPLETE", str(evaluated))
@@ -494,12 +498,22 @@ def effective_leverage(*, notional: float, capital_allocated: float,
             "note": "leverage is a ceiling, not a target (veto 3/Y.2)"}
 
 
-def margin_health_state(margin_health_fraction: float) -> Dict[str, Any]:
+def margin_health_state(margin_health_fraction: float, *, environment: str = "LIVE") -> Dict[str, Any]:
     """Governed polling thresholds: warning 0.60, action 0.40 (veto 14),
     liquidation-approach 0.20 → Emergency L3 CANCEL_ALL."""
     v = float(margin_health_fraction)
     if not (0.0 <= v <= 1.0) or v != v:
         raise RiskError("MARGIN_HEALTH_QX", str(margin_health_fraction))
+    if environment == "PAPER":
+        # Owner D29: strict BELOW boundaries for the PAPER reservation proxy.
+        thresholds = load_params()["paper_account"]["simulated_margin"]
+        for key, level, action, veto in (
+                ("liquidation_approach_fraction", "LIQUIDATION_APPROACH", "EMERGENCY_L3_CANCEL_ALL", 14),
+                ("action_fraction", "ACTION", "BLOCK_NEW_ENTRIES", 14),
+                ("warning_fraction", "WARNING", "NOTIFY_OWNER", None)):
+            if v < float(thresholds[key]):
+                return {"level": level, "action": action, "veto": veto, "threshold": float(thresholds[key])}
+        return {"level": "OK", "action": "NONE", "veto": None, "threshold": None}
     # "warning at 60 % of maintenance distance, action at 40 % — the action
     # blocks all new entries (veto 14) … liquidation-approach at 20 % triggers
     # Emergency L3 CANCEL_ALL automatically" (Ch.15 §15.1). The band edges are

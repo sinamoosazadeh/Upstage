@@ -887,3 +887,96 @@ def test_d28_failed_refresh_does_not_resurrect_old_facts_or_poison_other_symbol(
         finally:
             await store.close()
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("reserved,level", [(0, "OK"), (5000, "WARNING"), (6500, "ACTION"), (8100, "LIQUIDATION_APPROACH")])
+def test_d29_paper_proxy_requested_examples_and_real_veto(reserved, level):
+    from apex.risk import kernel
+    positions = [] if not reserved else [{"quantity": reserved, "mark_price": 1, "contract_multiplier": 1}]
+    result = EC.paper_reservation_proxy(capital=10000, positions=positions, orders=[], environment="PAPER")
+    assert result["margin_health_fraction"] == (Decimal(10000) - reserved) / 10000
+    assert result["margin_status"]["level"] == level
+    veto = kernel.evaluate_vetoes({**result, "timeframe": "1h", "q_raw": 1.0})
+    assert (14 in veto["fired_numbers"]) == (reserved > 6000)
+    if level == "LIQUIDATION_APPROACH":
+        assert result["margin_status"]["action"] == "EMERGENCY_L3_CANCEL_ALL"
+
+
+@pytest.mark.parametrize("fraction,paper,live", [(.6, "OK", "WARNING"), (.4, "WARNING", "ACTION"), (.2, "ACTION", "LIQUIDATION_APPROACH")])
+def test_d29_strict_boundaries_do_not_change_live(fraction, paper, live):
+    from apex.risk import kernel
+    assert kernel.margin_health_state(fraction, environment="PAPER")["level"] == paper
+    assert kernel.margin_health_state(fraction)["level"] == live
+    if fraction == .4:
+        base = {"timeframe": "1h", "q_raw": 1., "margin_health_fraction": fraction,
+                "margin_model": "PAPER_RESERVATION_PROXY_D29"}
+        assert 14 not in kernel.evaluate_vetoes({**base, "environment": "PAPER"})["fired_numbers"]
+        assert 14 in kernel.evaluate_vetoes({**base, "environment": "LIVE"})["fired_numbers"]
+
+
+@pytest.mark.parametrize("capital", [0, -1, None, "NaN", "Infinity"])
+def test_d29_invalid_capital_refuses(capital):
+    with pytest.raises(BridgeError, match="PAPER_MARGIN_INPUT_INVALID"):
+        EC.paper_reservation_proxy(capital=capital, positions=[], orders=[], environment="PAPER")
+
+
+def test_d29_pending_partial_reduce_only_cancelled_and_missing_facts():
+    position = {"quantity": 4, "mark_price": 125, "contract_multiplier": 1}
+    order = {"state": "PARTIAL", "quantity": 10, "filled_quantity": 4, "reference_price": 100,
+             "contract_multiplier": 1, "reduce_only": False, "is_risk_increase": True}
+    def calc(positions, orders):
+        return EC.paper_reservation_proxy(capital=10000, positions=positions, orders=orders, environment="PAPER")
+    result = calc([position], [order])
+    assert result["open_notional"] == 500 and result["pending_notional"] == 600
+    assert result["margin_health_fraction"] == Decimal(".89")
+    assert calc([position], [{**order, "state": "CANCELLED"}])["pending_notional"] == 0
+    assert calc([position], [{**order, "reduce_only": True}])["pending_notional"] == 0
+    with pytest.raises(BridgeError, match="PAPER_MARGIN_INPUT_INVALID"):
+        calc([{**position, "mark_price": None}], [])
+    with pytest.raises(BridgeError, match="PAPER_ORDER_STATE_UNAVAILABLE"):
+        calc([], [{**order, "state": None}])
+    with pytest.raises(BridgeError, match="PAPER_ORDER_STATE_UNAVAILABLE"):
+        calc([], [{**order, "state": "FILLED"}])
+    with pytest.raises(BridgeError, match="PAPER_MARGIN_OUT_OF_RANGE"):
+        calc([{**position, "quantity": 1000}], [])
+    with pytest.raises(BridgeError, match="PAPER_ACCOUNT_NOT_LIVE"):
+        EC.paper_reservation_proxy(capital=10000, positions=[], orders=[], environment="LIVE")
+
+
+def test_d29_real_ledger_partial_order_pnl_environment_isolation_and_cancel(tmp_path):
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    from apex.ledger.store import LedgerWriter
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "reservation.sqlite")).open()
+        ledger = LedgerWriter(store, clock=lambda: "2026-01-01T00:00:00.000Z")
+        await ledger.initialize(); await ledger.start()
+        try:
+            for env, suffix in (("PAPER", "000000000001"), ("LIVE", "000000000002")):
+                pid, intent, setup = "plan-" + suffix, "i-" + suffix, "setup-" + suffix
+                await ledger.append_trade_plan({"proposal_id": pid, "setup_id": setup, "symbol": "BTCUSDT", "timeframe": "1h",
+                    "direction": "LONG", "sized_quantity": 10, "decision": "ALLOW", "environment": env, "contract_multiplier": 1})
+                await ledger.append_fsm_transition(intent_id=intent, from_state="READY", to_state="SUBMITTING", reason="test",
+                    trigger="SUBMIT_ORDER", environment=env, evidence={"symbol": "BTCUSDT", "quantity": "10", "price": "100"})
+                await ledger.append_fsm_transition(intent_id=intent, from_state="SUBMITTING", to_state="PARTIAL", reason="test",
+                    trigger="PARTIAL_FILL", environment=env)
+                await ledger.append_fill(intent_id=intent, fill_id="fill-" + suffix, price="100", quantity="4", symbol="BTCUSDT", side="BUY_OPEN")
+                await store.db.execute("INSERT INTO setup_candidate (setup_id) VALUES (?)", (setup,))
+                await store.db.commit()
+                await ledger.append_outcome({"outcome_id": "outcome-" + suffix, "setup_id": setup, "pnl": "25", "context": {"environment": env}})
+            kwargs = {"marks": {"BTCUSDT": 125}, "contract_specs": {"BTCUSDT": {"contract_multiplier": 1}}, "environment": "PAPER"}
+            got = await EC.paper_account_state(ledger, **kwargs)
+            assert got["capital"] == Decimal("10025") == await EC.paper_balance(ledger)
+            assert got["open_notional"] == 500 and got["pending_notional"] == 600
+            assert got["margin_health_fraction"] == Decimal(8925) / Decimal(10025)
+            await ledger.append_fsm_transition(intent_id="i-000000000001", from_state="PARTIAL", to_state="CANCELLED", reason="test",
+                trigger="CANCEL_CONFIRMED", environment="PAPER")
+            cancelled = await EC.paper_account_state(ledger, **kwargs)
+            assert cancelled["open_notional"] == 500 and cancelled["pending_notional"] == 0
+            await ledger.append_trade_plan({"proposal_id": "missing-state", "setup_id": "setup", "symbol": "BTCUSDT", "timeframe": "1h",
+                "direction": "LONG", "sized_quantity": 1, "decision": "ALLOW", "environment": "PAPER", "contract_multiplier": 1})
+            with pytest.raises(BridgeError, match="PAPER_ORDER_STATE_UNAVAILABLE"):
+                await EC.paper_account_state(ledger, **kwargs)
+            assert (await ledger.verify_chain())["intact"]
+        finally:
+            await ledger.stop(); await store.close()
+    asyncio.run(exercise())

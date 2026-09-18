@@ -142,6 +142,174 @@ async def paper_balance(ledger: Any) -> Decimal:
     return total
 
 
+def _paper_decimal(value: Any, name: str, *, positive: bool = False) -> Decimal:
+    try:
+        if value is None or isinstance(value, bool):
+            raise ValueError("missing number")
+        number = Decimal(str(value))
+        if not number.is_finite() or (positive and number <= 0):
+            raise ValueError("invalid number")
+        return number
+    except (ArithmeticError, TypeError, ValueError) as exc:
+        raise BridgeError("PAPER_MARGIN_INPUT_INVALID", name) from exc
+
+
+def paper_reservation_proxy(*, capital: Any, positions: list[dict], orders: list[dict],
+                            environment: str) -> dict:
+    """D29, also binding on CP-15's durable-state adapter. No leverage input.
+
+    Positions carry signed quantity, mark_price and contract_multiplier.
+    Orders carry known state, reduce_only/is_risk_increase, submitted and
+    filled quantities, reference_price and contract_multiplier. All are facts,
+    not permissions or synthetic defaults. Exposure caps are evaluated elsewhere.
+    """
+    from apex.risk.kernel import margin_health_state
+    if environment != "PAPER":
+        raise BridgeError("PAPER_ACCOUNT_NOT_LIVE", "reservation proxy is PAPER-only")
+    C = _paper_decimal(capital, "capital", positive=True)
+    open_notional = Decimal(0)
+    for position in positions:
+        quantity = _paper_decimal(position.get("quantity"), "position quantity")
+        if quantity == 0:
+            continue
+        price = _paper_decimal(position.get("mark_price"), "position mark", positive=True)
+        multiplier = _paper_decimal(position.get("contract_multiplier"), "contract multiplier", positive=True)
+        open_notional += abs(quantity) * price * multiplier
+    pending = Decimal(0)
+    active = {"SUBMITTING", "ACKNOWLEDGED", "PARTIAL"}
+    filled = {"FILLED", "PROTECTED", "MANAGED", "CLOSED"}
+    cancelled = {"CANCELLED", "REJECTED"}
+    for order in orders:
+        state = order.get("state")
+        if state not in active | filled | cancelled:
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", str(state))
+        if type(order.get("reduce_only")) is not bool or type(order.get("is_risk_increase")) is not bool:
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "order risk classification missing")
+        if order["reduce_only"] or not order["is_risk_increase"] or state in cancelled:
+            continue
+        quantity = _paper_decimal(order.get("quantity"), "order quantity", positive=True)
+        done = _paper_decimal(order.get("filled_quantity"), "filled quantity")
+        if not 0 <= done <= quantity:
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "inconsistent filled quantity")
+        remaining = quantity - done
+        if state in filled and remaining != 0:
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "full-fill state lacks complete fill records")
+        if remaining:
+            price = _paper_decimal(order.get("reference_price"), "pending order price", positive=True)
+            multiplier = _paper_decimal(order.get("contract_multiplier"), "contract multiplier", positive=True)
+            pending += remaining * price * multiplier
+    N = open_notional + pending
+    health = (C - N) / C
+    if not Decimal(0) <= health <= Decimal(1):
+        raise BridgeError("PAPER_MARGIN_OUT_OF_RANGE", "reservation exceeds capital; no clipping")
+    return {"capital": C, "open_notional": open_notional, "pending_notional": pending,
+            "reserved_notional": N, "margin_health_fraction": health,
+            "margin_model": "PAPER_RESERVATION_PROXY_D29", "environment": "PAPER",
+            "margin_status": margin_health_state(float(health), environment="PAPER")}
+
+
+async def paper_account_state(ledger: Any, *, marks: Mapping[str, Any],
+                              contract_specs: Mapping[str, Mapping], environment: str) -> dict:
+    """Read-only D29 projection of the real append-only PAPER ledger.
+
+    No inference of an order's completion from its age, no leverage discount,
+    no unidentified fill, no PAPER capital in LIVE. Marks are supplied by the
+    governed fresh CLOSED data-plane reader, not entry-price fallbacks.
+    """
+    if environment != "PAPER":
+        raise BridgeError("PAPER_ACCOUNT_NOT_LIVE", "ledger projection is PAPER-only")
+    if ledger is None:
+        raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "ledger not bound")
+    entries = await ledger.read_ledger()
+    plans = await ledger.trade_plans()
+    identities = {}
+    for plan in plans:
+        for key in {plan["proposal_id"], "i-" + plan["proposal_id"][-12:]}:
+            if key in identities and identities[key]["proposal_id"] != plan["proposal_id"]:
+                raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "ambiguous execution identity")
+            identities[key] = plan
+    transitions, submissions, environments = {}, {}, {}
+    for entry in entries:
+        if entry.event_type != "FSM_TRANSITION":
+            continue
+        payload = entry.raw.get("payload", {})
+        env = payload.get("environment")
+        if env not in ("PAPER", "LIVE", "RESEARCH", "BACKTEST"):
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "FSM environment unavailable")
+        if entry.intent_id in environments and environments[entry.intent_id] != env:
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "FSM environment conflict")
+        environments[entry.intent_id] = env
+        history = transitions.setdefault(entry.intent_id, [])
+        history.append(payload.get("to_state"))
+        if payload.get("trigger") == "SUBMIT_ORDER":
+            if entry.intent_id in submissions:
+                raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "multiple submissions for one intent")
+            submissions[entry.intent_id] = payload.get("evidence", {})
+    for plan in plans:
+        if plan["environment"] != "PAPER" or plan["decision"] == "REJECT":
+            continue
+        if not any(k in transitions for k in (plan["proposal_id"], "i-" + plan["proposal_id"][-12:])):
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "materialized plan lacks order state")
+    net, filled_qty, pnl = {}, {}, []
+    for entry in entries:
+        payload = entry.raw.get("payload", {})
+        if entry.event_type == "OUTCOME":
+            env = payload.get("outcome", {}).get("context", {}).get("environment")
+            if env not in ("PAPER", "LIVE", "RESEARCH", "BACKTEST"):
+                raise BridgeError("PAPER_MARGIN_INPUT_INVALID", "outcome environment unavailable")
+            if env == "PAPER":
+                pnl.append((entry.timestamp, _paper_decimal(entry.raw.get("pnl"), "realized PAPER P/L")))
+        if entry.event_type != "FILL":
+            continue
+        plan = identities.get(entry.intent_id)
+        env = environments.get(entry.intent_id)
+        if plan is not None and env != plan["environment"]:
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "fill plan/FSM environment mismatch")
+        if env is None:
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "fill has no environment-tagged order state")
+        if env != "PAPER":
+            continue
+        side, symbol = payload.get("side"), payload.get("symbol")
+        if side not in ("BUY_OPEN", "SELL_OPEN", "BUY_CLOSE", "SELL_CLOSE") or not symbol:
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "fill symbol/side missing")
+        qty = _paper_decimal(entry.quantity, "fill quantity", positive=True)
+        net[symbol] = net.get(symbol, Decimal(0)) + (qty if side.startswith("BUY") else -qty)
+        if side.endswith("_OPEN"):
+            filled_qty[entry.intent_id] = filled_qty.get(entry.intent_id, Decimal(0)) + qty
+    def multiplier(symbol):
+        return _paper_decimal(contract_specs.get(symbol, {}).get("contract_multiplier"), "contract multiplier", positive=True)
+    positions = [{"symbol": symbol, "quantity": qty, "mark_price": marks.get(symbol),
+                  "contract_multiplier": multiplier(symbol)} for symbol, qty in net.items() if qty != 0]
+    orders = []
+    for intent, history in transitions.items():
+        if environments[intent] != "PAPER":
+            continue
+        state = history[-1]
+        if state == "RECONCILED":
+            settled = [s for s in history[:-1] if s in ("CLOSED", "CANCELLED", "REJECTED")]
+            if not settled:
+                raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "reconciled order has no settled origin")
+            state = settled[-1]
+        submit = submissions.get(intent)
+        if submit is None:
+            if state in ("REJECTED", "CANCELLED"):
+                continue  # explicit pre-submission refusal; no venue order
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "submission facts missing")
+        symbol = submit.get("symbol")
+        # Frozen FSM SUBMIT_ORDER submits phase=entry. Protective/exit orders
+        # use the separate reduce-only path and never this entry transition.
+        orders.append({"state": state, "symbol": symbol, "reduce_only": False,
+                       "is_risk_increase": True, "quantity": submit.get("quantity"),
+                       "filled_quantity": filled_qty.get(intent, Decimal(0)),
+                       "reference_price": submit.get("price"),
+                       "contract_multiplier": multiplier(symbol)})
+    capital = Decimal(str(load_paper_account()["capital_usdt"])) + sum((v for _, v in pnl), Decimal(0))
+    result = paper_reservation_proxy(capital=capital, positions=positions, orders=orders, environment=environment)
+    return {**result, "positions": net, "realized_outcomes": pnl,
+            "per_symbol_exposure": {p["symbol"]: abs(p["quantity"]) * _paper_decimal(p["mark_price"], "mark", positive=True)
+                                     * p["contract_multiplier"] for p in positions}, "orders": orders}
+
+
 def training_rule0(vector: Mapping[str, float], *, turbulence: float) -> str:
     """D21(b): the exact ordered training tree, with no entropy branch.
 

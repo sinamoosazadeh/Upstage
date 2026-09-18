@@ -16991,8 +16991,16 @@ a gap-through fills at the bar open; (c) `query_open_positions`,
 `query_account_margin_health` answer from the simulator's own durable
 state, so `reconcile_boot` reaches READY without any network; (d) balance
 = `params/paper_account_v1.yaml` `capital_usdt` + realised P/L from the
-ledger; margin health = simulated from that balance and open notional per
-the P7 `simulated_margin` fractions; (e) simulator state is persisted in
+ledger; **Session-CP-14 (2026-09-17), D29, binding for CP-15:** the simulator's
+`query_account_margin_health` must return exactly `(C-N)/C` from its durable
+state, where C is that PAPER balance and N is gross marked open PAPER
+notional plus full unfilled risk-increasing order notional, excluding
+reduce-only reservations and filled-quantity double counting, with no
+leverage discount. Apply P7's strictly-below 0.60 warning, 0.40 action/veto
+14, and 0.20 liquidation-approach/Emergency L3 CANCEL_ALL thresholds;
+missing marks/order state, C <= 0 or a fraction outside [0,1] fails closed,
+never clipped. This is the PAPER reservation proxy, not exchange liquidation
+distance; exposure caps remain independent and LIVE is unchanged; (e) simulator state is persisted in
 the same SQLite file under the additive table `paper_sim_state`
 (ADR-P2-003 additive migration; CP-15 defines its columns against the
 five-op surface above), so a restart reconciles against it; (f) LIVE is
@@ -20392,6 +20400,7 @@ ADR-P2-003):
 capital_usdt: 10000.0
 simulated_margin: {warning_fraction: 0.60, action_fraction: 0.40, liquidation_approach_fraction: 0.20}
 ```
+**Session-CP-14 (2026-09-17):** D29 defines the PAPER reservation proxy, not exchange liquidation distance: `C = capital_usdt + realized PAPER ledger P/L`; `N = gross marked notional of open PAPER positions + full notional of unfilled risk-increasing orders`; `margin_health_fraction = (C-N)/C`. Reduce-only orders reserve nothing; filled quantity is removed from the pending reservation and counted only in the marked position; there is no leverage discount. P7 thresholds are strictly below 0.60 for warning, below 0.40 for action (veto 14 MARGIN_HEALTH blocks new entries), and below 0.20 for liquidation-approach (Emergency L3 CANCEL_ALL). Missing marks or order state, nonpositive C, or a fraction outside [0,1] fails closed with a named status; no clipping. Exposure caps remain separate. This definition also binds CP-15's durable-state simulator `query_account_margin_health`; LIVE continues to use its venue `query_account_margin_health` unchanged.
 `capital_usdt` is the authoritative PAPER balance: the Telegram control
 plane's `paper_balance` is fed from this YAML, never a second literal
 (ISSUE-SESSION-A-006); PAPER and LIVE stay separate everywhere they are
@@ -20845,6 +20854,7 @@ Engine v4.0.0 formula bodies were not rewritten.
 | CP-14 D23 participation with missing OI (2026-09-17) | E11 Section 2; ISSUE-CP14-007 owner resolution |
 | CP-14 D26-A ATR14-to-atr_z consumer projection (2026-09-17) | E11 Section 1.2; ISSUE-CP14-011 part 1 owner resolution |
 | CP-14 D27 confidence-complement uncertainty (2026-09-17) | Section 9.5 P1 source row corrected to Ch.8 `1-p_max`; raw H and h_norm remain distinct; ISSUE-CP14-019 |
+| CP-14 D29 PAPER reservation proxy (2026-09-17) | Section 9.5 P7 and Ch.16 P3 CP-15 simulator binding; ISSUE-CP14-018; LIVE unchanged |
 | CP-14 D28 PAPER bootstrap governance and public venue provenance (2026-09-17) | Ch.12 AF.3, Section 2 snapshot binding, Section 9.5 tree; ADR-CP14-005 / ISSUE-CP14-017 |
 | CP-14 D25 decision-runtime YAML (2026-09-17) | Section 9.5 repository tree; ADR-CP14-003 / ISSUE-CP14-008 |
 | CP-14 D21 first-training label rule (2026-09-17) | E11 Section 3.3; ISSUE-CP14-001 owner resolution |
