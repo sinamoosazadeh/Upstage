@@ -539,7 +539,8 @@ from apex.ops.engine_context import *
 X = [[float(i == j) for j in range(8)] for i in range(9)] * 3
 W,b = fit_multinomial(X, list(E11.REGIMES) * 3, 123)
 a = {"W": W, "b": b, "K": 9, "label_delay_candles": 48, "seed": 123,
-     "training_window": {"start": "2026-01-01T00:00:00.000Z", "end": "2026-01-02T00:00:00.000Z"},
+     "training_window": {"start": "2026-01-01T00:00:00.000Z", "end": "2026-01-02T00:00:00.000Z", "timeframes": list(DEFAULT_TRAINING_TIMEFRAMES),
+                         "symbols": list(CORE10_SYMBOLS), "default_timeframes": list(DEFAULT_TRAINING_TIMEFRAMES), "default_symbols": list(CORE10_SYMBOLS)},
      "sample_count": 27, "training_query_sha256": "0" * 64, "artifact_sha256": classifier_hash(W,b,123)}
 write_classifier(a, sys.argv[1])
 assert load_classifier(sys.argv[1]) == a
@@ -1111,3 +1112,69 @@ def test_e01_local_atr_memoization_preserves_complete_native_pipeline(monkeypatc
     monkeypatch.setattr(EC.E01, "atr_sma", lambda candles, n=14, idx=-1: original(list(candles), n, idx))
     reference = EC.E01.run_pipeline(candles)
     assert EC.canonical_json(memoized) == EC.canonical_json(reference)
+
+
+def test_d30_default_scope_and_progress_are_exactly_twenty_base_cells(tmp_path):
+    import json
+    import subprocess
+    import sys
+    from apex.data_catalog.contracts import CORE10_SYMBOLS
+    result = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11", "--sqlite", str(tmp_path / "empty.sqlite"),
+                             "--out", str(tmp_path / "absent.yaml"), "--json"], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 2, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    lines = [line for line in result.stderr.splitlines() if line.startswith("TRAIN_CELL ")]
+    assert len(lines) == 20
+    assert {line.split()[1] for line in lines} == {f"cell={symbol}:{tf}" for symbol in CORE10_SYMBOLS for tf in ("1h", "4h")}
+    assert all("closed_bars=0 eligible_samples=0 elapsed_seconds=" in line for line in lines)
+    assert report["training_window"]["timeframes"] == ["1h", "4h"]
+    assert report["training_window"]["symbols"] == list(CORE10_SYMBOLS)
+    assert report["training_window"]["default_timeframes"] == ["1h", "4h"]
+    assert report["training_window"]["default_symbols"] == list(CORE10_SYMBOLS)
+    assert report["per_class_counts"] == dict.fromkeys(EC.E11.REGIMES, 0)
+    assert not (tmp_path / "absent.yaml").exists()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_d30_hard_cli_deadline_never_writes_artifact(tmp_path, existing):
+    import json
+    import subprocess
+    import sys
+    import time
+    target = tmp_path / "output.yaml"
+    if existing:
+        target.write_text("do not replace this artifact\n")
+    started = time.monotonic()
+    result = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11", "--sqlite", str(tmp_path / "empty.sqlite"),
+                             "--out", str(target), "--json", "--max-minutes", "0.0001"], capture_output=True, text=True, timeout=10)
+    assert time.monotonic() - started < 5
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert json.loads(result.stdout) == {"status": "REFUSED", "reason": "TRAINING_TIME_LIMIT", "artifact_written": False}
+    assert not list(tmp_path.glob(".e11-*"))
+    assert target.read_text() == "do not replace this artifact\n" if existing else not target.exists()
+
+
+@pytest.mark.parametrize("timeframes,symbols", [("15m", "BTCUSDT"), ("1h,1h", "BTCUSDT"), ("", "BTCUSDT"), ("1h", "UNKNOWN")])
+def test_d30_scope_rejects_nonbase_or_ambiguous_selection(timeframes, symbols):
+    with pytest.raises(BridgeError, match="TRAINING_SCOPE_INVALID"):
+        EC.training_scope(timeframes, symbols)
+
+
+def test_d30_subset_is_canonical_and_excludes_other_training_cells(tmp_path):
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    assert EC.training_scope("4h,1h", "ETHUSDT,BTCUSDT") == (("1h", "4h"), ("BTCUSDT", "ETHUSDT"))
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "scope.sqlite")).open()
+        progress = []
+        try:
+            for symbol, tf in (("BTCUSDT", "15m"), ("BTCUSDT", "1h"), ("ETHUSDT", "4h")):
+                await store.ingest_raw(make_obs(symbol=symbol, timeframe=tf), oi_state="AVAILABLE")
+            with pytest.raises(EC.DegenerateTraining) as exc:
+                await EC.train_classifier(store, symbols="BTCUSDT", timeframes="1h", progress=progress.append)
+            cells = [row for row in progress if row["kind"] == "cell"]
+            assert len(cells) == 1 and cells[0]["cell"] == "BTCUSDT:1h" and cells[0]["closed_bars"] == 1
+            assert exc.value.training_window["symbols"] == ["BTCUSDT"]
+            assert exc.value.training_window["timeframes"] == ["1h"]
+        finally:
+            await store.close()
+    asyncio.run(exercise())

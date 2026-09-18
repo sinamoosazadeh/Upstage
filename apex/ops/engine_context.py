@@ -17,7 +17,7 @@ from typing import Any, Callable, Mapping
 import numpy as np
 
 from apex.config import Config, PARAMS_DIR, PARAMS_FILES, _YamlSubsetParser, load_params
-from apex.data_catalog.contracts import parse_utc_ms
+from apex.data_catalog.contracts import CORE10_SYMBOLS, parse_utc_ms
 from apex.engines.e11_regime import engine as E11
 from apex.identity.canonical_json import canonical_json
 from apex.ops.bootstrap_service import close_time_ms
@@ -26,6 +26,8 @@ from apex.ops.plan_bridge import BridgeError
 ENGINE_ORDER = ("E01", "E02", "E12", "E04", "E03", "E10", "E09", "E05",
                 "E06", "E11", "E07", "E08")
 DEFAULT_TRAINING_SEED = 20260917
+DEFAULT_TRAINING_TIMEFRAMES = ("1h", "4h")
+DEFAULT_TRAINING_MAX_MINUTES = 20.0
 
 
 def classifier_hash(W: Any, b: Any, seed: int) -> str:
@@ -53,8 +55,14 @@ def validate_classifier(artifact: Mapping[str, Any]) -> dict[str, Any]:
         if not np.isfinite(W).all() or not np.isfinite(b).all():
             raise ValueError("non-finite W/b")
         window = artifact["training_window"]
-        if set(window) != {"start", "end"}:
+        if set(window) != {"start", "end", "timeframes", "symbols", "default_timeframes", "default_symbols"}:
             raise ValueError("training_window")
+        if (window["default_timeframes"] != list(DEFAULT_TRAINING_TIMEFRAMES)
+                or window["default_symbols"] != list(CORE10_SYMBOLS)):
+            raise ValueError("training scope defaults")
+        scoped = training_scope(window["timeframes"], window["symbols"])
+        if list(scoped[0]) != window["timeframes"] or list(scoped[1]) != window["symbols"]:
+            raise ValueError("training scope ordering")
         if parse_utc_ms(window["start"]) > parse_utc_ms(window["end"]):
             raise ValueError("reversed training_window")
         query_hash = artifact["training_query_sha256"]
@@ -63,7 +71,7 @@ def validate_classifier(artifact: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError("training_query_sha256")
         if classifier_hash(artifact["W"], artifact["b"], artifact["seed"]) != artifact["artifact_sha256"]:
             raise ValueError("artifact_sha256 mismatch")
-    except (ValueError, TypeError, KeyError, OverflowError) as exc:
+    except (ValueError, TypeError, KeyError, OverflowError, BridgeError) as exc:
         raise BridgeError("CONFIGURATION_INVALID", f"E11 {exc}") from exc
     return dict(artifact)
 
@@ -865,6 +873,7 @@ TRAINING_QUERY = canonical_json({
     "label_boundary": "49 consecutive CLOSED candles t..t+48 with independent E01 confirmation; D21 unchanged",
     "raw_metadata": "immutable observation_id/content hash binding restores availability_time and OI timestamp; availability<=as_of",
     "E04_replay": "native chronological VolatilityEngineV4, each CLOSED observation once; no future-state reuse",
+    "D30_scope": "selected base timeframes 1h/4h and Core-10 symbols only; default 20 cells; one shared runtime classifier",
 })
 HISTORY_KEYS = {"trend": "trendiness_raw", "vol": "vol_ratio", "exp": "expansion_raw",
                 "liq": "liquidity_raw", "part": "participation_raw", "sq": "structure_score"}
@@ -1058,22 +1067,63 @@ def fit_multinomial(X: list[list[float]], labels: list[str], seed: int) -> tuple
     return W.tolist(), b.tolist()
 
 
+def training_scope(timeframes=DEFAULT_TRAINING_TIMEFRAMES, symbols=CORE10_SYMBOLS) -> tuple[tuple, tuple]:
+    """D30: only subsets of the two base TFs/Core-10, in canonical order."""
+    def selected(value, allowed):
+        values = [v.strip() for v in value.split(",")] if isinstance(value, str) else list(value)
+        if not values or len(values) != len(set(values)) or any(v not in allowed for v in values):
+            raise BridgeError("TRAINING_SCOPE_INVALID", "use base timeframes 1h,4h and Core-10 symbols only")
+        return tuple(v for v in allowed if v in values)
+    return selected(timeframes, DEFAULT_TRAINING_TIMEFRAMES), selected(symbols, CORE10_SYMBOLS)
+
+
+def training_time_limit(minutes: float) -> float:
+    value = float(minutes)
+    if not math.isfinite(value) or value < 0:
+        raise BridgeError("TRAINING_LIMIT_INVALID", "max-minutes must be finite and nonnegative")
+    return value * 60.0
+
+
 async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
-                           now: Callable[[], float] = time.time) -> tuple[dict, dict]:
+                           now: Callable[[], float] = time.time,
+                           timeframes: Any = DEFAULT_TRAINING_TIMEFRAMES,
+                           symbols: Any = CORE10_SYMBOLS,
+                           max_minutes: float = DEFAULT_TRAINING_MAX_MINUTES,
+                           progress: Callable[[dict], None] | None = None,
+                           monotonic: Callable[[], float] = time.monotonic) -> tuple[dict, dict]:
     """Train from actual store windows only. No file or fixture fallback."""
-    cells = await (await store.db.execute(CELL_QUERY)).fetchall()
+    timeframes, symbols = training_scope(timeframes, symbols)
+    limit = training_time_limit(max_minutes)
+    started = monotonic()
+    def check_deadline():
+        if monotonic() - started >= limit:
+            raise BridgeError("TRAINING_TIME_LIMIT", "D30 maximum elapsed training time reached")
+    check_deadline()
+    counts = {(r[0], r[1]): r[3] for r in await (await store.db.execute(CELL_QUERY)).fetchall()}
     producer = EngineContextProducer(store, now=now)
     histogram = {name: 0 for name in E11.REGIMES}
     excluded: dict[str, int] = {}
     X, labels, stamps = [], [], []
     end_ms = int(now() * 1000)
-    for symbol, timeframe, _, count in cells:
-        window = await producer.window(symbol, timeframe, _ms_to_iso(end_ms), int(count))
+    for symbol, timeframe in [(symbol, tf) for symbol in symbols for tf in timeframes]:
+        check_deadline()
+        cell_start, eligible_before = monotonic(), len(labels)
+        count = counts.get((symbol, timeframe), 0)
+        window = await producer.window(symbol, timeframe, _ms_to_iso(end_ms), int(count)) if count else []
+        def report_cell(kind="cell"):
+            if progress:
+                progress({"kind": kind, "cell": symbol + ":" + timeframe,
+                          "closed_bars": len(window), "eligible_samples": len(labels) - eligible_before,
+                          "elapsed_seconds": monotonic() - cell_start})
+        report_cell("started")
         if not window:
             excluded["EMPTY_CLOSED_WINDOW"] = excluded.get("EMPTY_CLOSED_WINDOW", 0) + 1
+            report_cell()
             continue
         pending = []
         async for item in producer.feature_timeline(symbol, timeframe, window):
+            check_deadline()
+            report_cell("tick")
             # Keep just the 48 delayed candidates, not full engine states.
             pending.append({key: item[key] for key in ("index", "as_of", "confirmation", "vector", "rule0", "reason") if key in item})
             if len(pending) <= 48:
@@ -1095,16 +1145,109 @@ async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
             X.append([candidate["vector"][key] for key in E11.VECTOR_KEYS])
             stamps.append(candidate["as_of"])
         excluded["UNFINALIZED_TAIL"] = excluded.get("UNFINALIZED_TAIL", 0) + len(pending)
-    training_window = {"start": min(stamps) if stamps else None, "end": max(stamps) if stamps else None}
+        report_cell()
+    check_deadline()
+    training_window = {"start": min(stamps) if stamps else None, "end": max(stamps) if stamps else None,
+                       "timeframes": list(timeframes), "symbols": list(symbols),
+                       "default_timeframes": list(DEFAULT_TRAINING_TIMEFRAMES), "default_symbols": list(CORE10_SYMBOLS)}
     if any(count == 0 for count in histogram.values()):
         raise DegenerateTraining(histogram, excluded, training_window)
     W, b = fit_multinomial(X, labels, seed)
+    check_deadline()
     artifact = {"W": W, "b": b, "K": 9, "label_delay_candles": 48,
                 "seed": seed, "training_window": training_window, "sample_count": len(X),
-                "training_query_sha256": hashlib.sha256(TRAINING_QUERY.encode()).hexdigest(),
+                "training_query_sha256": hashlib.sha256(canonical_json({"protocol": TRAINING_QUERY, "timeframes": timeframes, "symbols": symbols}).encode()).hexdigest(),
                 "artifact_sha256": classifier_hash(W, b, seed)}
     validate_classifier(artifact)
     return artifact, {"per_class_counts": histogram, "excluded": excluded}
+
+
+def _training_worker(connection, sqlite: str, seed: int, timeframes: tuple, symbols: tuple, max_minutes: float):
+    """Isolated CPU worker. It never knows an output path or writes artifacts."""
+    import asyncio
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def run():
+        store = await SQLiteStore(sqlite).open()
+        try:
+            artifact, report = await train_classifier(store, seed=seed, timeframes=timeframes,
+                symbols=symbols, max_minutes=max_minutes, progress=connection.send)
+            connection.send({"kind": "result", "artifact": artifact, "report": report})
+        except DegenerateTraining as exc:
+            connection.send({"kind": "degenerate", "histogram": exc.histogram, "excluded": exc.excluded,
+                             "training_window": exc.training_window})
+        except BridgeError as exc:
+            connection.send({"kind": "error", "reason": exc.reason, "detail": exc.detail})
+        except Exception as exc:
+            connection.send({"kind": "error", "reason": "TRAINING_WORKER_FAILED", "detail": type(exc).__name__})
+        finally:
+            await store.close()
+    try:
+        asyncio.run(run())
+    finally:
+        connection.close()
+
+
+async def train_classifier_bounded(sqlite: str, *, seed=DEFAULT_TRAINING_SEED,
+        timeframes=DEFAULT_TRAINING_TIMEFRAMES, symbols=CORE10_SYMBOLS,
+        max_minutes=DEFAULT_TRAINING_MAX_MINUTES, progress=None) -> tuple[dict, dict]:
+    """Hard wall-time supervisor, including CPU-bound native engine calls.
+
+    asyncio.wait_for alone cannot interrupt those calls. Only the parent may
+    return a verified artifact to the atomic writer after successful training.
+    """
+    import asyncio
+    import multiprocessing
+    scope = training_scope(timeframes, symbols)
+    deadline = time.monotonic() + training_time_limit(max_minutes)
+    context = multiprocessing.get_context("spawn")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(target=_training_worker, args=(sender, sqlite, seed, *scope, max_minutes))
+    current = None
+    try:
+        process.start()
+        sender.close()
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                if current is not None and progress:
+                    progress({**current, "kind": "cell", "status": "ABORTED"})
+                raise BridgeError("TRAINING_TIME_LIMIT", "D30 maximum elapsed training time reached")
+            ready = await asyncio.to_thread(receiver.poll, min(.1, remaining))
+            if not ready:
+                if not process.is_alive():
+                    raise BridgeError("TRAINING_WORKER_FAILED", "worker exited without a result")
+                continue
+            try:
+                message = receiver.recv()
+            except EOFError as exc:
+                raise BridgeError("TRAINING_WORKER_FAILED", "worker closed its result channel") from exc
+            if time.monotonic() >= deadline:
+                raise BridgeError("TRAINING_TIME_LIMIT", "D30 maximum elapsed training time reached")
+            kind = message["kind"]
+            if kind in ("started", "tick"):
+                current = message
+            elif kind == "cell":
+                if progress:
+                    progress(message)
+                current = None
+            elif kind == "degenerate":
+                raise DegenerateTraining(message["histogram"], message["excluded"], message["training_window"])
+            elif kind == "error":
+                raise BridgeError(message["reason"], message["detail"])
+            elif kind == "result":
+                validate_classifier(message["artifact"])
+                return message["artifact"], message["report"]
+    finally:
+        sender.close()
+        receiver.close()
+        if process.pid is not None:
+            if process.is_alive():
+                process.terminate()
+            await asyncio.to_thread(process.join, 1.0)
+            if process.is_alive():
+                process.kill()
+                await asyncio.to_thread(process.join, 1.0)
+            process.close()
 
 
 def write_classifier(artifact: dict[str, Any], path: str | Path) -> None:
@@ -1119,7 +1262,7 @@ def write_classifier(artifact: dict[str, Any], path: str | Path) -> None:
     for key in ("b", "K", "label_delay_candles", "seed"):
         text += key + ": " + json.dumps(artifact[key], separators=(",", ":")) + "\n"
     text += "training_window:\n"
-    for key in ("start", "end"):
+    for key in ("start", "end", "timeframes", "symbols", "default_timeframes", "default_symbols"):
         text += "  " + key + ": " + json.dumps(artifact["training_window"][key]) + "\n"
     for key in ("sample_count", "training_query_sha256", "artifact_sha256"):
         text += key + ": " + json.dumps(artifact[key]) + "\n"

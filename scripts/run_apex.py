@@ -834,34 +834,41 @@ def _telegram_reply(signaling: Any):
 
 async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None,
                      out: Optional[str] = None,
-                     seed: int = EC.DEFAULT_TRAINING_SEED) -> int:
+                     seed: int = EC.DEFAULT_TRAINING_SEED,
+                     timeframes: str = "1h,4h", symbols: str = ",".join(CORE10_SYMBOLS),
+                     max_minutes: float = EC.DEFAULT_TRAINING_MAX_MINUTES) -> int:
     """Store-only first training; a refusal never replaces an artifact."""
-    from apex.data_catalog.store.sqlite_store import SQLiteStore
-    store = await SQLiteStore(sqlite or cfg.sqlite_path).open()
     target = Path(out) if out is not None else EC.PARAMS_DIR / "e11_classifier_v1.yaml"
+    def progress(row):
+        print(f"TRAIN_CELL cell={row['cell']} closed_bars={row['closed_bars']} "
+              f"eligible_samples={row['eligible_samples']} elapsed_seconds={row['elapsed_seconds']:.3f}",
+              file=sys.stderr, flush=True)
     try:
-        try:
-            artifact, report = await EC.train_classifier(store, seed=seed)
-        except EC.DegenerateTraining as exc:
-            result = {"status": "REFUSED", "reason": exc.reason,
-                      "refusing_class": exc.refusing_class,
-                      "sample_count": sum(exc.histogram.values()),
-                      "per_class_counts": exc.histogram,
-                      "training_window": exc.training_window,
-                      "excluded": exc.excluded, "artifact_written": False}
-            _say(json.dumps(result, sort_keys=True) if as_json else
-                 f"REFUSED {exc.reason}: {exc.detail}; histogram={exc.histogram}")
-            return EXIT_DEGRADED
-        EC.write_classifier(artifact, target)
-        result = {"status": "TRAINED", "sample_count": artifact["sample_count"],
-                  "training_window": artifact["training_window"],
-                  "artifact_sha256": artifact["artifact_sha256"],
-                  "artifact_path": str(target), "seed": seed, **report}
+        artifact, report = await EC.train_classifier_bounded(sqlite or cfg.sqlite_path, seed=seed,
+            timeframes=timeframes, symbols=symbols, max_minutes=max_minutes, progress=progress)
+    except EC.DegenerateTraining as exc:
+        result = {"status": "REFUSED", "reason": exc.reason,
+                  "refusing_class": exc.refusing_class,
+                  "sample_count": sum(exc.histogram.values()),
+                  "per_class_counts": exc.histogram,
+                  "training_window": exc.training_window,
+                  "excluded": exc.excluded, "artifact_written": False}
         _say(json.dumps(result, sort_keys=True) if as_json else
-             f"TRAINED {artifact['sample_count']} samples; artifact={target}")
-        return EXIT_READY
-    finally:
-        await store.close()
+             f"REFUSED {exc.reason}: {exc.detail}; histogram={exc.histogram}")
+        return EXIT_DEGRADED
+    except PB.BridgeError as exc:
+        result = {"status": "REFUSED", "reason": exc.reason, "artifact_written": False}
+        _say(json.dumps(result, sort_keys=True) if as_json else f"REFUSED {exc.reason}: {exc.detail}")
+        return EXIT_DEGRADED
+    EC.write_classifier(artifact, target)
+    result = {"status": "TRAINED", "sample_count": artifact["sample_count"],
+              "training_window": artifact["training_window"],
+              "artifact_sha256": artifact["artifact_sha256"],
+              "artifact_path": str(target), "seed": seed, **report}
+    _say(json.dumps(result, sort_keys=True) if as_json else
+         f"TRAINED {artifact['sample_count']} samples; artifact={target}")
+    return EXIT_READY
+
 
 
 COMMANDS = {"boot": _boot, "grid": _grid, "demo": _demo, "alerts": _alerts,
@@ -907,12 +914,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="train-e11: output artifact (default params/e11_classifier_v1.yaml)")
     parser.add_argument("--seed", type=int, default=EC.DEFAULT_TRAINING_SEED,
                         help="train-e11: fixed recorded optimizer seed")
+    parser.add_argument("--timeframes", default="1h,4h", help="train-e11: base TF subset (default 1h,4h)")
+    parser.add_argument("--symbols", default=",".join(CORE10_SYMBOLS), help="train-e11: Core-10 subset (default all ten)")
+    parser.add_argument("--max-minutes", type=float, default=EC.DEFAULT_TRAINING_MAX_MINUTES,
+                        help="train-e11: hard training time limit (default 20 minutes)")
     args = parser.parse_args(argv)
     cfg = Config(args.env_file)          # APEX_DOTENV_PATH/.env fill, no shadow
     try:
         if args.command == "train-e11":
             return asyncio.run(_train_e11(cfg, as_json=args.json,
-                                         sqlite=args.sqlite, out=args.out, seed=args.seed))
+                                         sqlite=args.sqlite, out=args.out, seed=args.seed,
+                                         timeframes=args.timeframes, symbols=args.symbols, max_minutes=args.max_minutes))
         if args.command == "bootstrap":
             return asyncio.run(_bootstrap(cfg, as_json=args.json,
                                           cells=args.cells, start=args.start,

@@ -11886,6 +11886,8 @@ with the recorded fixed seed; K remains 9, with no synthetic members or
 reweighting, and refuse if any of the nine classes is empty. Runtime retains
 the full Section 3.2 tree, including entropy, with the trained W/b.
 
+**Session-CP-14 (2026-09-17; D30, owner decision 2026-09-18):** `train-e11` trains the single runtime classifier only on E11 §1.2 base timeframes 1h/4h across Core-10 (20 default cells), exposes `--timeframes` (default `1h,4h`) and `--symbols` (default all ten) with effective/default scope in artifact `training_window`, prints one per-cell progress line (cell, CLOSED bars, eligible samples, elapsed seconds), and enforces a hard `--max-minutes` (default 20) named abort without writing an artifact, while the nine-class refusal remains unchanged and the resulting W/b serves all runtime timeframes as window-parameter extensions.
+
 PIT-safe softmax:
 $$p_{r,t}= \frac{\exp(z_{r,t} - \max_k z_{k,t})}{\sum_j \exp(z_{j,t} - \max_k z_{k,t})}$$
 subtracting the max for numerical stability.
@@ -20856,6 +20858,7 @@ Engine v4.0.0 formula bodies were not rewritten.
 | CP-14 D26-B native liquidity projection (2026-09-17) | E11 Section 1.2; live density/MAX age/confirmed sweep rate; shared train/runtime Method A |
 | CP-14 D26-A ATR14-to-atr_z consumer projection (2026-09-17) | E11 Section 1.2; ISSUE-CP14-011 part 1 owner resolution |
 | CP-14 D27 confidence-complement uncertainty (2026-09-17) | Section 9.5 P1 source row corrected to Ch.8 `1-p_max`; raw H and h_norm remain distinct; ISSUE-CP14-019 |
+| CP-14 D30 bounded base-timeframe training (2026-09-18) | E11 Section 3.3; ISSUE-CP14-032; 20 default cells, progress and hard deadline; single shared classifier |
 | CP-14 D29 PAPER reservation proxy (2026-09-17) | Section 9.5 P7 and Ch.16 P3 CP-15 simulator binding; ISSUE-CP14-018; LIVE unchanged |
 | CP-14 D28 PAPER bootstrap governance and public venue provenance (2026-09-17) | Ch.12 AF.3, Section 2 snapshot binding, Section 9.5 tree; ADR-CP14-005 / ISSUE-CP14-017 |
 | CP-14 D25 decision-runtime YAML (2026-09-17) | Section 9.5 repository tree; ADR-CP14-003 / ISSUE-CP14-008 |
