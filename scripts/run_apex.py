@@ -78,6 +78,7 @@ from apex.telegram import signaling as SG                      # noqa: E402
 from apex.ops import bootstrap_service as BS                   # noqa: E402
 from apex.ops import paper_loop as PL                          # noqa: E402
 from apex.ops import partial_bar_repair as PR                  # noqa: E402
+from apex.ops import engine_context as EC                      # noqa: E402
 from apex.ops import plan_bridge as PB                          # noqa: E402
 from apex.ops import watchdog as WD                            # noqa: E402
 
@@ -694,7 +695,7 @@ async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
         return EXIT_DEGRADED
 
     runtime = await Runtime(cfg).start()
-    service = BS.BootstrapService(config=cfg)      # shared command surface
+    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
     await service.open()
     gateway = None
     try:
@@ -708,7 +709,9 @@ async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
                      if cfg.telegram_bot_token else None)
         control = CP.ControlPlane(
             signaling=signaling, config=cfg, clock=clock.monotonic,
-            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env)
+            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+            paper_balance=(await EC.paper_balance(ledger)
+                           if cfg.apex_env == "PAPER" else "0"))
         control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
         for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
                      "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
@@ -730,12 +733,18 @@ async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
         # provider never falls back to a hand-built plan.
         plan_bridge = PB.PaperPlanBridge(
             store=runtime.store, environment=cfg.apex_env)
+        async def catch_up(now_ms: int) -> Dict[str, Any]:
+            result = await service.catch_up(now_ms)
+            if cfg.apex_env == "PAPER":
+                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+            return result
+
         driver = PL.PaperRuntime(
             config=cfg, store=runtime.store, ledger=ledger, bus=bus,
             adapter=adapter, signaling=signaling, control=control,
             gateway=gateway, watchdog=watchdog, clock=clock,
             environment=cfg.apex_env, notifier=notifier,
-            plan_provider=plan_bridge)
+            plan_provider=plan_bridge, catch_up=catch_up)
         _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
              "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
         drift = await C.measure_drift(
@@ -823,9 +832,41 @@ def _telegram_reply(signaling: Any):
     return notifier
 
 
+async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None,
+                     out: Optional[str] = None,
+                     seed: int = EC.DEFAULT_TRAINING_SEED) -> int:
+    """Store-only first training; a refusal never replaces an artifact."""
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    store = await SQLiteStore(sqlite or cfg.sqlite_path).open()
+    target = Path(out) if out is not None else EC.PARAMS_DIR / "e11_classifier_v1.yaml"
+    try:
+        try:
+            artifact, report = await EC.train_classifier(store, seed=seed)
+        except EC.DegenerateTraining as exc:
+            result = {"status": "REFUSED", "reason": exc.reason,
+                      "refusing_class": exc.refusing_class,
+                      "sample_count": sum(exc.histogram.values()),
+                      "per_class_counts": exc.histogram,
+                      "training_window": exc.training_window,
+                      "excluded": exc.excluded, "artifact_written": False}
+            _say(json.dumps(result, sort_keys=True) if as_json else
+                 f"REFUSED {exc.reason}: {exc.detail}; histogram={exc.histogram}")
+            return EXIT_DEGRADED
+        EC.write_classifier(artifact, target)
+        result = {"status": "TRAINED", "sample_count": artifact["sample_count"],
+                  "training_window": artifact["training_window"],
+                  "artifact_sha256": artifact["artifact_sha256"],
+                  "artifact_path": str(target), "seed": seed, **report}
+        _say(json.dumps(result, sort_keys=True) if as_json else
+             f"TRAINED {artifact['sample_count']} samples; artifact={target}")
+        return EXIT_READY
+    finally:
+        await store.close()
+
+
 COMMANDS = {"boot": _boot, "grid": _grid, "demo": _demo, "alerts": _alerts,
             "bootstrap": _bootstrap, "status": _status, "serve": _serve,
-            "repair-partial": _repair_partial}
+            "repair-partial": _repair_partial, "train-e11": _train_e11}
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -860,9 +901,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--apply", action="store_true",
                         help="repair-partial: perform corrections "
                              "(default is dry-run, writes nothing)")
+    parser.add_argument("--sqlite", default=None,
+                        help="train-e11: harvested SQLite store (default APEX_SQLITE_PATH)")
+    parser.add_argument("--out", default=None,
+                        help="train-e11: output artifact (default params/e11_classifier_v1.yaml)")
+    parser.add_argument("--seed", type=int, default=EC.DEFAULT_TRAINING_SEED,
+                        help="train-e11: fixed recorded optimizer seed")
     args = parser.parse_args(argv)
     cfg = Config(args.env_file)          # APEX_DOTENV_PATH/.env fill, no shadow
     try:
+        if args.command == "train-e11":
+            return asyncio.run(_train_e11(cfg, as_json=args.json,
+                                         sqlite=args.sqlite, out=args.out, seed=args.seed))
         if args.command == "bootstrap":
             return asyncio.run(_bootstrap(cfg, as_json=args.json,
                                           cells=args.cells, start=args.start,

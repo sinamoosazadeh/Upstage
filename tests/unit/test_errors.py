@@ -24,7 +24,7 @@ CH7_CODES = [
     "E-TELE-005", "E-TELE-006", "E-TELE-007",
     "RSK-ERR-506",
     "QX_INVALID",
-    "VETO_FRESHNESS_SLA", "VETO_OI_LAG",
+    "VETO_FRESHNESS_SLA", "VETO_OI_LAG", "CIRCUIT_OPEN",
     "TOO_MAUTC_W2_REQUESTS",
     "UNAUTHORIZED",
 ]
@@ -53,6 +53,7 @@ EXPECTED_MEANINGS = {
     "VETO_OI_LAG": "OI Lag Veto",
     "TOO_MAUTC_W2_REQUESTS": "Too Many Requests",
     "UNAUTHORIZED": "Unauthorized",
+    "CIRCUIT_OPEN": "Aggregate-loss vetoes 10-12 tripped (daily / weekly / consecutive)",
 }
 
 
@@ -66,7 +67,7 @@ def test_error_registry_ch7_complete():
 
 
 def test_ch7_row_count():
-    assert len(CH7_CODES) == 23
+    assert len(CH7_CODES) == 24
 
 
 def test_registry_lookup_and_unknown():
@@ -109,3 +110,9 @@ def test_wave_out_list_frozen():
         "hedge_mode", "cross_margin", "shadow_environment",
         "physical_postgresql", "networked_event_bus", "numba",
     }
+
+
+def test_cp14_circuit_open_exact_handling():
+    assert ERROR_REGISTRY["CIRCUIT_OPEN"].handling == (
+        "Block new trades per the veto 10-12 table (Ch.15); Telegram immediate + "
+        "OWNER escalation; reset time-based / OWNER-review only, never automatic on new data")

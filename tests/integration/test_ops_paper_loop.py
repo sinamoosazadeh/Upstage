@@ -850,3 +850,31 @@ def test_governed_bridge_drives_fixture_paper_lifecycle(harness):
             await shutdown(h)
 
     run(scenario())
+
+
+def test_d28_paper_bootstrap_unavailable_components_reach_real_bridge(harness):
+    """Only governance is D28-produced; engine/risk values remain test fixtures."""
+    from apex.ops import engine_context as EC
+    async def scenario():
+        h = await harness()
+        try:
+            await seed_bridge_sweep(h.store)
+            bootstrap = EC.paper_bootstrap_inputs(environment="PAPER", family_record=None)
+            async def source(symbol, timeframe, as_of):
+                context = await bridge_context(h.store, symbol, timeframe, as_of)
+                context.update(bootstrap)
+                # D27: produced uncertainty, rather than a fixture's old value.
+                context["regime_uncertainty"] = EC.regime_uncertainty_input({"probs": [.7] + [.0375] * 8})
+                return context
+            bridge = PaperPlanBridge(store=h.store, context_source=source)
+            plan = await bridge(SYMBOL, TF, _ms_to_iso(START_MS + 24 * HOUR))
+            assert plan is not None and not bridge.refusals
+            assert plan["environment"] == "PAPER" and plan["package_version"] == "v1.0.0"
+            arbitration = bridge.traces[f"{SYMBOL}:{TF}"]["arbitration"]
+            candidate = arbitration["ranked"][0]
+            assert candidate["family_status"] == "ACCUMULATING"
+            assert candidate["composite"]["component_status"]["alignment"] == "UNAVAILABLE"
+            assert candidate["composite"]["component_status"]["recency"] == "UNAVAILABLE"
+        finally:
+            await shutdown(h)
+    run(scenario())

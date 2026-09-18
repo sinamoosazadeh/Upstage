@@ -390,3 +390,19 @@ class TestWindowIsTheLatestBars:
         window = run(store.get_window("BTCUSDT", "15m",
                                       "2024-01-01T00:15:00.000Z", 10))
         assert [str(o.close) for o in window] == ["100"]
+
+
+def test_cp14_insert_snapshot_accepts_quality_mapping(store):
+    """CP-14 authorized exception: the public writer must bind its mapping."""
+    snapshot = {
+        "snapshot_id": "cp14-snapshot-quality", "as_of": "2026-01-01T00:00:00.000Z",
+        "symbol_scope": ["BTCUSDT"], "timeframe_scope": ["1h"],
+        "quality_state": {"min_q": 0.8, "weighted_q": 0.9},
+    }
+    run(store.insert_snapshot(snapshot))
+    import json
+    row = run((run(store.db.execute(
+        "SELECT vector_quality_state, min_quality, weighted_quality "
+        "FROM snapshot_pit WHERE snapshot_id=?", (snapshot["snapshot_id"],)))).fetchone())
+    assert json.loads(row[0]) == snapshot["quality_state"]
+    assert row[1:] == (0.8, 0.9)

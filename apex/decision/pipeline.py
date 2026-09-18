@@ -252,15 +252,36 @@ def composite_rank_score(playbook: Mapping[str, Any], *,
     w = {k: float(v) for k, v in weights.items()}
     if set(w) != {"quality", "alignment", "recency"}:
         raise DecisionError("ARBITRATION_WEIGHT_KEYS_QX", ",".join(sorted(w)))
+    if any(not math.isfinite(value) or value < 0 for value in w.values()):
+        raise DecisionError("ARBITRATION_WEIGHTS_QX", "weights must be finite and nonnegative")
     total = sum(w.values())
     if total <= 0:
         raise DecisionError("ARBITRATION_WEIGHTS_EMPTY_QX")
-    q = float(playbook.get("quality", 0.0))
-    a = min(float(playbook.get("alignment", 0.0)), cap) / cap if cap else 0.0
-    r = float(playbook.get("recency", 0.0))
-    score = (w["quality"] / total) * q + (w["alignment"] / total) * a \
-        + (w["recency"] / total) * r
+    # D28: a zero weight excludes the component before numeric conversion
+    # or multiplication. UNAVAILABLE is a state, never a measured zero.
+    score, a = 0.0, "UNAVAILABLE"
+    states = {}
+    for key in ("quality", "alignment", "recency"):
+        value = playbook.get(key)
+        absent = value is None or value == "UNAVAILABLE"
+        if w[key] == 0:
+            states[key] = "UNAVAILABLE" if absent else "EXCLUDED_ZERO_WEIGHT"
+            continue
+        if absent:
+            raise DecisionError("ARBITRATION_INPUT_UNAVAILABLE", key)
+        try:
+            measured = float(value)
+        except (TypeError, ValueError) as exc:
+            raise DecisionError("ARBITRATION_INPUT_QX", key) from exc
+        if not math.isfinite(measured):
+            raise DecisionError("ARBITRATION_INPUT_QX", key)
+        if key == "alignment":
+            measured = min(measured, cap) / cap if cap else 0.0
+            a = measured
+        states[key] = "AVAILABLE"
+        score += (w[key] / total) * measured
     return {"score": max(0.0, min(1.0, score)), "capped_alignment": a,
+            "component_status": states, "excluded_components": [k for k in w if w[k] == 0],
             "correlation_cap": cap, "weights_normalized":
             {k: v / total for k, v in w.items()}}
 

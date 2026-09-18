@@ -247,6 +247,7 @@ class PaperRuntime:
                  cells: Optional[Sequence[Any]] = None,
                  notifier: Optional[Callable[[str], Awaitable[Any]]] = None,
                  plan_provider: Optional[Callable[..., Any]] = None,
+                 catch_up: Optional[Callable[[int], Awaitable[Any]]] = None,
                  signal_source: str = SIGNAL_SOURCE_DECISION_BRIDGE,
                  max_trades_per_cycle: int = 4,
                  max_cells_per_cycle: Optional[int] = None,
@@ -267,6 +268,8 @@ class PaperRuntime:
         self.cells = tuple(cells) if cells is not None else ()
         self.notifier = notifier
         self.plan_provider = plan_provider
+        self.catch_up = catch_up
+        self._catch_up_failed: Dict[str, Any] = {}
         self.signal_source = signal_source
         self.max_trades_per_cycle = int(max_trades_per_cycle)
         self.max_cells_per_cycle = (None if max_cells_per_cycle is None
@@ -379,6 +382,9 @@ class PaperRuntime:
         return True
 
     async def _stage_setup(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        if payload["cell_id"] in self._catch_up_failed:
+            raise CellRefusal("CATCH_UP_FAILED",
+                              self._catch_up_failed[payload["cell_id"]]["error_code"])
         # The cycle trade budget is checked BEFORE the plan is asked for: once
         # it is exhausted the cell halts by name instead of materializing work
         # that can never be sent (the execution stage keeps the same guard).
@@ -695,6 +701,11 @@ class PaperRuntime:
         cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
                                  "signal_source": self.signal_source,
                                  "trading_enabled": self.trading_enabled}
+        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+                             {"cells_checked": 0, "cells_updated": 0,
+                              "bars_ingested": 0, "failures": []})
+        self._catch_up_failed = {row["cell"]: row
+                                 for row in cycle["catch_up"]["failures"]}
         if self.watchdog is not None:
             cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
         cycle["storage"] = await self._storage_guard()
@@ -711,6 +722,8 @@ class PaperRuntime:
                     cell, close_ms=close, context={"cell_state": {}}))
                  for cell, close in due]
         runs = list(await asyncio.gather(*tasks)) if tasks else []
+        import dataclasses
+        cycle["cell_runs"] = [dataclasses.asdict(run) for run in runs]
         cycle["cells_due"] = len(due)
         cycle["cells_complete"] = sum(1 for r in runs if r.status == "COMPLETE")
         cycle["cells_halted"] = sum(1 for r in runs if r.status == "HALTED")
@@ -729,6 +742,8 @@ class PaperRuntime:
         cycle["halt_reasons"] = halt_reasons
         cycle["halt_stages"] = halt_stages
         for run in runs:
+            if run.cell_id in self._catch_up_failed:
+                continue
             self._last_close[run.cell_id] = max(
                 self._last_close.get(run.cell_id, -1), int(run.close_ms))
         cycle["trades"] = [r for r in runs if r.status == "COMPLETE"]

@@ -395,3 +395,20 @@ class TestSeamArbitrationNeverImportsExecution:
         src = pathlib.Path("apex/risk/kernel.py").read_text(encoding="utf-8")
         assert "from apex.fabric.conflict import correlation_exposure" in src
         assert "def correlation_exposure" not in src   # no second definition
+
+
+def test_d28_unavailable_zero_weight_components_are_not_arithmetic_inputs():
+    from apex.ops.plan_bridge import _arbitration_measurement, BridgeError
+    weights = {"quality": 1., "alignment": 0., "recency": 0.}
+    inputs = {"alignment": "UNAVAILABLE", "recency": "UNAVAILABLE"}
+    candidate = {"quality": .73, "composite_weights": weights,
+                 **{k: _arbitration_measurement(inputs, weights, k) for k in inputs}}
+    result = composite_rank_score(candidate)
+    assert result["score"] == pytest.approx(.73)
+    assert result["capped_alignment"] == "UNAVAILABLE"
+    assert result["component_status"] == {"quality": "AVAILABLE", "alignment": "UNAVAILABLE", "recency": "UNAVAILABLE"}
+    assert set(result["excluded_components"]) == {"alignment", "recency"}
+    with pytest.raises(DecisionError, match="ARBITRATION_INPUT_UNAVAILABLE"):
+        composite_rank_score({**candidate, "composite_weights": {**weights, "recency": .1}})
+    with pytest.raises(BridgeError, match="ARBITRATION_INPUT_UNAVAILABLE"):
+        _arbitration_measurement(inputs, {**weights, "recency": .1}, "recency")

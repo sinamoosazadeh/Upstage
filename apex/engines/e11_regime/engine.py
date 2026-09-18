@@ -280,9 +280,13 @@ def rolling_minmax_norm(raw_t: float, window: Sequence[float]) -> float:
     return max(0.0, min(1.0, (float(raw_t) - mn) / (mx - mn)))
 
 
-def rolling_sigmoid_norm(raw_t: float, window: Sequence[float]) -> float:
-    """Method B: 180-day rolling sigmoid standardization (robust to
-    outliers); z clipped to ±10 for numerical stability."""
+def rolling_method_b_reference(raw_t: float, window: Sequence[float]) -> Tuple[float, float]:
+    """Shared Method-B mean/sigma and original minimum/degeneracy guards.
+
+    Caller supplies lag-one history capped by E11's existing window policy.
+    D26-A reuses this reference for the ATR14 consumer projection, without
+    changing the pre-existing sigmoid normalization's numerical behavior.
+    """
     if not window or len(window) < 20:
         raise ValueError("INVALID_E11_HISTORY: rolling_sigmoid_norm requires "
                          "at least 20 prior samples")
@@ -295,6 +299,13 @@ def rolling_sigmoid_norm(raw_t: float, window: Sequence[float]) -> float:
         raise ValueError("INVALID_E11_HISTORY: rolling_sigmoid_norm requires "
                          "finite non-degenerate history")
     sigma = math.sqrt(raw_var + EPS)       # §3.1 Method-B ε-regularized σ
+    return mu, sigma
+
+
+def rolling_sigmoid_norm(raw_t: float, window: Sequence[float]) -> float:
+    """Method B: 180-day rolling sigmoid standardization (robust to
+    outliers); z clipped to ±10 for numerical stability."""
+    mu, sigma = rolling_method_b_reference(raw_t, window)
     z = (float(raw_t) - mu) / sigma
     z = max(-10.0, min(10.0, z))
     return 1.0 / (1.0 + math.exp(-z))
@@ -374,7 +385,12 @@ def compute_state_vector(inputs: Dict[str, Any],
         x_comp = min(1.0, x_comp + E11_DEFAULTS["compression_atr_z_boost"])
     x_exp = rolling_sigmoid_norm(raw_exp, history.get("exp", []))
     x_liq = rolling_minmax_norm(raw_liq, history.get("liq", []))
-    x_part = rolling_sigmoid_norm(raw_part, history.get("part", []))
+    if "oi_state" in inputs:
+        # Owner D23: shared train/runtime participation mapping, no OI=0.
+        x_part = (1.0 / (1.0 + math.exp(-raw_part)) if raw_part >= 0
+                  else math.exp(raw_part) / (1.0 + math.exp(raw_part)))
+    else:
+        x_part = rolling_sigmoid_norm(raw_part, history.get("part", []))
     x_sq = rolling_sigmoid_norm(raw_sq, history.get("sq", []))
     x_mom = map_momentum_state(str(inputs["momentum_state_raw"]), prev_mom)
     bias = compute_bias(dict(inputs["bias_per_TF"]))
@@ -745,7 +761,8 @@ class RegimeEngine:
                  base_rates: Optional[Dict[str, Any]] = None,
                  symbol: str = "UNKNOWN", timeframe: str = "1h",
                  parameter_package_id: str = "e11_params_v4",
-                 code_revision: str = "0" * 40) -> None:
+                 code_revision: str = "0" * 40,
+                 classifier_artifact_sha256: Optional[str] = None) -> None:
         self.p = params or EngineParams()
         self.W = None if W is None else np.asarray(W, dtype=float)
         self.b = None if b is None else np.asarray(b, dtype=float)
@@ -775,7 +792,8 @@ class RegimeEngine:
         self.timeframe = timeframe
         self.parameter_package_id = parameter_package_id
         self.code_revision = code_revision
-        self._phash = param_hash(self.p)
+        # P2: the validated artifact identity is recorded in snapshot param_hash.
+        self._phash = classifier_artifact_sha256 or param_hash(self.p)
         self.last_as_of: Optional[int] = None
         self.last_output: Optional[Dict[str, Any]] = None
         self.last_vec: Optional[Dict[str, float]] = None
@@ -906,6 +924,8 @@ class RegimeEngine:
             q = quality_score(vec, H, turb, data_ok=True,
                               contract_ok=contract_ok, params=self.p)
             caps: List[Optional[str]] = []
+            if "oi_state" in ic_inputs and ic_inputs["oi_state"] != "AVAILABLE":
+                caps.append("Q4")  # D23: Q5 requires every dependency healthy.
             if zero_volume:
                 caps.append("Q1")                     # §3.8 V=0
             if self._pending_time_degraded:
@@ -941,6 +961,10 @@ class RegimeEngine:
                 "base_rates": self.base_rates,
                 "Q": q,
             }
+            if "oi_state" in ic_inputs:
+                payload["dependency_state"] = {
+                    "oi_state": ic_inputs["oi_state"],
+                    "contributing_features": dict(ic_inputs.get("contributing_features", {}))}
             sid = canonical_snapshot_id(ENGINE, CONTRACT_VERSION, payload)
             regime_state = {
                 "vector": vec,
@@ -1273,7 +1297,8 @@ def run_engine(candles: Sequence[Dict[str, Any]],
                base_rates: Optional[Dict[str, Any]] = None,
                symbol: str = "UNKNOWN", timeframe: str = "1h",
                as_of_ms: Optional[int] = None,
-               live_regime_gate: bool = False) -> Dict[str, Any]:
+               live_regime_gate: bool = False,
+               classifier_artifact_sha256: Optional[str] = None) -> Dict[str, Any]:
     """Batch driver → the last RegimeState + every event fired. The
     live-regime gate flag lives in THIS wrapper (never inside regime_state —
     §5.1 additionalProperties:false) and is OFF unless the caller asserts
@@ -1285,7 +1310,8 @@ def run_engine(candles: Sequence[Dict[str, Any]],
     eng = RegimeEngine(p, W=W, b=b, T=T, history=history, mu0=mu0,
                        Sigma0=Sigma0, prev_mom=prev_mom,
                        base_rates=base_rates, symbol=symbol,
-                       timeframe=timeframe)
+                       timeframe=timeframe,
+                       classifier_artifact_sha256=classifier_artifact_sha256)
     state: Dict[str, Any] = {"quality": "QX",
                              "reason": "INSUFFICIENT_HISTORY_Q1",
                              "as_of": int(as_of_ms or 0)}
@@ -1321,6 +1347,10 @@ def run_engine(candles: Sequence[Dict[str, Any]],
     gate_enabled = bool(live_regime_gate)
     return {
         "regime_state": state,
+        "dependency_state": ({
+            "oi_state": candles[-1]["ic_inputs"]["oi_state"],
+            "contributing_features": dict(candles[-1]["ic_inputs"].get("contributing_features", {}))}
+            if candles and "oi_state" in candles[-1].get("ic_inputs", {}) else {}),
         "events": events,
         "engine": ENGINE,
         "contract_version": CONTRACT_VERSION,
@@ -1427,7 +1457,8 @@ class E11RegimeEngine(EngineBase):
                 "prev_mom", 0.5),
             base_rates=context.get("base_rates"), symbol=symbol,
             timeframe=timeframe,
-            live_regime_gate=bool(context.get("live_regime_gate", False)))
+            live_regime_gate=bool(context.get("live_regime_gate", False)),
+            classifier_artifact_sha256=context.get("classifier_artifact_sha256"))
         self._last_result = result
         state = result["regime_state"]
         if "snapshot_id" not in state:
@@ -1518,7 +1549,7 @@ class E11RegimeEngine(EngineBase):
             snapshot_id=str(state["snapshot_id"]),
             event_time=iso, availability_time=iso,
             observation_window={"timeframe": timeframe, "K": K,
-                                "as_of_ms": ts},
+                                "as_of_ms": ts, **result.get("dependency_state", {})},
             feature_snapshot_id=str(state["snapshot_id"]),
             feature_dependencies=("E09_Trend.v4(bias)",
                                   "E10_Momentum.v4(momentum_state)",

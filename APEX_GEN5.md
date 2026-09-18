@@ -973,6 +973,8 @@ A Snapshot binds: `snapshot_id` (deterministic SHA-256 identity), `as_of`, `symb
 `code_version`, a combined quality state (minimum-veto plus weighted
 average), and `created_at`.
 
+**Session-CP-14 (2026-09-17):** D28's PAPER bootstrap binds `parameter_package_id = "cp14_paper_bootstrap-v1.0.0-" + SHA256(canonical_parameter_bytes)[:12]`. Canonical parameter bytes are UTF-8 `canonical_json({filename: parsed_YAML_document, ...})` using the repository's sole canonical serializer over every present governed `params/*.yaml` document; the optional `params/e11_classifier_v1.yaml` is included once. Filenames bind package membership, ordering/formatting/comments do not change parameter values, and any governed-value change yields a new package identity. The full parameter digest remains available for provenance; the snapshot identity itself remains the full 64-hex canonical hash, not the 12-hex package suffix. LIVE obtains no PAPER bootstrap package.
+
 Snapshots are immutable; any new artifact triggers supertemporal_window:
 OLD → CORRECTION EVENT → NEW VERSION → SUPERSEDES, producing a new `as_of`
 (e.g. 14:00:03 → 14:05:10 when a later artifact arrives), invalidating
@@ -11713,6 +11715,7 @@ Produce a transparent, explainable, PIT-safe classification of market behavioral
   - `E09 TrendStack v4.0.0` → `trendiness_raw, bias_per_TF, structure_score`
   - `E10 Momentum v4.0.0` → `momentum_state_raw (enum {IMPULSIVE, NEUTRAL, EXHAUSTED}), impulse_score`
   - `E04 Volatility v4.0.0` → `vol_short, vol_long, vol_ratio, ATR_z`
+    - Session-CP-14 (2026-09-17): D26-A maps the frozen E04 `VolatilityState.atr14_wilder` to `atr_z_t=(atr14_t−μ_{t−1,W})/(σ_{t−1,W}+ε)` using E11 Method B's same prior same-cell rolling reference, existing 180-day window capped by available history, lag 1, minimum-prior-samples rule and E11 ε in both training and the G1 producer, with insufficient history following `INVALID_E11_HISTORY` and no ATR20 or new window constant.
   - `E03 Volume v4.0.0` → `volume_z, OI_z, participation_raw`
   - `E02 Liquidity v4.0.0` → `level_density, sweep_rate, age_score` via the canonical v4.0.0 consumer projection.
 - Outputs: context only, consumed through the canonical L13 Decision/BDI and L14 Risk layer contracts; E12 never authorizes execution and does not directly grant capital permission.
@@ -11739,6 +11742,11 @@ Produce a transparent, explainable, PIT-safe classification of market behavioral
 | expansion | $x_4$ | $raw_{exp}= VolRatio \cdot \mathbb{I}[BOS_t]$, $x_4$ = sigmoid analogous to trendiness | [0,1] | Yes |
 | liquidity_stability | $x_5$ | $raw_{liq}= \frac{density \cdot age}{1+sweepRate}$, $x_5$ = rolling min-max | [0,1] | Yes |
 | participation | $x_6$ | $raw_{part}= 0.6\, VolumeZ + 0.4\, OI\_z$, $x_6 = \frac{1}{1+e^{-raw}}$ | [0,1] | Yes |
+
+Session-CP-14 (2026-09-17; D23): Non-AVAILABLE OI contributes zero weight, never a zero OI value: renormalize to raw_part=VolumeZ and x6=sigmoid(raw_part), identically in training/runtime; retain oi_state and contributing_features participation=PARTIAL and prohibit Q5 until OI is AVAILABLE, with no other quality change; AVAILABLE keeps 0.6*VolumeZ+0.4*OI_z.
+
+| Term | Symbol | Precise mathematical definition | Range | PIT-safe |
+|---|---|---|---|---|
 | structure_quality | $x_7$ | $raw_{sq}= S_{struct}$ from E01, $x_7$ = sigmoid | [0,1] | Yes |
 | momentum_state_numeric | $x_8$ | $v_{cat}\mapsto \{1,0,-1\}$, then $x_8 = (v+1)/2$ smoothed with EWMA $\lambda=0.94$ | [0,1] | Yes |
 | bias | $b_t$ | $b_t = \sum_{tf} w_{tf} \cdot bias_{tf}$, $bias_{tf}\in[-1,1]$ from TrendStack, $w_{MTF}=[0.5,0.3,0.2]$ for H4, H1, M15 | [-1,1] | Yes |
@@ -11863,6 +11871,19 @@ hash mismatch, wrong shape) fails closed with
 `CONFIGURATION_INVALID`/`FAIL_CLOSED` (the bridge's `e11_context`
 validation requires exactly `classifier_W (9,8)` + `classifier_b (9)`);
 ISSUE-SESSION-A-002.
+
+**Session-CP-14 (2026-09-17; D21 — first-training label rule):** Initial
+training is self-contained and store-only; it never consumes a prior artifact.
+For training only, form `r_t^rule0` with the Section 3.2 entropy branch removed;
+all other branches retain their order and thresholds (CRISIS turbulence 15.5,
+with the classifier-independent Section 3.6/3.7 EWMA state). Apply Section 3.4
+confirmation in `[t+1,t+48]`: confirmed labels retain `r_t^rule0`, while the
+unconfirmed AMBIGUOUS outcome becomes the training label TRANSITION, its only
+training source. Only samples whose `t+48` is CLOSED in the store are used
+(PIT through window-end minus 48 candles). Fit multinomial logistic regression
+with the recorded fixed seed; K remains 9, with no synthetic members or
+reweighting, and refuse if any of the nine classes is empty. Runtime retains
+the full Section 3.2 tree, including entropy, with the trained W/b.
 
 PIT-safe softmax:
 $$p_{r,t}= \frac{\exp(z_{r,t} - \max_k z_{k,t})}{\sum_j \exp(z_{j,t} - \max_k z_{k,t})}$$
@@ -15956,6 +15977,7 @@ Arbitration accepts exactly the following read-only inputs:
     - Alignment (sum of positive correlations with live positions, capped by correlation_cap 0.70; Liquidity Proxy Models, A07).
     - Recency (trend direction of the setup family's recent outcome history, Beta-Bernoulli posterior, research-registry A06).
     - All weights are **governed**, versioned by SL-12 and Optimizer and First-Run Bootstrap.1; no hardcoded constants.
+  **Session-CP-14 (2026-09-17):** D28 authorizes PAPER-only bootstrap arbitration weights `quality=1.0, alignment=0.0, recency=0.0` in `params/decision_runtime_v1.yaml` under `paper_bootstrap.arbitration_weights` (ADR-CP14-005); inputs without a measured alignment/recency basis are reported `UNAVAILABLE` and excluded from arithmetic at zero weight, while a positive-weight unavailable input fails closed. The package ID is `cp14_paper_bootstrap-v1.0.0-` plus the first 12 hex characters of SHA-256 over canonical bytes of all present governed parameter YAML documents, including `e11_classifier_v1.yaml` when present; changes to governed values produce a new package ID (Section 2 snapshot binding). Only a family with no Setup Family Registry record defaults to `ACCUMULATING` (the backtest/PAPER phase below the 30-trade floor); existing lifecycle records are never overwritten and promotion/demotion remains owner-driven per AD.3. Commission, funding, contract multiplier, contract type and expiry retain public Toobit exchangeInfo/funding provenance; absent facts fail the affected cell closed with a named status, never a default fee or signed fallback. LIVE ignores this section and receives no bootstrap permission.
   - Arbitration proposes the ranked list to the Decision layer (SL-4, economic utility ranking); **execution of more than one same-direction candidate remains subject to the existing exposure ceilings** (SL-5, risk veto logic). Arbitration allocates **nothing**; that responsibility is frozen in the Risk Kernel.
 
 - **(Rule 4) Opposite-Direction Candidates (Conflict Resolution, Default NO-TRADE):** When candidates have conflicting directional intent (LONG vs. SHORT):
@@ -20313,6 +20335,7 @@ apex/telegram/control_plane.py
 apex/telegram/signaling.py
 apex/ops/watchdog.py
 apex/ops/backup.py
+apex/ops/engine_context.py
 params/universe_v1.yaml
 params/risk_defaults_v1.yaml
 params/setup_weights_v1.yaml
@@ -20320,12 +20343,26 @@ params/quality_weights_v1.yaml
 params/toobit_wire_v1.yaml
 params/e11_params_v4.yaml
 params/paper_account_v1.yaml
+params/decision_runtime_v1.yaml  # D25 policy + D28 PAPER-only paper_bootstrap (ADR-CP14-005)
 params/e11_classifier_v1.yaml
 tests/unit/
 tests/integration/
 tests/fixtures/gf_sc_01.json
 tests/fixtures/gf_sc_02.json
+tests/fixtures/e11_classifier_v1.yaml
 ```
+
+**Session-CP-14 (2026-09-17; D25):** `params/decision_runtime_v1.yaml` stores
+capital_hard_cap_fraction=0.60, c_min=0.50 and all 14 p_min_tf values:
+1m=0.52, 1h=0.55, 1d=0.50; every other TF takes the strictest governed
+anchor 0.55 (no interpolation). PAPER and LIVE read it separately from
+account state; absent/invalid file fails closed. Ch.17 SL-12 wins on a twin
+mismatch; no risk_defaults value is duplicated.
+
+**Session-CP-14 (2026-09-17):** `apex/ops/engine_context.py` owns the
+engine-context, classifier artifact, and PAPER account wiring; the small
+`tests/fixtures/e11_classifier_v1.yaml` is loader-test data, never a runtime
+training fallback. Its battery is `tests/unit/test_engine_context.py`.
 
 Every package directory has `__init__.py`.
 
@@ -20427,6 +20464,8 @@ contract, and the wiring staleness law):**
    → `bridge_contexts`, and absence fails closed
    (ISSUE-SESSION-A-007). The producer for every key:
 
+   **Session-CP-14 (2026-09-17):** D27 corrects the Session-A uncertainty-source error below: raw entropy remains in the complete E11 state; only `h_norm` carries `H/ln(9)`. The Ch.8 confidence combiner and its weights are unchanged.
+
    | Context key | Authoritative producer |
    |---|---|
    | `events` | E01–E12 versioned event channels: complete EvidenceEvent payloads via `insert_evidence`, read back through `get_bridge_context` (reduced projections refused) |
@@ -20439,7 +20478,7 @@ contract, and the wiring staleness law):**
    | `volatility_state` | E04 `VolatilityState.regime` |
    | `structure_state` | E01 structure output (`APEX-CONTRACT-STRUCT-V4.0.0`) |
    | `regime_confidence` | producer-derived from E11 `regime_state` probabilities (`p_max` at `as_of`) |
-   | `regime_uncertainty` | E11 entropy `H_t` (§3.3) |
+   | `regime_uncertainty` | 1 − regime_confidence = 1 − p_max (Ch.8) |
    | `divergence_magnitude` | E10 divergence outputs |
    | `temporal_window_validity` | E12 window validity |
    | `atr` | E04 ATR |
@@ -20502,6 +20541,7 @@ contract, and the wiring staleness law):**
    column is **not** reinterpreted (the 1970 value stands as the venue's
    own fact). `freshness_ok ⇔ staleness_seconds ≤
    freshness_sla_seconds`; `Q_fresh` uses the same derivation.
+**Session-CP-14 (2026-09-17):** D22: a catch-up failure is the separate per-cycle blocking status `CATCH_UP_FAILED` (cell, error code, attempted frontier in `catch_up.failures[]`), never a freshness override; retry next cycle, preserve D14 measurements and other cells' progress.
 15. **Identity:** `intent_id` = UUIDv7. Fibonacci is `apex/pattern/fibonacci.py` (not a network service).
 
 ### 9.6 Round-2 re-freeze (owner decision integration)
@@ -20801,6 +20841,14 @@ Engine v4.0.0 formula bodies were not rewritten.
 | TRADE key, withdraw disabled | §2.5 + SL-6 |
 | Still NOT filled with invented numbers | live Toobit depth, device p95, Sharpe/winrate, fixture SHA-256, ECONOMIC_GATE costs, restore RTO |
 | Repo tree, YAML, P model p_raw=0.5, Q/OI tables, 7 invariants, pattern tolerances, GF_SC_01/02, depth protocol, ECONOMIC_GATE empty grid, signaling P0–P3, termux-battery-status, requirements.lock name | merged 2026-09-08 into G/U/AD/AE/SL-2/SL-3/SL-6/T/Y/O/W.6/§2.1/§9.5 |
+| CP-14 engine-context producer and loader fixture paths (2026-09-17) | Section 9.5 repository tree; ADR-CP14-001 under ADR-P2-003 |
+| CP-14 D23 participation with missing OI (2026-09-17) | E11 Section 2; ISSUE-CP14-007 owner resolution |
+| CP-14 D26-A ATR14-to-atr_z consumer projection (2026-09-17) | E11 Section 1.2; ISSUE-CP14-011 part 1 owner resolution |
+| CP-14 D27 confidence-complement uncertainty (2026-09-17) | Section 9.5 P1 source row corrected to Ch.8 `1-p_max`; raw H and h_norm remain distinct; ISSUE-CP14-019 |
+| CP-14 D28 PAPER bootstrap governance and public venue provenance (2026-09-17) | Ch.12 AF.3, Section 2 snapshot binding, Section 9.5 tree; ADR-CP14-005 / ISSUE-CP14-017 |
+| CP-14 D25 decision-runtime YAML (2026-09-17) | Section 9.5 repository tree; ADR-CP14-003 / ISSUE-CP14-008 |
+| CP-14 D21 first-training label rule (2026-09-17) | E11 Section 3.3; ISSUE-CP14-001 owner resolution |
+| CP-14 D22 catch-up failure separated from freshness (2026-09-17) | Section 9.5 item 14; ISSUE-CP14-002 owner resolution |
 | P1: per-close catch-up + runtime engine order + engine-context producer contract + wiring staleness law (2026-09-17) | §9.5 item 14 (D2/D5/D14; CP-14 interface) |
 | P2: E11 classifier artifact + deterministic training procedure + degenerate-class handling (2026-09-17) | E11 §3.3 (D2/D3) |
 | P3: PAPER simulator transport + APEX_ALLOW_SIGNED reconciliation (2026-09-17) | Ch.16 Toobit wire (D1/D2) |

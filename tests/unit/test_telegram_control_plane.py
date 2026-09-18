@@ -962,6 +962,8 @@ class TestControlPlaneGuardrails:
     def test_the_environment_and_balance_are_displayed_from_the_settings(self):
         cp = plane(environment="LIVE", balance="987654.321")
         assert "LIVE" in cp.screen_main_menu()["title"]
+        assert "987,654.321 USDT" not in cp.screen_main_menu()["title"]
+        cp = plane(environment="PAPER", balance="987654.321")
         assert "987,654.321 USDT" in cp.screen_main_menu()["title"]
 
     def test_every_dispatch_is_audited(self):

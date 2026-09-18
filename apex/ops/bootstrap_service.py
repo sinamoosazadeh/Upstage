@@ -219,6 +219,21 @@ def close_time_ms(open_ms: int, timeframe: str) -> int:
     raise BootstrapError("TIMEFRAME_QX", tf)
 
 
+def latest_close_boundary(now_ms: int, timeframe: str) -> int:
+    """Most recent venue boundary (UTC, Monday weeks, calendar months)."""
+    import datetime as dt
+    if timeframe == "1mo":
+        now = dt.datetime.fromtimestamp(now_ms / 1000, dt.timezone.utc)
+        return int(now.replace(day=1, hour=0, minute=0, second=0,
+                               microsecond=0).timestamp() * 1000)
+    if timeframe == "1w":
+        # 1970-01-05 was Monday; epoch itself was Thursday.
+        anchor = 4 * 86400_000
+        return anchor + ((now_ms - anchor) // (7 * 86400_000)) * (7 * 86400_000)
+    duration = close_time_ms(0, timeframe)
+    return (now_ms // duration) * duration
+
+
 class _RateLimitSurfaced(Exception):
     """Internal: bounded walk retries exhausted → surface −1003 to the runner."""
 
@@ -495,6 +510,22 @@ class ToobitKlineSource:
         except Exception:                        # pragma: no cover - teardown
             pass
 
+    def begin_catch_up(self, symbol: str, timeframe: str,
+                       frontier: Optional[int]) -> None:
+        """Reset delivery state to the persisted frontier, including retries.
+
+        A failed ingest must never turn a previously served page into a hole.
+        Bootstrap's once-per-run/resume contract is unchanged.
+        """
+        key = (symbol, timeframe)
+        self._frontiers[key] = frontier
+        self._served_upto.pop(key, None)
+        self._history.pop(key, None)
+        self._history_end.pop(key, None)
+        if not hasattr(self, "_catch_up_floor"):
+            self._catch_up_floor = {}
+        self._catch_up_floor[key] = frontier
+
     # -- CP-13 frontier handoff ----------------------------------------------
     def set_frontiers(self, frontiers: Mapping[Tuple[str, str], Optional[int]]
                       ) -> None:
@@ -648,7 +679,8 @@ class ToobitKlineSource:
         prev_first_ms: Optional[int] = None
         # startTime is ignored by the tail-aligned venue; pass DEEP_START so a
         # head-aligned double (tests) still has a lawful lower bound.
-        walk_start = int(DEEP_START_MS)
+        floor = getattr(self, "_catch_up_floor", {}).get(key)
+        walk_start = int(DEEP_START_MS if floor is None else floor)
 
         while walk_end >= walk_start:
             page = self._get_klines_with_walk_backoff(
@@ -1127,6 +1159,7 @@ class BootstrapService:
         self.runner: Optional[BootstrapRunner] = None
         self.notifications: List[Dict[str, Any]] = []
         self._now = now
+        self._catch_up_boundary: Dict[str, int] = {}
 
     # -- lifecycle -----------------------------------------------------------
     async def open(self) -> "BootstrapService":
@@ -1427,6 +1460,74 @@ class BootstrapService:
                   "raw_store": self._db_path}
         if announce:
             await self.report(_summary_line(result), kind=result["status"])
+        return result
+
+    async def catch_up(self, now_ms: int) -> Dict[str, Any]:
+        """D5/D22: due timeframes, fresh per-cell frontiers, isolated failures.
+
+        The source and ingest path are the bootstrap authorities. Only a
+        timeframe with all cells successful advances its boundary; otherwise
+        it is retried next cycle. No repair is performed here.
+        """
+        result: Dict[str, Any] = {"cells_checked": 0, "cells_updated": 0,
+                                  "bars_ingested": 0, "failures": []}
+        for timeframe in dict.fromkeys(tf for _, tf in self.cells):
+            boundary = latest_close_boundary(now_ms, timeframe)
+            if boundary <= self._catch_up_boundary.get(timeframe, -1):
+                continue
+            successful = True
+            for symbol, tf in self.cells:
+                if tf != timeframe:
+                    continue
+                result["cells_checked"] += 1
+                frontier = None
+                before = None
+                try:
+                    row = await (await self._store.db.execute(
+                        "SELECT MAX(as_of) FROM raw_observation "
+                        "WHERE symbol=? AND timeframe=?", (symbol, tf))).fetchone()
+                    frontier = _iso_to_ms(row[0]) if row and row[0] else None
+                    before = await _count_raw(self._store, symbol, tf)
+                    self._ensure_source()
+                    self.source.begin_catch_up(symbol, tf, frontier)
+                    cursor = frontier if frontier is not None else DEEP_START_MS
+                    while True:
+                        page = self.source(symbol, tf, cursor, now_ms, PAGE_LIMIT)
+                        code = page.get("code")
+                        if code not in (None, 0):
+                            raise BootstrapServiceError(str(code))
+                        rows = page["rows"]
+                        if not rows:
+                            await self._flush_cell_complete_prints()
+                            break
+                        await self._ingest(rows, symbol, tf)
+                        following = int(page["next_cursor_ms"])
+                        if following <= cursor:
+                            raise BootstrapServiceError("CURSOR_NOT_ADVANCING")
+                        cursor = following
+                except Exception as exc:
+                    successful = False
+                    result["failures"].append({
+                        "cell": f"{symbol}:{tf}", "symbol": symbol,
+                        "timeframe": tf, "status": "CATCH_UP_FAILED",
+                        "error_code": str(getattr(exc, "reason", type(exc).__name__)),
+                        "frontier": frontier})
+                finally:
+                    if before is not None:
+                        try:
+                            after = await _count_raw(self._store, symbol, tf)
+                            inserted = after - before
+                            result["bars_ingested"] += inserted
+                            result["cells_updated"] += int(inserted > 0)
+                        except Exception as exc:
+                            successful = False
+                            result["failures"].append({
+                                "cell": f"{symbol}:{tf}", "symbol": symbol,
+                                "timeframe": tf, "status": "CATCH_UP_FAILED",
+                                "error_code": str(getattr(exc, "reason", type(exc).__name__)),
+                                "frontier": frontier, "phase": "ingest_accounting"})
+            if successful:
+                self._catch_up_boundary[timeframe] = boundary
         return result
 
     async def run_phase2(self, *, replay: Optional[Callable[[], Mapping[str, Any]]] = None

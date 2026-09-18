@@ -69,6 +69,8 @@ _CH7_ROWS = [
      "Hard veto - Data stale -> REJECT even P=0.99"),
     ("VETO_OI_LAG", "OI Lag Veto",
      "Hard veto - OI lag -> QUARANTINED - Q_oi AVAILABLE=1.0 STALE=0.5 Not 0.9 - veto_OI_lag hard quarantine Not soft"),
+    ("CIRCUIT_OPEN", "Aggregate-loss vetoes 10-12 tripped (daily / weekly / consecutive)",
+     "Block new trades per the veto 10-12 table (Ch.15); Telegram immediate + OWNER escalation; reset time-based / OWNER-review only, never automatic on new data"),
     ("TOO_MAUTC_W2_REQUESTS", "Too Many Requests",
      "TokenBucket queue - Retry exponential 1s,2s,4s max 3"),
     ("UNAUTHORIZED", "Unauthorized",

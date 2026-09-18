@@ -983,9 +983,16 @@ class E03VolumeEngine(EngineBase):
             atr_series = [atr_prev] * len(window_obs)
         if len(atr_series) < len(window_obs):
             raise ValueError("ATR_UNAVAILABLE_QX")
+        def availability(key: str, index: int):
+            value = context.get(key)
+            if isinstance(value, (list, tuple)):
+                if len(value) != len(window_obs):
+                    raise ValueError("AVAILABILITY_ALIGNMENT_QX")
+                return value[index]
+            return value
         bars = [observation_to_bar(o, timeframe, atr_series[i],
-                                   context.get("oi_availability_time_ms"),
-                                   context.get("atr_availability_time_ms"))
+                                   availability("oi_availability_time_ms", i),
+                                   availability("atr_availability_time_ms", i))
                 for i, o in enumerate(window_obs)]
         params = get_params(context.get("e03_params"))
         eng = VolumeEngineV4(params)
@@ -995,7 +1002,7 @@ class E03VolumeEngine(EngineBase):
             if ev is not None:
                 results.append(ev)
         quality = self._window_quality(window_obs)
-        conf = self._climax_calibration(results)
+        conf = self._climax_calibration(results, bars)
         input_hash = _sha_of(_canon([
             {k: b[k] for k in ("ts", "o", "h", "l", "c", "v", "atr_prev")}
             for b in bars]))
@@ -1019,11 +1026,13 @@ class E03VolumeEngine(EngineBase):
         return min(1.0, sum(comps) / len(comps))
 
     @staticmethod
-    def _climax_calibration(results: Sequence[ParticipationEvidence]
+    def _climax_calibration(results: Sequence[ParticipationEvidence],
+                            bars: Sequence[dict]
                             ) -> float:
         """§8.5: Wilson lower bound over in-window climax outcomes (a climax
         bar followed within 5 bars by a close beyond the climax close —
         continuation ground truth), else 0 (uncalibrated)."""
+        by_time = {bar["ts"]: bar for bar in bars}
         n = cont = 0
         for i, ev in enumerate(results):
             if not ev.climax:
@@ -1032,8 +1041,10 @@ class E03VolumeEngine(EngineBase):
             if not future:
                 continue
             n += 1
-            if any(f.c is not None and ev is not None
-                   and (f.volume_ratio or 0) >= 0.6 for f in future):
+            origin = by_time[ev.as_of_ts]
+            direction = 1 if origin["c"] >= origin["o"] else -1
+            if any((by_time[f.as_of_ts]["c"] - origin["c"]) * direction > 0
+                   for f in future):
                 cont += 1
         if n == 0:
             return 0.0

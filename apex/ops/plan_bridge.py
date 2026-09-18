@@ -215,6 +215,17 @@ def _finite_float(value: Any, name: str) -> float:
     return out
 
 
+def _arbitration_measurement(inputs: Mapping[str, Any], weights: Mapping[str, Any], key: str) -> Any:
+    """D28 zero-weight UNAVAILABLE survives as a marker, never an imputation."""
+    weight = _finite_float(_required(weights, key), "arbitration.weight." + key)
+    value = inputs.get(key)
+    if value is None or value == "UNAVAILABLE":
+        if weight == 0:
+            return "UNAVAILABLE"
+        raise BridgeError("ARBITRATION_INPUT_UNAVAILABLE", key)
+    return _finite_float(value, "arbitration." + key)
+
+
 def _required(mapping: Mapping[str, Any], key: str) -> Any:
     if key not in mapping or mapping[key] is None:
         raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE", key)
@@ -806,10 +817,8 @@ class PaperPlanBridge:
             "composite_weights": dict(weights),
             "quality": _finite_float(arb_input.get("quality", evaluation.final_score),
                                      "arbitration.quality"),
-            "alignment": _finite_float(_required(arb_input, "alignment"),
-                                       "arbitration.alignment"),
-            "recency": _finite_float(_required(arb_input, "recency"),
-                                     "arbitration.recency"),
+            "alignment": _arbitration_measurement(arb_input, weights, "alignment"),
+            "recency": _arbitration_measurement(arb_input, weights, "recency"),
         }
         family_status = str(_required(context, "family_status"))
         arb = arbitrate([arb_candidate],

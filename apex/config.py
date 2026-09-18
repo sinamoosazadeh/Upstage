@@ -71,6 +71,9 @@ PARAMS_FILES: Dict[str, str] = {
     "quality_weights": "quality_weights_v1.yaml",
     "toobit_wire": "toobit_wire_v1.yaml",
     "e11_params": "e11_params_v4.yaml",
+    "e11_classifier": "e11_classifier_v1.yaml",
+    "paper_account": "paper_account_v1.yaml",
+    "decision_runtime": "decision_runtime_v1.yaml",
 }
 
 
