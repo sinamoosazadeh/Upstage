@@ -16052,6 +16052,7 @@ the PIT evidence `X`.
 **Bootstrap P model (until WFO package exists):**
 `p_raw = 1/(1+exp(-(β0+β·x)))` with **β=0, β0=0 → p_raw=0.5**, `Q_forecast=0.5`.
 `x = [s_struct, s_liq, s_vol, s_fvg, s_ob, trend_stack, momentum_z, regime_entropy, vol_quantile, temporal_core_flag, log_rr, log_cost_R]`.
+**Session-CP-14 (2026-09-18; D32):** `vol_quantile = (count(prior_HV30 < HV30_t) + 0.5*count(prior_HV30 == HV30_t))/N` uses finite same-cell native E04 HV30 strictly before t within the native 180-day regime-window bar cap, requires N>=50 (not a full window), gives 0.5 for constant history, and refuses nonfinite current/insufficient history as VOL_QUANTILE_UNAVAILABLE.
 Constant-0.5 is eligible for PAPER/RESEARCH only. LIVE capital: Setup Gates 10/12 fail until a calibrated package exists (the Promotion Protocol Wilson on the forecast family).
 `p_hat` = Platt/isotonic OOS (never on the decision bar). `U = clip(0.5 U_cal + 0.3 U_ood + 0.2 U_dis, 0, 1)`, `C=clip(1-U,0,1)`.
 `EU = p_hat*RR − (1-p_hat)*1 − cost_R − R_penalty` with R_penalty 0/0/0.10/0.25/+∞ by risk_state. If spread UNAVAILABLE, `cost_R ≥ 0.05`.
@@ -20834,6 +20835,7 @@ Engine v4.0.0 formula bodies were not rewritten.
 
 | Decision / fill | Home section now |
 |---|---|
+| CP-14 D32 native HV forecast mid-rank | Ch.13 bootstrap vector; ADR-CP14-007 / ISSUE-CP14-036 |
 | Q_oi STALE=0.5 | §2.1 + the Data Plane note |
 | Latency UNVERIFIED | §1 Latency Budget heading |
 | Gate 11 = lineage/snapshot | the Setup Engine table |

@@ -1375,3 +1375,38 @@ def test_d31_public_insert_still_rejects_invalid_resolution_tags(tmp_path, inval
         finally:
             await store.close()
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("values,current,expected", [
+    ([1.] * 25 + [2.] * 25, 2., .75),
+    ([3.] * 50, 3., .5),
+    ([1.] * 50, 2., 1.),
+    ([3.] * 50, 2., 0.),
+])
+def test_d32_native_hv_midrank(values, current, expected):
+    states = [SimpleNamespace(hv30=v, as_of=i) for i, v in enumerate(values)]
+    assert EC.forecast_vol_quantile(states, SimpleNamespace(hv30=current, as_of=100), timeframe="1h") == expected
+
+
+def test_d32_49_refuses_50_passes_and_nonfinite_refuses():
+    states = [SimpleNamespace(hv30=1., as_of=i) for i in range(50)]
+    current = SimpleNamespace(hv30=1., as_of=100)
+    with pytest.raises(BridgeError, match="VOL_QUANTILE_UNAVAILABLE"):
+        EC.forecast_vol_quantile(states[:49], current, timeframe="1h")
+    assert EC.forecast_vol_quantile(states, current, timeframe="1h") == .5
+    with pytest.raises(BridgeError, match="VOL_QUANTILE_UNAVAILABLE"):
+        EC.forecast_vol_quantile(states, SimpleNamespace(hv30=float("nan"), as_of=100), timeframe="1h")
+    states[0].hv30 = float("inf")
+    with pytest.raises(BridgeError, match="VOL_QUANTILE_UNAVAILABLE"):
+        EC.forecast_vol_quantile(states, current, timeframe="1h")
+
+
+def test_d32_native_window_cap_and_strict_pit():
+    # Native 1d regime window is 180 bars, not all retained native states.
+    states = [SimpleNamespace(hv30=0. if i < 20 else 5., as_of=i) for i in range(200)]
+    current = SimpleNamespace(hv30=5., as_of=200)
+    states += [current, SimpleNamespace(hv30=0., as_of=201)]
+    assert EC.forecast_vol_quantile(states, current, timeframe="1d") == .5
+    assert EC.forecast_vol_quantile(list(reversed(states)), current, timeframe="1d") == .5
+    # Native 1h cap (4320) must not be confused with min_bars (50).
+    assert EC.forecast_vol_quantile(states, current, timeframe="1h") == .55

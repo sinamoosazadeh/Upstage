@@ -30,6 +30,32 @@ DEFAULT_TRAINING_TIMEFRAMES = ("1h", "4h")
 DEFAULT_TRAINING_MAX_MINUTES = 20.0
 
 
+
+def forecast_vol_quantile(states: Any, current: Any, *, timeframe: str) -> float:
+    """D32: mid-rank of native HV30, prior same-cell E04 states only.
+
+    The caller owns the per-cell native stream; no reconstructed HV or E04
+    regime threshold availability is used. Cap by native bar history before
+    discarding nonfinite HV measurements; current/future states never count.
+    """
+    from apex.engines.e04_volatility import engine as volatility
+    try:
+        seconds = volatility.TF_SECONDS[timeframe]
+        value, stamp = float(current.hv30), int(current.as_of)
+        window = max(30, int(round(volatility.E04_DEFAULTS["regime_window_days"]
+                                   * 86400.0 / seconds)))
+        prior = sorted((s for s in states if int(s.as_of) < stamp),
+                       key=lambda s: int(s.as_of))[-window:]
+        if len({int(s.as_of) for s in prior}) != len(prior):
+            raise ValueError("duplicate native state timestamp")
+        history = [float(s.hv30) for s in prior if math.isfinite(float(s.hv30))]
+        if not math.isfinite(value) or len(history) < volatility.E04_DEFAULTS["min_bars"]:
+            raise ValueError("nonfinite current HV or fewer than 50 finite prior states")
+    except (KeyError, AttributeError, TypeError, ValueError, OverflowError) as exc:
+        raise BridgeError("VOL_QUANTILE_UNAVAILABLE", str(exc)) from exc
+    return (sum(h < value for h in history) + .5 * sum(h == value for h in history)) / len(history)
+
+
 def classifier_hash(W: Any, b: Any, seed: int) -> str:
     return hashlib.sha256(canonical_json(
         {"W": W, "b": b, "seed": seed}).encode("utf-8")).hexdigest()
