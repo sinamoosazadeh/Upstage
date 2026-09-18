@@ -683,6 +683,27 @@ SWEEP_PREREQUISITES = frozenset({"P1_valid_level", "P2_penetration", "P3_rejecti
                                 "P4_temporal", "P5_data_quality"})
 
 
+def structural_confirmation(raw_window: list[Any], symbol: str, timeframe: str) -> bool:
+    window = closed_engine_window(raw_window, timeframe)
+    if not window:
+        raise BridgeError("NO_MARKET_DATA", "empty confirmation window")
+    duration = (close_time_ms(_iso_to_ms(raw_window[-1].timestamp), timeframe)
+                - _iso_to_ms(raw_window[-1].timestamp)) // 1000
+    params = E01.get_params()
+    params["tick_size"] = E01.resolve_tick_size(symbol)
+    result = E01.run_pipeline([E01.observation_to_candle(o, timeframe, duration) for o in window], params)
+    return any(event["candle_index"] == len(window) - 1 and event["event_type"].startswith(
+        ("EV_STR_007", "EV_STR_008", "EV_STR_009", "EV_STR_010")) for event in result["events"])
+
+
+def contiguous_label_horizon(window: list[Any], index: int, timeframe: str) -> bool:
+    """Exactly t+48 calendar-aware closes; a retained-row offset is not time."""
+    horizon = window[index:index + 49]
+    return len(horizon) == 49 and all(
+        close_time_ms(_iso_to_ms(a.timestamp), timeframe) == _iso_to_ms(b.timestamp)
+        for a, b in zip(horizon, horizon[1:]))
+
+
 def liquidity_inputs(liquidity: Any) -> dict:
     """D26-B: actual E02 live levels and confirmed retained-window sweeps.
 
@@ -765,7 +786,7 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     if not volume.emitted or not volatility["states"]:
         raise BridgeError("INSUFFICIENT_HISTORY", "E03/E04 warmup")
     vol = volume.emitted[-1]
-    if vol.as_of_ts != _iso_to_ms(end):
+    if volume.history_bars[-1]["ts"] != _iso_to_ms(end):
         raise BridgeError("ENGINE_CONTEXT_UNAVAILABLE", "E03 latest candle unavailable")
     vlt = volatility["states"][-1]
     collect("E10", E10.E10MomentumEngine, {**base, "volatility_context": vars(vlt)})
@@ -819,7 +840,8 @@ TRAINING_QUERY = canonical_json({
     "window_predicate": "candle_status IN (CLOSED,CORRECTED) AND open_time <= as_of",
     "window_order": "last bars by open_time DESC, returned open_time ASC",
     "closed_filter": "close_time_ms(open_time,timeframe) <= as_of",
-    "label_boundary": "t+48 exists in filtered CLOSED store window; D21 unchanged",
+    "label_boundary": "49 consecutive CLOSED candles t..t+48 with independent E01 confirmation; D21 unchanged",
+    "raw_metadata": "immutable observation_id/content hash binding restores availability_time and OI timestamp; availability<=as_of",
 })
 HISTORY_KEYS = {"trend": "trendiness_raw", "vol": "vol_ratio", "exp": "expansion_raw",
                 "liq": "liquidity_raw", "part": "participation_raw", "sq": "structure_score"}
@@ -835,6 +857,7 @@ class EngineContextProducer:
         self.environment = Config().apex_env if environment is None else environment
         self.diagnostics: dict[str, Any] = {}
         self._frames: dict[tuple, dict] = {}
+        self._raw_lineage: dict[tuple, dict] = {}
 
     async def decision_inputs(self, symbol: str, timeframe: str, as_of: str) -> dict:
         """D28 stored governance/venue inputs; not a fabricated complete context."""
@@ -854,14 +877,47 @@ class EngineContextProducer:
         window = await self.store.get_window(symbol, timeframe, as_of, bars)
         if window is None:
             raise BridgeError("NO_MARKET_DATA", "store returned no window")
-        return [o for o in window if close_time_ms(_iso_to_ms(o.timestamp), timeframe) <= end]
+        from dataclasses import replace
+        window = [o for o in window if close_time_ms(_iso_to_ms(o.timestamp), timeframe) <= end]
+        if not window:
+            return []
+        # get_window is the authoritative bar reader. Its legacy projection
+        # substitutes retrieved_at for raw availability and loses OI lineage.
+        # Recover ONLY metadata through the immutable identity, never rewrite
+        # a market/raw row or substitute the derived close for raw availability.
+        rows = await (await self.store.db.execute(
+            "SELECT m.open_time,m.observation_id,m.raw_payload_hash,r.content_hash,"
+            "r.availability_time,r.oi_timestamp,r.oi_state FROM market_observation m "
+            "JOIN raw_observation r ON m.observation_id='obs-'||r.event_id "
+            "WHERE m.symbol=? AND m.timeframe=? AND m.candle_status IN ('CLOSED','CORRECTED') "
+            "AND m.open_time>=? AND m.open_time<=? ORDER BY m.open_time",
+            (symbol, timeframe, window[0].timestamp, window[-1].timestamp))).fetchall()
+        metadata = {}
+        for row in rows:
+            if row[0] in metadata:
+                raise BridgeError("RAW_LINEAGE_INVALID", "ambiguous active observation")
+            metadata[row[0]] = row
+        result = []
+        for obs in window:
+            row = metadata.get(obs.timestamp)
+            if row is None or row[3] != obs.content_hash() or row[2] != hashlib.sha256(row[3].encode()).hexdigest():
+                raise BridgeError("RAW_LINEAGE_INVALID", "observation/raw content binding missing")
+            if row[4] is None:
+                raise BridgeError("RAW_LINEAGE_INVALID", "raw availability unavailable")
+            if _iso_to_ms(row[4]) > end:
+                continue  # never expose not-yet-available observations
+            oi_lag = (max(0., (end - _iso_to_ms(row[5])) / 1000.) if row[5] is not None else None)
+            result.append(replace(obs, availability_time=row[4], oi_timestamp=row[5], oi_lag_seconds=oi_lag))
+            self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())] = {
+                "observation_id": row[1], "oi_state": row[6], "availability_time": row[4]}
+        return result
 
     async def _frame_at(self, symbol: str, timeframe: str, as_of: str) -> dict[str, Any]:
         window = await self.window(symbol, timeframe, as_of, 301)
         if len(window) < 51:
             raise BridgeError("INSUFFICIENT_HISTORY", f"{symbol}:{timeframe}")
         window = window[-300:]
-        key = (symbol, timeframe, window[-1].timestamp, window[0].timestamp)
+        key = (symbol, timeframe, hashlib.sha256(canonical_json(window).encode()).hexdigest())
         if key not in self._frames:
             self._frames[key] = upstream_frame(window, symbol, timeframe)
             if len(self._frames) > 32:
@@ -883,11 +939,14 @@ class EngineContextProducer:
             if index < 50:
                 yield {"index": index, "as_of": as_of, "reason": "UPSTREAM_WARMUP", "confirmation": False}
                 continue
-            confirmation = False
+            source_window = window[max(0, index - 299):index + 1]
+            if any(o.availability_time is None or _iso_to_ms(o.availability_time) > _iso_to_ms(as_of) for o in source_window):
+                yield {"index": index, "as_of": as_of, "confirmation": None, "reason": "PIT_VIOLATION"}
+                continue
+            confirmation = structural_confirmation(source_window, symbol, timeframe)
             try:
-                frame = upstream_frame(window[max(0, index - 299):index + 1], symbol, timeframe,
+                frame = upstream_frame(source_window, symbol, timeframe,
                                        atr14_history=atr14_history)
-                confirmation = frame["confirmation"]
                 # Advance the independent same-cell ATR reference AFTER its
                 # lag-one projection, even while another feature is refused.
                 if atr14_history is None:
@@ -914,7 +973,7 @@ class EngineContextProducer:
                        "reason": getattr(exc, "reason", str(exc).split(":")[0]), "confirmation": confirmation}
                 continue
             item = {"index": index, "as_of": as_of, "ic": ic, "frame": frame,
-                    "confirmation": frame["confirmation"], "history": {k: list(v) for k, v in history.items()},
+                    "confirmation": confirmation, "history": {k: list(v) for k, v in history.items()},
                     "mu": mu.copy(), "Sigma": sigma.copy(), "prev_mom": previous_momentum}
             try:
                 vector, bias = E11.compute_state_vector(ic, history, previous_momentum)
@@ -996,6 +1055,12 @@ async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
             if "vector" not in candidate:
                 reason = candidate.get("reason", "INVALID_FEATURE")
                 excluded[reason] = excluded.get(reason, 0) + 1
+                continue
+            if not contiguous_label_horizon(window, candidate["index"], timeframe):
+                excluded["NONCONTIGUOUS_LABEL_HORIZON"] = excluded.get("NONCONTIGUOUS_LABEL_HORIZON", 0) + 1
+                continue
+            if any(type(f.get("confirmation")) is not bool for f in pending):
+                excluded["LABEL_CONFIRMATION_UNAVAILABLE"] = excluded.get("LABEL_CONFIRMATION_UNAVAILABLE", 0) + 1
                 continue
             label = candidate["rule0"] if any(f["confirmation"] for f in pending) else "TRANSITION"
             histogram[label] += 1

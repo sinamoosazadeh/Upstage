@@ -997,12 +997,14 @@ class E03VolumeEngine(EngineBase):
         params = get_params(context.get("e03_params"))
         eng = VolumeEngineV4(params)
         results: List[ParticipationEvidence] = []
-        for b in bars:
+        source_indices: List[int] = []
+        for index, b in enumerate(bars):
             ev = eng.ingest_bar(b)
             if ev is not None:
                 results.append(ev)
+                source_indices.append(index)
         quality = self._window_quality(window_obs)
-        conf = self._climax_calibration(results, bars)
+        conf = self._climax_calibration(results, bars, source_indices=source_indices)
         input_hash = _sha_of(_canon([
             {k: b[k] for k in ("ts", "o", "h", "l", "c", "v", "atr_prev")}
             for b in bars]))
@@ -1027,24 +1029,28 @@ class E03VolumeEngine(EngineBase):
 
     @staticmethod
     def _climax_calibration(results: Sequence[ParticipationEvidence],
-                            bars: Sequence[dict]
+                            bars: Sequence[dict], *,
+                            source_indices: Optional[Sequence[int]] = None
                             ) -> float:
         """§8.5: Wilson lower bound over in-window climax outcomes (a climax
         bar followed within 5 bars by a close beyond the climax close —
         continuation ground truth), else 0 (uncalibrated)."""
-        by_time = {bar["ts"]: bar for bar in bars}
+        # Evidence as_of is dependency availability, NOT a candle identity.
+        # Preserve exact source indices even if an intermediate input refused.
+        indices = list(source_indices) if source_indices is not None else list(range(len(results)))
+        if len(indices) != len(results) or any(i < 0 or i >= len(bars) for i in indices):
+            raise ValueError("E03_CALIBRATION_ALIGNMENT_QX")
         n = cont = 0
         for i, ev in enumerate(results):
             if not ev.climax:
                 continue
-            future = results[i + 1:i + 6]
+            future = [bars[j] for j in indices[i + 1:i + 6] if j <= indices[i] + 5]
             if not future:
                 continue
             n += 1
-            origin = by_time[ev.as_of_ts]
+            origin = bars[indices[i]]
             direction = 1 if origin["c"] >= origin["o"] else -1
-            if any((by_time[f.as_of_ts]["c"] - origin["c"]) * direction > 0
-                   for f in future):
+            if any((bar["c"] - origin["c"]) * direction > 0 for bar in future):
                 cont += 1
         if n == 0:
             return 0.0

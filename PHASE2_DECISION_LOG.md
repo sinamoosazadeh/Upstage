@@ -477,3 +477,26 @@ Owner D26-B decision retained in session context (semantic transcription, not a 
   Rule applied: scope the owner-authorized degenerate projection to the new liquidity_raw IC; preserve the legacy helper and all original tests, short-history and nonfinite refusal.
   Interim behavior: projected_liquidity_norm returns 0.5 only for a finite constant reference with the same minimum of ten prior samples; otherwise it calls the existing Method A. Training and runtime both use compute_state_vector and the same composite history.
   Needs from owner: none; D26-B is the authority. No changes to legacy volatility normalization, labels, tree or original pins.
+
+### Raw-lineage / delayed-label restoration milestone
+
+- D26-B checkpoint `2cd6a81` was pushed immediately after context/E11 verification: 173 passed in 3.29 s. ISSUE-CP14-026's scoped degenerate-reference regression is green; legacy normalization and original pins are unchanged.
+- [ISSUE-CP14-027] severity: MAJOR | status: CLOSED-with-evidence
+  A: D14/G5 preserve raw availability and D23 requires actual OI provenance; engines must use the public CLOSED-window reader.
+  B: frozen get_window projects retrieved_at into availability_time and omits OI timestamps.
+  Rule applied: keep get_window as the bar reader; read immutable metadata by observation_id and verify both content-hash bindings in the additive consumer. Never edit another frozen store method or raw row.
+  Interim behavior: recover raw availability/OI timestamp and derived OI lag; reject missing/ambiguous lineage and exclude future-available rows. Window cache identities now include the complete projected input, not only endpoint timestamps. Regression proves the legacy reader differs, raw 1970 survives unchanged, real OI lag is recovered and later availability is gated.
+  Needs from owner: none; this implements D14 rather than redefining availability.
+- [ISSUE-CP14-028] severity: MAJOR | status: CLOSED-with-evidence
+  A: D21 finalizes rule0 using an independently observed E01 BOS/CHoCH in the next 48 CLOSED candles.
+  B: the incomplete trainer inferred confirmation only after all upstream projections succeeded and equated 48 retained rows with a contiguous horizon.
+  Rule applied: independent native E01 confirmation survives unavailable E11 features; require all 49 calendar-aware candles t..t+48, and refuse unknown future confirmation.
+  Interim behavior: named NONCONTIGUOUS_LABEL_HORIZON / LABEL_CONFIRMATION_UNAVAILABLE exclusions; actual training-query hash includes this lineage/horizon protocol. No synthetic labels/members/reweighting or all-nine relaxation. Focused regressions verify a missing candle and confirmation despite failed normalization.
+  Needs from owner: none; D21 governs.
+- [ISSUE-CP14-029] severity: MAJOR | status: CLOSED-with-evidence
+  A: E03 as_of_ts is maximum dependency availability, whereas climax continuation compares actual candle closes within five input bars.
+  B: CP14-006's first repair keyed actual bars by candle time but then indexed that map with availability, failing on late/equal receipts.
+  Rule applied: preserve availability semantics and explicitly bind each native emission to its source index at ingest; no evidence-schema or input-price change.
+  Interim behavior: calibration uses aligned source indices and its five-input-bar horizon. Regressions cover equal late receipt timestamps and a six-bar gap; the existing close-price continuation regression remains green. Producer latest-emission validation also uses the accepted source candle identity, not availability equality.
+  Needs from owner: none; this corrects the wiring/calibration association, not the signal formula.
+- Context/E03/E11 verification for the restoration above: **227 passed, 0 failed, 3.55 s**. This is focused evidence, not the still-pending successful full-store two-process G2 proof or final twice-full-suite evidence. Immediate checkpoint/push follows.

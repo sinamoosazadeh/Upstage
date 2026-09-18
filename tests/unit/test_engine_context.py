@@ -1019,3 +1019,51 @@ def test_d26b_classifier_normalizes_projected_raw_not_density():
     engine = EC.E11.RegimeEngine()
     engine._append_history(ic, vector)
     assert engine.history_windows["liq"][-1] == 1.9
+
+
+def test_raw_availability_and_oi_lineage_survive_public_store_projection(tmp_path):
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "lineage.sqlite")).open()
+        try:
+            original = replace(make_obs(timeframe="1h", ts="2026-01-01T00:00:00.000Z"),
+                availability_time="1970-01-01T00:00:00.000Z", oi_timestamp="2026-01-01T00:59:00.000Z")
+            await store.ingest_raw(original, oi_state="AVAILABLE")
+            legacy = (await store.get_window("BTCUSDT", "1h", "2026-01-01T01:00:00.000Z", 10))[0]
+            assert legacy.availability_time != original.availability_time and legacy.oi_timestamp is None
+            producer = EC.EngineContextProducer(store)
+            recovered = (await producer.window("BTCUSDT", "1h", "2026-01-01T01:00:00.000Z", 10))[0]
+            assert recovered.availability_time == original.availability_time
+            assert recovered.oi_timestamp == original.oi_timestamp and recovered.oi_lag_seconds == 60
+            late = replace(make_obs(timeframe="1h", ts="2026-01-01T01:00:00.000Z"), availability_time="2026-01-01T03:00:00.000Z")
+            await store.ingest_raw(late, oi_state="AVAILABLE")
+            assert len(await producer.window("BTCUSDT", "1h", "2026-01-01T02:00:00.000Z", 10)) == 1
+            assert len(await producer.window("BTCUSDT", "1h", "2026-01-01T03:00:00.000Z", 10)) == 2
+            row = await (await store.db.execute("SELECT availability_time FROM raw_observation WHERE as_of=?", (original.timestamp,))).fetchone()
+            assert row[0] == original.availability_time
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+
+
+def test_label_horizon_requires_contiguous_calendar_closes():
+    from datetime import datetime, timedelta, timezone
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    window = [make_obs(timeframe="1h", ts=(start + timedelta(hours=i)).isoformat(timespec="milliseconds").replace("+00:00", "Z")) for i in range(51)]
+    assert EC.contiguous_label_horizon(window, 0, "1h")
+    assert not EC.contiguous_label_horizon(window[:48], 0, "1h")
+    assert not EC.contiguous_label_horizon(window[:20] + window[21:], 0, "1h")
+
+
+def test_future_confirmation_survives_unavailable_e11_features(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    def failed(*a, **kw):
+        raise BridgeError("INVALID_E11_HISTORY", "normalizer unavailable")
+    monkeypatch.setattr(EC, "upstream_frame", failed)
+    monkeypatch.setattr(EC, "structural_confirmation", lambda *a: True)
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    window = [make_obs(timeframe="1h", ts=(start + timedelta(hours=i)).isoformat(timespec="milliseconds").replace("+00:00", "Z")) for i in range(52)]
+    async def exercise():
+        rows = [r async for r in EC.EngineContextProducer(None).feature_timeline("BTCUSDT", "1h", window)]
+        assert rows[-1]["confirmation"] is True and rows[-1]["reason"] == "INVALID_E11_HISTORY"
+    asyncio.run(exercise())
