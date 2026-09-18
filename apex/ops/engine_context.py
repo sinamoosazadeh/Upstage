@@ -31,6 +31,28 @@ DEFAULT_TRAINING_MAX_MINUTES = 20.0
 
 
 
+
+def paper_bootstrap_uncertainty(regime_state: Mapping[str, Any], *, environment: str) -> dict:
+    """D34's explicitly uncalibrated PAPER-only three-component model."""
+    if environment != "PAPER":
+        raise BridgeError("PAPER_UNCERTAINTY_NOT_LIVE", environment)
+    try:
+        snapshot = regime_state["snapshot_id"]
+        probs = regime_state["probs"]
+        values = list(probs.values()) if isinstance(probs, Mapping) else list(probs)
+        if (not snapshot or len(values) != 9 or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                or not math.isfinite(v) or not 0 <= v <= 1 for v in values)
+                or not math.isclose(sum(values), 1., abs_tol=1e-9)):
+            raise ValueError("invalid same-snapshot probabilities")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise BridgeError("FORECAST_UNCERTAINTY_UNAVAILABLE", str(exc)) from exc
+    return {"model_version": "cp14_paper_bootstrap_uncertainty-v1",
+            "e11_snapshot_id": snapshot, "calibration": .5, "ood": .5,
+            "disagreement": 1. - max(values),
+            **{k: {"state": "UNAVAILABLE"} for k in
+               ("sampling", "data_quality", "regime_shift", "tail_risk")}}
+
+
 def forecast_vol_quantile(states: Any, current: Any, *, timeframe: str) -> float:
     """D32: mid-rank of native HV30, prior same-cell E04 states only.
 

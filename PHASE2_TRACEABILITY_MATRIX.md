@@ -553,3 +553,6 @@ CP-14 current verification (2026-09-18): interim whole suite 2858 passed, 14 war
 | CP14-61-key audit | P1 38 context + 23 risk keys; Ch.13 12 x features | DECISION_LOG ordered native-source/consumer inventory and ISSUE-037–048 A/B/options; AST coverage 38/38, 23/23, 12/12 | STATIC AUDIT ONLY; batch owner decisions pending before implementation |
 
 | CP14-D32 projection | D32 / ADR-007 / ISSUE-036 | Six tests cover ties, 49/50, finite input, native cap and PIT; broader battery 168 passed, 1 deselected | PROJECTION PASS; G1 binding pending |
+
+| CP14-D33 gate10 | ISSUE-042 / ADR-013 | Failing-before .5, passing-after boundaries/categorical/LIVE | TARGETED PASS |
+| CP14-D34 forecast U/C | ISSUE-043 / ADR-014 | Failing-before max mismatch; three components/version/snapshot/typed UNAVAILABLE and strict omissions | PROJECTION PASS; G1 binding pending |

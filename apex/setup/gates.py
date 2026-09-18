@@ -246,6 +246,15 @@ def gate10_forecast_quality(forecast: Mapping[str, Any], *,
                     "RESEARCH|PAPER only", "",
                     "GATE10_BOOTSTRAP_PRIOR_NOT_LIVE_ELIGIBLE")
     cls = forecast.get("quality", forecast.get("q_forecast"))
+    # D33: native normalized quality is not a truncated categorical tier.
+    if isinstance(cls, (int, float)) and not isinstance(cls, bool):
+        import math
+        if not math.isfinite(cls):
+            return _res(10, False, cls, "finite quality", "", "GATE10_FORECAST_QUALITY_FAIL")
+        if "q_forecast" in forecast or cls <= 1:
+            return _res(10, 0 <= cls <= 1 and cls >= q_forecast_min(),
+                        cls, q_forecast_min(), "FORECAST_QUALITY_OK",
+                        "GATE10_FORECAST_QUALITY_FAIL")
     v = _q_class_int(cls) if not isinstance(cls, (int, float)) else int(cls)
     minimum = quality_min_class()
     return _res(10, v >= minimum, cls, f"Q{minimum}",

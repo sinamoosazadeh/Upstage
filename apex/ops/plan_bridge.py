@@ -758,6 +758,7 @@ class PaperPlanBridge:
             temporal_quality=_required(context, "temporal_quality"),
             volatility_quality=_required(context, "volatility_quality"),
             forecast={"quality": _required(context, "forecast_quality"),
+                      "bootstrap_prior": forecast.bootstrap_prior,
                       "h_norm": _finite_float(_required(context, "h_norm"), "h_norm")},
             q_forecast=forecast.q_forecast,
             package=package,

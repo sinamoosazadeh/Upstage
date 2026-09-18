@@ -14697,6 +14697,8 @@ The catalogue is the 74-feature registry in §3.12 together with the completenes
 
 ## 7. Error Codes
 
+**Session-CP-14 (2026-09-18; D33 / ISSUE-042):** Gate 10 consumes normalized native Q_forecast with Q_forecast < 0.5 blocking (0.5 passes), preserves genuine categorical quality handling and the bootstrap LIVE ban, and receives the actual bootstrap flag rather than an invented Q tier.
+
 | Code | Meaning | Handling |
 |------|---------|----------|
 | E-VAL-020 | Busy Guard MAX_CONCURRENT=1 | If second request comes -> E-VAL-020 + Stop button - State table IDLE -> BUSY -> IDLE |
@@ -16037,6 +16039,8 @@ Arbitration interface with frozen architecture:
 Forecast answers only: probability that target is touched before stop within the playbook horizon, given PIT evidence. Until a walk-forward package exists, the uninformative prior is `p_raw = 0.5`. That prior may run in RESEARCH and PAPER. It cannot pass the forecast gates for LIVE capital.
 
 ### 13.1 Contract
+
+**Session-CP-14 (2026-09-18; D34 / ISSUE-043):** PAPER-only `cp14_paper_bootstrap_uncertainty-v1` records its E11 snapshot_id and uses U_cal=0.5, U_ood=0.5 and U_dis=1-p_max from that snapshot, U=clip(0.5*U_cal+0.3*U_ood+0.2*U_dis,0,1), C=1-U, with other named fields typed UNAVAILABLE and unconsumed, no zero defaults, and no use of this model in LIVE.
 
 Forecast event definition (exact, PIT-stamped):
 
@@ -20835,6 +20839,8 @@ Engine v4.0.0 formula bodies were not rewritten.
 
 | Decision / fill | Home section now |
 |---|---|
+| CP-14 D33 normalized forecast quality | Ch.7; ADR-CP14-013 / ISSUE-042; native 0.5 passes gate10 |
+| CP-14 D34 PAPER uncertainty and C=1-U | Ch.13.1; ADR-CP14-014 / ISSUE-043; version/snapshot-bound, no zero defaults |
 | CP-14 D32 native HV forecast mid-rank | Ch.13 bootstrap vector; ADR-CP14-007 / ISSUE-CP14-036 |
 | Q_oi STALE=0.5 | §2.1 + the Data Plane note |
 | Latency UNVERIFIED | §1 Latency Budget heading |

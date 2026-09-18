@@ -1410,3 +1410,45 @@ def test_d32_native_window_cap_and_strict_pit():
     assert EC.forecast_vol_quantile(list(reversed(states)), current, timeframe="1d") == .5
     # Native 1h cap (4320) must not be confused with min_bars (50).
     assert EC.forecast_vol_quantile(states, current, timeframe="1h") == .55
+
+
+def test_d33_gate10_native_normalized_half_before_after():
+    from apex.setup.gates import gate10_forecast_quality
+    assert gate10_forecast_quality({"q_forecast": .5, "bootstrap_prior": True}, environment="PAPER").passed
+
+
+@pytest.mark.parametrize("quality,passed", [(.5, True), (.49, False), (0., False), (1., True), (float("nan"), False), (float("inf"), False)])
+def test_d33_gate10_normalized_boundaries(quality, passed):
+    from apex.setup.gates import gate10_forecast_quality
+    assert gate10_forecast_quality({"q_forecast": quality}).passed is passed
+
+
+def test_d33_gate10_categorical_and_live_bootstrap():
+    from apex.setup.gates import gate10_forecast_quality as gate
+    assert gate({"quality": "Q2"}).passed
+    assert not gate({"quality": "Q1"}).passed
+    assert not gate({"q_forecast": .5, "bootstrap_prior": True}, environment="LIVE").passed
+
+
+def test_d34_versioned_bootstrap_uncertainty_is_same_e11_snapshot():
+    from tests.unit.test_forecast_logistic import ev, X0
+    from apex.forecast.logistic import build_forecast, ForecastError
+    state = {"snapshot_id": "a"*64, "probs": [.8]+[.025]*8}
+    model = EC.paper_bootstrap_uncertainty(state, environment="PAPER")
+    rec = build_forecast(ev(), x=X0, uncertainty=model)
+    assert rec.u == pytest.approx(.44)
+    assert rec.c == pytest.approx(.56)
+    assert rec.components["e11_snapshot_id"] == state["snapshot_id"]
+    assert rec.components["uncertainty_model"] == "cp14_paper_bootstrap_uncertainty-v1"
+    assert rec.uncertainty["tail_risk"] == {"state": "UNAVAILABLE"}
+    assert rec.uncertainty["data_quality"] == {"state": "UNAVAILABLE"}
+    with pytest.raises(BridgeError, match="PAPER_UNCERTAINTY_NOT_LIVE"):
+        EC.paper_bootstrap_uncertainty(state, environment="LIVE")
+    with pytest.raises(ForecastError, match="FORECAST_UNCERTAINTY_UNAVAILABLE"):
+        build_forecast(ev(), x=X0)
+    with pytest.raises(ForecastError, match="UNCERTAINTY_COMPONENT_QX"):
+        build_forecast(ev(), x=X0, uncertainty={**model, "tail_risk": 0.})
+    with pytest.raises(ForecastError, match="FORECAST_BOOTSTRAP_NOT_LIVE_ELIGIBLE"):
+        build_forecast(ev(), x=X0, uncertainty=model, environment="LIVE")
+    with pytest.raises(BridgeError, match="FORECAST_UNCERTAINTY_UNAVAILABLE"):
+        EC.paper_bootstrap_uncertainty({**state, "probs": [float("nan")]*9}, environment="PAPER")

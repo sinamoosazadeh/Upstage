@@ -37,6 +37,7 @@ def _complete_context(*, events: Any) -> Dict[str, Any]:
         },
         "direction": 1, "pattern_id": "PAT-WYC-001", "x": {"s_struct": 0.5},
         "forecast_quality": "Q3", "forecast_rr": 3.0,
+        "forecast_uncertainty": {"calibration": .2, "data_quality": .2, "disagreement": .2},
         "forecast_cost_r": 0.05, "h_norm": 0.4,
         "window_qualities": [(1.0, 0.0)],
         "temporal_quality": "Q2", "volatility_quality": "Q2",

@@ -829,3 +829,15 @@ Decision: forecast_vol_quantile consumes the producer-owned same-cell native E04
 ISSUE-CP14-036 CLOSED-with-projection-evidence: actual `python -m pytest tests/unit/test_engine_context.py -k d32 -q` => **6 passed, 122 deselected in 0.52s**. Tests cover ties/constant history, rank endpoints, 49/50, nonfinite history/current, native 180/4320 window differences and strict PIT. Runtime source integration remains pending, not G1 completion. D33/D34 are received verbatim; this green increment implements D32 only.
 
 Broader D32 verification: context + forecast batteries excluding only long G2 => **168 passed, 1 deselected in 30.57s**; no final full-suite claim.
+
+### ADR-CP14-013 — D33 normalized gate-10 quality
+
+ISSUE-CP14-042 CLOSED-with-evidence: native normalized numeric quality in [0,1] uses the existing governed Q_forecast floor, with exact 0.5 passing; genuine categorical tags/legacy categorical numerics retain their class handling. NaN/Inf refuse. Bridge transports the actual forecast bootstrap flag; LIVE remains banned for bootstrap. No frozen file changed.
+
+### ADR-CP14-014 — D34 PAPER uncertainty and forecast confidence
+
+ISSUE-CP14-043 CLOSED-with-projection-evidence: engine_context.paper_bootstrap_uncertainty validates the actual nine same-snapshot E11 probabilities and produces model/version provenance, calibration=.5, ood=.5, disagreement=1-p_max; all other named fields are typed UNAVAILABLE. build_forecast consumes exactly those three, rejects missing/invalid/defaulted components, and uses C=1-U. LIVE cannot consume this PAPER model. Legacy explicitly measured inputs retain their declared representation, but omissions no longer imply zeros. The erroneous prior C=1-max assertion was corrected under D34; existing tests now supply explicit fixture observations, not runtime fallback measurements. Ch.8 combiner unchanged. Full producer binding remains pending.
+
+Required failing-before command (two added regressions): `python -m pytest tests/unit/test_forecast_logistic.py::test_d34_confidence_is_one_minus_weighted_uncertainty_before_after tests/unit/test_engine_context.py::test_d33_gate10_native_normalized_half_before_after -q` => **2 failed in 0.43s**, specifically .5 gate refusal and max-component confidence. Same command after correction => **2 passed in 0.21s**. Logs outside repository: cp14-d33-d34-before.log and cp14-forecast-after.log.
+
+Expanded after command: context, forecast, setup-gates, plan-bridge, context-to-trade and ops-paper-loop batteries, excluding only long G2 => **248 passed, 1 deselected, 13 warnings in 35.38s**. No full-suite/final-closeout claim.

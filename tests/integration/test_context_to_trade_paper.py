@@ -265,7 +265,7 @@ def run_chain(refs):
         horizon=HORIZON_BARS, entry_ref=ENTRY_LOGIC_REF, symbol=SYMBOL,
         timeframe=TIMEFRAME, timestamp=AS_OF_MS)
     rec = build_forecast(event, x=x, environment="PAPER", rr=3.0,
-                         cost_r=0.05)
+                         cost_r=0.05, uncertainty={"calibration": .2, "data_quality": .2, "disagreement": .2})
     out["forecast"] = rec
 
     evaluation = evaluate_cell(
