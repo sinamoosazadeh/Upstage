@@ -546,3 +546,5 @@ CP-14 D27/D28 (2026-09-18; IN PROGRESS): G1's uncertainty projection now follows
 | D31 terminal QX persistence | §8 row 24; ADR-CP14-006; ISSUE-CP14-034 | test_d31_terminal_e05_qx_public_insert_full_roundtrip fails before at public insert_evidence, passes after; test_d31_public_insert_still_rejects_invalid_resolution_tags covers Q6/QX_EXPIRED/empty/None; native 180-hour bundle retains EXPIRED/QX | CLOSED-with-evidence; exact one-line frozen exception |
 
 CP-14 current verification (2026-09-18): interim whole suite 2858 passed, 14 warnings, 601.85s, with no deselection. Subsequent full-E11-object projection: 149 targeted passed, 1 G2 test deselected, 13 warnings, 31.44s. G1 is not complete; two final full-suite runs, final handoff and PR remain pending.
+
+| G1 new projection gap | Ch.13 §13.1 mandatory `x.vol_quantile`; P1 `x` source; ISSUE-CP14-036 | Actual public-store/native-E04 diagnostic: no rank export, 178 prior HV points vs native 4320-bar window, unavailable percentile thresholds; unchanged forecast rejects omitted vol_quantile | OPEN—owner choice of exact projection; no implementation/default/waiver |
