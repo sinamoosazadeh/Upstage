@@ -1189,3 +1189,19 @@ def test_d23_vocabulary_table_stays_contiguous_with_note_below():
     assert rows == list(range(rows[0], rows[-1] + 1))
     assert section.count("| Term | Symbol |") == 1
     assert "| participation |" in section and "| structure_quality |" in section and "| PIT |" in section
+
+
+def test_e01_atr_prefix_cache_uses_absolute_boundary_without_changing_failures():
+    bars = [{"O": 100 + i, "C": 101 + i, "H": 103 + i, "L": 98 + i} for i in range(80)]
+    window = EC.E01._ATRWindow(bars)
+    for end in (30, 50, 80):
+        expected = EC.E01.atr_sma(bars[:end])
+        assert EC.E01.atr_sma(window, idx=end - 1) == expected
+        assert EC.E01.atr_sma(window[:end]) == expected
+        assert window[:end]._atr_sma_cache is window._atr_sma_cache
+    assert len(window._atr_sma_cache) == 3
+    assert not isinstance(window[1:], EC.E01._ATRWindow)
+    with pytest.raises(IndexError):
+        EC.E01.atr_sma(window[:20], idx=49)
+    with pytest.raises(ValueError, match="INSUFFICIENT_HISTORY"):
+        EC.E01.atr_sma(window[:5])

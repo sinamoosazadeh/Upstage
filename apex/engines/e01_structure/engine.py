@@ -100,18 +100,26 @@ class _ATRWindow(tuple):
         window._atr_sma_cache = {}
         return window
 
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        if isinstance(key, slice) and key.start in (None, 0) and key.step in (None, 1):
+            prefix = type(self)(value)
+            prefix._atr_sma_cache = self._atr_sma_cache
+            return prefix
+        return value
+
 
 def atr_sma(candles: Sequence[Dict[str, Any]], n: int = 14,
             idx: int = -1) -> float:
     """ATR_n(t) SMA form over TR (§3.2). Insufficient history is a Q1 warmup
     state, not a numerical estimate — raises ValueError (§4.1)."""
     cache = candles._atr_sma_cache if isinstance(candles, _ATRWindow) else None
-    if cache is not None and (n, idx) in cache:
-        return cache[n, idx]
+    base = len(candles) if idx == -1 else idx + 1
+    if cache is not None and n + 1 <= base <= len(candles) and (n, base) in cache:
+        return cache[n, base]
     if len(candles) < n + 1:
         raise ValueError("INSUFFICIENT_HISTORY_Q1")
     trs: List[float] = []
-    base = len(candles) if idx == -1 else idx + 1
     for i in range(1, base):
         c = candles[i]
         p = candles[i - 1]
@@ -122,7 +130,7 @@ def atr_sma(candles: Sequence[Dict[str, Any]], n: int = 14,
         raise ValueError("INSUFFICIENT_HISTORY_Q1")
     value = sum(trs[-n:]) / n
     if cache is not None:
-        cache[n, idx] = value
+        cache[n, base] = value
     return value
 
 
