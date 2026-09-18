@@ -1452,3 +1452,113 @@ def test_d34_versioned_bootstrap_uncertainty_is_same_e11_snapshot():
         build_forecast(ev(), x=X0, uncertainty=model, environment="LIVE")
     with pytest.raises(BridgeError, match="FORECAST_UNCERTAINTY_UNAVAILABLE"):
         EC.paper_bootstrap_uncertainty({**state, "probs": [float("nan")]*9}, environment="PAPER")
+
+
+def test_d33_quality_uses_native_window_not_current_bar():
+    from apex.quality.vector import calc_window_quality
+    pairs = [(.6, 1), (.9, 0)]
+    projected = EC.window_quality_projection(pairs)
+    assert projected["q_raw"] == projected["data_trust"] == calc_window_quality(pairs)[0]
+    assert projected["q_raw"] != .9
+    with pytest.raises(BridgeError, match="WINDOW_QUALITY_UNAVAILABLE"):
+        EC.window_quality_projection([(.49, 1), (.99, 0)])
+    for bad in (None, float("nan"), 1.1):
+        with pytest.raises(BridgeError, match="QUALITY_PROVENANCE_UNAVAILABLE"):
+            EC.window_quality_projection([(bad, 0)])
+
+
+def _d33_mtf_states(tf="1h"):
+    scope = __import__("apex.setup.family_sf_fvg_sweep_rev", fromlist=["relative_mtf"]).relative_mtf(tf)
+    return {t: {"symbol": "BTCUSDT", "timeframe": t, "as_of": 100,
+                "closed": True, "freshness_ok": True, "bias": .5}
+            for t in (tf, scope["intermediate"], scope["htf"]) if t}
+
+
+@pytest.mark.parametrize("bias,label,score", [(.5, "ALIGNED", 1.), (0., "PARTIALLY_ALIGNED", .6), (-.5, "CONFLICTING", 0.)])
+def test_d33_mtf_native_directions(bias, label, score):
+    states = _d33_mtf_states()
+    states["1h"]["bias"] = bias
+    result = EC.mtf_projection("BTCUSDT", "1h", 100, states)
+    assert (result["mtf_state"], result["mtf_align"]) == (label, score)
+
+
+@pytest.mark.parametrize("key,value", [("closed", False), ("as_of", 101), ("freshness_ok", False), ("bias", None), ("symbol", "ETHUSDT")])
+def test_d33_mtf_missing_stale_future_scope_refuse(key, value):
+    states = _d33_mtf_states()
+    states["1h"][key] = value
+    with pytest.raises(BridgeError, match="MTF_"):
+        EC.mtf_projection("BTCUSDT", "1h", 100, states)
+
+
+def test_d33_mtf_top_vacuity_and_missing_required():
+    states = _d33_mtf_states("1mo")
+    states["1mo"]["bias"] = 0.
+    assert EC.mtf_projection("BTCUSDT", "1mo", 100, states)["mtf_state"] == "ALIGNED"
+    states = _d33_mtf_states()
+    states.pop(next(t for t in states if t != "1h"))
+    with pytest.raises(BridgeError, match="MTF_INSUFFICIENT"):
+        EC.mtf_projection("BTCUSDT", "1h", 100, states)
+
+
+def test_d33_component_quality_opposition_absence_and_features():
+    from apex.setup.family_sf_fvg_sweep_rev import REQUIRED_EVIDENCE
+    refs = [SimpleNamespace(engine_id=e, state="ACTIVE", direction=1, quality=.8) for e in REQUIRED_EVIDENCE]
+    refs += [SimpleNamespace(engine_id="E01", state="ACTIVE", direction=-1, quality=.6),
+             SimpleNamespace(engine_id="E04", state="ACTIVE", direction=0, quality=.7)]
+    projection = EC.component_projection(refs, 1)
+    assert projection["q_i"]["structure"] == .6
+    assert projection["s_i"]["structure"] == 1
+    assert "volume" not in projection["s_i"]
+    assert len(refs) == 8  # no opposing evidence deletion
+    x = EC.forecast_features(scores=projection["s_i"], trend_bias=-.4, momentum_z=-2,
+        regime_entropy=.8, vol_quantile=.5, temporal_core=False, rr=3., cost_r=.05)
+    assert x["s_vol"] == 0.  # E04 presence is not E03 volume presence
+    assert x["s_struct"] == 1.  # not multiplied by .6
+    assert x["trend_stack"] == -.4
+    assert x["temporal_core_flag"] == 0.
+    refs[0].quality = None
+    with pytest.raises(BridgeError, match="COMPONENT_QUALITY_UNAVAILABLE"):
+        EC.component_projection(refs, 1)
+    with pytest.raises(BridgeError, match="REQUIRED_EVIDENCE_MISSING"):
+        EC.component_projection([], 1)
+
+
+def test_d33_e07_actual_contributor_mean_not_default():
+    contributors = [{"engine_id": "E01", "evidence_id": "ev1", "quality": .4},
+                    {"engine_id": "E05", "evidence_id": "ev2", "quality": .8}]
+    assert EC.confirmation_quality(contributors) == pytest.approx(.6)
+    for bad in ([], [{"engine_id": "E07", "evidence_id": "circular", "quality": .9}],
+                [{"engine_id": "E01", "evidence_id": "ev", "quality": None}]):
+        with pytest.raises(BridgeError, match="E07_CONFIRMATION_QUALITY_UNAVAILABLE"):
+            EC.confirmation_quality(bad)
+
+
+def test_d33_pattern_hybrid_ranking_opposition_and_invalidation():
+    from apex.pattern.detect import PatternHit, CATALOGUE, entity_for
+    ids = ["PAT-STR-001", "PAT-STR-002"]
+    entities = {i: entity_for(next(r for r in CATALOGUE if r.pattern_id == i)) for i in ids}
+    a = PatternHit(ids[0], "test", 1, 0, 5., "DOWN", strength=.8)
+    b = PatternHit(ids[1], "test", 1, 1, 5., "DOWN", strength=.5)
+    bars = [{"c": 10.}, {"c": 10.}]
+    assert EC.select_native_pattern([a, b], entities, bars) == b
+    b = replace(b, index=0, strength=.9)
+    assert EC.select_native_pattern([a, b], entities, bars) == b
+    b = replace(b, strength=.8)
+    assert EC.select_native_pattern([b, a], entities, bars) == a
+    with pytest.raises(BridgeError, match="PATTERN_SELECTION_AMBIGUOUS"):
+        EC.select_native_pattern([a, replace(b, direction=-1)], entities, bars)
+    with pytest.raises(BridgeError, match="PATTERN_NOT_DETECTED"):
+        EC.select_native_pattern([a], entities, [{"c": 10.}, {"c": 4.}])
+    with pytest.raises(BridgeError, match="PATTERN_NOT_DETECTED"):
+        EC.select_native_pattern([a], {}, bars)
+
+
+@pytest.mark.parametrize("state,value", [("VALID", 1.), ("DEGRADED", 0.), ("INVALID", 0.)])
+def test_d33_temporal_validity_categories(state, value):
+    assert EC.temporal_validity_projection(state) == value
+
+
+@pytest.mark.parametrize("state", [None, "Q3", "CORE", "UNKNOWN"])
+def test_d33_temporal_missing_not_core_flag(state):
+    with pytest.raises(BridgeError, match="TEMPORAL_VALIDITY_UNAVAILABLE"):
+        EC.temporal_validity_projection(state)

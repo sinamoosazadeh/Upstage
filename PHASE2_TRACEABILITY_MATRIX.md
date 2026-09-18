@@ -556,3 +556,9 @@ CP-14 current verification (2026-09-18): interim whole suite 2858 passed, 14 war
 
 | CP14-D33 gate10 | ISSUE-042 / ADR-013 | Failing-before .5, passing-after boundaries/categorical/LIVE | TARGETED PASS |
 | CP14-D34 forecast U/C | ISSUE-043 / ADR-014 | Failing-before max mismatch; three components/version/snapshot/typed UNAVAILABLE and strict omissions | PROJECTION PASS; G1 binding pending |
+
+| CP14-D33-037 | ADR-008 / 2.1 Quality Vector (Q0–QX) | window_quality_projection, matching d33 regressions | PROJECTION PASS; G1 binding pending |
+| CP14-D33-038 | ADR-009 / 8.3 MTF alignment | mtf_projection, matching d33 regressions | PROJECTION PASS; G1 binding pending |
+| CP14-D33-039 | ADR-010 / 10.1 Thirteen hard gates | component_projection / confirmation_quality / forecast_features, matching d33 regressions | PROJECTION PASS; G1 binding pending |
+| CP14-D33-040 | ADR-011 / 9.0 Hierarchy | select_native_pattern, matching d33 regressions | PROJECTION PASS; G1 binding pending |
+| CP14-D33-041 | ADR-012 / 8.0 Evidence and context fabric | temporal_validity_projection, matching d33 regressions | PROJECTION PASS; G1 binding pending |

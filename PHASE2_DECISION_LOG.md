@@ -841,3 +841,25 @@ ISSUE-CP14-043 CLOSED-with-projection-evidence: engine_context.paper_bootstrap_u
 Required failing-before command (two added regressions): `python -m pytest tests/unit/test_forecast_logistic.py::test_d34_confidence_is_one_minus_weighted_uncertainty_before_after tests/unit/test_engine_context.py::test_d33_gate10_native_normalized_half_before_after -q` => **2 failed in 0.43s**, specifically .5 gate refusal and max-component confidence. Same command after correction => **2 passed in 0.21s**. Logs outside repository: cp14-d33-d34-before.log and cp14-forecast-after.log.
 
 Expanded after command: context, forecast, setup-gates, plan-bridge, context-to-trade and ops-paper-loop batteries, excluding only long G2 => **248 passed, 1 deselected, 13 warnings in 35.38s**. No full-suite/final-closeout claim.
+
+### ADR-CP14-008 — D33 / ISSUE-CP14-037
+
+Decision: Native minimum-veto plus exponentially weighted window quality supplies both q_raw and data_trust, with the separate full-window gate2 preserved and unknown provenance refusing. Implementation: engine_context.window_quality_projection. ISSUE-CP14-037 CLOSED-with-projection-evidence; source integration pending. Tests in test_engine_context cover the matching d33 cases, including failure boundaries, not only happy paths; no frozen changes.
+
+### ADR-CP14-009 — D33 / ISSUE-CP14-038
+
+Decision: MTF compares native E09 directions across base and required coarser cells: opposing signs CONFLICTING, all nonzero equal ALIGNED, otherwise neutral without opposition PARTIALLY_ALIGNED, with missing/stale refusal, top-TF vacuity and the existing E07 state-to-score mapping. Implementation: engine_context.mtf_projection. ISSUE-CP14-038 CLOSED-with-projection-evidence; source integration pending. Tests in test_engine_context cover the matching d33 cases, including failure boundaries, not only happy paths; no frozen changes.
+
+### ADR-CP14-010 — D33 / ISSUE-CP14-039
+
+Decision: Admitted evidence supplies binary supporting presence and minimum native component quality, known-absent optional components contribute nothing, the five forecast s-features use unweighted E01/E02/E03-volume/E05/E06 presence, trend_stack is native E09 bias and E07 average quality is the mean of actual confirmation contributors, never 1.0/.9 defaults. Implementation: engine_context.component_projection / confirmation_quality / forecast_features. ISSUE-CP14-039 CLOSED-with-projection-evidence; source integration pending. Tests in test_engine_context cover the matching d33 cases, including failure boundaries, not only happy paths; no frozen changes.
+
+### ADR-CP14-011 — D33 / ISSUE-CP14-040
+
+Decision: Only admitted confirmed still-valid native pattern hits compete: opposing directions refuse as PATTERN_SELECTION_AMBIGUOUS; same-direction hits rank by latest confirmation, native strength then lexical pattern ID, with research-only patterns never promoted. Implementation: engine_context.select_native_pattern. ISSUE-CP14-040 CLOSED-with-projection-evidence; source integration pending. Tests in test_engine_context cover the matching d33 cases, including failure boundaries, not only happy paths; no frozen changes.
+
+### ADR-CP14-012 — D33 / ISSUE-CP14-041
+
+Decision: Numeric temporal_window_validity projects native VALID to 1 and DEGRADED/INVALID to 0, refuses missing/unknown categories and is distinct from temporal_core_flag. Implementation: engine_context.temporal_validity_projection. ISSUE-CP14-041 CLOSED-with-projection-evidence; source integration pending. Tests in test_engine_context cover the matching d33 cases, including failure boundaries, not only happy paths; no frozen changes.
+
+D33 projection verification: `pytest tests/unit/test_engine_context.py -k d33 -q` => **28 passed, 129 deselected in 0.35s**. Expanded context/forecast/gates/bridge/ops batteries excluding only long G2 => **255 passed, 1 deselected, 13 warnings in 37.02s**. Raw log /home/user/cp14-d33-projections.log. These helpers do not complete store-backed G1 or serve binding.

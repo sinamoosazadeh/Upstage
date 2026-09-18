@@ -428,6 +428,8 @@ raw OHLCV (e.g. a `get_ohlcv()` call) is forbidden; access is always via
 
 ### 2.1 Quality Vector (Q0–QX)
 
+**Session-CP-14 (2026-09-18; D33 / ISSUE-037):** Native minimum-veto plus exponentially weighted window quality supplies both q_raw and data_trust, with the separate full-window gate2 preserved and unknown provenance refusing.
+
 **Mission:** transform a raw `MarketObservation` (Toobit OHLCV + separately
 tracked Open Interest) into a Quality Vector,
 
@@ -14739,6 +14741,8 @@ Evidence from multiple engines is assembled for one `(symbol, timeframe)` at one
 
 ### 8.0 Evidence and context fabric
 
+**Session-CP-14 (2026-09-18; D33 / ISSUE-041):** Numeric temporal_window_validity projects native VALID to 1 and DEGRADED/INVALID to 0, refuses missing/unknown categories and is distinct from temporal_core_flag.
+
 **Evidence Fabric** — the normalized set of all ACTIVE evidence at time `t`
 for one `(symbol, timeframe)`:
 
@@ -14960,6 +14964,8 @@ correlation_exposure(open_positions, new_proposal):
 
 ### 8.3 MTF alignment
 
+**Session-CP-14 (2026-09-18; D33 / ISSUE-038):** MTF compares native E09 directions across base and required coarser cells: opposing signs CONFLICTING, all nonzero equal ALIGNED, otherwise neutral without opposition PARTIALLY_ALIGNED, with missing/stale refusal, top-TF vacuity and the existing E07 state-to-score mapping.
+
 States: `ALIGNED | PARTIALLY_ALIGNED | CONFLICTING | UNAVAILABLE | STALE`.
 HTF information is consumed only up to the last CLOSED candle available at
 decision time. An MTF conflict is **evidence, not an automatic veto** at the
@@ -14972,6 +14978,8 @@ synthetic multi-timeframe data with PIT enforcement.
 ## 9. Pattern Intelligence
 
 ### 9.0 Hierarchy
+
+**Session-CP-14 (2026-09-18; D33 / ISSUE-040):** Only admitted confirmed still-valid native pattern hits compete: opposing directions refuse as PATTERN_SELECTION_AMBIGUOUS; same-direction hits rank by latest confirmation, native strength then lexical pattern ID, with research-only patterns never promoted.
 
 Four contract levels:
 
@@ -15275,6 +15283,8 @@ This chapter, AC, serves as the normative hub for pattern governance and interac
 A setup is a scored composition of required evidence plus pattern plus context. Thirteen hard gates can quarantine it. One family is instantiated for implementation: FVG + sweep reversal, on every symbol and every timeframe. No second family may be invented in code.
 
 ### 10.1 Thirteen hard gates
+
+**Session-CP-14 (2026-09-18; D33 / ISSUE-039):** Admitted evidence supplies binary supporting presence and minimum native component quality, known-absent optional components contribute nothing, the five forecast s-features use unweighted E01/E02/E03-volume/E05/E06 presence, trend_stack is native E09 bias and E07 average quality is the mean of actual confirmation contributors, never 1.0/.9 defaults.
 
 | Gate | Condition | Action |
 |------|-----------|--------|
@@ -20839,6 +20849,11 @@ Engine v4.0.0 formula bodies were not rewritten.
 
 | Decision / fill | Home section now |
 |---|---|
+| CP-14 D33 ISSUE-037 projection | 2.1 Quality Vector (Q0–QX); ADR-CP14-008 |
+| CP-14 D33 ISSUE-038 projection | 8.3 MTF alignment; ADR-CP14-009 |
+| CP-14 D33 ISSUE-039 projection | 10.1 Thirteen hard gates; ADR-CP14-010 |
+| CP-14 D33 ISSUE-040 projection | 9.0 Hierarchy; ADR-CP14-011 |
+| CP-14 D33 ISSUE-041 projection | 8.0 Evidence and context fabric; ADR-CP14-012 |
 | CP-14 D33 normalized forecast quality | Ch.7; ADR-CP14-013 / ISSUE-042; native 0.5 passes gate10 |
 | CP-14 D34 PAPER uncertainty and C=1-U | Ch.13.1; ADR-CP14-014 / ISSUE-043; version/snapshot-bound, no zero defaults |
 | CP-14 D32 native HV forecast mid-rank | Ch.13 bootstrap vector; ADR-CP14-007 / ISSUE-CP14-036 |

@@ -32,6 +32,158 @@ DEFAULT_TRAINING_MAX_MINUTES = 20.0
 
 
 
+def measured_number(value: Any, reason: str, *, lower: float | None = None,
+                    upper: float | None = None) -> float:
+    """No coercion of absent/bool/nonfinite measurements into permissions."""
+    try:
+        if value is None or isinstance(value, (bool, str)):
+            raise ValueError("missing or untyped measurement")
+        result = float(value)
+        if not math.isfinite(result) or (lower is not None and result < lower) or (upper is not None and result > upper):
+            raise ValueError("measurement outside domain")
+        return result
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise BridgeError(reason, str(value)) from exc
+
+
+def window_quality_projection(qualities: Any) -> dict:
+    """D33/037: native minimum veto and weighted mean, never last-bar only."""
+    from apex.quality.vector import calc_window_quality
+    pairs = [(measured_number(q, "QUALITY_PROVENANCE_UNAVAILABLE", lower=0, upper=1),
+              measured_number(age, "QUALITY_PROVENANCE_UNAVAILABLE", lower=0))
+             for q, age in qualities]
+    value, reason, _ = calc_window_quality(pairs)
+    if value is None:
+        raise BridgeError("WINDOW_QUALITY_UNAVAILABLE", reason)
+    return {"q_raw": value, "data_trust": value, "window_qualities": pairs}
+
+
+def mtf_projection(symbol: str, timeframe: str, as_of_ms: int,
+                   states: Mapping[str, Mapping[str, Any]]) -> dict:
+    """D33/038: pattern-independent E09 alignment, including 1mo vacuity."""
+    from apex.setup.family_sf_fvg_sweep_rev import relative_mtf
+    from apex.fabric.context import MTF_STATE_SCORES
+    scope = relative_mtf(timeframe)
+    required = list(dict.fromkeys(tf for tf in (scope["intermediate"], scope["htf"]) if tf))
+    directions, closes = [], {}
+    for tf in [timeframe, *required]:
+        state = states.get(tf)
+        if (not isinstance(state, Mapping) or state.get("symbol") != symbol
+                or state.get("timeframe") != tf or state.get("closed") is not True
+                or not isinstance(state.get("as_of"), int) or state["as_of"] > as_of_ms):
+            raise BridgeError("MTF_INSUFFICIENT", tf)
+        if state.get("freshness_ok") is not True:
+            raise BridgeError("MTF_STALE", tf)
+        bias = measured_number(state.get("bias"), "MTF_INSUFFICIENT", lower=-1, upper=1)
+        directions.append(0 if abs(bias) < .05 else (1 if bias > 0 else -1))
+        closes[tf] = state["as_of"]
+    nonzero = set(directions) - {0}
+    if not required:
+        label = "ALIGNED"
+    elif len(nonzero) == 2:
+        label = "CONFLICTING"
+    elif 0 not in directions:
+        label = "ALIGNED"
+    else:
+        label = "PARTIALLY_ALIGNED"
+    return {"mtf_state": label, "mtf_align": MTF_STATE_SCORES[label],
+            "available_closes": closes, "relative_mtf": scope}
+
+
+def component_projection(admitted: Any, direction: int) -> dict:
+    """D33/039. Input is the fabric's admitted refs, not unfiltered events."""
+    from apex.fabric.context import COMPONENT_ENGINE
+    from apex.setup.family_sf_fvg_sweep_rev import REQUIRED_EVIDENCE
+    if direction not in (-1, 1):
+        raise BridgeError("PATTERN_DIRECTION_UNAVAILABLE", str(direction))
+    refs = list(admitted)
+    si, qi = {}, {}
+    for component, engine in COMPONENT_ENGINE.items():
+        group = [r for r in refs if r.engine_id == engine]
+        if not group:
+            if engine in REQUIRED_EVIDENCE:
+                raise BridgeError("REQUIRED_EVIDENCE_MISSING", engine)
+            continue  # proven absence in the admitted set, not missing quality
+        if any(r.state != "ACTIVE" or r.direction not in (-1, 0, 1) for r in group):
+            raise BridgeError("COMPONENT_EVIDENCE_INVALID", engine)
+        si[component] = float(any(r.direction in (0, direction) for r in group))
+        qi[component] = min(measured_number(r.quality, "COMPONENT_QUALITY_UNAVAILABLE", lower=0, upper=1)
+                            for r in group)
+    return {"s_i": si, "q_i": qi}
+
+
+def confirmation_quality(contributors: Any) -> float:
+    """D33/039: explicit actual E07 contributors; no .9 startup default."""
+    rows = list(contributors)
+    if not rows:
+        raise BridgeError("E07_CONFIRMATION_QUALITY_UNAVAILABLE", "no contributors")
+    for row in rows:
+        if row.get("engine_id") not in ("E01", "E02", "E03", "E05") or not row.get("evidence_id"):
+            raise BridgeError("E07_CONFIRMATION_QUALITY_UNAVAILABLE", "contributor provenance")
+    return sum(measured_number(row.get("quality"), "E07_CONFIRMATION_QUALITY_UNAVAILABLE", lower=0, upper=1)
+               for row in rows) / len(rows)
+
+
+def select_native_pattern(hits: Any, entities: Mapping[str, Any], bars: Any) -> Any:
+    """D33/040 hybrid: direction conflicts veto; rank same-side hits only."""
+    from apex.pattern.detect import assert_scoring_admissible, is_invalidated
+    eligible = []
+    for hit in hits:
+        entity = entities.get(hit.pattern_id)
+        if entity is None or entity.lifecycle_status != "ACTIVE":
+            continue  # recorded catalogue/admission exclusion, never promotion
+        assert_scoring_admissible(entity)
+        if hit.direction not in (-1, 1) or not 0 <= hit.index < len(bars):
+            raise BridgeError("PATTERN_CONTEXT_INVALID", hit.pattern_id)
+        measured_number(hit.strength, "PATTERN_STRENGTH_UNAVAILABLE", lower=0, upper=1)
+        if any(is_invalidated(hit, float(b["c"])) for b in bars[hit.index:]):
+            continue
+        eligible.append(hit)
+    if not eligible:
+        raise BridgeError("PATTERN_NOT_DETECTED", "no admitted still-valid confirmed hit")
+    if len({h.direction for h in eligible}) != 1:
+        raise BridgeError("PATTERN_SELECTION_AMBIGUOUS", "opposing admitted patterns")
+    return sorted(eligible, key=lambda h: (-h.index, -h.strength, h.pattern_id))[0]
+
+
+def temporal_validity_projection(validity: Any) -> float:
+    """D33/041: explicit native category, distinct from the core flag."""
+    if validity == "VALID":
+        return 1.
+    if validity in ("DEGRADED", "INVALID"):
+        return 0.
+    raise BridgeError("TEMPORAL_VALIDITY_UNAVAILABLE", str(validity))
+
+
+def forecast_features(*, scores: Mapping[str, float], trend_bias: Any,
+                      momentum_z: Any, regime_entropy: Any, vol_quantile: Any,
+                      temporal_core: Any, rr: Any, cost_r: Any) -> dict:
+    """D32/D33 full forecast vector; known optional absence is binary false."""
+    from apex.forecast.logistic import logistic_bootstrap_p
+    if not isinstance(temporal_core, bool):
+        raise BridgeError("TEMPORAL_CORE_UNAVAILABLE", str(temporal_core))
+    values = {}
+    for feature, component in (("s_struct", "structure"), ("s_liq", "liquidity"),
+                               ("s_vol", "volume"), ("s_fvg", "fvg"), ("s_ob", "orderblock")):
+        if component in ("structure", "liquidity", "fvg") and component not in scores:
+            raise BridgeError("REQUIRED_EVIDENCE_MISSING", component)
+        value = scores.get(component, 0.)
+        if value not in (0., 1.):
+            raise BridgeError("FORECAST_FEATURE_INVALID", feature)
+        values[feature] = float(value)
+    rr = measured_number(rr, "FORECAST_GEOMETRY_UNAVAILABLE", lower=0)
+    cost_r = measured_number(cost_r, "COST_MODEL_UNAVAILABLE", lower=0)
+    if rr <= 0 or cost_r <= 0:
+        raise BridgeError("FORECAST_LOG_DOMAIN_UNAVAILABLE", "RR and cost must be positive")
+    values.update(trend_stack=measured_number(trend_bias, "TREND_UNAVAILABLE", lower=-1, upper=1),
+                  momentum_z=measured_number(momentum_z, "MOMENTUM_UNAVAILABLE"),
+                  regime_entropy=measured_number(regime_entropy, "REGIME_UNAVAILABLE", lower=0),
+                  vol_quantile=measured_number(vol_quantile, "VOL_QUANTILE_UNAVAILABLE", lower=0, upper=1),
+                  temporal_core_flag=float(temporal_core), log_rr=math.log(rr), log_cost_R=math.log(cost_r))
+    logistic_bootstrap_p(values)  # use, never bypass, the native validator
+    return values
+
+
 def paper_bootstrap_uncertainty(regime_state: Mapping[str, Any], *, environment: str) -> dict:
     """D34's explicitly uncalibrated PAPER-only three-component model."""
     if environment != "PAPER":

@@ -159,3 +159,5 @@ CONTINUE(CP-14) IN PROGRESS 2026-09-17: owner D21/D22 resolve ISSUE-CP14-001/002
 - CP-14 D32 projection implemented; D33/D34 recorded verbatim and release continuation. Tests 168 passed / 1 deselected / 30.57s (long G2 not rerun). AFTER blueprint 0209f7314ad80546ea42015ff1e920c7eb787f1d2bdfbdf64c92cdd4368718f6 / 20882 lines. G1 integration and D33/D34 implementation pending; OWNER-CHECKED:[ ].
 
 - D33 ISSUE-042 and D34 ISSUE-043 projection boundaries green, including both required before/after failures; expanded targeted 248 passed, 1 deselected, 13 warnings / 35.38s. AFTER 47e364ac2982fe1670aa448f21b8c2762f86065892c5fcac3cfa47915a48f634 / 20888 lines. Other projections/source binding remain in progress. OWNER-CHECKED:[ ].
+
+- D33 ISSUE-037–041 projections implemented/tested, each ADR/home sentence/AJ row recorded. Expanded 255 passed, 1 deselected / 37.02s; source integration pending. AFTER b8f393e5f5d6ef51cc1a148053fe5d9a34e248726ab6c45fe682b3de65e6e153 / 20903 lines; OWNER-CHECKED:[ ].
