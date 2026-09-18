@@ -1191,6 +1191,76 @@ def test_d23_vocabulary_table_stays_contiguous_with_note_below():
     assert "| participation |" in section and "| structure_quality |" in section and "| PIT |" in section
 
 
+async def _seed_full_training_fixture(store, symbols=("BTCUSDT", "ETHUSDT")):
+    """Unlabelled OHLCV only: native D21 supplies every class member.
+
+    BTC varies throughout; ETH has expanding oscillations then a mid-range
+    quiet segment. Past-only M15/H4 data supplies canonical HTF dependencies.
+    """
+    import math
+    import random
+    from datetime import datetime, timedelta, timezone
+    from apex.data_catalog.contracts import MarketObservation
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for symbol in symbols:
+        target_count = 700 if symbol == "BTCUSDT" else 180
+        for tf, hours, count, start in (("15m", .25, 65, -16.25), ("4h", 4, 65, -260), ("1h", 1, target_count, 0)):
+            rng, price = random.Random(2), 100.
+            for i in range(count):
+                opening = price
+                if tf != "1h":
+                    price += .15 + math.sin(i) * .5
+                elif symbol == "BTCUSDT":
+                    price *= math.exp(rng.gauss(0, .013) + .005 * math.sin(i / 45))
+                else:
+                    price = 100 + (2 + .05 * i) * math.sin(2 * math.pi * i / 10) if i < 80 else 100.
+                wick = .1 if symbol == "ETHUSDT" and tf == "1h" else None
+                high = max(opening, price) + (rng.uniform(.1, 2) if wick is None else wick)
+                low = min(opening, price) - (rng.uniform(.1, 2) if wick is None else wick)
+                stamp = (base + timedelta(hours=start + i * hours)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                obs = MarketObservation(symbol, tf, *[Decimal(str(v)) for v in
+                    (opening, high, low, price, rng.uniform(500, 2000))], None, stamp, i, "CLOSED",
+                    availability_time="1970-01-01T00:00:00.000Z")
+                await store.ingest_raw(obs, oi_state="MISSING")
+
+
+def test_g2_actual_store_training_in_two_processes_is_byte_identical(tmp_path):
+    import json
+    import subprocess
+    import sys
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    path = tmp_path / "training.sqlite"
+    async def seed():
+        store = await SQLiteStore(str(path)).open()
+        try:
+            await _seed_full_training_fixture(store)
+        finally:
+            await store.close()
+    asyncio.run(seed())
+    targets = [tmp_path / f"trained-{i}.yaml" for i in range(2)]
+    reports = []
+    for target in targets:
+        # Each CLI launches its own isolated native-engine training worker.
+        # No monkeypatch, pre-labelled matrix or existing classifier is used.
+        result = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11", "--sqlite", str(path),
+            "--out", str(target), "--seed", "20260917", "--max-minutes", "6", "--json"],
+            capture_output=True, text=True, timeout=370)
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.loads(result.stdout)
+        assert report["status"] == "TRAINED"
+        assert set(report["per_class_counts"]) == set(EC.E11.REGIMES)
+        assert all(n > 0 for n in report["per_class_counts"].values())
+        assert len([line for line in result.stderr.splitlines() if line.startswith("TRAIN_CELL ")]) == 20
+        reports.append(report)
+    assert targets[0].read_bytes() == targets[1].read_bytes()
+    assert reports[0]["artifact_sha256"] == reports[1]["artifact_sha256"]
+    artifact = EC.load_classifier(targets[0])
+    assert artifact["sample_count"] == sum(reports[0]["per_class_counts"].values())
+    assert artifact["training_window"]["timeframes"] == ["1h", "4h"]
+    print("G2 actual-store proof:", json.dumps({k: reports[0][k] for k in
+        ("sample_count", "per_class_counts", "training_window", "artifact_sha256")}, sort_keys=True))
+
+
 def test_e01_atr_prefix_cache_uses_absolute_boundary_without_changing_failures():
     bars = [{"O": 100 + i, "C": 101 + i, "H": 103 + i, "L": 98 + i} for i in range(80)]
     window = EC.E01._ATRWindow(bars)
