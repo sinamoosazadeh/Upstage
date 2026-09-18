@@ -242,3 +242,150 @@ def test_native_bundle_without_injected_quality_or_mtf(tmp_path, monkeypatch):
         finally:
             await store.close()
     asyncio.run(run())
+
+
+def test_ladder_source_reads_native_revision_pit_and_never_defaults(tmp_path):
+    from apex.risk.kernel import apply_ladder_state_migration, append_ladder_revision, ladder_revision
+    async def run():
+        store = await SQLiteStore(str(tmp_path/"ladder.sqlite")).open()
+        try:
+            source = EC.EngineContextProducer(store,environment="PAPER")
+            asof = "2026-01-01T00:00:00.000Z"
+            with pytest.raises(BridgeError,match="RISK_LADDER_UNAVAILABLE"):
+                await source.ladder_input(asof)
+            await apply_ladder_state_migration(store.db)
+            with pytest.raises(BridgeError,match="RISK_LADDER_UNAVAILABLE"):
+                await source.ladder_input(asof)
+            native = ladder_revision(revision_id="fixture-native-revision",applied_at=asof,
+                state="HighRisk",emergency_state="L1_PAUSE",consumed_budget=.5,
+                reason="measured fixture exposure",snapshot_id="fixture-exposure")
+            await append_ladder_revision(store.db,native)
+            got = await source.ladder_input(asof)
+            assert got["state"] == native.state
+            assert got["emergency_state"] == native.emergency_state
+            assert got["multiplier"] == native.multiplier
+            with pytest.raises(BridgeError,match="RISK_LADDER_UNAVAILABLE"):
+                await source.ladder_input("2025-12-31T23:59:59.999Z")
+        finally: await store.close()
+    asyncio.run(run())
+
+
+def test_adv_store_reads_720_actual_bars_with_verified_units_and_pit(tmp_path):
+    from tests.unit.test_engine_context import _PublicFactsFixture
+    async def run():
+        store = await SQLiteStore(str(tmp_path/"adv.sqlite")).open()
+        try:
+            fixture = _PublicFactsFixture()
+            asof = "2026-02-01T12:00:00.000Z"
+            midnight = EC._iso_to_ms("2026-02-01T00:00:00.000Z")
+            source = EC.EngineContextProducer(store,environment="PAPER")
+            await EC.persist_public_venue_facts(store,"BTCUSDT",environment="PAPER",
+                client=fixture.client,now=lambda:(midnight-1)/1000)
+            with pytest.raises(BridgeError,match="ADV_UNAVAILABLE"):
+                await source.adv_input("BTCUSDT",asof)
+            fixture.record["volumeUnit"] = "BASE"
+            await EC.persist_public_venue_facts(store,"BTCUSDT",environment="PAPER",
+                client=fixture.client,now=lambda:midnight/1000)
+            with pytest.raises(BridgeError,match="ADV_UNAVAILABLE"):
+                await source.adv_input("BTCUSDT",asof)
+            volumes = []
+            for i in range(720):
+                obs,_,_ = await measured_bar(store,stamp=EC._ms_to_iso(midnight-(720-i)*3600000),index=i,publish=False)
+                volumes.append(float(obs.volume))
+            result = await source.adv_input("BTCUSDT",asof)
+            assert result["adv"] == pytest.approx(sum(volumes)/30)
+            assert len(result["observation_ids"]) == 720
+            # Today's volume cannot leak into the previous-complete-days ADV.
+            await measured_bar(store,stamp=EC._ms_to_iso(midnight),index=721,publish=False)
+            assert canonical_json(await source.adv_input("BTCUSDT",asof)) == canonical_json(result)
+            assert fixture.venue.calls and all(not c.api_key_present and "signature" not in c.params for c in fixture.venue.calls)
+        finally: await store.close()
+    asyncio.run(run())
+
+
+def test_account_source_durable_pit_marks_pending_fills_and_losses(tmp_path):
+    from decimal import Decimal
+    from apex.ledger.store import LedgerWriter
+    from tests.unit.test_engine_context import _PublicFactsFixture
+    async def run():
+        store = await SQLiteStore(str(tmp_path/"account.sqlite")).open()
+        clock = {"now":"2026-01-01T01:00:00.000Z"}
+        ledger = LedgerWriter(store,clock=lambda:clock["now"])
+        await ledger.initialize(); await ledger.start()
+        try:
+            source = EC.EngineContextProducer(store,ledger=ledger,environment="PAPER")
+            asof = "2026-01-01T01:00:02.000Z"
+            empty = await source.paper_account_inputs(asof)
+            assert empty["capital"] == 10000 and empty["reserved_notional"] == 0
+            assert empty["margin_health_fraction"] == 1 and empty["consecutive_losses"] == 0
+            assert empty["mark_set"]["mark_model"] == "PAPER_CLOSE_MARK"
+            fixture = _PublicFactsFixture()
+            await EC.persist_public_venue_facts(store,"BTCUSDT",environment="PAPER",
+                client=fixture.client,now=lambda:EC._iso_to_ms(clock["now"])/1000)
+            plan = {"proposal_id":"plan-000000000001","setup_id":"setup-source","symbol":"BTCUSDT","timeframe":"1h",
+                "direction":"LONG","sized_quantity":10,"decision":"ALLOW","environment":"PAPER","contract_multiplier":1,
+                "as_of":clock["now"],"created_utc":clock["now"]}
+            await ledger.append_trade_plan(plan)
+            await ledger.append_fsm_transition(intent_id="i-000000000001",from_state="READY",to_state="SUBMITTING",
+                reason="fixture",trigger="SUBMIT_ORDER",environment="PAPER",
+                evidence={"symbol":"BTCUSDT","quantity":"10","price":"100"})
+            await ledger.append_fsm_transition(intent_id="i-000000000001",from_state="SUBMITTING",to_state="PARTIAL",
+                reason="fixture",trigger="PARTIAL_FILL",environment="PAPER")
+            await ledger.append_fill(intent_id="i-000000000001",fill_id="actual-fill",price="100",quantity="4",
+                symbol="BTCUSDT",side="BUY_OPEN")
+            with pytest.raises(BridgeError,match="PAPER_MARK_UNAVAILABLE"):
+                await source.paper_account_inputs(asof)
+            obs,_,_ = await measured_bar(store,"1m","2026-01-01T00:59:00.000Z")
+            await store.db.execute("INSERT INTO setup_candidate (setup_id) VALUES (?)",("setup-source",))
+            await store.db.commit()
+            outcome = {"outcome_id":"closed-source","setup_id":"setup-source","pnl":"-25",
+                       "exit_reason":"STOP_LOSS","context":{"environment":"PAPER"}}
+            await ledger.append_outcome(outcome)
+            actual = await source.paper_account_inputs(asof)
+            assert actual["capital"] == 9975
+            assert actual["open_notional"] == 4*obs.close
+            assert actual["pending_notional"] == 600
+            assert actual["margin_health_fraction"] == (Decimal(9975)-4*obs.close-600)/Decimal(9975)
+            assert actual["realized_daily_loss_fraction"] == pytest.approx(25/9975)
+            assert actual["consecutive_losses"] == 1
+            assert actual["mark_set"]["mark_provenance"]["BTCUSDT"]["model"] == "PAPER_CLOSE_MARK"
+            clock["now"] = "2026-01-02T01:00:00.000Z"
+            await ledger.append(event_type="OWNER_REVIEW",actor="OWNER",kind="CONSECUTIVE_LOSSES")
+            assert canonical_json(await source.paper_account_inputs(asof)) == canonical_json(actual)
+            with pytest.raises(BridgeError,match="CIRCUIT_RESET_UNAVAILABLE"):
+                await source.paper_account_inputs(clock["now"])
+            assert (await ledger.verify_chain())["intact"]
+        finally:
+            await ledger.stop(); await store.close()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("case",["correction","incomplete_outcome","orphan_fill","missing_plan_time","forged_review"])
+def test_account_source_reachable_named_refusals(tmp_path,case):
+    from apex.ledger.store import LedgerWriter
+    async def run():
+        store = await SQLiteStore(str(tmp_path/"refusals.sqlite")).open()
+        stamp = "2026-01-01T00:00:00.000Z"
+        ledger = LedgerWriter(store,clock=lambda:stamp)
+        await ledger.initialize(); await ledger.start()
+        try:
+            source = EC.EngineContextProducer(store,ledger=ledger,environment="PAPER")
+            if case == "correction":
+                await ledger.append_correction(supersedes="unresolved-event",reason="fixture",delta={"pnl":"1"})
+                reason = "PAPER_CORRECTION_UNAVAILABLE"
+            elif case == "incomplete_outcome":
+                await ledger.append(event_type="OUTCOME",outcome={"context":{"environment":"PAPER"}},pnl="1")
+                reason = "PAPER_LOSS_UNAVAILABLE"
+            elif case == "orphan_fill":
+                await ledger.append_fill(intent_id="unknown",fill_id="f",price="10",quantity="1",symbol="BTCUSDT",side="BUY_OPEN")
+                reason = "PAPER_ORDER_STATE_UNAVAILABLE"
+            elif case == "missing_plan_time":
+                await ledger.append_trade_plan({"proposal_id":"p","setup_id":"s","direction":"LONG",
+                    "sized_quantity":1,"decision":"ALLOW","environment":"PAPER"})
+                reason = "PAPER_ORDER_STATE_UNAVAILABLE"
+            else:
+                await ledger.append(event_type="CIRCUIT_RESET",actor="OWNER",environment="PAPER",kind="CONSECUTIVE_LOSSES")
+                reason = "CIRCUIT_RESET_UNAVAILABLE"
+            with pytest.raises(BridgeError,match=reason): await source.paper_account_inputs(stamp)
+        finally: await ledger.stop(); await store.close()
+    asyncio.run(run())

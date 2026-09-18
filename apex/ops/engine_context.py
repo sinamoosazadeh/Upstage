@@ -78,7 +78,7 @@ def paper_close_marks(held_symbols: Any, observations: Mapping[str, Mapping], *,
         price = measured_number(row.get("close_price"), "PAPER_MARK_UNAVAILABLE", lower=0)
         if price == 0:
             raise BridgeError("PAPER_MARK_UNAVAILABLE", symbol)
-        marks[symbol] = price
+        marks[symbol] = _paper_decimal(row["close_price"], "PAPER close mark", positive=True)
         provenance[symbol] = {"model": "PAPER_CLOSE_MARK", "close_ms": close,
                               "availability_ms": availability, "receipt_ms": receipt}
     return {"marks": marks, "mark_provenance": provenance, "as_of_ms": as_of_ms,
@@ -1575,6 +1575,163 @@ class EngineContextProducer:
             frames[tf] = frame
         projection = mtf_projection(symbol, timeframe, _iso_to_ms(as_of), states)
         return {**projection, "states": states, "frames": frames}
+
+    async def paper_marks(self, held_symbols: Any, as_of: str) -> dict:
+        """One shared D34 last-CLOSED-1m account mark set from actual SQLite."""
+        if self.environment != "PAPER":
+            raise BridgeError("PAPER_ACCOUNT_NOT_LIVE", self.environment)
+        rows = {}
+        for symbol in sorted(set(held_symbols)):
+            try:
+                quality = await self.quality_window(symbol, "1m", as_of, 1)
+                obs = quality["window"][-1]
+                rows[symbol] = {"symbol": symbol, "timeframe": "1m", "status": obs.status,
+                    "open_time_ms": _iso_to_ms(obs.timestamp), "availability_ms": _iso_to_ms(obs.availability_time),
+                    "receipt_ms": quality["receipt_time_ms"], "close_price": obs.close}
+            except BridgeError as exc:
+                raise BridgeError("PAPER_MARK_UNAVAILABLE", f"{symbol}: {exc.reason}") from exc
+        return paper_close_marks(held_symbols, rows, as_of_ms=_iso_to_ms(as_of))
+
+    async def adv_input(self, symbol: str, as_of: str) -> dict:
+        """D34 base-asset ADV; units must be declared by the public venue."""
+        import datetime as dt
+        venue = await read_public_venue_facts(self.store, symbol, as_of)
+        unit = venue["sources"]["exchange_info"]["record"].get("volumeUnit")
+        if unit not in ("BASE", "CONTRACT"):
+            raise BridgeError("ADV_UNAVAILABLE", "public venue volume units unavailable")
+        end_ms = _iso_to_ms(as_of)
+        midnight = int(dt.datetime.fromtimestamp(end_ms/1000,dt.timezone.utc)
+                       .replace(hour=0,minute=0,second=0,microsecond=0).timestamp()*1000)
+        window = await self.window(symbol,"1h",as_of,30*24+int((end_ms-midnight)//3600000)+1)
+        rows = [{"open_time_ms":_iso_to_ms(obs.timestamp), "timeframe":"1h", "status":obs.status,
+                 "availability_ms":_iso_to_ms(obs.availability_time), "volume":float(obs.volume)} for obs in window]
+        value = adv_base_volume(rows, as_of_ms=end_ms, volume_unit=unit,
+                                contract_multiplier=Decimal(str(venue["contract_multiplier"])))
+        return {"adv":value, "volume_unit":unit, "as_of":as_of,
+                "period_start_ms":midnight-30*86400000, "period_end_ms":midnight,
+                "venue_source_sha256":venue["source_sha256"],
+                "observation_ids":[self._raw_lineage[(symbol,"1h",obs.timestamp,obs.content_hash())]["observation_id"]
+                    for obs in window if midnight-30*86400000 <= _iso_to_ms(obs.timestamp) < midnight]}
+
+    async def ladder_input(self, as_of: str) -> dict:
+        """Read the native append-only risk revision, never bootstrap NORMAL."""
+        from apex.risk.kernel import LADDER_ROW_COLUMNS, EMERGENCY_LADDER, ladder_multiplier, ratchet_allow
+        exists = await (await self.store.db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='apex_risk_ladder_state'")).fetchone()
+        if not exists:
+            raise BridgeError("RISK_LADDER_UNAVAILABLE", "native ladder table absent")
+        rows = await (await self.store.db.execute("SELECT "+",".join(LADDER_ROW_COLUMNS)+
+            " FROM apex_risk_ladder_state WHERE applied_at<=? ORDER BY applied_at DESC,rowid DESC LIMIT 2",(as_of,))).fetchall()
+        if not rows:
+            raise BridgeError("RISK_LADDER_UNAVAILABLE", "no PIT native ladder revision")
+        result = dict(zip(LADDER_ROW_COLUMNS,rows[0]))
+        if (result["emergency_state"] not in EMERGENCY_LADDER or not result["snapshot_id"]
+                or result["multiplier"] != ladder_multiplier(result["state"])):
+            raise BridgeError("RISK_LADDER_UNAVAILABLE", "invalid native revision")
+        if len(rows) > 1:
+            previous = dict(zip(LADDER_ROW_COLUMNS,rows[1]))
+            if result["parent_revision_id"] != previous["revision_id"]:
+                raise BridgeError("RISK_LADDER_UNAVAILABLE", "revision parent binding unavailable")
+            if not ratchet_allow(previous["emergency_state"],result["emergency_state"])["allowed"]:
+                raise BridgeError("CIRCUIT_RESET_UNAVAILABLE", "emergency downgrade lacks authenticated durable review")
+        return result
+
+    async def paper_account_inputs(self, as_of: str) -> dict:
+        """PIT durable ledger + shared marks + native D29 and D34 projections.
+
+        Correction chains and purported OWNER reviews with no authenticated
+        durable binding are refused, never silently interpreted as resets.
+        """
+        if self.environment != "PAPER":
+            raise BridgeError("PAPER_ACCOUNT_NOT_LIVE", self.environment)
+        if self.ledger is None:
+            raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "ledger not bound")
+        end = _iso_to_ms(as_of)
+        entries = [e for e in await self.ledger.read_ledger() if _iso_to_ms(e.timestamp) <= end]
+        plans = []
+        for plan in await self.ledger.trade_plans():
+            if plan.get("environment") in ("LIVE","RESEARCH","BACKTEST"):
+                continue
+            if plan.get("environment") != "PAPER":
+                raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "plan environment unavailable")
+            try:
+                stamp = max(_iso_to_ms(plan["as_of"]),_iso_to_ms(plan["created_utc"]))
+            except (ValueError,TypeError,KeyError,AttributeError) as exc:
+                raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "plan PIT timestamps unavailable") from exc
+            if stamp <= end:
+                plans.append(plan)
+        class PITView:
+            async def read_ledger(self): return entries
+            async def trade_plans(self): return plans
+        by_id = {e.event_id:e for e in entries}
+        by_id.update({e.ledger_id:e for e in entries})
+        environments, symbols, net = {}, set(), {}
+        for entry in entries:
+            p = entry.raw.get("payload",{})
+            if entry.event_type == "FSM_TRANSITION":
+                env = p.get("environment")
+                if env not in ("PAPER","LIVE","RESEARCH","BACKTEST") or (
+                        entry.intent_id in environments and environments[entry.intent_id] != env):
+                    raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "FSM environment unavailable/conflicting")
+                environments[entry.intent_id] = env
+                if env == "PAPER" and p.get("trigger") == "SUBMIT_ORDER":
+                    symbol = p.get("evidence",{}).get("symbol")
+                    if not symbol:
+                        raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "submission symbol unavailable")
+                    symbols.add(symbol)
+        outcomes = []
+        for entry in entries:
+            p = entry.raw.get("payload",{})
+            if entry.event_type == "CORRECTION_EVENT":
+                target = by_id.get(p.get("supersedes"))
+                target_payload = target.raw.get("payload",{}) if target is not None else {}
+                target_env = target_payload.get("outcome",{}).get("context",{}).get("environment")
+                if target_env is None and target is not None:
+                    target_env = environments.get(target.intent_id)
+                if target_env not in ("LIVE","RESEARCH","BACKTEST"):
+                    raise BridgeError("PAPER_CORRECTION_UNAVAILABLE", "canonical correction resolution required")
+            if (entry.event_type in ("OWNER_REVIEW","CIRCUIT_RESET","RISK_REVIEW")
+                    and p.get("environment") not in ("LIVE","RESEARCH","BACKTEST")):
+                raise BridgeError("CIRCUIT_RESET_UNAVAILABLE", "no authenticated durable review binding")
+            if entry.event_type == "FILL":
+                env = environments.get(entry.intent_id)
+                if env is None:
+                    raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "unidentified fill environment")
+                if env == "PAPER":
+                    side, symbol = p.get("side"), p.get("symbol")
+                    if side not in ("BUY_OPEN","SELL_OPEN","BUY_CLOSE","SELL_CLOSE") or not symbol:
+                        raise BridgeError("PAPER_ORDER_STATE_UNAVAILABLE", "fill symbol/side unavailable")
+                    qty = _paper_decimal(entry.quantity,"fill quantity",positive=True)
+                    symbols.add(symbol)
+                    net[symbol] = net.get(symbol,Decimal(0)) + (qty if side.startswith("BUY") else -qty)
+            if entry.event_type == "OUTCOME":
+                outcome = p.get("outcome",{})
+                env = outcome.get("context",{}).get("environment")
+                if env not in ("PAPER","LIVE","RESEARCH","BACKTEST"):
+                    raise BridgeError("PAPER_LOSS_UNAVAILABLE", "outcome environment unavailable")
+                if env != "PAPER": continue
+                identity = outcome.get("outcome_id")
+                if not identity or not outcome.get("exit_reason"):
+                    raise BridgeError("PAPER_LOSS_UNAVAILABLE", "canonical completed outcome identity/reason unavailable")
+                stored = await (await self.store.db.execute(
+                    "SELECT pnl,setup_id,exit_reason,context FROM outcome WHERE outcome_id=?",(identity,))).fetchone()
+                import json
+                if (stored is None or stored[1] != outcome.get("setup_id")
+                        or stored[2] != outcome["exit_reason"] or json.loads(stored[3]) != outcome["context"]
+                        or _paper_decimal(stored[0],"stored net pnl") != _paper_decimal(entry.raw.get("pnl"),"ledger net pnl")
+                        or _paper_decimal(outcome.get("pnl"),"outcome net pnl") != _paper_decimal(stored[0],"stored net pnl")):
+                    raise BridgeError("PAPER_LOSS_UNAVAILABLE", "canonical outcome/ledger mismatch")
+                outcomes.append({"outcome_id":identity,"environment":env,"completed":True,
+                    "timestamp_ms":_iso_to_ms(entry.timestamp),"pnl":entry.raw["pnl"]})
+        marks = await self.paper_marks([s for s,q in net.items() if q],as_of)
+        specs = {}
+        for symbol in sorted(symbols):
+            fact = await read_public_venue_facts(self.store,symbol,as_of)
+            specs[symbol] = {"contract_multiplier":fact["contract_multiplier"]}
+        account = await paper_account_state(PITView(), marks=marks["marks"], contract_specs=specs,environment="PAPER")
+        losses = realized_loss_projection(outcomes,capital=account["capital"],as_of_ms=end)
+        return {**account, **losses, "mark_set":marks, "as_of":as_of,
+                "ledger_event_ids":[e.event_id for e in entries]}
 
     async def prepare_engine_bundle(self, symbol: str, timeframe: str, as_of: str,
                                     *, rtm_context: Mapping[str, Any] | None = None) -> dict:
