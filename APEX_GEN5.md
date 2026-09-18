@@ -14737,6 +14737,8 @@ one-line addition is deferred to CP-14 (Session A is doc-only).
 
 ## 8. Evidence Fabric, Conflict, and Cross-Domain
 
+**Session-CP-14 (2026-09-18; D34 / ISSUE-047):** Risk-increasing requests require consecutive CLOSED same-cell states under matching versions and uncertainty rises iff raw entropy or native conflict restriction rank strictly increases, with equal values not rising and conflict uncertainty bound to D27.
+
 Evidence from multiple engines is assembled for one `(symbol, timeframe)` at one `as_of`. Conflict never creates permission. Correlation between symbols is a portfolio constraint, not a directional signal. Higher timeframes are consumed only as last closed candles.
 
 ### 8.0 Evidence and context fabric
@@ -16668,6 +16670,12 @@ Selection is by `EU` only, up to the exposure/capital caps; the Risk Kernel
 
 ## 15. Risk Kernel
 
+**Session-CP-14 (2026-09-18; D34 / ISSUE-048):** Realized loss is max(0,-net period completed PAPER P/L)/current D29 capital over UTC days and ISO UTC weeks, nonnegative completed outcomes break the streak, and immutable-outcome replay preserves threshold-crossing circuit latches until their existing UTC/OWNER reset conditions are satisfied.
+
+**Session-CP-14 (2026-09-18; D34 / ISSUE-046):** Each PIT account view shares one fresh last-CLOSED 1m close per held symbol labeled PAPER_CLOSE_MARK, never an exchange mark or entry-price fallback, and missing/stale marks invoke D29 refusal.
+
+**Session-CP-14 (2026-09-18; D34 / ISSUE-045):** ATR_cap is 1/native E04 ATR14 with ATR <= EPS refused, native sizing produces only a read-only request bound, proposed_notional includes quantity times entry times contract_multiplier, new entries are risk-increasing and all vetoes still precede authorization.
+
 Risk is independent. Fourteen named vetoes, sizing, and capital ceilings apply to every cell. Optimizer output cannot soften them.
 
 ### 15.1 Contract
@@ -16826,6 +16834,8 @@ maintenance distance, action at 40% — the action blocks all new entries
 
 
 ## 16. Execution, Venue Adapter, and Ledger
+
+**Session-CP-14 (2026-09-18; D34 / ISSUE-044):** ADV is mean daily base-asset volume from CLOSED 1h bars over the previous 30 complete UTC days, costs use actual round-trip fees and side-specific nonnegative funding across publicly verified settlement intervals within the governed holding horizon, endpoint/schedule failure yields FUNDING_UNAVAILABLE for retry, and unavailable spread retains cost_R >= 0.05.
 
 The execution state machine is the only path to Toobit. Identity is `intent_id` (UUIDv7) as `clientOrderId`. Unknown venue outcomes are reconciled, never blindly retried. The ledger is append-only.
 
@@ -20849,6 +20859,11 @@ Engine v4.0.0 formula bodies were not rewritten.
 
 | Decision / fill | Home section now |
 |---|---|
+| CP-14 D34 ISSUE-044 projection | 16. Execution, Venue Adapter, and Ledger; ADR-CP14-015 |
+| CP-14 D34 ISSUE-045 projection | 15. Risk Kernel; ADR-CP14-016 |
+| CP-14 D34 ISSUE-046 projection | 15. Risk Kernel; ADR-CP14-017 |
+| CP-14 D34 ISSUE-047 projection | 8. Evidence Fabric, Conflict, and Cross-Domain; ADR-CP14-018 |
+| CP-14 D34 ISSUE-048 projection | 15. Risk Kernel; ADR-CP14-019 |
 | CP-14 D33 ISSUE-037 projection | 2.1 Quality Vector (Q0–QX); ADR-CP14-008 |
 | CP-14 D33 ISSUE-038 projection | 8.3 MTF alignment; ADR-CP14-009 |
 | CP-14 D33 ISSUE-039 projection | 10.1 Thirteen hard gates; ADR-CP14-010 |

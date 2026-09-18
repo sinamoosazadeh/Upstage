@@ -161,3 +161,5 @@ CONTINUE(CP-14) IN PROGRESS 2026-09-17: owner D21/D22 resolve ISSUE-CP14-001/002
 - D33 ISSUE-042 and D34 ISSUE-043 projection boundaries green, including both required before/after failures; expanded targeted 248 passed, 1 deselected, 13 warnings / 35.38s. AFTER 47e364ac2982fe1670aa448f21b8c2762f86065892c5fcac3cfa47915a48f634 / 20888 lines. Other projections/source binding remain in progress. OWNER-CHECKED:[ ].
 
 - D33 ISSUE-037–041 projections implemented/tested, each ADR/home sentence/AJ row recorded. Expanded 255 passed, 1 deselected / 37.02s; source integration pending. AFTER b8f393e5f5d6ef51cc1a148053fe5d9a34e248726ab6c45fe682b3de65e6e153 / 20903 lines; OWNER-CHECKED:[ ].
+
+- D34 ISSUE-044–048 projection helpers green (310 passed, 1 deselected, 13 warnings / 35.06s); ADR/home/AJ each recorded. ISSUE-049 funding schedule absence uses conservative named refusal, not a new stop. AFTER a66a1b654ea2f082b119469ca7faa75a1caa749a6d6cae679127682550c81e60 / 20918 lines. Producer/serve/HANDOFF/two final suites/PR pending; OWNER-CHECKED:[ ].

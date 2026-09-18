@@ -562,3 +562,9 @@ CP-14 current verification (2026-09-18): interim whole suite 2858 passed, 14 war
 | CP14-D33-039 | ADR-010 / 10.1 Thirteen hard gates | component_projection / confirmation_quality / forecast_features, matching d33 regressions | PROJECTION PASS; G1 binding pending |
 | CP14-D33-040 | ADR-011 / 9.0 Hierarchy | select_native_pattern, matching d33 regressions | PROJECTION PASS; G1 binding pending |
 | CP14-D33-041 | ADR-012 / 8.0 Evidence and context fabric | temporal_validity_projection, matching d33 regressions | PROJECTION PASS; G1 binding pending |
+
+| CP14-D34-044 | ADR-015 / 16. Execution, Venue Adapter, and Ledger | adv_base_volume / forecast_cost_projection / collect_public_funding_schedule, matching d34 regressions | PROJECTION PASS; G1 binding pending |
+| CP14-D34-045 | ADR-016 / 15. Risk Kernel | native_size_request, matching d34 regressions | PROJECTION PASS; G1 binding pending |
+| CP14-D34-046 | ADR-017 / 15. Risk Kernel | paper_close_marks, matching d34 regressions | PROJECTION PASS; G1 binding pending |
+| CP14-D34-047 | ADR-018 / 8. Evidence Fabric, Conflict, and Cross-Domain | uncertainty_trend, matching d34 regressions | PROJECTION PASS; G1 binding pending |
+| CP14-D34-048 | ADR-019 / 15. Risk Kernel | realized_loss_projection, matching d34 regressions | PROJECTION PASS; G1 binding pending |

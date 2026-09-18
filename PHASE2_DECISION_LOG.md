@@ -863,3 +863,27 @@ Decision: Only admitted confirmed still-valid native pattern hits compete: oppos
 Decision: Numeric temporal_window_validity projects native VALID to 1 and DEGRADED/INVALID to 0, refuses missing/unknown categories and is distinct from temporal_core_flag. Implementation: engine_context.temporal_validity_projection. ISSUE-CP14-041 CLOSED-with-projection-evidence; source integration pending. Tests in test_engine_context cover the matching d33 cases, including failure boundaries, not only happy paths; no frozen changes.
 
 D33 projection verification: `pytest tests/unit/test_engine_context.py -k d33 -q` => **28 passed, 129 deselected in 0.35s**. Expanded context/forecast/gates/bridge/ops batteries excluding only long G2 => **255 passed, 1 deselected, 13 warnings in 37.02s**. Raw log /home/user/cp14-d33-projections.log. These helpers do not complete store-backed G1 or serve binding.
+
+### ADR-CP14-015 — D34 / ISSUE-CP14-044
+
+Decision: ADV is mean daily base-asset volume from CLOSED 1h bars over the previous 30 complete UTC days, costs use actual round-trip fees and side-specific nonnegative funding across publicly verified settlement intervals within the governed holding horizon, endpoint/schedule failure yields FUNDING_UNAVAILABLE for retry, and unavailable spread retains cost_R >= 0.05. Implementation: engine_context.adv_base_volume / forecast_cost_projection / collect_public_funding_schedule. ISSUE-CP14-044 CLOSED-with-projection-evidence; full producer/account/serve integration remains pending. Network-facing funding tests use the actual public client against tests.fake_toobit_responder, not the live venue. No frozen changes.
+
+### ADR-CP14-016 — D34 / ISSUE-CP14-045
+
+Decision: ATR_cap is 1/native E04 ATR14 with ATR <= EPS refused, native sizing produces only a read-only request bound, proposed_notional includes quantity times entry times contract_multiplier, new entries are risk-increasing and all vetoes still precede authorization. Implementation: engine_context.native_size_request. ISSUE-CP14-045 CLOSED-with-projection-evidence; full producer/account/serve integration remains pending. Network-facing funding tests use the actual public client against tests.fake_toobit_responder, not the live venue. No frozen changes.
+
+### ADR-CP14-017 — D34 / ISSUE-CP14-046
+
+Decision: Each PIT account view shares one fresh last-CLOSED 1m close per held symbol labeled PAPER_CLOSE_MARK, never an exchange mark or entry-price fallback, and missing/stale marks invoke D29 refusal. Implementation: engine_context.paper_close_marks. ISSUE-CP14-046 CLOSED-with-projection-evidence; full producer/account/serve integration remains pending. Network-facing funding tests use the actual public client against tests.fake_toobit_responder, not the live venue. No frozen changes.
+
+### ADR-CP14-018 — D34 / ISSUE-CP14-047
+
+Decision: Risk-increasing requests require consecutive CLOSED same-cell states under matching versions and uncertainty rises iff raw entropy or native conflict restriction rank strictly increases, with equal values not rising and conflict uncertainty bound to D27. Implementation: engine_context.uncertainty_trend. ISSUE-CP14-047 CLOSED-with-projection-evidence; full producer/account/serve integration remains pending. Network-facing funding tests use the actual public client against tests.fake_toobit_responder, not the live venue. No frozen changes.
+
+### ADR-CP14-019 — D34 / ISSUE-CP14-048
+
+Decision: Realized loss is max(0,-net period completed PAPER P/L)/current D29 capital over UTC days and ISO UTC weeks, nonnegative completed outcomes break the streak, and immutable-outcome replay preserves threshold-crossing circuit latches until their existing UTC/OWNER reset conditions are satisfied. Implementation: engine_context.realized_loss_projection. ISSUE-CP14-048 CLOSED-with-projection-evidence; full producer/account/serve integration remains pending. Network-facing funding tests use the actual public client against tests.fake_toobit_responder, not the live venue. No frozen changes.
+
+D34 expanded verification: context, forecast, risk-kernel, plan-bridge and ops-paper-loop batteries excluding only long G2 => **310 passed, 1 deselected, 13 warnings in 35.06s**. Log: /home/user/cp14-d34-expanded.log. The initial new sizing test compared native floating arithmetic to exact 1.2; corrected the test to approximate equality, not the native quantity or sizing machine. Tests cover attention cap/step/multiplier, marked account time/scope, strict uncertainty history, 720-hour ADV/unit/PIT, fee/funding schedule/side/floor, actual client with fake responder, loss netting/denominator/zero outcome/UTC boundaries and breach persistence despite recovery.
+
+[ISSUE-CP14-049] severity: MAJOR | status: CONSERVATIVE REFUSAL IMPLEMENTED (D34 continuation rule; no owner stop). A: funding costs require a verified public rate, interval units and settlement phase. B: the frozen get_funding_rate helper exports only (rate, alert); the actual public deployment's interval/phase availability is not yet measured. Rule: no assumed 8h or guessed schedule. Interim: additive unsigned same-endpoint raw read accepts explicit fundingIntervalHours/fundingIntervalSeconds and nextFundingTime with the original source payload, otherwise FUNDING_UNAVAILABLE and retry on next preparation; no frozen client edit. Public response-schema availability must be listed in the PR/phone acceptance, not claimed from the network-free test. Needs from owner: none; continue under D34.

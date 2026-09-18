@@ -779,6 +779,7 @@ class _PublicFactsFixture:
         self.record = {"symbol": "BTC-SWAP-USDT", "commissionRate": {"takerCommissionRate": "0.0005"},
                        "contractMultiplier": "1", "contractType": "PERPETUAL", "deliveryDate": 0}
         self.funding = "0.0001"
+        self.funding_schedule = {}
         outer = self
         class Venue(FakeToobitResponder):
             def _route(self, call, method, path, params):
@@ -786,7 +787,7 @@ class _PublicFactsFixture:
                 if method == "GET" and path == "/api/v1/exchangeInfo":
                     return {"http_status": 200, "body": {"symbols": [copy.deepcopy(outer.record)]}}
                 if method == "GET" and path == "/api/v1/futures/fundingRate":
-                    return {"http_status": 200, "body": {"fundingRate": outer.funding}}
+                    return {"http_status": 200, "body": {"fundingRate": outer.funding, **outer.funding_schedule}}
                 return super()._route(call, method, path, params)
         self.venue = Venue()
         class Response:
@@ -1562,3 +1563,132 @@ def test_d33_temporal_validity_categories(state, value):
 def test_d33_temporal_missing_not_core_flag(state):
     with pytest.raises(BridgeError, match="TEMPORAL_VALIDITY_UNAVAILABLE"):
         EC.temporal_validity_projection(state)
+
+
+def test_d34_size_request_native_attention_multiplier_and_no_permission():
+    kw = dict(capital=10000., exposure=0., risk_state="NoRisk", atr=1000.,
+              stop_distance=1., entry=100., contract_multiplier=2., quantity_step=.1)
+    result = EC.native_size_request(**kw)
+    assert result["atr_cap"] == .001
+    assert result["sized_quantity"] == pytest.approx(1.2)  # native float attention 1.25 rounded down to step
+    assert result["proposed_notional"] == pytest.approx(240.)
+    assert result["request_only"] and result["is_risk_increase"]
+    assert EC.native_size_request(**{**kw, "exposure": 5500.})["risk_state"] == "HighRisk"
+    for value in (0., None, EC.E04.EPS, float("nan")):
+        with pytest.raises(BridgeError, match="SIZE_INPUT_UNAVAILABLE"):
+            EC.native_size_request(**{**kw, "atr": value})
+
+
+def test_d34_shared_paper_close_marks_and_stale_future_refusal():
+    opening = EC._iso_to_ms("2026-01-01T00:00:00.000Z")
+    row = dict(symbol="BTCUSDT", timeframe="1m", status="CLOSED", open_time_ms=opening,
+               availability_ms=opening+60000, receipt_ms=opening+61000, close_price=100.)
+    result = EC.paper_close_marks(["BTCUSDT"], {"BTCUSDT": row}, as_of_ms=opening+62000)
+    assert result["marks"] == {"BTCUSDT": 100.}
+    assert result["mark_model"] == "PAPER_CLOSE_MARK"
+    assert EC.paper_close_marks([], {}, as_of_ms=opening)["marks"] == {}
+    for over in ({"timeframe": "1h"}, {"receipt_ms": opening+65000}, {"status": "PARTIAL"}, {"close_price": None}):
+        with pytest.raises(BridgeError, match="PAPER_MARK_UNAVAILABLE"):
+            EC.paper_close_marks(["BTCUSDT"], {"BTCUSDT": {**row, **over}}, as_of_ms=opening+62000)
+    with pytest.raises(BridgeError, match="PAPER_MARK_UNAVAILABLE"):
+        EC.paper_close_marks(["BTCUSDT"], {"BTCUSDT": row}, as_of_ms=opening+3600000)
+
+
+def _d34_comparison():
+    prev = dict(symbol="BTCUSDT", timeframe="1h", parameter_version="p1", classifier_version="c1",
+                close_ms=EC._iso_to_ms("2026-01-01T00:00:00.000Z"), closed=True,
+                entropy=.5, conflict_state="CONSENSUS")
+    return prev, {**prev, "close_ms": prev["close_ms"]+3600000}
+
+
+def test_d34_uncertainty_trend_strict_entropy_or_native_conflict_rank():
+    prev, current = _d34_comparison()
+    assert not EC.uncertainty_trend(current, prev, is_risk_increase=True)
+    assert EC.uncertainty_trend({**current, "entropy": .6}, prev, is_risk_increase=True)
+    assert EC.uncertainty_trend({**current, "entropy": .4, "conflict_state": "MATERIAL_CONFLICT"}, prev, is_risk_increase=True)
+    assert not EC.uncertainty_trend(current, None, is_risk_increase=False)
+    for bad in (None, {**prev, "classifier_version": "old"}, {**prev, "symbol": "ETHUSDT"},
+                {**prev, "close_ms": current["close_ms"]}, {**prev, "closed": False}):
+        with pytest.raises(BridgeError, match="UNCERTAINTY_TREND_UNAVAILABLE"):
+            EC.uncertainty_trend(current, bad, is_risk_increase=True)
+
+
+def _d34_adv_bars():
+    end = EC._iso_to_ms("2026-02-01T00:00:00.000Z")
+    return end, [dict(open_time_ms=t, timeframe="1h", status="CLOSED", availability_ms=t+3600000, volume=10.)
+                 for t in range(end-30*86400000, end, 3600000)]
+
+
+def test_d34_adv_complete_utc_days_units_and_pit():
+    end, bars = _d34_adv_bars()
+    assert EC.adv_base_volume(bars, as_of_ms=end+3600000, volume_unit="BASE") == 240.
+    assert EC.adv_base_volume(bars, as_of_ms=end, volume_unit="CONTRACT", contract_multiplier=2.) == 480.
+    assert EC.adv_base_volume(bars+[dict(open_time_ms=end, volume=1e10)], as_of_ms=end+3600000, volume_unit="BASE") == 240.
+    for bad in (bars[1:], bars+[bars[-1]], [*bars[:-1], {**bars[-1], "availability_ms": end+1}]):
+        with pytest.raises(BridgeError, match="ADV_UNAVAILABLE"):
+            EC.adv_base_volume(bad, as_of_ms=end, volume_unit="BASE")
+    with pytest.raises(BridgeError, match="ADV_UNAVAILABLE"):
+        EC.adv_base_volume(bars, as_of_ms=end, volume_unit="UNKNOWN")
+
+
+def test_d34_cost_actual_fee_schedule_side_units_and_floor():
+    funding = dict(rate=.001, interval_ms=3600000, next_settlement_ms=3600000, observed_at_ms=0, source="public-test-record")
+    kw = dict(quantity=2., entry=100., stop_distance=10., contract_multiplier=3., adv=600.,
+              commission_rate=.0005, funding=funding, direction=1, start_ms=0, end_ms=7200000, spread_available=True)
+    long = EC.forecast_cost_projection(**kw)
+    assert long["funding_settlements"] == 2
+    assert long["forecast_cost_r"] == pytest.approx((.001 + .25*.01 + .002)*10)
+    assert EC.forecast_cost_projection(**{**kw, "direction": -1})["funding_fraction"] == 0.
+    assert EC.forecast_cost_projection(**{**kw, "adv": None, "direction": -1})["forecast_cost_r"] == .05
+    for bad in ({}, {**funding, "interval_ms": None}, {**funding, "observed_at_ms": 1}):
+        with pytest.raises(BridgeError, match="FUNDING_UNAVAILABLE"):
+            EC.forecast_cost_projection(**{**kw, "funding": bad})
+
+
+def test_d34_public_funding_schedule_real_client_fake_responder():
+    fixture = _PublicFactsFixture()
+    fixture.funding_schedule = {"fundingIntervalHours": "4", "nextFundingTime": "1767240000000"}
+    result = asyncio.run(EC.collect_public_funding_schedule("BTCUSDT", client=fixture.client, now=lambda: 1767225600))
+    assert result["interval_ms"] == 4*3600000  # not a guessed eight hours
+    assert result["rate"] == Decimal("0.0001")
+    fixture.funding_schedule = {}
+    with pytest.raises(BridgeError, match="FUNDING_UNAVAILABLE"):
+        asyncio.run(EC.collect_public_funding_schedule("BTCUSDT", client=fixture.client))
+    fixture.funding_schedule = {"fundingIntervalHours": "4", "nextFundingTime": "1767240000000"}
+    assert asyncio.run(EC.collect_public_funding_schedule("BTCUSDT", client=fixture.client))["interval_ms"] == 14400000
+
+
+def _d34_outcome(i, pnl, stamp="2026-01-01T12:00:00.000Z"):
+    return dict(outcome_id=str(i), environment="PAPER", completed=True,
+                timestamp_ms=EC._iso_to_ms(stamp), pnl=pnl)
+
+
+def test_d34_net_losses_current_capital_streak_and_persistent_breach():
+    at = EC._iso_to_ms("2026-01-01T13:00:00.000Z")
+    rows = [_d34_outcome(1, -300), _d34_outcome(2, 300)]
+    result = EC.realized_loss_projection(rows, capital=10000, as_of_ms=at)
+    assert result["realized_daily_loss_fraction"] == 0.
+    assert result["consecutive_losses"] == 0
+    assert "DAILY_LOSS_LIMIT" in result["loss_latches"]  # 300/9700 crossed before recovery
+    result = EC.realized_loss_projection(rows[:1], capital=9700, as_of_ms=at)
+    assert result["realized_daily_loss_fraction"] == pytest.approx(300/9700)
+    streak = [_d34_outcome(i, -1) for i in range(5)] + [_d34_outcome(6, 0)]
+    result = EC.realized_loss_projection(streak, capital=9995, as_of_ms=at)
+    assert result["consecutive_losses"] == 0
+    assert "CONSECUTIVE_LOSSES" in result["loss_latches"]
+    review = dict(kind="CONSECUTIVE_LOSSES", actor="OWNER", timestamp_ms=at-1)
+    assert not EC.realized_loss_projection(streak, capital=9995, as_of_ms=at, owner_reviews=[review])["loss_latches"]
+
+
+def test_d34_losses_utc_week_reset_requires_review_pit_and_integrity():
+    rows = [_d34_outcome(1, -700, "2026-01-04T12:00:00.000Z")]
+    at = EC._iso_to_ms("2026-01-05T00:00:00.000Z")  # Monday
+    result = EC.realized_loss_projection(rows, capital=9300, as_of_ms=at)
+    assert result["realized_weekly_loss_fraction"] == 0
+    assert result["loss_latches"] == ["WEEKLY_LOSS_LIMIT"]
+    review = dict(kind="WEEKLY_LOSS_LIMIT", actor="OWNER", timestamp_ms=at)
+    assert not EC.realized_loss_projection(rows, capital=9300, as_of_ms=at, owner_reviews=[review])["loss_latches"]
+    assert EC.realized_loss_projection([_d34_outcome(2, -100)], capital=10000, as_of_ms=0)["consecutive_losses"] == 0
+    for bad in (rows*2, [{**rows[0], "completed": False}], [{**rows[0], "environment": None}]):
+        with pytest.raises(BridgeError, match="PAPER_LOSS_UNAVAILABLE"):
+            EC.realized_loss_projection(bad, capital=9300, as_of_ms=at)

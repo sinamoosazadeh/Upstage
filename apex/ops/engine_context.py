@@ -32,6 +32,231 @@ DEFAULT_TRAINING_MAX_MINUTES = 20.0
 
 
 
+def native_size_request(*, capital: Any, exposure: Any, risk_state: str,
+                        atr: Any, stop_distance: Any, entry: Any,
+                        contract_multiplier: Any, quantity_step: Any) -> dict:
+    """D34/045: read-only request bound, never an authorization."""
+    from apex.risk.kernel import size, ladder_state_for, RISK_LADDER_STATES
+    from apex.engines.e04_volatility.engine import EPS
+    a = measured_number(atr, "SIZE_INPUT_UNAVAILABLE")
+    if a <= EPS:
+        raise BridgeError("SIZE_INPUT_UNAVAILABLE", "ATR <= native E04 EPS")
+    c = measured_number(capital, "SIZE_INPUT_UNAVAILABLE", lower=0)
+    e = measured_number(exposure, "SIZE_INPUT_UNAVAILABLE", lower=0)
+    price = measured_number(entry, "SIZE_INPUT_UNAVAILABLE", lower=0)
+    multiplier = measured_number(contract_multiplier, "SIZE_INPUT_UNAVAILABLE", lower=0)
+    step = measured_number(quantity_step, "SIZE_INPUT_UNAVAILABLE", lower=0)
+    stop = measured_number(stop_distance, "SIZE_INPUT_UNAVAILABLE", lower=0)
+    if min(c, price, multiplier, step, stop) <= 0 or e > c or risk_state not in RISK_LADDER_STATES:
+        raise BridgeError("SIZE_INPUT_UNAVAILABLE", "invalid capital/exposure/geometry/spec/ladder")
+    derived = ladder_state_for(e/c)
+    state = max((risk_state, derived), key=RISK_LADDER_STATES.index)
+    request = size(capital=c, stop_distance=stop, contract_multiplier=multiplier,
+                   min_quantity=step, risk_state=state, atr_cap=1/a)
+    return {"sized_quantity": request["sized_quantity"], "atr_cap": 1/a,
+            "proposed_notional": request["sized_quantity"] * price * multiplier,
+            "is_risk_increase": True, "request_only": True,
+            "risk_state": state, "native_sizing": request}
+
+
+def paper_close_marks(held_symbols: Any, observations: Mapping[str, Mapping], *, as_of_ms: int) -> dict:
+    """D34/046: one PIT account mark set, independent of candidate TF."""
+    sla = float(load_params()["quality_weights"]["freshness_threshold_seconds"]["1m"])
+    marks, provenance = {}, {}
+    for symbol in sorted(set(held_symbols)):
+        row = observations.get(symbol)
+        if not row or row.get("symbol") != symbol or row.get("timeframe") != "1m" or row.get("status") != "CLOSED":
+            raise BridgeError("PAPER_MARK_UNAVAILABLE", symbol)
+        try:
+            opening, availability, receipt = (int(row[k]) for k in ("open_time_ms", "availability_ms", "receipt_ms"))
+            close = close_time_ms(opening, "1m")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BridgeError("PAPER_MARK_UNAVAILABLE", symbol) from exc
+        if (max(close, availability, receipt) > as_of_ms
+                or (as_of_ms-close)/1000 > sla or max(0, receipt-close)/1000 > sla):
+            raise BridgeError("PAPER_MARK_UNAVAILABLE", symbol + ": stale/future")
+        price = measured_number(row.get("close_price"), "PAPER_MARK_UNAVAILABLE", lower=0)
+        if price == 0:
+            raise BridgeError("PAPER_MARK_UNAVAILABLE", symbol)
+        marks[symbol] = price
+        provenance[symbol] = {"model": "PAPER_CLOSE_MARK", "close_ms": close,
+                              "availability_ms": availability, "receipt_ms": receipt}
+    return {"marks": marks, "mark_provenance": provenance, "as_of_ms": as_of_ms,
+            "mark_model": "PAPER_CLOSE_MARK"}
+
+
+def uncertainty_trend(current: Mapping, previous: Mapping | None, *, is_risk_increase: bool) -> bool:
+    """D34/047: strict same-cell consecutive/version-matched comparator."""
+    from apex.fabric.conflict import _OUTPUT_RESTRICTION
+    try:
+        if previous is None:
+            raise ValueError("missing prior state")
+        for key in ("symbol", "timeframe", "parameter_version", "classifier_version"):
+            if not current.get(key) or current[key] != previous.get(key):
+                raise ValueError("comparison scope/version mismatch")
+        if current.get("closed") is not True or previous.get("closed") is not True:
+            raise ValueError("non-CLOSED state")
+        if close_time_ms(int(previous["close_ms"]), current["timeframe"]) != int(current["close_ms"]):
+            raise ValueError("not consecutive CLOSED observations")
+        now_h = measured_number(current.get("entropy"), "UNCERTAINTY_TREND_UNAVAILABLE", lower=0)
+        prev_h = measured_number(previous.get("entropy"), "UNCERTAINTY_TREND_UNAVAILABLE", lower=0)
+        return (now_h > prev_h or _OUTPUT_RESTRICTION[current["conflict_state"]]
+                > _OUTPUT_RESTRICTION[previous["conflict_state"]])
+    except (KeyError, TypeError, ValueError, BridgeError) as exc:
+        if not is_risk_increase:
+            return False  # not permission: predicate is irrelevant for reductions
+        raise BridgeError("UNCERTAINTY_TREND_UNAVAILABLE", str(exc)) from exc
+
+
+def adv_base_volume(bars: Any, *, as_of_ms: int, volume_unit: str,
+                    contract_multiplier: Any = None) -> float:
+    """D34/044: native CLOSED 1h volume over 30 complete UTC days / 30."""
+    import datetime as dt
+    end = int(dt.datetime.fromtimestamp(as_of_ms/1000, dt.timezone.utc)
+              .replace(hour=0, minute=0, second=0, microsecond=0).timestamp()*1000)
+    start = end - 30*86400000
+    if volume_unit not in ("BASE", "CONTRACT"):
+        raise BridgeError("ADV_UNAVAILABLE", "unverified volume units")
+    multiplier = 1. if volume_unit == "BASE" else measured_number(contract_multiplier, "ADV_UNAVAILABLE", lower=0)
+    if multiplier <= 0:
+        raise BridgeError("ADV_UNAVAILABLE", "invalid multiplier")
+    selected = {}
+    for bar in bars:
+        opening = bar.get("open_time_ms")
+        if not isinstance(opening, int):
+            raise BridgeError("ADV_UNAVAILABLE", "missing candle timestamp")
+        if not start <= opening < end:
+            continue
+        if (opening in selected or bar.get("timeframe") != "1h" or bar.get("status") != "CLOSED"
+                or not isinstance(bar.get("availability_ms"), int) or bar["availability_ms"] > as_of_ms):
+            raise BridgeError("ADV_UNAVAILABLE", "duplicate/nonclosed/non-PIT 1h volume")
+        selected[opening] = measured_number(bar.get("volume"), "ADV_UNAVAILABLE", lower=0) * multiplier
+    if set(selected) != set(range(start, end, 3600000)):
+        raise BridgeError("ADV_UNAVAILABLE", "30 complete contiguous UTC days required")
+    result = sum(selected.values())/30
+    if result <= 0:
+        raise BridgeError("ADV_UNAVAILABLE", "nonpositive daily volume")
+    return result
+
+
+def forecast_cost_projection(*, quantity: Any, entry: Any, stop_distance: Any,
+                             contract_multiplier: Any, adv: Any, commission_rate: Any,
+                             funding: Mapping, direction: int, start_ms: int,
+                             end_ms: int, spread_available: bool) -> dict:
+    """D34/044: explicit rate/schedule/units; native slippage and R floor."""
+    from apex.decision.pipeline import slippage_model
+    from apex.forecast.logistic import cost_r_floor
+    from apex.research.governance import GOVERNED_DEFAULTS
+    qty = measured_number(quantity, "COST_MODEL_UNAVAILABLE", lower=0)
+    price = measured_number(entry, "COST_MODEL_UNAVAILABLE", lower=0)
+    stop = measured_number(stop_distance, "COST_MODEL_UNAVAILABLE", lower=0)
+    multiplier = measured_number(contract_multiplier, "COST_MODEL_UNAVAILABLE", lower=0)
+    fee = measured_number(commission_rate, "VENUE_COMMISSION_RATE_UNAVAILABLE", lower=0)
+    if min(price, stop, multiplier) <= 0 or direction not in (-1, 1) or end_ms <= start_ms:
+        raise BridgeError("COST_MODEL_UNAVAILABLE", "invalid geometry/direction/horizon")
+    try:
+        rate = measured_number(funding.get("rate"), "FUNDING_UNAVAILABLE")
+        interval = measured_number(funding.get("interval_ms"), "FUNDING_UNAVAILABLE", lower=1)
+        next_time = funding["next_settlement_ms"]
+        if (not isinstance(next_time, int) or interval != int(interval)
+                or not isinstance(funding.get("observed_at_ms"), int)
+                or funding["observed_at_ms"] > start_ms or not funding.get("source")):
+            raise ValueError("unverified funding phase/PIT/provenance")
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise BridgeError("FUNDING_UNAVAILABLE", str(exc)) from exc
+    interval = int(interval)
+    first = next_time + max(0, (start_ms-next_time)//interval + 1)*interval
+    count = max(0, (end_ms-first)//interval+1)
+    funding_fraction = max(0., direction*rate)*count
+    alpha = next(float(p.l1_default) for p in GOVERNED_DEFAULTS if p.name == "alpha_spread")
+    adv_value = None if adv is None else measured_number(adv, "ADV_UNAVAILABLE", lower=0)
+    slip = slippage_model(order_size=qty*multiplier, adv=adv_value, alpha_spread=alpha)
+    fractions = [2*fee, funding_fraction]
+    if slip["available"]:
+        fractions.append(slip["slippage"])
+    else:
+        # Unknown term remains typed unavailable in the native cost record;
+        # only known terms are summed, with the governed total-cost floor.
+        spread_available = False
+    cost = sum(fractions)*price/stop
+    if not spread_available:
+        cost = max(cost, cost_r_floor())
+    return {"forecast_cost_r": cost, "spread_available": spread_available,
+            "slippage": slip, "funding_settlements": count,
+            "funding_fraction": funding_fraction, "round_trip_fee_fraction": 2*fee,
+            "funding_source": dict(funding)}
+
+
+def realized_loss_projection(outcomes: Any, *, capital: Any, as_of_ms: int,
+                             owner_reviews: Any = ()) -> dict:
+    """D34/048: replay canonical completed outcomes, including breach latches.
+
+    A replay of immutable outcomes reconstructs breaches even if profits
+    recovered before the next cycle. The caller must resolve corrections or
+    refuse; duplicate identities never silently double-count a trade.
+    """
+    import datetime as dt
+    from apex.risk.kernel import frozen_risk_params
+    C = _paper_decimal(capital, "PAPER capital", positive=True)
+    def periods(stamp):
+        d = dt.datetime.fromtimestamp(stamp/1000, dt.timezone.utc)
+        return d.date().isoformat(), d.isocalendar()[:2]
+    rows, seen = [], set()
+    for index, row in enumerate(outcomes):
+        if row.get("environment") not in ("PAPER", "LIVE", "RESEARCH", "BACKTEST"):
+            raise BridgeError("PAPER_LOSS_UNAVAILABLE", "outcome environment unknown")
+        if row["environment"] != "PAPER":
+            continue
+        if not isinstance(row.get("timestamp_ms"), int):
+            raise BridgeError("PAPER_LOSS_UNAVAILABLE", "outcome timestamp unknown")
+        if row["timestamp_ms"] > as_of_ms:
+            continue
+        identity = row.get("outcome_id")
+        if not identity or identity in seen or row.get("completed") is not True:
+            raise BridgeError("PAPER_LOSS_UNAVAILABLE", "duplicate/incomplete/unknown outcome")
+        seen.add(identity)
+        rows.append((row["timestamp_ms"], index, _paper_decimal(row.get("pnl"), "realized net P/L")))
+    rows.sort(key=lambda r: (r[0], r[1]))
+    base = C - sum((r[2] for r in rows), Decimal(0))
+    if base <= 0:
+        raise BridgeError("PAPER_LOSS_UNAVAILABLE", "invalid opening capital")
+    caps = frozen_risk_params()
+    daily, weekly, streak, breaches = {}, {}, 0, {}
+    for stamp, _, pnl in rows:
+        day, week = periods(stamp)
+        base += pnl
+        if base <= 0:
+            raise BridgeError("PAPER_LOSS_UNAVAILABLE", "historical capital nonpositive")
+        daily[day] = daily.get(day, Decimal(0)) + pnl
+        weekly[week] = weekly.get(week, Decimal(0)) + pnl
+        streak = streak + 1 if pnl < 0 else 0
+        for kind, condition in (
+            ("DAILY_LOSS_LIMIT", max(Decimal(0), -daily[day])/base > Decimal(str(caps["daily_loss_cap"]))),
+            ("WEEKLY_LOSS_LIMIT", max(Decimal(0), -weekly[week])/base > Decimal(str(caps["weekly_loss_cap"]))),
+            ("CONSECUTIVE_LOSSES", streak > caps["consecutive_loss_halt"])):
+            if condition:
+                breaches[kind] = stamp
+    day, week = periods(as_of_ms)
+    reviews = {}
+    for review in owner_reviews:
+        if review.get("actor") != "OWNER" or review.get("kind") not in ("WEEKLY_LOSS_LIMIT", "CONSECUTIVE_LOSSES") or not isinstance(review.get("timestamp_ms"), int):
+            raise BridgeError("CIRCUIT_RESET_UNAVAILABLE", "invalid OWNER review provenance")
+        if review["timestamp_ms"] <= as_of_ms:
+            reviews[review["kind"]] = max(reviews.get(review["kind"], -1), review["timestamp_ms"])
+    active = []
+    for kind, stamp in breaches.items():
+        old_day, old_week = periods(stamp)
+        reset = (day != old_day if kind == "DAILY_LOSS_LIMIT" else
+                 (week != old_week and reviews.get(kind, -1) > stamp) if kind == "WEEKLY_LOSS_LIMIT" else
+                 reviews.get(kind, -1) > stamp)
+        if not reset:
+            active.append(kind)
+    return {"realized_daily_loss_fraction": float(max(Decimal(0), -daily.get(day, Decimal(0)))/C),
+            "realized_weekly_loss_fraction": float(max(Decimal(0), -weekly.get(week, Decimal(0)))/C),
+            "consecutive_losses": streak, "loss_latches": sorted(active),
+            "circuit_breaker_engaged": bool(active), "breach_timestamps": breaches}
+
+
 def measured_number(value: Any, reason: str, *, lower: float | None = None,
                     upper: float | None = None) -> float:
     """No coercion of absent/bool/nonfinite measurements into permissions."""
@@ -1729,3 +1954,42 @@ async def persist_complete_evidence(store: Any, events: list[Any]) -> list[Any]:
     if canonical_json(result) != canonical_json(events):
         raise BridgeError("EVIDENCE_CONTEXT_INVALID", "complete-event round trip mismatch")
     return result
+
+
+async def collect_public_funding_schedule(symbol: str, *, client: Any = None,
+                                          now: Callable[[], float] = time.time) -> dict:
+    """D34 additive unsigned read, preserving schedule fields frozen helper drops.
+
+    Only unit-explicit schedule fields are interpreted. A bare rate or an
+    ambiguous interval never authorizes an assumed eight-hour schedule.
+    """
+    if client is None:
+        import aiohttp
+        from apex.data_catalog.ingest.toobit_public import ToobitPublicClient
+        async with aiohttp.ClientSession() as session:
+            return await collect_public_funding_schedule(symbol,
+                client=ToobitPublicClient(session=session), now=now)
+    from apex.execution.toobit_map import to_wire_symbol
+    path = "/api/v1/futures/fundingRate"
+    try:
+        raw = await client._get(path, params={"symbol": to_wire_symbol(symbol)})
+        data = raw.get("data", raw) if isinstance(raw, Mapping) else raw
+        if isinstance(data, list):
+            data = data[-1]
+        if not isinstance(data, Mapping):
+            raise ValueError("funding record missing")
+        rate = Decimal(str(data["fundingRate"]))
+        if "fundingIntervalSeconds" in data:
+            interval = Decimal(str(data["fundingIntervalSeconds"]))*1000
+        elif "fundingIntervalHours" in data:
+            interval = Decimal(str(data["fundingIntervalHours"]))*3600000
+        else:
+            raise ValueError("public interval and its units unavailable")
+        phase = Decimal(str(data["nextFundingTime"]))
+        if (not rate.is_finite() or not interval.is_finite() or interval <= 0
+                or interval != int(interval) or not phase.is_finite() or phase <= 0 or phase != int(phase)):
+            raise ValueError("invalid funding rate/interval/phase")
+        return {"rate": rate, "interval_ms": int(interval), "next_settlement_ms": int(phase),
+                "observed_at_ms": int(now()*1000), "source": {"endpoint": path, "payload": raw}}
+    except Exception as exc:
+        raise BridgeError("FUNDING_UNAVAILABLE", f"{symbol}: {type(exc).__name__}") from exc
