@@ -547,4 +547,7 @@ CP-14 D27/D28 (2026-09-18; IN PROGRESS): G1's uncertainty projection now follows
 
 CP-14 current verification (2026-09-18): interim whole suite 2858 passed, 14 warnings, 601.85s, with no deselection. Subsequent full-E11-object projection: 149 targeted passed, 1 G2 test deselected, 13 warnings, 31.44s. G1 is not complete; two final full-suite runs, final handoff and PR remain pending.
 
-| G1 new projection gap | Ch.13 §13.1 mandatory `x.vol_quantile`; P1 `x` source; ISSUE-CP14-036 | Actual public-store/native-E04 diagnostic: no rank export, 178 prior HV points vs native 4320-bar window, unavailable percentile thresholds; unchanged forecast rejects omitted vol_quantile | OPEN—owner choice of exact projection; no implementation/default/waiver |
+| G1 new projection gap | Ch.13 §13.1 mandatory `x.vol_quantile`; P1 `x` source; ISSUE-CP14-036 | Actual public-store/native-E04 diagnostic: no rank export, 178 prior HV points vs native 4320-bar window, unavailable percentile thresholds; unchanged forecast rejects omitted vol_quantile | RESOLVED-DESIGN by D32 (mid-rank/N>=50); implementation deferred for the exhaustive batch audit below |
+
+| CP14-D32 receipt | Owner D32 / ISSUE-036 | Exact owner wording in DECISION_LOG; mid-rank, finite same-cell prior HV, capped native window, N>=50 | DESIGN RESOLVED; ADR-007/code/Ch.13/AJ/tests pending, no completion claim |
+| CP14-61-key audit | P1 38 context + 23 risk keys; Ch.13 12 x features | DECISION_LOG ordered native-source/consumer inventory and ISSUE-037–048 A/B/options; AST coverage 38/38, 23/23, 12/12 | STATIC AUDIT ONLY; batch owner decisions pending before implementation |

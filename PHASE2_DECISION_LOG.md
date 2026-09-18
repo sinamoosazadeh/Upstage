@@ -590,7 +590,7 @@ Actual command: `/home/user/cp14-tools/.venv/bin/python -m pytest tests/unit/tes
 
 Owner verified D31 at 1a18dd2 and the branch through 1ee744a, directed continuation in G1 → serve → handoff → two clean final full suites → one verified PR order, and required stopping with an A/B/options ISSUE if a new owner decision is necessary. The accidental Markdown autolinks in the D31 entry have been removed as explicitly requested; their displayed text and all decision wording are unchanged. No new frozen-file change is made.
 
-- [ISSUE-CP14-036] severity: MAJOR | status: OPEN—new owner projection decision required
+- [ISSUE-CP14-036] severity: MAJOR | status: RESOLVED-DESIGN by D32; implementation deferred pending batch audit below (historical pre-decision proposal follows)
   - **A:** Ch.13 §13.1 defines the mandatory twelve-member forecast vector including `vol_quantile`; P1 assigns assembly of `x` to the producer from authoritative engine/fabric outputs. `apex.forecast.logistic.logistic_bootstrap_p` rejects any omitted feature even when the PAPER bootstrap coefficients are zero.
   - **B:** E04's native `VolatilityState` exports `hv30` and `regime`, but no `vol_quantile` or percentile-rank field. Its `rolling_quantiles` produces **HV-valued thresholds at given percentiles**, not the current HV observation's percentile rank. Neither the sole `vol_quantile` occurrence in the blueprint nor D21–D31 specifies the inverse projection's estimator/tie law. E11's sigmoid-normalized volatility and E04's categorical regime are not the same quantity and cannot silently be relabelled. E04 also has a specific full-window warmup law; D26-A's capped-history ATR standardization does not authorize a different warmup for this separate forecast feature.
   - **Rule:** complete forecast vector + authoritative-source/PIT/no-guess requirements; no omitted feature, zero fill, silent bucket mapping, or alteration of the frozen forecast contract to exploit β=0.
@@ -615,3 +615,201 @@ forecast_missing_quantile_refusal: FORECAST_FEATURE_VECTOR_QX::missing vol_quant
 Raw diagnostic log: `/home/user/cp14-forecast-quantile-audit.log` (outside the repository). The final line is a contract-negative probe of the unchanged forecast validator, not a synthetic vector supplied to a runtime bridge. No G1 positive acceptance is claimed from this diagnostic.
 
 Unchanged forecast battery verification: actual `/home/user/cp14-tools/.venv/bin/python -m pytest tests/unit/test_forecast_logistic.py -q` → `41 passed in 0.19s`. This verifies the existing contract, not a resolution of ISSUE-CP14-036. The only repository changes in this increment are control/documentation records and the owner-requested D31 autolink removal; no production/test code or parameter change. Immediate commit/push follows this green check.
+
+### D32 receipt and exhaustive pre-implementation projection audit (2026-09-18)
+
+**Status:** ISSUE-CP14-036 is RESOLVED-DESIGN by D32, NOT implemented. The earlier right-CDF/full-window proposal is superseded, not an alternative still awaiting approval. ADR-CP14-007, Ch.13/AJ changes, implementation and D32 tests remain pending the owner's explicitly required batch audit. Under bootstrap beta=0, p does not depend on vol_quantile's value; presence and validity still do.
+
+**Owner D32, verbatim:**
+
+OWNER DECISION D32 for ISSUE-CP14-036 — binding. Option 1 is accepted with three corrections. Definition: vol_quantile = (count(prior_HV30 &lt; HV30_t) + 0.5·count(prior_HV30 == HV30_t)) / N (mid-rank; a constant history yields 0.5, consistent with the E11 Method-A degenerate rule). prior_HV30 = the finite HV30 values of the same cell strictly before t, taken from the native per-cell E04 state already owned by the producer (ISSUE-030), limited to the most recent E04 regime_window_bars (regime_window_days=180 converted with the cell's tf_seconds, exactly as E04 does), never including t or any later bar. Warmup: N ≥ 50 (E04's existing min_bars constant), NOT the full window — rationale: Toobit retention is about 3500 bars per interval, so a full 4320-bar requirement would make vol_quantile permanently UNAVAILABLE on 1h and slower timeframes and block every PAPER plan there; E04 itself does not refuse in this case, it falls back to its baseline regime. N &lt; 50 or any nonfinite HV30_t → VOL_QUANTILE_UNAVAILABLE, fail closed for that cell, no substitute, no zero. Range [0,1], finite. Implement in engine_context only (no E04 engine or frozen-file change). Controls: ISSUE-CP14-036 record, ADR-CP14-007, DECISION_LOG D32 verbatim, one sentence in Ch.13 right after the bootstrap x vector defining vol_quantile as above, one AJ row. Tests: mid-rank tie handling; constant history → 0.5; 49 prior → UNAVAILABLE, 50 → value; window capped at regime_window_bars; PIT (current and future bars excluded); note in the ISSUE that under β=0 the bootstrap p is independent of this value, so this is a presence/validity requirement. BEFORE implementing D32: walk every remaining key of the 38 context + 23 risk tables against the native engine outputs and the plan, and report ALL still-undefined producer projections in ONE message as ISSUE-CP14-037… with A/B and options (or state explicitly that none remain). I will decide them together; no more one-at-a-time stops. Then implement D32 plus any further decisions, commit + push each green step, and continue the closeout order previously given (producer, serve wiring, HANDOFF, suite twice, ONE PR). D21–D32 binding.
+
+#### Audit scope and classification
+
+Read-only source/consumer audit against APEX_GEN5.md P1's two tables (lines 20474–20552 at c57b7d9), Ch.2/8–17, the native engine contracts, and every REQUIRED_CONTEXT_KEYS/REQUIRED_RISK_KEYS entry in apex/ops/plan_bridge.py. Also traced the twelve x members and downstream dependencies: E07 inputs, pattern admission, geometry, sizing, costs, normalized forecast quality, structured uncertainty, ledger marks/losses and circuit reset. This is **not** a passing real-source-to-plan test or an assertion that the real phone store contains the required measurements.
+
+- **W** = authority exists; implementation/transport/validation remains. Missing authoritative data invokes the existing fail-closed rule, not a new policy question.
+- **Dnnn** = unresolved projection described in ISSUE-CP14-nnn below. All such questions are reported together, not reserved for later serial stops.
+- A W row depending on a D row is not ready for runtime simply because its own transformation is defined.
+
+#### Context inventory — exactly 38 keys
+
+| Context key | Native source → consumer; disposition |
+|---|---|
+| `events` | complete_engine_bundle → persist_complete_evidence/public SQLite insert/readback → _fabric_ref/EvidenceFabric; W, D31 QX preserved, no reduced rows or terminal-event deletion |
+| `data_trust` | quality vectors → Ch.8 normalized Q_raw → build_context/resolve; D037 window-versus-current reduction |
+| `q_raw` | calc_quality_vector/calc_window_quality → solvency, conflict and risk veto 1; D037 |
+| `market_regime` | complete E11 regime_state.state → ContextFabric; W, same confirmed label as regime_state, not dict stringification |
+| `mtf_state` | last-CLOSED required coarser native states → ContextFabric and setup gates 5/6; D038 |
+| `utc_window_state` | E12 temporal_state.temporal_window → ContextFabric; W, canonical registry names only |
+| `is_overlap` | E12 temporal_state.is_overlap → ContextFabric; W, no locally invented UTC windows |
+| `volatility_state` | E04 VolatilityState.regime → ContextFabric; W |
+| `structure_state` | E01 structure result → ContextFabric label; W, preserve native state rather than invent direction from candles |
+| `regime_confidence` | max(E11 regime_state.probs) → Ch.8 combiner; W, D27 |
+| `regime_uncertainty` | 1 - regime_confidence → Ch.8 combiner; W, D27, not entropy |
+| `divergence_magnitude` | E10 normalized divergence EvidenceEvent.strength (native _to_evidence owns the normalization), retaining raw D_mag/pivots → Ch.8 bounded input; W; raw PIVOT D_mag can exceed 1 and must not be passed as already normalized |
+| `temporal_window_validity` | E12 schema/quality/EvidenceEvent.validity → bounded Ch.8 input; D041 |
+| `atr` | native E04 atr14_wilder → family ATR gate/playbook stops; W, D26-A, never ATR20 |
+| `fvg_zones` | native E05 FVG object bounds/index/mitigation/fate → family fvg_gate and playbook; W, transport/index alignment only, terminal evidence still persisted |
+| `bos` | native E01 BOS strength.S/direction/index → structure_gate; W; CHoCH lacking native S_struct cannot acquire a fabricated score |
+| `regime_state` | entire native E11 mapping → validation plus checked .state projection at label consumers; W, ISSUE-035 |
+| `e11_context` | shared PIT IC/history/classifier inputs → _validate_e11_context; W, D21/D23/D26/D30 |
+| `direction` | admitted native PatternHit.direction → family/playbook; D040 when multiple hits compete |
+| `pattern_id` | matching admitted PatternEntity/PatternHit → _pattern_entity/assert_scoring_admissible; D040 |
+| `x` | twelve forecast features → logistic_bootstrap_p; D039 plus D32; log_cost_R also depends on D044 |
+| `forecast_quality` | normalized native Q_forecast/prior forecast → gate10's categorical interpretation; D042 |
+| `forecast_rr` | family sweep/entry + native E05 bounds/E04 ATR → build_stops/units_of_r → build_forecast; W, must be identical to downstream geometry, not fixture 3.0 |
+| `forecast_cost_r` | actual commission/funding + slippage_model + geometry → forecast/EU/log_cost_R; D044 |
+| `window_qualities` | per-observation measured quality and bar age → calc_window_quality/gate2; W for formula; missing historical provenance is a named refusal, not permission to use dataclass defaults |
+| `temporal_quality` | E12 temporal_state.quality → gate8; W, no promotion of Q1 to Q2 |
+| `volatility_quality` | E04 q_tag → gate9; W |
+| `s_i` | admitted component evidence → family score/freshness/redundancy; D039 |
+| `q_i` | native evidence quality, component reduction → family score; D039 |
+| `package` | D28 versioned governed package → gate13/arbitration/plan; W; distinct from a calibrated forecast package |
+| `p_min_tf` | D25 decision_runtime/SL-12 → eligibility/arbitration; W, all 14 TFs |
+| `c_min` | D25 governed 0.50 → eligibility/arbitration; W |
+| `freshness_ok` | D14 staleness <= governed SLA → eligibility; W, D22 catch-up failure remains separate |
+| `risk` | the entire 23-key assembly below → adjudicate; W container, dependent on unresolved subprojections |
+| `risk_state` | latest applicable durable apex_risk_ladder_state revision → forecast penalty/arbitration; W, same revision as risk.risk_state; absent complete revision is not a measured NoRisk |
+| `h_norm` | E11 entropy / ln(9) → gate7; W, D27 |
+| `family_status` | actual registry or D28 PAPER-only missing-registry ACCUMULATING → family/arbitration; W, no promotion |
+| `arbitration` | D28 quality/alignment/recency weights 1/0/0, measured or explicitly excluded UNAVAILABLE inputs → arbitrate; W |
+
+#### Risk inventory — exactly 23 keys
+
+| Risk key | Native source → consumer; disposition |
+|---|---|
+| `capital` | D29 initial PAPER YAML capital + realized PAPER ledger P/L at PIT → sizing/caps; W, never PAPER capital in LIVE |
+| `portfolio_exposure` | ledger net open quantities × actual marks × contract multipliers, gross across symbols → vetoes 3/5/ladder; D046 mark selection; positions-only exposure stays separate from D29 pending reservations |
+| `proposed_notional` | read-only sizing projection + entry reference/multiplier → veto3; D045, including missing ATR_cap authority |
+| `capital_hard_cap` | D25 0.60 × authoritative capital → veto3; W |
+| `circuit_breaker_engaged` | durable emergency/circuit state, including aggregate-loss latches → veto4; W, never cleared by a new data bar |
+| `emergency_state` | durable L1–L5/NORMAL revision → ratchet/veto4; W; boot's empty-table NORMAL check is not a complete persisted risk/budget record |
+| `per_symbol_exposure` | same account mark projection scoped to symbol → veto5; D046 |
+| `symbol_cap` | SL-12/research.governance symbol_exposure_cap 20% × capital → veto5; W, no duplicate risk YAML default |
+| `portfolio_cap` | SL-12/research.governance portfolio_exposure_cap 60% × capital → veto5; W |
+| `staleness_seconds` | max(0, raw receipt - calendar-derived candle close) → veto7; W, D14, raw availability untouched |
+| `freshness_sla_seconds` | governed quality_weights freshness_threshold_seconds[tf] → veto7; W |
+| `oi_lag_seconds` | measured OI observation availability versus as_of → veto8; W for available measurement; missing lag must refuse by name, never float(None), zero or invented infinity |
+| `oi_lag_threshold_seconds` | quality_weights oi_lag_threshold_seconds[tf] → veto8; W, do not substitute quality-plane five-threshold band for the risk veto |
+| `is_risk_increase` | new entry intent versus account/reservation projection → decision.monotone_ok and veto9; D045 specifies the pre-decision request boundary; existing SUBMIT_ORDER entry reservations are already risk-increasing under D29 |
+| `uncertainty_is_rising` | prior/current E11 and fabric observations → decision anti-monotonicity/veto9; D047 |
+| `realized_daily_loss_fraction` | PAPER ledger outcomes → veto10; D048 sign/netting/denominator, not the already fixed 3% threshold |
+| `realized_weekly_loss_fraction` | PAPER ledger outcomes → veto11; D048; UTC-week reset/review obligation already exists |
+| `consecutive_losses` | completed trade outcomes, not fills → veto12; D048 zero-P/L treatment and aggregation |
+| `time_to_expiry_days` | dated exchangeInfo expiry minus as_of; explicitly PERPETUAL is not applicable → veto13; W, typed applicability adapter required, no numeric sentinel or guess for missing dated expiry |
+| `margin_health_fraction` | D29 durable PAPER reservation proxy → veto14/L3; W formula, D046 mark choice; preserve strict PAPER thresholds and LIVE isolation |
+| `min_quantity` | universe quantity_step and actual exchangeInfo quantization precedence → size; W, do not confuse quantity step with min-notional |
+| `contract_multiplier` | actual venue contract spec → size/notional/account; W, missing spec refuses |
+| `risk_state` | same durable revision as context.risk_state → adjudicate floor/ladder; W, no new independent ladder |
+
+#### Nested forecast feature inventory — exactly 12 members
+
+| Feature | Projection status |
+|---|---|
+| `s_struct` | D039: precise component/quality scaling |
+| `s_liq` | D039 |
+| `s_vol` | D039: explicitly choose volume, not silently volatility |
+| `s_fvg` | D039 |
+| `s_ob` | D039 |
+| `trend_stack` | D039: E09 native stack is a mapping and native bias is a scalar; choose the documented scalar binding explicitly |
+| `momentum_z` | W: native E10 momentum.momentum_z; nonfinite/None refuses, not zero |
+| `regime_entropy` | W: native raw E11 entropy; h_norm is the separately named normalized input (D27) |
+| `vol_quantile` | D32 mid-rank, prior same-cell native E04 history, capped native window, N>=50; implementation deferred |
+| `temporal_core_flag` | W: numeric boolean from E12 is_utc_activity_window/is_core_window, not overlap or merely any UTC-window membership |
+| `log_rr` | W: natural log of actual geometry RR, positive-domain validation |
+| `log_cost_R` | W logarithm/domain validation, D044 cost source; preserve governed unavailable-spread floor, never log an invented zero |
+
+#### Consolidated unresolved projection batch — ISSUE-CP14-037 through ISSUE-CP14-048
+
+All twelve are **OPEN—owner projection decision required**, severity MAJOR. In each entry A/B are the conflicting authority/implementation facts; numbered choices are proposals, **not decisions**. Shared rule/interim: no fabricated defaults, clipping, weakened gates, extra pattern family, frozen changes or runtime fixtures; retain named unavailability until authorized. No proposal below reopens D21–D32. Where a choice explicitly leaves an input unavailable, it does not promise a tradable startup or count an always-refusing stub as completed G1.
+
+**[ISSUE-CP14-037] Which window reduction supplies q_raw/data_trust?**
+- A: Ch.8 says data_trust is normalized Q_raw; P1 says derive trust over window quality vectors. Ch.2 defines both per-candle Q_raw and minimum-veto/exponentially weighted Q_window.
+- B: calc_quality_vector and calc_window_quality expose those distinct quantities, but no producer selects which scalar becomes the context/risk q_raw. Choosing latest, minimum or weighted mean changes solvency/conflict/veto1. This is separate from the implementation gap that raw ingest stores NULL quality metadata and get_window reconstructs healthy-looking defaults.
+- Options: **1 (recommended):** use the native required-window minimum-veto plus exponential mean as context q_raw, with data_trust equal to that already-[0,1] value; keep every measured (Q_i, age_i) for gate2. A failed window never gets an average substituted. **2:** use latest closed candle's native Q_raw for both context q_raw/data_trust, retaining the independent full-window gate2. Owner may specify another exact reduction instead.
+- Interim/needs: approve 1 or 2; absent measured quality remains unavailable in either. No approval to reconstruct source health/completeness/replay results from dataclass defaults or content_hash. Tests: bad historical candle versus healthy current, weighted mean versus current, unknown provenance and D14 freshness.
+
+**[ISSUE-CP14-038] Directional MTF state construction.**
+- A: Ch.10 fixes relative timing/intermediate/HTF selection, last-CLOSED/PIT requirements and top-TF vacuous pass; Ch.8 fixes the scalar mapping ALIGNED=1, PARTIALLY_ALIGNED=.6, STALE=.3, conflicting/unavailable/insufficient=0.
+- B: quality.pit.calc_snapshot_pit_window classifies sufficient bar counts as ALIGNED; it does not compare directions. E09 supplies per-cell trend bias but there is no cross-cell directional classifier defining neutral versus opposing versus partial agreement. Copying the count label would call opposing markets aligned. E07's required mtf_align also needs the resulting authoritative state, not a fixture .5/1.
+- Options: **1 (recommended):** for the base cell and Ch.10's required coarser cells, use native E09 bias with existing |bias|<.05 neutral law. Both positive and negative directions present => CONFLICTING; all are nonzero and the same => ALIGNED; otherwise (neutral, none opposed) PARTIALLY_ALIGNED. This comparison is pattern-independent, so E07 never depends on a later E08/pattern decision. Missing required closed state => INSUFFICIENT/refuse, stale => STALE/refuse; no required coarser TF => documented vacuous ALIGNED. E07 consumes the existing Ch.8 scalar mapping. **2:** require an authoritative persisted cross-TF MTF record; do not synthesize a classifier, and refuse where it is absent. This postpones actual emission on such cells, not an assumed pass.
+- Tests: both sides, neutral, opposition, missing/stale, 1mo vacuity, and future/open HTF exclusion.
+
+**[ISSUE-CP14-039] Component s_i/q_i aggregation, six x projections and E07 average quality.**
+- A: AC.4 defines binary pattern presence s_i and governed q_i; Ch.10 weights twelve engine components; P1 requires complete score maps and x assembled from them. Native events provide individual quality/strength, often multiple events per engine. E09 exports both stack mapping and bias scalar.
+- B: no function defines component-level evidence selection/quality reduction, whether the five s_* forecast features include q_i, or the scalar meaning of trend_stack. The family has 1.0/.9 convenience defaults; E07 requires avg_quality. These defaults are not measured runtime authority.
+- Options: **1 (proposed explicit conservative adapter):** from SL-14-admitted same-cell evidence, each component is present iff it has setup-direction or neutral context support; s_i is that binary presence. Opposite evidence is retained for conflict, never dropped from events/fabric. q_i is the minimum native quality of all admitted evidence for that component, including opposing evidence. Known absent optional components are omitted from both score maps (a native zero contribution); their binary presence feature is 0. Missing required evidence refuses, and a missing quality measurement never becomes 0 or .9. Feed x.s_struct/s_liq/s_vol/s_fvg/s_ob from these unweighted binary structure/liquidity/**volume**/fvg/orderblock scores; quality remains in the setup score, not silently multiplied into x. x.trend_stack is native E09 bias. E07 avg_quality is the arithmetic mean of native qualities of its actual upstream confirmation contributors (E01/E02/E03/E05), not E07/E08 itself; missing contributor quality refuses. **2:** owner-specified versioned component selection/quality model and explicit six-feature bindings, with no use of the convenience defaults while undefined. This is not a request to retune the twelve weights or E07 coefficients.
+- Tests: multiple event qualities, opposition retained, absent versus unavailable, exact volume/volatility distinction, no double quality weighting, E07 contributor provenance/no dependency cycle, native E09 scalar equality.
+
+**[ISSUE-CP14-040] One pattern/direction from multiple admitted hits.**
+- A: P1 requires a detected catalogue pattern and its direction; the bridge accepts one pattern per cell, and only SF_FVG_SWEEP_REV is Wave-In. Pattern admission/lifecycle is separately governed; D28 ACCUMULATING is a family status, not pattern promotion.
+- B: pattern.detect.detect_all can return multiple opposing hits, is_invalidated is separate, and E08-backed Spring/Upthrust use separate APIs. Neither native detector enumeration order nor the bridge defines a winner. Registering PAT-LIQ-003 automatically, choosing E09 direction instead, or blindly promoting catalogue examples would invent authority.
+- Options: **1 (recommended conservative):** consider only independently admitted, native-confirmed, not-subsequently-invalidated hits within their valid PIT context; include E08-backed hits only with their native confirmation and lawful registry row. If none, refuse; if more than one distinct hit remains, report PATTERN_SELECTION_AMBIGUOUS/refuse instead of choosing. **2:** select latest confirmation among those same admitted valid hits; break equal-time ties by highest native hit strength and then lexical pattern_id. This is an explicit new ranking policy, not an existing native rule. Neither option admits a new pattern/family or relaxes AC.1/AC.2.
+- Tests: no hit, unique hit, opposing/multiple hits, deterministic ties (option2), invalidation after original hit, research-only exclusion, E08 source preservation.
+
+**[ISSUE-CP14-041] E12 categorical validity to numeric temporal_window_validity.**
+- A: Ch.8 requires a bounded numeric validity input. E12 publishes schema validation, quality tags and EvidenceEvent.validity (VALID/DEGRADED); UTC core/overlap are separate fields.
+- B: no numeric DEGRADED mapping is specified. Schema-valid low-quality state, native VALID event and being in a core window are different conditions. The current combiner weight is zero, but as with D32 presence/validity remains a contract obligation.
+- Options: **1 (recommended):** project the native event validity as an indicator: VALID=>1, explicitly DEGRADED/INVALID=>0, after native schema/PIT checks; missing/unknown state refuses. This is a categorical indicator, not replacing missing data by zero. **2:** schema/PIT-valid canonical temporal state=>1 regardless of quality; quality degradation remains exclusively in temporal_quality/gate8, malformed/missing state refuses. Do not confuse either with temporal_core_flag.
+- Tests: schema-valid degraded state distinguishes choices; valid state, missing state, invalid schema and future state.
+
+**[ISSUE-CP14-042] Normalized forecast quality versus gate10 Q-class.**
+- A: Ch.13/native forecast defines bootstrap Q_forecast=.5; gate12 accepts the governed normalized threshold .5. P1 separately requires forecast_quality for gates10/12.
+- B: gate10_forecast_quality interprets numeric quality using int(value) against gate_quality_min_class=2. Passing native .5 becomes class0, while passing fixture Q3 manufactures an unproduced categorical quality. ForecastRecord has q_forecast but no native categorical tier. Prior-cycle reuse also needs the matching forecast identity/package/PIT, not any old prediction.
+- Options: **1 (recommended):** explicitly authorize gate10's normalized-quality transport for native ForecastRecord/bootstrap records, using the existing governed Q_forecast minimum, retaining categorical handling for genuinely categorical inputs and the bootstrap LIVE ban. Pass actual bootstrap_prior metadata; gate12 remains separate. No fabricated Q2/Q3 conversion. **2:** retain categorical gate10, require an independently governed forecast-quality class record (matching event/package/PIT); missing tier is FORECAST_QUALITY_UNAVAILABLE even when normalized Q_forecast=.5. No class record is currently produced by the bootstrap.
+- Tests: exact .5/.49 boundaries, bootstrap PAPER/LIVE, categorical legacy inputs unchanged, prior-record scope/version/PIT mismatch. This is a non-frozen gate/bridge boundary change under option1, not an E11 or Ch.8 confidence-combiner change.
+
+**[ISSUE-CP14-043] Forecast structured uncertainty bootstrap/projection authority.**
+- A: Ch.13 separates P/U/C and names disagreement, sampling, calibration, data_quality, regime_shift and tail_risk; its weighted U formula requires actual component values. D27 only resolves E11 regime uncertainty for Ch.8, not all six forecast components.
+- B: build_forecast accepts six supplied scalars but defaults all absent values to zero; an omitted producer forecast_uncertainty therefore claims U=0/C=1. Native E11 entropy/turbulence/probabilities and calibration diagnostics do not define the six scalar projection laws (especially sampling/calibration/tail risk). A named component is not an estimator.
+- Options: **1 (recommended safety boundary, with explicit startup consequence):** consume only an independently versioned/PIT-valid complete forecast uncertainty record with its event/package/measurement provenance; absent component => FORECAST_UNCERTAINTY_UNAVAILABLE, never the zero defaults. This does not authorize a cold-start uncertainty model and may prevent bootstrap plans until that source exists. **2:** owner defines a PAPER-only bootstrap uncertainty model now: exact six values/formulas, source windows/minimum observations, missing-data treatment and provenance labeling. Any conservative bound must be labeled as a bound, not a measurement; no automatic use in LIVE. An unspecified 'use E11 uncertainty' does not resolve six different quantities.
+- Independent implementation defect (no owner policy choice): build_forecast currently computes C=1-max(component U), while Ch.13 specifies C=clip(1-U,0,1); the pure composite path already uses 1-U. Correcting that downstream forecast C to the explicit Ch.13 formula is wiring/contract repair; **do not change the Ch.8 combiner**. Tests must distinguish unequal components and forbid invented zero components.
+
+**[ISSUE-CP14-044] Cost-model units, ADV window and funding horizon.**
+- A: Ch.13/16/20 define round-trip fees + alpha_spread*abs(order_size/ADV) + expected holding-period funding, converted to R; D28 supplies actual public rate/spec facts, never guessed fees. A missing spread invokes cost_R>=.05, not invented fee/funding zero.
+- B: slippage_model consumes precomputed ADV. No native producer defines ADV lookback/units or how a present funding rate becomes expected holding cost; the public rate helper exposes neither a full funding schedule nor historical average holding duration. Using the rate once, assuming an 8h interval, treating a percentage as R, or setting total cost to .05 are not defined by the cited formulas.
+- Options: **1 (proposed fully disclosed PAPER estimator):** ADV is mean daily base-asset volume over the previous 30 complete UTC days, assembled from contiguous CLOSED 1h bars (exclude current incomplete day); require verified volume units and convert order quantity using actual contract multiplier to the same base units. Use the existing alpha_spread formula. Fee fraction is twice the actual taker fee. Funding charge is the nonnegative side-specific current rate times the number of verified venue funding settlements in the calendar-derived maximum holding interval allowed by the instantiated playbook and D25 H_max; no assumed schedule. Convert the summed price fractions by entry/actual stop distance to R; preserve the governed unavailable-spread floor. Rate persistence and using maximum holding duration rather than historical average are explicit estimator assumptions requiring authorization. Missing fee/rate/schedule/units refuses. **2:** require authoritative precomputed ADV and holding-period funding-cost records from a governed cost model, scoped/PIT/unit-checked; until present report COST_MODEL_UNAVAILABLE. Owner may supply a different exact estimator instead of 1. Neither option silently upgrades the advisory Economic Gate to a hard veto; the existing mandatory forecast cost remains required.
+- Tests: quantity/multiplier units, 30 full days and missing-day refusal, no future/incomplete-day volume, positive/negative side funding, zero versus unknown settlements, R conversion, floor and no default fee.
+
+**[ISSUE-CP14-045] Pre-veto candidate sizing, undefined ATR_cap and notional units.**
+- A: P1 requires sized_quantity*reference_price before the risk vetoes; Ch.15 sizing also requires k_attn*ATR_cap*Capital/ContractMultiplier. D29 consistently includes multiplier in actual notional and labels entry orders risk-increasing.
+- B: neither E04 nor governance supplies ATR_cap (it appears as an unbound input to risk.size); kernel silently omits the attention bound when None. ATR14 itself and its reciprocal have different units. Computing notional from final adjudication is circular; ignoring multiplier differs from the sizing/account units when multiplier!=1.
+- Options: **1 (proposed explicit adapter):** ATR_cap=1/native E04 atr14_wilder, with positive finite ATR required, retaining existing k_attn and all sizing bounds. Compute a read-only candidate quantity with the same native sizing routine and conservative declared/derived ladder floor, then proposed_notional=quantity*entry*contract_multiplier. This quantity is a request bound, **not** permission; all vetoes still precede final sizing/adjudication. NEW_ENTRY proposals are is_risk_increase=true as in D29; reduce-only/manage actions remain outside this producer. Add a final quantity/notional consistency assertion. **2:** require an owner-governed explicit ATR_cap (units base-asset/USDT) or exact alternative native projection before sizing; retain named SIZE_INPUT_UNAVAILABLE until supplied. Owner must also confirm multiplier-aware notional and the read-only proposal boundary or specify another unit-consistent request law. No silent omission of the attention cap.
+- Tests: ATR zero/unknown, multiplier!=1, higher derived ladder than declared, min-step rounding, attention-bound activation, veto before final authorization, no preview/final notional mismatch.
+
+**[ISSUE-CP14-046] A single authoritative PAPER mark selection law.**
+- A: D29 requires gross marked open notional and fails on missing marks; P1 uses those marks for portfolio/per-symbol exposure. paper_account_state intentionally takes marks as inputs.
+- B: the store has fourteen last-CLOSED prices per symbol; account_state does not select a timeframe and does not define selection among them. Using the candidate cell's close makes one account have different exposure/margin health for simultaneous different-TF plans. Actual exchange mark price and last-trade/candle close are also not the same measure.
+- Options: **1 (recommended PAPER closed-data convention):** latest CLOSED 1m close for each held symbol, available at the common PIT boundary and passing D14/SLA; share one account mark set across cells at that boundary. No fallback to entry price, another TF or a future close; absent/stale required mark refuses. State explicitly that this is a PAPER close-price mark, not exchange liquidation mark. **2:** actual public venue mark-price observations with explicit receipt/availability, governed freshness and retained source payload; no candle-close fallback. This requires an additive public observation source, not signing or frozen client edits.
+- Tests: identical portfolio health across candidate TFs, future mark exclusion, stale/missing held-symbol mark, flat account requires no fictional mark, multiplier and D29 thresholds unchanged.
+
+**[ISSUE-CP14-047] Rising uncertainty/conflict comparator.**
+- A: P1 requires fabric conflict state plus E11 entropy trend for uncertainty_is_rising; decision anti-monotonicity and veto9 consume a boolean. D27's 1-p_max is not the same statistic as raw entropy.
+- B: native E11 publishes entropy but no 'rising' predicate; neither lookback, equality nor combination with conflict severity is defined. The bridge's optional conflict uncertainty also defaults to zero unless explicitly bound. Choosing one-step entropy, rolling slope, 1-p_max, or just HARD_CONFLICT changes which requests are blocked.
+- Options: **1 (recommended minimal trend law):** compare current and immediately preceding CLOSED same-cell observations with matching parameter/classifier versions. rising iff H_t>H_previous OR the native conflict restriction rank increases (CONSENSUS=0, MATERIAL_CONFLICT=1, INSUFFICIENT_EVIDENCE=2, HARD_CONFLICT=3, from conflict._OUTPUT_RESTRICTION), strict comparisons; equality is not rising. Supply the conflict resolver's uncertainty scalar from the already governed E11 1-p_max (D27), never missing=>0. Missing/incompatible prior comparison => UNCERTAINTY_TREND_UNAVAILABLE/refuse risk-increasing plans. **2:** owner supplies a different exact trend window/statistic/conflict ordering and cold-start rule; no implicit smoothing/tolerance or reuse of another cell's history.
+- Tests: entropy versus p_max moving in opposite ways, rising conflict with falling entropy, ties, first comparison, changed artifact/package, future/cross-cell exclusion; hard conflict still independently vetoes.
+
+**[ISSUE-CP14-048] Realized-loss sign/netting, capital denominator and outcome streak.**
+- A: P1 says realized daily/weekly P/L divided by capital; risk vetoes compare a positive loss fraction with .03/.06, and streak>4. D29 defines current capital; Ch.15 fixes next UTC day/week and OWNER-review reset requirements.
+- B: paper_account_state returns signed OUTCOME P/L/timestamps, not loss aggregates. Direct signed negative P/L would not trip a positive threshold. Net loss versus sum of losing trades, period-opening versus current capital, and whether zero-P/L trades break a streak are not selected by a native producer. Counting fills instead of completed trade outcomes is incorrect. This is not permission to change the fixed thresholds or resets.
+- Options: **1 (recommended):** daily/weekly loss=max(0,-sum(net realized PAPER completed-trade P/L in period))/current D29 capital; UTC day and ISO Monday-start UTC week; a trade with P/L>=0 breaks the consecutive-negative-outcome streak. Evaluate only canonical completed outcomes at/before as_of, not partial fills, with ledger-order tie breaking and correction-chain integrity. The max(0,...) defines positive loss, not clipping an invalid measurement. **2:** gross realized losing-trade sums divided by period-opening capital, zero-P/L outcomes ignored in streak; same PIT/environment/integrity requirements. This is a different financial meaning and needs explicit owner authorization; specify another complete rule if neither is intended.
+- Shared mandatory implementation in either choice: persist/reconstruct a threshold-crossing latch so later profits/new bars cannot auto-clear CIRCUIT_OPEN. Daily reset only at UTC rollover; weekly also needs OWNER review; consecutive-loss reset needs OWNER review. An empty verified PAPER outcome history genuinely has zero losses/streak; missing/unreadable/ambiguous ledger does not. Tests: -300/+300 offsets, losses lowering capital, day/week boundaries, zero-P/L streaks, partial fills, duplicates/corrections, recovered P/L after a breach and authorized resets.
+
+#### Already-governed gaps — not additional owner questions
+
+1. Persist/recover measured quality and validation provenance through an additive, identity-bound seam before trusting it; raw quality_vector=NULL and default health=1/completeness=100/delay=0 are not measurements. Existing missing-provenance failure is lawful, even if initial historical windows consequently cannot pass. D14 still applies to receipt-derived freshness; no historical backfill waiver is proposed.
+2. Build the real get_bridge_context/source cache, validate every required key, persist/read the complete events and exact engine order, preserve lifecycle/lineage/PIT, then bind source/preparer in PAPER serve outside scheduler budgets. Existing helper tests are not this acceptance.
+3. Consume E01 native BOS strength.S (not CHoCH break magnitude as S_struct); map E02 five-prerequisite sweep facts, E05 bounds/creation indices/mitigation/fates, E06 stateful EWMA and E04 ATR14 directly. No re-detector, fake optional evidence or dropped terminal QX.
+4. Reuse native family sweep/reclaim and playbook stop/target geometry for pre-forecast and final plan; align FVG indices to the same raw window and apply native lifecycle admission to the decision view, not to persistence. An absent/invalid setup produces a named no-setup result, not dummy RR/stop/quantity.
+5. Native E10's normalized divergence event strength is already an exported authority; do not add producer clipping of raw pivot D_mag. Explicit native no-divergence differs from missing E10 state.
+6. Query durable ladder revisions at the applicable PIT boundary, preserve the ratchet and use the same revision in both risk_state fields. The startup check's empty-table NORMAL message does not supply a complete measured risk-state/budget revision. Missing complete source => named refusal; no bootstrap ladder authorization requested or inferred.
+7. OI lag unavailable => named risk-input refusal, not float(None), zero or infinity. This does not exclude an E11 training sample or change D23's participation/Q5 rule. Available/stale measured lag still follows the existing veto8 threshold.
+8. Known PERPETUAL with no expiry is typed 'not applicable' for the existing quarterly-contract veto13; propagate contract type and evaluate that applicability explicitly. Unknown type/missing dated expiry refuses. No infinity/large-day sentinel and no guessed exemption; this corrects float(None) transport, not the veto definition.
+9. D29 account reads require as_of filtering and PAPER identity separation. Pending notional is a margin reservation, not a replacement for position-only exposure caps. Governance already supplies 20%/60% caps and D25 supplies the separate hard-cap fraction.
+10. Optional consumer defaults must not fabricate authority: propagate the forecast bootstrap flag, separate D28 parameter package from statistical calibration, bind measured conflict uncertainty/redundancy/component history, and honor existing insufficient-history redundancy-skip law (fewer than 20 OK points). Ch.13's explicit C=1-U repair is described in ISSUE-043; the Ch.8 confidence combiner is untouched.
+11. CIRCUIT_OPEN latching/reset semantics, calendar-aware close law, public venue facts, family registry default, arbitration exclusions, quantity-filter precedence and LIVE isolation already have authority. Missing inputs stay named refusals; none is a request to relax a gate or to implement CP-15 simulator execution.
+
+**Audit outcome:** the complete decision batch is ISSUE-CP14-037–048 above. No additional undefined projection was identified in the 38+23 keys and their traced consumers/dependencies beyond this batch and the already resolved D32 projection. This is a source-audit conclusion, not a guarantee that later tests cannot reveal implementation defects. All runtime implementation, including D32, remains deferred pending the batch response. Existing frozen exceptions remain exactly insert_snapshot's body and D31's single membership-check line.
+
+**Verification of this documentation increment:** static AST/schema coverage checks and git diff --check only; no production/test/parameter/blueprint change, no new runtime or full-suite result. The external test virtualenv is absent in this restored environment, so the earlier 41-test and 2858-test results are historical, not rerun. Immediate documentation commit/plain push follows the green static audit. OWNER-CHECKED:[ ].
