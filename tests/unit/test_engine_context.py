@@ -608,7 +608,7 @@ def test_d26a_shared_timeline_advances_prior_same_cell_history_after_projection(
     from datetime import datetime, timedelta, timezone
     calls = []
     initial = [SimpleNamespace(atr14_wilder=float(i)) for i in range(1, 21)]
-    def upstream(window, symbol, timeframe, *, atr14_history):
+    def upstream(window, symbol, timeframe, *, atr14_history, **kwargs):
         calls.append((symbol, timeframe, None if atr14_history is None else list(atr14_history)))
         states = initial if atr14_history is None else [SimpleNamespace(atr14_wilder=100.0)]
         return {"confirmation": False, "volatility": {"states": states}, "vlt": states[-1],
@@ -1060,10 +1060,54 @@ def test_future_confirmation_survives_unavailable_e11_features(monkeypatch):
     def failed(*a, **kw):
         raise BridgeError("INVALID_E11_HISTORY", "normalizer unavailable")
     monkeypatch.setattr(EC, "upstream_frame", failed)
-    monkeypatch.setattr(EC, "structural_confirmation", lambda *a: True)
+    monkeypatch.setattr(EC, "structural_confirmation", lambda *a, **kw: True)
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     window = [make_obs(timeframe="1h", ts=(start + timedelta(hours=i)).isoformat(timespec="milliseconds").replace("+00:00", "Z")) for i in range(52)]
     async def exercise():
         rows = [r async for r in EC.EngineContextProducer(None).feature_timeline("BTCUSDT", "1h", window)]
         assert rows[-1]["confirmation"] is True and rows[-1]["reason"] == "INVALID_E11_HISTORY"
     asyncio.run(exercise())
+
+
+def test_native_e04_stream_matches_full_prefix_batch_without_future_inputs():
+    import random
+    from datetime import datetime, timedelta, timezone
+    rng = random.Random(47)
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    raw = []
+    price = 100.
+    for i in range(82):
+        opening = price; price += rng.uniform(-1, 1)
+        raw.append(replace(make_obs(timeframe="1h", oi=None,
+            ts=(start + timedelta(hours=i)).isoformat(timespec="milliseconds").replace("+00:00", "Z")),
+            open=Decimal(str(opening)), close=Decimal(str(price)), high=Decimal(str(max(opening, price) + 1)),
+            low=Decimal(str(min(opening, price) - 1)), volume=Decimal(str(rng.uniform(300, 1000)))))
+    bars = [EC.E04.observation_to_bar(o, "1h") for o in EC.closed_engine_window(raw, "1h")]
+    stream = {"engine": EC.E04.VolatilityEngineV4(timeframe="1h"), "pending": bars[:80], "evidence": []}
+    for end in (80, 81, 82):
+        if end > 80:
+            stream["pending"].append(bars[end - 1])
+        projection_raw = raw[:end] if end == 80 else raw[end - 51:end]
+        frame = EC.upstream_frame(projection_raw, "BTCUSDT", "1h", volatility_stream=stream)
+        expected = EC.E04.run_engine(bars[:end], timeframe="1h")
+        start_ms = EC._iso_to_ms(frame["window"][0].timestamp)
+        assert [s.to_canonical() for s in frame["volatility"]["states"]] == [s.to_canonical() for s in expected["states"] if s.as_of >= start_ms]
+        assert len(stream["engine"].bars) == end
+        assert max(s.as_of for s in frame["volatility"]["states"]) == bars[end - 1]["ts"]
+
+
+def test_e01_local_atr_memoization_preserves_complete_native_pipeline(monkeypatch):
+    import random
+    rng = random.Random(12)
+    candles = []
+    price = 100.
+    for i in range(130):
+        opening = price; price += rng.uniform(-2, 2)
+        candles.append({"O": opening, "H": max(opening, price) + rng.random(),
+                        "L": min(opening, price) - rng.random(), "C": price,
+                        "V": rng.uniform(10, 100), "is_closed": True, "close_time": i})
+    memoized = EC.E01.run_pipeline(candles)
+    original = EC.E01.atr_sma
+    monkeypatch.setattr(EC.E01, "atr_sma", lambda candles, n=14, idx=-1: original(list(candles), n, idx))
+    reference = EC.E01.run_pipeline(candles)
+    assert EC.canonical_json(memoized) == EC.canonical_json(reference)

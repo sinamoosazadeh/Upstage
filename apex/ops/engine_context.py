@@ -683,7 +683,7 @@ SWEEP_PREREQUISITES = frozenset({"P1_valid_level", "P2_penetration", "P3_rejecti
                                 "P4_temporal", "P5_data_quality"})
 
 
-def structural_confirmation(raw_window: list[Any], symbol: str, timeframe: str) -> bool:
+def structure_projection(raw_window: list[Any], symbol: str, timeframe: str) -> dict:
     window = closed_engine_window(raw_window, timeframe)
     if not window:
         raise BridgeError("NO_MARKET_DATA", "empty confirmation window")
@@ -691,8 +691,12 @@ def structural_confirmation(raw_window: list[Any], symbol: str, timeframe: str) 
                 - _iso_to_ms(raw_window[-1].timestamp)) // 1000
     params = E01.get_params()
     params["tick_size"] = E01.resolve_tick_size(symbol)
-    result = E01.run_pipeline([E01.observation_to_candle(o, timeframe, duration) for o in window], params)
-    return any(event["candle_index"] == len(window) - 1 and event["event_type"].startswith(
+    return E01.run_pipeline([E01.observation_to_candle(o, timeframe, duration) for o in window], params)
+
+
+def structural_confirmation(raw_window: list[Any], symbol: str, timeframe: str, *, result: dict | None = None) -> bool:
+    result = structure_projection(raw_window, symbol, timeframe) if result is None else result
+    return any(event["candle_index"] == len(raw_window) - 1 and event["event_type"].startswith(
         ("EV_STR_007", "EV_STR_008", "EV_STR_009", "EV_STR_010")) for event in result["events"])
 
 
@@ -735,7 +739,9 @@ def liquidity_inputs(liquidity: Any) -> dict:
 
 def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
                    *, emit: bool = False,
-                   atr14_history: list[float] | None = None) -> dict[str, Any]:
+                   atr14_history: list[float] | None = None,
+                   structure_result: dict | None = None,
+                   volatility_stream: dict | None = None) -> dict[str, Any]:
     """P1's first seven engines, in order, with explicit producer projections.
 
     A 300-bar engine window is the existing paper runtime window. The E11
@@ -759,7 +765,7 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     params["tick_size"] = E01.resolve_tick_size(symbol)
     collect("E01", E01.E01StructureEngine, base)
     candles = [E01.observation_to_candle(o, timeframe, duration) for o in window]
-    structure = E01.run_pipeline(candles, params)
+    structure = E01.run_pipeline(candles, params) if structure_result is None else structure_result
     bos_events = [ev for ev in structure["events"] if ev["event_type"].startswith(
         ("EV_STR_007", "EV_STR_008"))]
     structural_events = [ev for ev in structure["events"] if ev["event_type"].startswith(
@@ -769,9 +775,25 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     liquidity = E02.run_engine([E02.observation_to_candle(o) for o in window])
     collect("E12", E12.E12TemporalEngine, base)
     temporal = E12.run_engine([E12.observation_to_candle(o) for o in window])["temporal_state"]
-    collect("E04", E04.E04VolatilityEngine, base)
+    order.append("E04")
     bars = [E04.observation_to_bar(o, timeframe) for o in window]
-    volatility = E04.run_engine(bars, timeframe=timeframe)
+    if volatility_stream is None:
+        volatility = E04.run_engine(bars, timeframe=timeframe)
+    else:
+        # Native chronological E04, never a partial/reimplemented indicator.
+        # Drain only observations already reached by this feature timeline.
+        for bar in volatility_stream["pending"]:
+            evidence = volatility_stream["engine"].ingest_bar(bar)
+            if evidence is not None:
+                volatility_stream["evidence"].append(evidence)
+        volatility_stream["pending"].clear()
+        retained = [e for e in volatility_stream["evidence"] if bars[0]["ts"] <= e.state.as_of <= bars[-1]["ts"]]
+        volatility = {"engine": volatility_stream["engine"], "states": [e.state for e in retained],
+                      "events": [event for e in retained for event in e.events], "atr_series": [e.atr_scalar for e in retained]}
+    if emit:
+        emitter = E04.E04VolatilityEngine()
+        quality = emitter._window_quality(window)
+        events.extend(emitter._to_evidence(state, symbol, timeframe, quality) for state in volatility["states"] if state.snapshot_id)
     # D26-A supersedes the provisional ATR20 addition. Consume the actual
     # published E04 schema and align by as_of, not emitted-list position.
     atr_by_close = {state.as_of: state.atr14_wilder for state in volatility["states"]}
@@ -842,6 +864,7 @@ TRAINING_QUERY = canonical_json({
     "closed_filter": "close_time_ms(open_time,timeframe) <= as_of",
     "label_boundary": "49 consecutive CLOSED candles t..t+48 with independent E01 confirmation; D21 unchanged",
     "raw_metadata": "immutable observation_id/content hash binding restores availability_time and OI timestamp; availability<=as_of",
+    "E04_replay": "native chronological VolatilityEngineV4, each CLOSED observation once; no future-state reuse",
 })
 HISTORY_KEYS = {"trend": "trendiness_raw", "vol": "vol_ratio", "exp": "expansion_raw",
                 "liq": "liquidity_raw", "part": "participation_raw", "sq": "structure_score"}
@@ -934,8 +957,10 @@ class EngineContextProducer:
         atr14_history: list[float] | None = None
         seed_state = E11.RegimeEngine()
         mu, sigma, previous_momentum = seed_state.mu, seed_state.Sigma, seed_state.prev_mom
+        volatility_stream = {"engine": E04.VolatilityEngineV4(timeframe=timeframe), "pending": [], "evidence": []}
         for index, obs in enumerate(window):
             as_of = _ms_to_iso(close_time_ms(_iso_to_ms(obs.timestamp), timeframe))
+            volatility_stream["pending"].append(E04.observation_to_bar(closed_engine_window([obs], timeframe)[0], timeframe))
             if index < 50:
                 yield {"index": index, "as_of": as_of, "reason": "UPSTREAM_WARMUP", "confirmation": False}
                 continue
@@ -943,10 +968,11 @@ class EngineContextProducer:
             if any(o.availability_time is None or _iso_to_ms(o.availability_time) > _iso_to_ms(as_of) for o in source_window):
                 yield {"index": index, "as_of": as_of, "confirmation": None, "reason": "PIT_VIOLATION"}
                 continue
-            confirmation = structural_confirmation(source_window, symbol, timeframe)
+            structure = structure_projection(source_window, symbol, timeframe)
+            confirmation = structural_confirmation(source_window, symbol, timeframe, result=structure)
             try:
-                frame = upstream_frame(source_window, symbol, timeframe,
-                                       atr14_history=atr14_history)
+                frame = upstream_frame(source_window, symbol, timeframe, atr14_history=atr14_history,
+                                       structure_result=structure, volatility_stream=volatility_stream)
                 # Advance the independent same-cell ATR reference AFTER its
                 # lag-one projection, even while another feature is refused.
                 if atr14_history is None:
@@ -973,6 +999,7 @@ class EngineContextProducer:
                        "reason": getattr(exc, "reason", str(exc).split(":")[0]), "confirmation": confirmation}
                 continue
             item = {"index": index, "as_of": as_of, "ic": ic, "frame": frame,
+                    "volatility_stream": volatility_stream,
                     "confirmation": confirmation, "history": {k: list(v) for k, v in history.items()},
                     "mu": mu.copy(), "Sigma": sigma.copy(), "prev_mom": previous_momentum}
             try:

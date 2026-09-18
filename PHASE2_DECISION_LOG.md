@@ -500,3 +500,21 @@ Owner D26-B decision retained in session context (semantic transcription, not a 
   Interim behavior: calibration uses aligned source indices and its five-input-bar horizon. Regressions cover equal late receipt timestamps and a six-bar gap; the existing close-price continuation regression remains green. Producer latest-emission validation also uses the accepted source candle identity, not availability equality.
   Needs from owner: none; this corrects the wiring/calibration association, not the signal formula.
 - Context/E03/E11 verification for the restoration above: **227 passed, 0 failed, 3.55 s**. This is focused evidence, not the still-pending successful full-store two-process G2 proof or final twice-full-suite evidence. Immediate checkpoint/push follows.
+
+### Native chronological preparation and exact memoization milestone
+
+- A first 830-observation network-free scratch-store training probe timed out after 1800 s, without a returned histogram or artifact. A 300-bar upstream profile measured 19.08 s under cProfile: 14.02 s E04 replay (11.56 s repeated GARCH fits) and 3.68 s E01 replay. This is a preparation-performance finding, not G2 proof.
+- [ISSUE-CP14-030] severity: MAJOR | status: CLOSED-with-evidence
+  A: D26-A requires native E04 state and prior same-cell history, shared by training/runtime; no substitute indicator or skipped GARCH calculation is authorized.
+  B: the preliminary consumer reset and fully replayed E04 for every overlapping training window, repeatedly fitting the same history and discarding native chronological state at the 300-bar projection boundary.
+  Rule applied: the additive feature timeline owns one actual VolatilityEngineV4 per cell, drains CLOSED inputs at E04's position in the pipeline, and retains native published states. No E04 engine/schema/parameters are edited. Only states already reached at the current candle enter the projection; preparation remains outside the plan latency budget.
+  Interim behavior: native ingest_bar processes each reached candle once; the raw input/observation window stays bounded separately. E04 evidence uses the native converter and exact native VolatilityState. Full-prefix batch equality (including a rolling projection boundary), no-future-state and per-cell history regressions pass. Training-query protocol now records chronological E04 replay.
+  Needs from owner: none; this is actual native-engine composition, not an ATR period/window policy change.
+- [ISSUE-CP14-031] severity: MINOR | status: CLOSED-with-evidence
+  A: all native E01 calculations and outputs must remain unchanged while G1/G2 reuse real engines.
+  B: E01 run_pipeline repeatedly computes identical ATR(n,index) requests within the same immutable candle window (11,069 calls in the 300-bar profile).
+  Rule applied: memoize the unchanged atr_sma result only inside one native run_pipeline invocation; no global or cross-window cache, changed summation order, formula or test-pin adjustment.
+  Interim behavior: private tuple window/cache in e01_structure/engine.py; every original ATR evaluation is still performed on first request. Complete native pipeline canonical JSON equals an uncached reference. Existing E01/E03/E04/E11 tests remain green. This is an additional production-file change, explicitly recorded rather than hidden as wiring.
+  Needs from owner: none; exact native-output parity is the acceptance guard.
+- Post-streaming scratch-store probe (before E01 memoization) completed in **597.84 s** and correctly refused: **CRISIS 78, TRANSITION 0, EXPANSION 168, TREND_EXPANSION 16, TREND_CONTRACTION 7, TREND 9, COMPRESSION 184, CHOP 3, RANGE 117** (582 finalized samples). Exclusions: UPSTREAM_WARMUP 84, UNFINALIZED_TAIL 144, INVALID_E11_HISTORY 20. This is reproducible current code evidence of an **8/9 refusal**, not the earlier unverified 7/9 report, and not successful two-process G2 proof. Scratch data remains outside Git; no classifier artifact written.
+- Context/E01/E03/E04/E11 verification: **339 passed, 0 failed, 39.01 s**. Immediate milestone commit/push follows the strengthened rolling-projection regression.

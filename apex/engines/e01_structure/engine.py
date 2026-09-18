@@ -89,10 +89,25 @@ def true_range(c: Dict[str, Any], prev: Optional[Dict[str, Any]]) -> float:
                abs(c["L"] - prev["C"]), gap)
 
 
+class _ATRWindow(tuple):
+    """One immutable pipeline window; memoize identical native ATR requests.
+
+    This cache never escapes a run, changes arithmetic order, or substitutes
+    an indicator. Input candle dictionaries are read-only in run_pipeline.
+    """
+    def __new__(cls, values):
+        window = super().__new__(cls, values)
+        window._atr_sma_cache = {}
+        return window
+
+
 def atr_sma(candles: Sequence[Dict[str, Any]], n: int = 14,
             idx: int = -1) -> float:
     """ATR_n(t) SMA form over TR (§3.2). Insufficient history is a Q1 warmup
     state, not a numerical estimate — raises ValueError (§4.1)."""
+    cache = candles._atr_sma_cache if isinstance(candles, _ATRWindow) else None
+    if cache is not None and (n, idx) in cache:
+        return cache[n, idx]
     if len(candles) < n + 1:
         raise ValueError("INSUFFICIENT_HISTORY_Q1")
     trs: List[float] = []
@@ -105,7 +120,10 @@ def atr_sma(candles: Sequence[Dict[str, Any]], n: int = 14,
         trs.append(true_range(c, p))
     if len(trs) < n:
         raise ValueError("INSUFFICIENT_HISTORY_Q1")
-    return sum(trs[-n:]) / n
+    value = sum(trs[-n:]) / n
+    if cache is not None:
+        cache[n, idx] = value
+    return value
 
 
 def atr_wilder(candles: Sequence[Dict[str, Any]], n: int = 14) -> List[float]:
@@ -1150,7 +1168,7 @@ def run_pipeline(candles: Sequence[Dict[str, Any]],
     invalid = [{"event_type": "EV_STR_000_INVALID_CANDLE", "q_tag": "Q0",
                 "candle": {"O": c["O"], "H": c["H"], "L": c["L"], "C": c["C"]}}
                for c in candles if c["H"] < c["L"]]
-    clean = [c for c in candles if not c["H"] < c["L"]]
+    clean = _ATRWindow(c for c in candles if not c["H"] < c["L"])
     if len(clean) < p["min_candles"]:
         return {"events": with_schema_version(invalid), "swings": [],
                 "state": "RANGE", "bias": None}
