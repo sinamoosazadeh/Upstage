@@ -528,8 +528,8 @@ Additive-file rule: any file outside §9.5's list traces to a DECISION_LOG ADR o
 ### CP-14 — in-progress traceability (2026-09-17)
 | Goal | Authority | Current evidence | Status |
 |---|---|---|---|
-| G1 engine-context producer | Section 9.5 P1, ADR-CP14-001 | engine_context.py boundary helpers; full 38+23-key producer and persisted-event round trip pending ISSUE-CP14-007/008 | OPEN |
-| G2 E11 classifier artifact | E11 P2 and owner D21 | validated test-only YAML, missing-file/hash/shape tests, rule0/delayed-label helpers; store-feature training/CLI/two-process determinism not built | OPEN |
+| G1 engine-context producer | Section 9.5 P1, ADR-CP14-001 | native twelve-engine bundle and full persisted round trips (including terminal QX), pre-budget preparation hook, full E11-state label projection; authoritative 38+23-key source/serve binding still pending | OPEN |
+| G2 E11 classifier artifact | E11 P2 and owner D21 | store-only native D21/D23/D26 training and D30 twenty-cell CLI; two independent successful processes, all nine classes, byte-identical artifact; included in interim 2858-test full run | Fixture PASS; phone acceptance pending |
 | G3 CIRCUIT_OPEN | Ch.7 P6, D9 | errors.py exact row and test_errors.py registry/handling tests; no -1021/-2026 changes | Implemented; final suite pending |
 | G4 per-cycle catch-up | Section 9.5 P1, D5/D22 | BootstrapService.catch_up; serve shared store; fake Toobit 140-cell/due-boundary/frontier/failure/retry tests; cycle catch_up JSON | Implemented; full producer integration pending |
 | G5 wiring staleness | Section 9.5 P1, D14/D22 | freshness helper exact boundary tests, availability_time unchanged, fresh-but-CATCH_UP_FAILED regression; full producer hookup pending | OPEN |
@@ -540,3 +540,9 @@ CP-14 continuation (2026-09-17; IN-PROGRESS): G1 full-event envelope round trip 
 CP-14 D26-A (2026-09-17): G1/G2 ATR input projection is now E04 VolatilityState.atr14_wilder standardized by the shared E11 Method-B prior reference and existing constants; no ATR20. Known-series/short-history/lag/source/window/cell-isolation regressions pass (250 targeted including E04/E03, then 134 context/E11). ISSUE-CP14-011 part 1 is owner-resolved; part 2 liquidity and complete producer/trainer acceptance remain pending. No final completion or new full-suite claim.
 
 CP-14 D27/D28 (2026-09-18; IN PROGRESS): G1's uncertainty projection now follows 1-p_max with a real-combiner regression. D28 bootstrap governance has canonical all-governed-YAML/classifier package binding, non-overwriting family status, measured/unavailable component distinction, public venue-fact provenance/PIT/failure isolation and LIVE-exclusion tests; real bridge integration consumes the bootstrap with test-only engine/risk inputs. Production serve binding and full producer assembly remain pending, as does owner margin decision ISSUE-CP14-018. G2 class/label policy is unchanged; two-process package-ID proof is not two-process classifier-training proof. Current full suite once: 2812 passed / 0 failed, 14 warnings (95.20 s), after local authorized-policy commit 4999d86 fixed the untouched cleanliness test. No final completion/push/PR claim; earlier missing-tree test claims are not reused as current evidence.
+
+| Additional decision | Authority | Evidence | Status |
+|---|---|---|---|
+| D31 terminal QX persistence | §8 row 24; ADR-CP14-006; ISSUE-CP14-034 | test_d31_terminal_e05_qx_public_insert_full_roundtrip fails before at public insert_evidence, passes after; test_d31_public_insert_still_rejects_invalid_resolution_tags covers Q6/QX_EXPIRED/empty/None; native 180-hour bundle retains EXPIRED/QX | CLOSED-with-evidence; exact one-line frozen exception |
+
+CP-14 current verification (2026-09-18): interim whole suite 2858 passed, 14 warnings, 601.85s, with no deselection. Subsequent full-E11-object projection: 149 targeted passed, 1 G2 test deselected, 13 warnings, 31.44s. G1 is not complete; two final full-suite runs, final handoff and PR remain pending.

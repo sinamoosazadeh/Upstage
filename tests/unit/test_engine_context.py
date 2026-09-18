@@ -1301,6 +1301,8 @@ def test_native_twelve_engine_bundle_persists_full_evidence(tmp_path):
                 assert set(bundle["raw_observation_ids"]).issubset(event.lineage)
                 assert EC._iso_to_ms(event.availability_time) <= EC._iso_to_ms("2026-01-04T18:00:00.000Z")
             assert bundle["regime_state"]["snapshot_id"]
+            from apex.ops.plan_bridge import _regime_label
+            assert _regime_label(bundle["regime_state"]) == bundle["regime_state"]["state"]
             # D31: terminal QX must remain intact, including the native
             # expiry meaning and every other field, not dropped/relabelled.
             later = await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-08T12:00:00.000Z",

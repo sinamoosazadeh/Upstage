@@ -473,6 +473,18 @@ def _validate_e11_context(value: Any) -> None:
             _finite_float(item, "e11_classifier")
 
 
+def _regime_label(value: Any) -> str:
+    """Read the label without stringifying or discarding full E11 state.
+
+    P1's producer supplies the native object. Legacy CP-9 source adapters
+    may still supply the label alone; neither path invents an alias.
+    """
+    label = value.get("state") if isinstance(value, Mapping) else value
+    if not isinstance(label, str) or not label:
+        raise BridgeError("E11_CONTEXT_INVALID", "regime_state.state unavailable")
+    return label
+
+
 def _pattern_entity(pattern_id: Any, supplied: Any = None) -> PatternEntity:
     if isinstance(supplied, PatternEntity):
         entity = supplied
@@ -603,6 +615,7 @@ class PaperPlanBridge:
             raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE",
                               ",".join(missing_context))
         _validate_e11_context(context["e11_context"])
+        regime_label = _regime_label(context["regime_state"])
         # ``events`` is the only evidence path.  A reduced SQL row fails in
         # _fabric_ref rather than being silently upgraded to ACTIVE.
         events = _event_list(_required(context, "events"))
@@ -651,7 +664,7 @@ class PaperPlanBridge:
             quality_asymmetry=quality_asymmetry,
             redundancy_rho=(None if context.get("redundancy_rho") is None else
                             _finite_float(context["redundancy_rho"], "redundancy_rho")),
-            regime_state=str(_required(context, "regime_state")),
+            regime_state=regime_label,
             conflict_id=str(context.get("conflict_id", "bridge-conflict")),
             package_id=package_id, snapshot_id=fabric0.hash,
             lineage=_lineage(fabric0.members),
@@ -738,7 +751,7 @@ class PaperPlanBridge:
             direction=direction,
             fvg_zones=_required(context, "fvg_zones"),
             bos=_required(context, "bos"),
-            regime_state=str(_required(context, "regime_state")),
+            regime_state=regime_label,
             mtf_state=str(_required(context, "mtf_state")),
             available_closes=context.get("available_closes"),
             window_qualities=_required(context, "window_qualities"),
@@ -774,7 +787,7 @@ class PaperPlanBridge:
             raise BridgeError("FVG_PRICE_CONTEXT_UNAVAILABLE", "low/high")
         playbook = instantiate_playbook(
             lifecycle="VALIDATING",
-            regime_window=tuple(context.get("regime_window", (str(_required(context, "regime_state")),))))
+            regime_window=tuple(context.get("regime_window", (regime_label,))))
         stops = build_stops(
             direction=direction, entry=float(evaluation.entry),
             atr=_finite_float(_required(context, "atr"), "atr"),
@@ -835,7 +848,7 @@ class PaperPlanBridge:
         }
         family_status = str(_required(context, "family_status"))
         arb = arbitrate([arb_candidate],
-                        regime=str(_required(context, "regime_state")),
+                        regime=regime_label,
                         family_statuses={FAMILY_ID: family_status})
         if arb["proposal"] is None or arb["reason"].get("decision") != "TRADE":
             raise BridgeError("DECISION_NO_TRADE", str(arb["reason"]))
@@ -879,7 +892,7 @@ class PaperPlanBridge:
         )
         await self._materialize_setup(evaluation.to_setup_event(),
                                        pattern_id=entity.pattern_id,
-                                       regime=str(context.get("regime_state", "")))
+                                       regime=regime_label)
 
         trace = {
             "fabric": fabric.to_dict(), "conflict": conflict,

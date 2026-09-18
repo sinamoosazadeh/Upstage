@@ -94,3 +94,23 @@ def test_reduced_evidence_row_is_not_promoted_to_active():
         assert "direction" in refusal["detail"]
 
     asyncio.run(scenario())
+
+
+def test_full_e11_state_label_projection_preserves_payload_and_legacy_source():
+    from apex.ops.plan_bridge import _regime_label
+    from apex.identity.canonical_json import canonical_json
+    state = {"state": "TRANSITION", "state_raw": "AMBIGUOUS",
+             "entropy": 2.1, "probs": {"TRANSITION": .6, "RANGE": .4},
+             "snapshot_id": "fixture-native-object-shape"}
+    before = canonical_json(state)
+    assert _regime_label(state) == "TRANSITION"
+    assert canonical_json(state) == before
+    assert _regime_label("TREND") == "TREND"
+
+
+def test_regime_label_projection_never_stringifies_missing_or_invalid_state():
+    import pytest
+    from apex.ops.plan_bridge import BridgeError, _regime_label
+    for value in ({}, {"state_raw": "TREND"}, {"state": None}, {"state": ""}, 1, None):
+        with pytest.raises(BridgeError, match="E11_CONTEXT_INVALID"):
+            _regime_label(value)
