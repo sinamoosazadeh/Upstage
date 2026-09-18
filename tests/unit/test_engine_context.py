@@ -1287,10 +1287,15 @@ def test_native_twelve_engine_bundle_persists_full_evidence(tmp_path):
             await _seed_full_training_fixture(store, symbols=("ETHUSDT",))
             classifier = Path(__file__).parents[1] / "fixtures" / "e11_classifier_v1.yaml"
             producer = EC.EngineContextProducer(store, classifier_path=classifier, environment="PAPER")
-            # Explicit E07 contract inputs: this test proves native assembly,
-            # not the still-unfinished 38-context/23-risk source projection.
+            # Native contributor quality now replaces the old injected .9.
+            # MTF remains explicit here; this is not the full 38+23 proof.
             bundle = await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-04T18:00:00.000Z",
-                rtm_context={"avg_quality": .9, "mtf_align": .5})
+                rtm_context={"derive_avg_quality": True, "mtf_align": .5})
+            contributors = bundle["rtm_quality_contributors"]
+            assert contributors
+            by_id = {event.evidence_id: event for event in bundle["events"]}
+            assert all(row["quality"] == by_id[row["evidence_id"]].quality for row in contributors)
+            assert bundle["rtm_avg_quality"] == pytest.approx(sum(row["quality"] for row in contributors)/len(contributors))
             assert tuple(bundle["engine_order"]) == EC.ENGINE_ORDER
             assert bundle["events"]
             assert bundle["classifier_artifact_sha256"] == EC.load_classifier(classifier)["artifact_sha256"]
@@ -1307,7 +1312,7 @@ def test_native_twelve_engine_bundle_persists_full_evidence(tmp_path):
             # D31: terminal QX must remain intact, including the native
             # expiry meaning and every other field, not dropped/relabelled.
             later = await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-08T12:00:00.000Z",
-                rtm_context={"avg_quality": .9, "mtf_align": .5})
+                rtm_context={"derive_avg_quality": True, "mtf_align": .5})
             expired = [event for event in later["events"] if event.engine_id == "E05"
                        and event.condition_state.endswith("_EXPIRED")]
             assert expired and all(event.resolution_class == "QX" for event in expired)

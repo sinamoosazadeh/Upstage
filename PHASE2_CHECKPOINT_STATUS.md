@@ -163,3 +163,5 @@ CONTINUE(CP-14) IN PROGRESS 2026-09-17: owner D21/D22 resolve ISSUE-CP14-001/002
 - D33 ISSUE-037–041 projections implemented/tested, each ADR/home sentence/AJ row recorded. Expanded 255 passed, 1 deselected / 37.02s; source integration pending. AFTER b8f393e5f5d6ef51cc1a148053fe5d9a34e248726ab6c45fe682b3de65e6e153 / 20903 lines; OWNER-CHECKED:[ ].
 
 - D34 ISSUE-044–048 projection helpers green (310 passed, 1 deselected, 13 warnings / 35.06s); ADR/home/AJ each recorded. ISSUE-049 funding schedule absence uses conservative named refusal, not a new stop. AFTER a66a1b654ea2f082b119469ca7faa75a1caa749a6d6cae679127682550c81e60 / 20918 lines. Producer/serve/HANDOFF/two final suites/PR pending; OWNER-CHECKED:[ ].
+
+- G1 native E07 average-quality integration: both public-store native bundle roundtrips now derive contributor qualities (no .9 injected); complete terminal E05 QX retained. Targeted 192 passed, 1 deselected, 13 warnings / 37.03s. Full producer/cache/serve and final closeout still unfinished. OWNER-CHECKED:[ ].

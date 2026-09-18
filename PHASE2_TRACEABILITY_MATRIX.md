@@ -568,3 +568,5 @@ CP-14 current verification (2026-09-18): interim whole suite 2858 passed, 14 war
 | CP14-D34-046 | ADR-017 / 15. Risk Kernel | paper_close_marks, matching d34 regressions | PROJECTION PASS; G1 binding pending |
 | CP14-D34-047 | ADR-018 / 8. Evidence Fabric, Conflict, and Cross-Domain | uncertainty_trend, matching d34 regressions | PROJECTION PASS; G1 binding pending |
 | CP14-D34-048 | ADR-019 / 15. Risk Kernel | realized_loss_projection, matching d34 regressions | PROJECTION PASS; G1 binding pending |
+
+| CP14-D33-E07 integration | ADR-010 actual confirmation contributors | Native E01/E02/E03/E05 evidence identity join; 90h/180h public-store twelve-engine roundtrips use derived mean | TARGETED PASS; full G1 source not yet complete |

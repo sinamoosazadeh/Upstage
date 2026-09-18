@@ -1310,7 +1310,10 @@ def complete_engine_bundle(item: Mapping[str, Any], symbol: str, timeframe: str,
     """
     from dataclasses import asdict
     artifact = validate_classifier(artifact)
+    derive_quality = rtm_context.get("derive_avg_quality") is True
     for key in ("avg_quality", "mtf_align"):
+        if key == "avg_quality" and derive_quality:
+            continue
         value = rtm_context.get(key)
         if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or not 0 <= value <= 1:
             raise BridgeError("E07_CONTEXT_UNAVAILABLE", key)
@@ -1403,9 +1406,31 @@ def complete_engine_bundle(item: Mapping[str, Any], symbol: str, timeframe: str,
     for i, evidence in volume_by_idx.items():
         if any(str(code).startswith("EV_VOL_001") for code in evidence["events"]):
             confirm("vol_confirm", _iso_to_ms(window[i].timestamp))
+    quality_contributors = []
+    if derive_quality:
+        used = set()
+        for confirmation in confirmations:
+            cid, stamp = confirmation["cid"], confirmation["t_confirm_ms"]
+            engine = {"bos": "E01", "choch": "E01", "sweep": "E02",
+                      "vol_confirm": "E03", "fvg": "E05"}[cid]
+            matched = [ev for ev in events if ev.engine_id == engine
+                       and _iso_to_ms(ev.event_time) == stamp
+                       and (cid not in ("bos", "choch") or str(ev.condition_state).startswith(
+                            ("EV_STR_007", "EV_STR_008") if cid == "bos" else ("EV_STR_009", "EV_STR_010")))
+                       and (cid != "sweep" or ev.condition_state in CONFIRMED_SWEEP_EVENT_TYPES)]
+            if not matched:
+                raise BridgeError("E07_CONFIRMATION_QUALITY_UNAVAILABLE", f"{engine}:{cid}:{stamp}")
+            for ev in matched:
+                if ev.evidence_id not in used:
+                    used.add(ev.evidence_id)
+                    quality_contributors.append({"engine_id": engine, "evidence_id": ev.evidence_id,
+                        "snapshot_id": ev.snapshot_id, "confirmation_ms": stamp, "quality": ev.quality})
+        avg_quality = confirmation_quality(quality_contributors)
+    else:
+        avg_quality = rtm_context["avg_quality"]
     events.extend(E07.E07RTMEngine().compute(symbol, timeframe, end, {
         "window": window, "events": confirmations, "direction": direction,
-        "avg_quality": rtm_context["avg_quality"], "mtf_align": rtm_context["mtf_align"],
+        "avg_quality": avg_quality, "mtf_align": rtm_context["mtf_align"],
         "as_of_ms": _iso_to_ms(end), "temporal_provider": E12.E12TemporalProvider()}))
     order.append("E08")
     events.extend(E08.E08WyckoffEngine().compute(symbol, timeframe, end, {"window": window,
@@ -1422,7 +1447,8 @@ def complete_engine_bundle(item: Mapping[str, Any], symbol: str, timeframe: str,
                               f"{event.engine_id} resolution_class={event.resolution_class}: {exc}") from exc
         if _iso_to_ms(event.availability_time) > _iso_to_ms(end):
             raise BridgeError("BRIDGE_PIT_VIOLATION", event.engine_id)
-    return {**frame, "feature_vector": item["vector"], "rtm_confirmations": confirmations, "regime_state": state, "e11_result": result,
+    return {**frame, "feature_vector": item["vector"], "rtm_confirmations": confirmations,
+        "rtm_avg_quality": avg_quality, "rtm_quality_contributors": quality_contributors, "regime_state": state, "e11_result": result,
         "e11_context": {"ic_inputs": dict(item["ic"]), "history_windows": item["history"],
                         "classifier_W": artifact["W"], "classifier_b": artifact["b"],
                         "classifier_artifact_sha256": artifact["artifact_sha256"], "regime_state": state},
