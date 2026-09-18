@@ -270,6 +270,7 @@ class PaperRuntime:
         self.plan_provider = plan_provider
         self.catch_up = catch_up
         self._catch_up_failed: Dict[str, Any] = {}
+        self._context_preparation_failed: Dict[str, Any] = {}
         self.signal_source = signal_source
         self.max_trades_per_cycle = int(max_trades_per_cycle)
         self.max_cells_per_cycle = (None if max_cells_per_cycle is None
@@ -385,6 +386,9 @@ class PaperRuntime:
         if payload["cell_id"] in self._catch_up_failed:
             raise CellRefusal("CATCH_UP_FAILED",
                               self._catch_up_failed[payload["cell_id"]]["error_code"])
+        if payload["cell_id"] in self._context_preparation_failed:
+            failed = self._context_preparation_failed[payload["cell_id"]]
+            raise CellRefusal(failed["reason"], failed["detail"])
         # The cycle trade budget is checked BEFORE the plan is asked for: once
         # it is exhausted the cell halts by name instead of materializing work
         # that can never be sent (the execution stage keeps the same guard).
@@ -718,6 +722,27 @@ class PaperRuntime:
                if item[1] > self._last_close.get(item[0].cell_id, -1)]
         if self.max_cells_per_cycle is not None:
             due = due[:self.max_cells_per_cycle]
+        # G1: all expensive source preparation completes before run_cell
+        # starts its latency clock. D22 failures never enter preparation;
+        # a failed source must not fall back to its previous cached success.
+        self._context_preparation_failed = {}
+        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+        prepare = getattr(self.plan_provider, "prepare", None)
+        if callable(prepare):
+            for cell, close in due:
+                if cell.cell_id in self._catch_up_failed:
+                    continue
+                preparation["cells_checked"] += 1
+                try:
+                    await _maybe_await(prepare(cell.symbol, cell.timeframe, _ms_to_iso(close)))
+                    preparation["cells_prepared"] += 1
+                except Exception as exc:
+                    failed = {"cell": cell.cell_id,
+                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+                              "detail": getattr(exc, "detail", type(exc).__name__)}
+                    self._context_preparation_failed[cell.cell_id] = failed
+                    preparation["failures"].append(failed)
+        cycle["context_preparation"] = preparation
         tasks = [asyncio.create_task(self.scheduler.run_cell(
                     cell, close_ms=close, context={"cell_state": {}}))
                  for cell, close in due]
@@ -742,7 +767,8 @@ class PaperRuntime:
         cycle["halt_reasons"] = halt_reasons
         cycle["halt_stages"] = halt_stages
         for run in runs:
-            if run.cell_id in self._catch_up_failed:
+            if (run.cell_id in self._catch_up_failed
+                    or run.cell_id in self._context_preparation_failed):
                 continue
             self._last_close[run.cell_id] = max(
                 self._last_close.get(run.cell_id, -1), int(run.close_ms))

@@ -500,16 +500,29 @@ class PaperPlanBridge:
 
     def __init__(self, *, store: Any, environment: str = "PAPER",
                  context_source: Optional[ContextSource] = None,
+                 context_preparer: Optional[ContextSource] = None,
                  max_bars: int = 300) -> None:
         self.store = store
         self.environment = str(environment)
         self.context_source = context_source
+        self.context_preparer = context_preparer
         self.max_bars = int(max_bars)
         if self.max_bars <= 0:
             raise ValueError("max_bars must be positive")
         self.refusals: Dict[str, Dict[str, str]] = {}
         self.traces: Dict[str, Dict[str, Any]] = {}
         self.plans: Dict[str, Dict[str, Any]] = {}
+
+    async def prepare(self, symbol: str, timeframe: str, as_of: str) -> None:
+        """Outside-budget preparation, explicitly bound at composition time.
+
+        Never call the plan builder here: preparation may publish/read
+        evidence but cannot materialize a decision or consume a trade slot.
+        """
+        if self.context_preparer is not None:
+            if self.environment != "PAPER":
+                raise BridgeError("PAPER_ONLY_EXECUTION", self.environment)
+            await _maybe_await(self.context_preparer(symbol, timeframe, as_of))
 
     async def __call__(self, symbol: str, timeframe: str, as_of: str
                        ) -> Optional[Mapping[str, Any]]:
