@@ -1486,6 +1486,92 @@ class EngineContextProducer:
         self._frames: dict[tuple, dict] = {}
         self._raw_lineage: dict[tuple, dict] = {}
 
+    async def quality_window(self, symbol: str, timeframe: str, as_of: str,
+                             bars: int = 300) -> dict:
+        """Hydrate measured metadata only after immutable raw identity checking.
+
+        Raw-only SQLite rows do not prove source health, gap/sequence status or
+        receipt time. Absence of the quality-plane record is a refusal, not an
+        invitation to use MarketObservation constructor defaults.
+        """
+        from dataclasses import replace
+        from apex.quality.vector import calc_quality_vector, QualityFlags
+        window = await self.window(symbol, timeframe, as_of, bars)
+        if not window:
+            raise BridgeError("NO_MARKET_DATA", f"{symbol}:{timeframe}")
+        hydrated, qualities, facts = [], [], []
+        for index, obs in enumerate(window):
+            identity = self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())]["observation_id"]
+            fact = await read_context_fact(self.store, "QUALITY_"+identity, symbol, timeframe, as_of)
+            if fact is None:
+                raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", identity)
+            try:
+                if (fact["observation_id"] != identity or fact["content_hash"] != obs.content_hash()
+                        or not fact["measurement_source"] or type(fact["receipt_time_ms"]) is not int
+                        or fact["receipt_time_ms"] > _iso_to_ms(fact["fact_as_of"])
+                        or fact["receipt_time_ms"] < close_time_ms(_iso_to_ms(obs.timestamp), timeframe)):
+                    raise ValueError("quality/raw identity or receipt mismatch")
+                flags = fact["flags"]
+                if set(flags) != set(QualityFlags.__dataclass_fields__) or any(type(v) is not bool for v in flags.values()):
+                    raise ValueError("invalid quality flags")
+                measurements = fact["measurements"]
+                if set(measurements) != {"source_health", "gap_count", "expected_count", "completeness_pct", "delay_seconds"}:
+                    raise ValueError("incomplete measured metadata")
+                for key in ("gap_count", "expected_count"):
+                    if type(measurements[key]) is not int or measurements[key] < (1 if key == "expected_count" else 0):
+                        raise ValueError("invalid measured counts")
+                measured_number(measurements["source_health"], "QUALITY_PROVENANCE_UNAVAILABLE", lower=0, upper=1)
+                measured_number(measurements["completeness_pct"], "QUALITY_PROVENANCE_UNAVAILABLE", lower=0, upper=100)
+                measured_number(measurements["delay_seconds"], "QUALITY_PROVENANCE_UNAVAILABLE", lower=0)
+                delay = freshness([obs], timeframe, receipt_time=fact["receipt_time_ms"]/1000)["staleness_seconds"]
+                if delay != measurements["delay_seconds"]:
+                    raise ValueError("receipt/delay binding mismatch")
+                lag = (max(0., (fact["receipt_time_ms"]-_iso_to_ms(obs.oi_timestamp))/1000)
+                       if obs.oi_timestamp is not None else None)
+                measured = replace(obs, **measurements, oi_lag_seconds=lag)
+                q, state, tier = calc_quality_vector(measured, QualityFlags(**flags))
+                if q is None:
+                    raise BridgeError("WINDOW_QUALITY_UNAVAILABLE", state)
+                if (q != fact.get("q_raw") or state != fact["quality_state"] or tier != fact["quality_class"]):
+                    raise ValueError("native quality readback mismatch")
+            except (ValueError, KeyError, TypeError) as exc:
+                raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", f"{identity}: {exc}") from exc
+            hydrated.append(measured)
+            qualities.append((q, len(window)-index-1))
+            facts.append(fact["fact_snapshot_id"])
+        quality = window_quality_projection(qualities)
+        latest = await read_context_fact(self.store, "QUALITY_"+identity, symbol, timeframe, as_of)
+        fresh = freshness(hydrated, timeframe, receipt_time=latest["receipt_time_ms"]/1000)
+        return {"window": hydrated, **quality, **fresh,
+                "quality_snapshot_ids": facts, "receipt_time_ms": latest["receipt_time_ms"]}
+
+    async def mtf_inputs(self, symbol: str, timeframe: str, as_of: str) -> dict:
+        """D33 actual E09 base/intermediate/HTF states, no injected alignment."""
+        from apex.setup.family_sf_fvg_sweep_rev import relative_mtf
+        scope = relative_mtf(timeframe)
+        frames, states = {}, {}
+        for tf in dict.fromkeys((timeframe, scope["intermediate"], scope["htf"])):
+            if tf is None:
+                continue
+            try:
+                quality = await self.quality_window(symbol, tf, as_of)
+                if len(quality["window"]) < 51:
+                    raise BridgeError("INSUFFICIENT_HISTORY", tf)
+                frame = upstream_frame(quality["window"], symbol, tf)
+            except BridgeError as exc:
+                if exc.reason in ("NO_MARKET_DATA", "INSUFFICIENT_HISTORY"):
+                    raise BridgeError("MTF_INSUFFICIENT", f"{tf}: {exc.reason}") from exc
+                raise
+            state = {"symbol": symbol, "timeframe": tf, "closed": True,
+                     "as_of": close_time_ms(_iso_to_ms(quality["window"][-1].timestamp), tf),
+                     "freshness_ok": quality["freshness_ok"], "bias": frame["trend"]["bias"],
+                     "receipt_time_ms": quality["receipt_time_ms"],
+                     "quality_snapshot_ids": quality["quality_snapshot_ids"]}
+            states[tf] = state
+            frames[tf] = frame
+        projection = mtf_projection(symbol, timeframe, _iso_to_ms(as_of), states)
+        return {**projection, "states": states, "frames": frames}
+
     async def prepare_engine_bundle(self, symbol: str, timeframe: str, as_of: str,
                                     *, rtm_context: Mapping[str, Any]) -> dict:
         """Compute and persist a complete native bundle before plan admission.
@@ -2019,3 +2105,100 @@ async def collect_public_funding_schedule(symbol: str, *, client: Any = None,
                 "observed_at_ms": int(now()*1000), "source": {"endpoint": path, "payload": raw}}
     except Exception as exc:
         raise BridgeError("FUNDING_UNAVAILABLE", f"{symbol}: {type(exc).__name__}") from exc
+
+
+async def append_context_fact(store: Any, kind: str, symbol: str, timeframe: str,
+                              as_of: str, data: Mapping) -> str:
+    """Append an identity-bound producer input/result via public snapshot API.
+
+    No UPDATE/DELETE, schema change or replacement of raw availability. The
+    input owner supplies measurement time, not the candle's convenient time.
+    """
+    as_of = _ms_to_iso(_iso_to_ms(as_of))
+    body = {"kind": kind, "symbol": symbol, "timeframe": timeframe,
+            "as_of": as_of, "data": dict(data)}
+    identity = hashlib.sha256(canonical_json(body).encode()).hexdigest()
+    found = await (await store.db.execute("SELECT snapshot_id FROM snapshot_pit WHERE snapshot_id=?", (identity,))).fetchone()
+    if not found:
+        await store.insert_snapshot({"snapshot_id": identity, "as_of": as_of,
+            "symbol_scope": [symbol], "timeframe_scope": [timeframe],
+            "source_state": "CP14_"+kind, "parameter_package_id": "CP14_PRODUCER_V1",
+            "code_version": "CP14_PRODUCER_V1", "quality_state": body})
+    return identity
+
+
+async def read_context_fact(store: Any, kind: str, symbol: str, timeframe: str,
+                            as_of: str, *, exact: bool = False) -> dict | None:
+    import json
+    rows = await (await store.db.execute(
+        "SELECT snapshot_id,vector_quality_state,as_of FROM snapshot_pit "
+        "WHERE source_state=? AND symbol_scope=? AND timeframe_scope=? AND as_of"+
+        ("=?" if exact else "<=?")+" ORDER BY as_of DESC,rowid DESC LIMIT 1",
+        ("CP14_"+kind, symbol, timeframe, as_of))).fetchall()
+    if not rows:
+        return None
+    try:
+        identity, raw, stamp = rows[0]
+        body = json.loads(raw)
+        if (hashlib.sha256(canonical_json(body).encode()).hexdigest() != identity
+                or (body["kind"], body["symbol"], body["timeframe"], body["as_of"]) != (kind,symbol,timeframe,stamp)):
+            raise ValueError("fact identity mismatch")
+        return {**body["data"], "fact_snapshot_id": identity, "fact_as_of": stamp}
+    except (ValueError, KeyError, TypeError) as exc:
+        raise BridgeError("CONTEXT_FACT_INVALID", kind) from exc
+
+
+async def publish_quality_observation(store: Any, observation: Any, *, flags: Any,
+                                      measurements: Mapping, receipt_time_ms: int, measured_at: str,
+                                      measurement_source: str) -> str:
+    """Quality-plane public seam: explicit observations/flags, native scoring.
+
+    This is not called to backfill unknown historical metadata. A source must
+    supply its actual completeness/source-health/sequence measurements and
+    their provenance; the raw-only runtime never invokes it with defaults.
+    """
+    from dataclasses import asdict, replace
+    from apex.quality.vector import calc_quality_vector, QualityFlags
+    if not isinstance(flags, QualityFlags) or not measurement_source:
+        raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", "explicit flags and source required")
+    if (type(receipt_time_ms) is not int or receipt_time_ms > _iso_to_ms(measured_at)
+            or receipt_time_ms < close_time_ms(_iso_to_ms(observation.timestamp), observation.timeframe)):
+        raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", "future receipt")
+    rows = await (await store.db.execute(
+        "SELECT observation_id FROM market_observation WHERE symbol=? AND timeframe=? AND open_time=? "
+        "AND candle_status IN ('CLOSED','CORRECTED')",
+        (observation.symbol, observation.timeframe, observation.timestamp))).fetchall()
+    if len(rows) != 1:
+        raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", "unique raw identity required")
+    delay = freshness([observation], observation.timeframe, receipt_time=receipt_time_ms/1000)["staleness_seconds"]
+    if set(measurements) != {"source_health", "gap_count", "expected_count", "completeness_pct"}:
+        raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", "explicit measured metadata required")
+    lag = (max(0., (receipt_time_ms-_iso_to_ms(observation.oi_timestamp))/1000)
+           if observation.oi_timestamp is not None else None)
+    obs = replace(observation, **measurements, delay_seconds=delay, oi_lag_seconds=lag)
+    q, state, tier = calc_quality_vector(obs, flags)
+    payload = {"observation_id": rows[0][0], "content_hash": obs.content_hash(),
+               "measurement_source": measurement_source, "receipt_time_ms": receipt_time_ms,
+               "flags": asdict(flags), "measurements": {k: getattr(obs,k) for k in
+                   ("source_health","gap_count","expected_count","completeness_pct","delay_seconds")},
+               "quality_state": state, "quality_class": tier}
+    if q is not None:
+        payload["q_raw"] = q
+    else:
+        payload["refusal"] = state
+    return await append_context_fact(store, "QUALITY_"+rows[0][0], obs.symbol, obs.timeframe, measured_at, payload)
+
+
+def governed_holding_end(start_ms: int, timeframe: str) -> int:
+    """D25 SL-12's known H_max entries; strictest known bound elsewhere."""
+    import re
+    from apex.research.governance import GOVERNED_DEFAULTS
+    text = next(p.l1_default for p in GOVERNED_DEFAULTS if p.name == "H_max(tf)")
+    documented = {tf:int(n) for n,tf in re.findall(r"(\d+) \((\w+)\)", text)}
+    if not documented or timeframe not in E04.TF_SECONDS:
+        raise BridgeError("HOLDING_HORIZON_UNAVAILABLE", timeframe)
+    cap = documented.get(timeframe, min(documented.values()))
+    end = start_ms
+    for _ in range(cap):
+        end = close_time_ms(end, timeframe)
+    return end
