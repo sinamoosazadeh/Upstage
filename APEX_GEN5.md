@@ -11743,11 +11743,6 @@ Produce a transparent, explainable, PIT-safe classification of market behavioral
 | expansion | $x_4$ | $raw_{exp}= VolRatio \cdot \mathbb{I}[BOS_t]$, $x_4$ = sigmoid analogous to trendiness | [0,1] | Yes |
 | liquidity_stability | $x_5$ | $raw_{liq}= \frac{density \cdot age}{1+sweepRate}$, $x_5$ = rolling min-max | [0,1] | Yes |
 | participation | $x_6$ | $raw_{part}= 0.6\, VolumeZ + 0.4\, OI\_z$, $x_6 = \frac{1}{1+e^{-raw}}$ | [0,1] | Yes |
-
-Session-CP-14 (2026-09-17; D23): Non-AVAILABLE OI contributes zero weight, never a zero OI value: renormalize to raw_part=VolumeZ and x6=sigmoid(raw_part), identically in training/runtime; retain oi_state and contributing_features participation=PARTIAL and prohibit Q5 until OI is AVAILABLE, with no other quality change; AVAILABLE keeps 0.6*VolumeZ+0.4*OI_z.
-
-| Term | Symbol | Precise mathematical definition | Range | PIT-safe |
-|---|---|---|---|---|
 | structure_quality | $x_7$ | $raw_{sq}= S_{struct}$ from E01, $x_7$ = sigmoid | [0,1] | Yes |
 | momentum_state_numeric | $x_8$ | $v_{cat}\mapsto \{1,0,-1\}$, then $x_8 = (v+1)/2$ smoothed with EWMA $\lambda=0.94$ | [0,1] | Yes |
 | bias | $b_t$ | $b_t = \sum_{tf} w_{tf} \cdot bias_{tf}$, $bias_{tf}\in[-1,1]$ from TrendStack, $w_{MTF}=[0.5,0.3,0.2]$ for H4, H1, M15 | [-1,1] | Yes |
@@ -11764,6 +11759,8 @@ Session-CP-14 (2026-09-17; D23): Non-AVAILABLE OI contributes zero weight, never
 | quality Q | $Q$ | $Q0$=Invalid, $Q1$=Degraded, $Q2$=Noisy, $Q3$=Acceptable, $Q4$=Stable, $Q5$=Golden | enum | Yes |
 | hysteresis | $h$ | $r^*$ changes only if 3 consecutive candles repeat the new label | - | Yes |
 | PIT | - | For a **pre-close decision at $t$**, reference/history inputs are bounded by $\le t-1$; at the canonical close-of-candle `as_of=t` boundary, the closed $X_t$ observation may be evaluated against the prior state | - | boundary-specific design rule |
+
+Session-CP-14 (2026-09-17; D23): Non-AVAILABLE OI contributes zero weight, never a zero OI value: renormalize to raw_part=VolumeZ and x6=sigmoid(raw_part), identically in training/runtime; retain oi_state and contributing_features participation=PARTIAL and prohibit Q5 until OI is AVAILABLE, with no other quality change; AVAILABLE keeps 0.6*VolumeZ+0.4*OI_z.
 
 **Versioned dependency contract (normative):**
 ```

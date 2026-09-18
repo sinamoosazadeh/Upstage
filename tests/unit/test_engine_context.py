@@ -1178,3 +1178,14 @@ def test_d30_subset_is_canonical_and_excludes_other_training_cells(tmp_path):
         finally:
             await store.close()
     asyncio.run(exercise())
+
+
+def test_d23_vocabulary_table_stays_contiguous_with_note_below():
+    text = (Path(__file__).parents[2] / "APEX_GEN5.md").read_text()
+    note_start = text.index("Session-CP-14 (2026-09-17; D23):")
+    start = text.rfind("## 2. Complete Vocabulary with Mathematical Definitions", 0, note_start)
+    section = text[start:note_start]
+    rows = [i for i, line in enumerate(section.splitlines()) if line.startswith("|")]
+    assert rows == list(range(rows[0], rows[-1] + 1))
+    assert section.count("| Term | Symbol |") == 1
+    assert "| participation |" in section and "| structure_quality |" in section and "| PIT |" in section
