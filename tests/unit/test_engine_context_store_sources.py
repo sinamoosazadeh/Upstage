@@ -154,3 +154,91 @@ def test_governed_holding_uses_sl12_known_bound_or_strictest(tf):
     for _ in range(24 if tf == "1h" else 12):
         expected = EC.close_time_ms(expected, tf)
     assert EC.governed_holding_end(start, tf) == expected
+
+
+def test_native_bundle_without_injected_quality_or_mtf(tmp_path, monkeypatch):
+    from tests.unit.test_engine_context import _seed_full_training_fixture, FIXTURE
+    from apex.ops.bootstrap_service import latest_close_boundary
+    actual_calls, outputs, phase = [], {}, {"active": False}
+    native_complete = EC.complete_engine_bundle
+    def tracked_complete(*args, **kwargs):
+        phase["active"] = True
+        try:
+            return native_complete(*args, **kwargs)
+        finally:
+            phase["active"] = False
+    monkeypatch.setattr(EC, "complete_engine_bundle", tracked_complete)
+    for code, cls in (("E01",EC.E01.E01StructureEngine),("E02",EC.E02.E02LiquidityEngine),
+        ("E12",EC.E12.E12TemporalEngine),("E03",EC.E03.E03VolumeEngine),
+        ("E09",EC.E09.E09TrendEngine),("E05",EC.E05.E05FVGEngine),
+        ("E06",EC.E06.E06OrderBlockEngine),("E11",EC.E11.E11RegimeEngine),
+        ("E07",EC.E07.E07RTMEngine),("E08",EC.E08.E08WyckoffEngine)):
+        original = cls.compute
+        def tracked(self, *args, _code=code, _original=original, **kwargs):
+            if phase["active"]: actual_calls.append(_code)
+            result = _original(self,*args,**kwargs)
+            if phase["active"]: outputs[_code] = list(result)
+            return result
+        monkeypatch.setattr(cls,"compute",tracked)
+    native_fvg = EC.E05.run_engine
+    def tracked_fvg(*args, **kwargs):
+        if phase["active"]: actual_calls.append("E05")
+        return native_fvg(*args, **kwargs)
+    monkeypatch.setattr(EC.E05, "run_engine", tracked_fvg)
+    # E04/E10 consume their native streams and materialize directly (rather
+    # than replaying their generic open/close-incompatible compute wrappers).
+    for code, cls in (("E04",EC.E04.E04VolatilityEngine),("E10",EC.E10.E10MomentumEngine)):
+        original = cls._window_quality
+        def tracked(window, _code=code, _original=original):
+            if phase["active"]: actual_calls.append(_code)
+            return _original(window)
+        monkeypatch.setattr(cls,"_window_quality",staticmethod(tracked))
+    async def run():
+        store = await SQLiteStore(str(tmp_path/"native.sqlite")).open()
+        try:
+            await _seed_full_training_fixture(store, symbols=("ETHUSDT",))
+            asof = "2026-01-08T12:00:00.000Z"
+            end = EC._iso_to_ms(asof)
+            source = EC.EngineContextProducer(store, environment="PAPER", classifier_path=FIXTURE)
+            # Extend the actual fixture's coarser CLOSED frontier. These are
+            # raw OHLCV, not E09 states or an injected alignment score.
+            base = EC._iso_to_ms("2026-01-01T00:00:00.000Z")
+            for tf, step in (("4h",14400000), ("8h",28800000)):
+                stop = latest_close_boundary(end,tf)
+                start = base if tf == "4h" else stop-70*step
+                for index, stamp in enumerate(range(start,stop,step)):
+                    p = 110+index*.1+math.sin(index)
+                    obs = replace(make_obs(symbol="ETHUSDT", timeframe=tf,
+                        ts=EC._ms_to_iso(stamp), o=p, c=p+.2,h=p+1,l=p-1,v=1000,oi=None),
+                        sequence=1000+index, availability_time="1970-01-01T00:00:00.000Z")
+                    await store.ingest_raw(obs,oi_state="MISSING")
+            for tf in ("1h","4h","8h"):
+                for obs in await source.window("ETHUSDT",tf,asof,300):
+                    receipt = EC.close_time_ms(EC._iso_to_ms(obs.timestamp),tf)
+                    await EC.publish_quality_observation(store,obs,
+                        flags=QualityFlags(True,True,False,True,True),
+                        measurements={"source_health":.95,"gap_count":0,"expected_count":1,"completeness_pct":100.},
+                        receipt_time_ms=receipt, measured_at=EC._ms_to_iso(receipt),
+                        measurement_source="native-fixture-measured-ingestion")
+            # No rtm_context argument: runtime derives both inputs from stores
+            # and native confirmations, with the existing classifier loader.
+            bundle = await source.prepare_engine_bundle("ETHUSDT","1h",asof)
+            assert tuple(bundle["engine_order"]) == EC.ENGINE_ORDER
+            assert set(bundle["measured_mtf"]["states"]) == {"1h","4h","8h"}
+            assert bundle["measured_quality"]["window"][0].source_health == .95
+            assert bundle["rtm_quality_contributors"]
+            assert bundle["rtm_avg_quality"] == EC.confirmation_quality(bundle["rtm_quality_contributors"])
+            events = bundle["events"]
+            assert tuple(actual_calls) == EC.ENGINE_ORDER
+            assert set(e.engine_id for e in events).issubset(EC.ENGINE_ORDER)
+            for code, emitted in outputs.items():
+                assert {e.evidence_id for e in emitted} == {e.evidence_id for e in events if e.engine_id == code}
+            for event in events:
+                event.validate_24_fields()
+            restored = await EC.read_complete_evidence(store,[e.evidence_id for e in events])
+            assert restored == events
+            assert EC.forecast_vol_quantile(bundle["volatility_history"], bundle["vlt"], timeframe="1h") >= 0
+            assert any(e.engine_id == "E05" and e.resolution_class == "QX" for e in restored)
+        finally:
+            await store.close()
+    asyncio.run(run())

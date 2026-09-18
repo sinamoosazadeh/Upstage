@@ -1548,6 +1548,7 @@ class EngineContextProducer:
     async def mtf_inputs(self, symbol: str, timeframe: str, as_of: str) -> dict:
         """D33 actual E09 base/intermediate/HTF states, no injected alignment."""
         from apex.setup.family_sf_fvg_sweep_rev import relative_mtf
+        from apex.ops.bootstrap_service import latest_close_boundary
         scope = relative_mtf(timeframe)
         frames, states = {}, {}
         for tf in dict.fromkeys((timeframe, scope["intermediate"], scope["htf"])):
@@ -1555,6 +1556,9 @@ class EngineContextProducer:
                 continue
             try:
                 quality = await self.quality_window(symbol, tf, as_of)
+                actual_close = close_time_ms(_iso_to_ms(quality["window"][-1].timestamp), tf)
+                if actual_close != latest_close_boundary(_iso_to_ms(as_of), tf):
+                    raise BridgeError("MTF_INSUFFICIENT", f"{tf}: latest CLOSED frontier missing")
                 if len(quality["window"]) < 51:
                     raise BridgeError("INSUFFICIENT_HISTORY", tf)
                 frame = upstream_frame(quality["window"], symbol, tf)
@@ -1573,7 +1577,7 @@ class EngineContextProducer:
         return {**projection, "states": states, "frames": frames}
 
     async def prepare_engine_bundle(self, symbol: str, timeframe: str, as_of: str,
-                                    *, rtm_context: Mapping[str, Any]) -> dict:
+                                    *, rtm_context: Mapping[str, Any] | None = None) -> dict:
         """Compute and persist a complete native bundle before plan admission.
 
         Final bridge/risk projection is separate; this method never presents
@@ -1581,6 +1585,11 @@ class EngineContextProducer:
         """
         from dataclasses import replace
         artifact = load_classifier(self.classifier_path)
+        measured = mtf = None
+        if rtm_context is None:
+            measured = await self.quality_window(symbol, timeframe, as_of)
+            mtf = await self.mtf_inputs(symbol, timeframe, as_of)
+            rtm_context = {"derive_avg_quality": True, "mtf_align": mtf["mtf_align"]}
         rows = await (await self.store.db.execute(
             "SELECT COUNT(*) FROM market_observation WHERE symbol=? AND timeframe=? "
             "AND candle_status IN ('CLOSED','CORRECTED') AND open_time<=?",
@@ -1593,7 +1602,17 @@ class EngineContextProducer:
             last = item
         if last is None or "vector" not in last:
             raise BridgeError("E11_CONTEXT_UNAVAILABLE", str((last or {}).get("reason", "empty timeline")))
+        if measured is not None:
+            expected = [(o.timestamp, o.content_hash()) for o in last["frame"]["raw_window"]]
+            actual = [(o.timestamp, o.content_hash()) for o in measured["window"]]
+            if actual != expected:
+                raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", "engine/quality window mismatch")
+            last["frame"]["raw_window"] = measured["window"]
         bundle = complete_engine_bundle(last, symbol, timeframe, artifact, rtm_context=rtm_context)
+        bundle["volatility_history"] = [e.state for e in last["volatility_stream"]["evidence"]]
+        if measured is not None:
+            bundle["measured_quality"] = measured
+            bundle["measured_mtf"] = {k: v for k, v in mtf.items() if k != "frames"}
         lineage = tuple(self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())]["observation_id"]
                         for obs in bundle["raw_window"])
         available = max([_iso_to_ms(bundle["window"][-1].timestamp)] + [_iso_to_ms(obs.availability_time) for obs in bundle["raw_window"]])
