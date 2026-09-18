@@ -1,0 +1,23 @@
+# Ch.17 SL-12 / D25: owner hard cap, fraction of capital (not USDT).
+capital_hard_cap_fraction: 0.60
+# Ch.17 SL-12 / D25: preserve anchors; missing TFs take strictest anchor 0.55.
+p_min_tf:
+  1m: 0.52
+  3m: 0.55
+  5m: 0.55
+  15m: 0.55
+  30m: 0.55
+  1h: 0.55
+  2h: 0.55
+  4h: 0.55
+  6h: 0.55
+  8h: 0.55
+  12h: 0.55
+  1d: 0.50
+  1w: 0.55
+  1mo: 0.55
+# Ch.17 SL-12 / D25: minimum process confidence.
+c_min: 0.50
+# Ch.12 AF.3 / D28: PAPER only; zero-weight unavailable inputs are not measurements.
+paper_bootstrap:
+  arbitration_weights: {quality: 1.0, alignment: 0.0, recency: 0.0}
