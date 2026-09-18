@@ -551,7 +551,7 @@ assert load_classifier(sys.argv[1]) == a
     assert paths[0].read_bytes() == paths[1].read_bytes()
 
 
-def test_actual_first_seven_engines_keep_missing_projections_explicit():
+def test_actual_first_seven_engines_use_d26_projections_and_refuse_short_history():
     import random
     from datetime import datetime, timedelta, timezone
     rng = random.Random(2)
@@ -571,8 +571,8 @@ def test_actual_first_seven_engines_keep_missing_projections_explicit():
     assert frame["events"]
     assert frame["ic"]["oi_state"] == "MISSING"
     assert frame["ic"]["contributing_features"]["participation"] == "PARTIAL"
-    assert frame["ic"]["level_density"] is None
-    assert frame["projection_refusals"] == ["E11_LIQUIDITY_PROJECTION_UNCONFIGURED"]
+    assert frame["ic"]["liquidity_raw"] == EC.liquidity_inputs(frame["liquidity"])["liquidity_raw"]
+    assert frame["projection_refusals"] == []
     states = frame["volatility"]["states"]
     prior = [state.atr14_wilder for state in states[:-1]]
     assert frame["ic"]["atr_z"] == EC.atr_z_input(states[-1], prior)
@@ -980,3 +980,42 @@ def test_d29_real_ledger_partial_order_pnl_environment_isolation_and_cancel(tmp_
         finally:
             await ledger.stop(); await store.close()
     asyncio.run(exercise())
+
+
+def test_d26b_live_density_max_age_and_five_prerequisite_sweeps():
+    engine = EC.E02.LiquidityEngineV4()
+    engine.candles = [EC.E02.Candle(100, 105, 95, 101, 50, i, True, i) for i in range(120)]
+    def level(price, touch, fate="ACTIVE"):
+        return SimpleNamespace(price=price, last_touch=touch, fate=fate)
+    engine.levels = {"a": level(100, 115), "b": level(110, 100, "STRENGTHENED"),
+                     "c": level(130, 118), "dead": level(1000, 0, "EXPIRED")}
+    prereq = dict.fromkeys(EC.SWEEP_PREREQUISITES, True)
+    def event(kind, index, checks=prereq):
+        return {"event_type": kind, "at_bar": index, "payload": {"prereq": checks}}
+    engine.events = [event("EV_LIQ_005", 110), event("EV_LIQ_006", 111), event("EV_LIQ_005", 0),
+                     event("EV_LIQ_007", 112), event("EV_LIQ_005", 113, {**prereq, "P3_rejection": False})]
+    got = EC.liquidity_inputs(engine)
+    assert got["level_density"] == 3 / 30
+    assert got["age_score"] == 19  # maximum age, NOT average/sum
+    assert got["sweep_rate"] == 2 / EC.E02.E02_DEFAULTS["volume_profile_bars"]
+    assert got["liquidity_raw"] == (3 / 30) * 19 / 1.02
+    engine.levels = {"a": engine.levels["a"]}
+    one = EC.liquidity_inputs(engine)
+    assert one["level_density"] == one["age_score"] == one["liquidity_raw"] == 0
+    assert one["sweep_rate"] == .02
+    assert EC.E11.projected_liquidity_norm(one["liquidity_raw"], [0.] * 20) == .5
+    engine.events = [event("EV_LIQ_007", 112)]
+    assert EC.liquidity_inputs(engine)["sweep_rate"] == 0
+
+
+def test_d26b_classifier_normalizes_projected_raw_not_density():
+    ic = {"trendiness_raw": .4, "vol_ratio": .4, "expansion_raw": .4,
+          "level_density": .1, "liquidity_raw": 1.9, "participation_raw": .4,
+          "structure_score": .4, "momentum_state_raw": "NEUTRAL", "atr_z": 0,
+          "bias_per_TF": {"H4": 0, "H1": 0, "M15": 0}}
+    history = {key: [0., 1., 2.] * 10 for key in EC.HISTORY_KEYS}
+    vector, _ = EC.E11.compute_state_vector(ic, history, .5)
+    assert vector["liquidity_stability"] == EC.E11.rolling_minmax_norm(1.9, history["liq"])
+    engine = EC.E11.RegimeEngine()
+    engine._append_history(ic, vector)
+    assert engine.history_windows["liq"][-1] == 1.9

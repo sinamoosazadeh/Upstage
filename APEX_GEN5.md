@@ -11718,6 +11718,7 @@ Produce a transparent, explainable, PIT-safe classification of market behavioral
     - Session-CP-14 (2026-09-17): D26-A maps the frozen E04 `VolatilityState.atr14_wilder` to `atr_z_t=(atr14_t−μ_{t−1,W})/(σ_{t−1,W}+ε)` using E11 Method B's same prior same-cell rolling reference, existing 180-day window capped by available history, lag 1, minimum-prior-samples rule and E11 ε in both training and the G1 producer, with insufficient history following `INVALID_E11_HISTORY` and no ATR20 or new window constant.
   - `E03 Volume v4.0.0` → `volume_z, OI_z, participation_raw`
   - `E02 Liquidity v4.0.0` → `level_density, sweep_rate, age_score` via the canonical v4.0.0 consumer projection.
+    - Session-CP-14 (2026-09-17): D26-B uses live E02 ACTIVE/STRENGTHENED levels, `density=count/(max_price−min_price)` and `age=MAX(t−last_touch)`, with density=age=0 below two live levels; `sweep_rate` is five-prerequisite §3.6 confirmed sweeps (not WickOnly) divided by CLOSED bars in E02's existing retained window, including when fewer than two levels remain; train-e11 and G1 both normalize `raw_liq=density*age/(1+sweep_rate)` by existing Method A, whose degenerate-reference result remains 0.5.
 - Outputs: context only, consumed through the canonical L13 Decision/BDI and L14 Risk layer contracts; E12 never authorizes execution and does not directly grant capital permission.
 
 ### 1.3 Boundaries and Self-Sufficiency Guarantee
@@ -20852,6 +20853,7 @@ Engine v4.0.0 formula bodies were not rewritten.
 | Repo tree, YAML, P model p_raw=0.5, Q/OI tables, 7 invariants, pattern tolerances, GF_SC_01/02, depth protocol, ECONOMIC_GATE empty grid, signaling P0–P3, termux-battery-status, requirements.lock name | merged 2026-09-08 into G/U/AD/AE/SL-2/SL-3/SL-6/T/Y/O/W.6/§2.1/§9.5 |
 | CP-14 engine-context producer and loader fixture paths (2026-09-17) | Section 9.5 repository tree; ADR-CP14-001 under ADR-P2-003 |
 | CP-14 D23 participation with missing OI (2026-09-17) | E11 Section 2; ISSUE-CP14-007 owner resolution |
+| CP-14 D26-B native liquidity projection (2026-09-17) | E11 Section 1.2; live density/MAX age/confirmed sweep rate; shared train/runtime Method A |
 | CP-14 D26-A ATR14-to-atr_z consumer projection (2026-09-17) | E11 Section 1.2; ISSUE-CP14-011 part 1 owner resolution |
 | CP-14 D27 confidence-complement uncertainty (2026-09-17) | Section 9.5 P1 source row corrected to Ch.8 `1-p_max`; raw H and h_norm remain distinct; ISSUE-CP14-019 |
 | CP-14 D29 PAPER reservation proxy (2026-09-17) | Section 9.5 P7 and Ch.16 P3 CP-15 simulator binding; ISSUE-CP14-018; LIVE unchanged |

@@ -356,6 +356,19 @@ REQUIRED_IC_INPUTS: Tuple[str, ...] = (
     "bias_per_TF", "atr_z")
 
 
+def projected_liquidity_norm(raw: float, history: Sequence[float]) -> float:
+    """Owner D26-B Method-A degenerate reference, only for the new E02 IC.
+
+    Legacy callers keep ISSUE-CP5-009 behavior. Short/nonfinite references
+    still refuse; only a finite constant reference has the documented 0.5.
+    """
+    values = [float(value) for value in history]
+    if len(values) >= 10 and math.isfinite(float(raw)) and all(math.isfinite(v) for v in values):
+        if max(values) == min(values):
+            return 0.5
+    return rolling_minmax_norm(raw, history)
+
+
 def compute_state_vector(inputs: Dict[str, Any],
                          history: Dict[str, List[float]],
                          prev_mom: float) -> Tuple[Dict[str, float], float]:
@@ -369,7 +382,7 @@ def compute_state_vector(inputs: Dict[str, Any],
     raw_trend = float(inputs["trendiness_raw"])
     raw_vol_ratio = float(inputs["vol_ratio"])
     raw_exp = float(inputs["expansion_raw"])
-    raw_liq = float(inputs["level_density"])
+    raw_liq = float(inputs.get("liquidity_raw", inputs["level_density"]))
     raw_part = float(inputs["participation_raw"])
     raw_sq = float(inputs["structure_score"])
     atr_z = float(inputs["atr_z"])
@@ -384,7 +397,8 @@ def compute_state_vector(inputs: Dict[str, Any],
     if atr_z < E11_DEFAULTS["compression_atr_z_threshold"]:
         x_comp = min(1.0, x_comp + E11_DEFAULTS["compression_atr_z_boost"])
     x_exp = rolling_sigmoid_norm(raw_exp, history.get("exp", []))
-    x_liq = rolling_minmax_norm(raw_liq, history.get("liq", []))
+    x_liq = (projected_liquidity_norm(raw_liq, history.get("liq", []))
+             if "liquidity_raw" in inputs else rolling_minmax_norm(raw_liq, history.get("liq", [])))
     if "oi_state" in inputs:
         # Owner D23: shared train/runtime participation mapping, no OI=0.
         x_part = (1.0 / (1.0 + math.exp(-raw_part)) if raw_part >= 0
@@ -1066,7 +1080,8 @@ class RegimeEngine:
                    ("exp", "expansion_raw"), ("liq", "level_density"),
                    ("part", "participation_raw"), ("sq", "structure_score"))
         for win, key in raw_map:
-            val = ic_inputs.get(key)
+            val = (ic_inputs.get("liquidity_raw", ic_inputs.get(key))
+                   if win == "liq" else ic_inputs.get(key))
             if val is not None and math.isfinite(float(val)):
                 buf = self.history_windows[win]
                 buf.append(float(val))
@@ -1325,7 +1340,8 @@ def run_engine(candles: Sequence[Dict[str, Any]],
                              ("liq", "level_density"),
                              ("part", "participation_raw"),
                              ("sq", "structure_score")):
-                val = ic.get(key)
+                val = (ic.get("liquidity_raw", ic.get(key))
+                       if win == "liq" else ic.get(key))
                 if val is not None and math.isfinite(float(val)):
                     eng.history_windows[win].append(float(val))
             state = {"quality": "QX", "reason": "INSUFFICIENT_HISTORY_Q1",

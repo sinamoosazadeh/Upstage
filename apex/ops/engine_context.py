@@ -677,6 +677,41 @@ def atr_z_input(state: Any, prior_atr14: list[float]) -> float:
     return (current - mu) / (sigma + E11.EPS)
 
 
+
+CONFIRMED_SWEEP_EVENT_TYPES = frozenset({"EV_LIQ_005", "EV_LIQ_006"})
+SWEEP_PREREQUISITES = frozenset({"P1_valid_level", "P2_penetration", "P3_rejection",
+                                "P4_temporal", "P5_data_quality"})
+
+
+def liquidity_inputs(liquidity: Any) -> dict:
+    """D26-B: actual E02 live levels and confirmed retained-window sweeps.
+
+    The native retained-window constant is shared via volume_profile_bars;
+    WickOnly and incomplete prerequisite sets never count as sweeps.
+    """
+    retained = [bar for bar in liquidity.candles[-liquidity.volume_profile_bars:] if bar.is_closed]
+    if not retained:
+        raise BridgeError("INVALID_E11_HISTORY", "empty CLOSED E02 retained window")
+    current = retained[-1].bar_index
+    live = [level for level in liquidity.levels.values() if level.fate in ("ACTIVE", "STRENGTHENED")]
+    density = age = 0.0
+    if len(live) >= 2:
+        span = max(level.price for level in live) - min(level.price for level in live)
+        if not math.isfinite(span) or span <= 0:
+            raise BridgeError("INVALID_E11_FEATURE", "nonpositive live-level price span")
+        density = len(live) / span
+        age = float(max(current - level.last_touch for level in live))
+        if age < 0:
+            raise BridgeError("INVALID_E11_FEATURE", "future level touch")
+    indices = {bar.bar_index for bar in retained}
+    sweeps = [event for event in liquidity.events
+              if event.get("event_type") in CONFIRMED_SWEEP_EVENT_TYPES and event.get("at_bar") in indices
+              and SWEEP_PREREQUISITES.issubset(event.get("payload", {}).get("prereq", {}))
+              and all(event["payload"]["prereq"][key] is True for key in SWEEP_PREREQUISITES)]
+    rate = len(sweeps) / len(retained)
+    return {"level_density": density, "age_score": age, "sweep_rate": rate,
+            "liquidity_raw": density * age / (1.0 + rate)}
+
 def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
                    *, emit: bool = False,
                    atr14_history: list[float] | None = None) -> dict[str, Any]:
@@ -742,12 +777,12 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     collect("E09", E09.E09TrendEngine, trend_context)
     trend = E09.run_engine(bars, swings=swings, atr=vlt.atr14_wilder,
                           tf_seconds=duration, bos_event=bos, oi_state=vol.oi_state)
-    # ISSUE-CP14-011 part 1 is resolved by D26-A; part 2 remains pending.
+    # ISSUE-CP14-011 projections are resolved by owner D26-A/B.
     # An explicit empty history is unavailable, never replaced by a fallback.
     prior = ([state.atr14_wilder for state in volatility["states"]
               if state.as_of < _iso_to_ms(end)]
              if atr14_history is None else atr14_history)
-    projection_refusals = ["E11_LIQUIDITY_PROJECTION_UNCONFIGURED"]
+    projection_refusals = []
     try:
         atr_z = atr_z_input(vlt, prior)
     except ValueError as exc:
@@ -761,7 +796,7 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
                     for scale, weight in E09.W_STACK_CORRECTED.items())
     is_bos = bool(bos and bos["candle_index"] == len(window) - 1)
     ic = {"trendiness_raw": raw_trend, "vol_ratio": vlt.vol_ratio,
-          "expansion_raw": vlt.vol_ratio * is_bos, "level_density": None,
+          "expansion_raw": vlt.vol_ratio * is_bos, **liquidity_inputs(liquidity),
           "structure_score": float(bos["strength"]["S"]) if bos else 0.0,
           "momentum_state_raw": E10.momentum_state_projection(momentum)["momentum_state_raw"],
           "atr_z": atr_z, **part}
@@ -787,7 +822,7 @@ TRAINING_QUERY = canonical_json({
     "label_boundary": "t+48 exists in filtered CLOSED store window; D21 unchanged",
 })
 HISTORY_KEYS = {"trend": "trendiness_raw", "vol": "vol_ratio", "exp": "expansion_raw",
-                "liq": "level_density", "part": "participation_raw", "sq": "structure_score"}
+                "liq": "liquidity_raw", "part": "participation_raw", "sq": "structure_score"}
 
 
 class EngineContextProducer:
