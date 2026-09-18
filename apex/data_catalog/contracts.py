@@ -385,7 +385,7 @@ class EvidenceEvent:
                         ("quality", self.quality)):
             if not isinstance(v, (int, float)) or v != v or v in (float("inf"), float("-inf")):
                 raise ValueError(f"{name} non-finite (contract #14–16)")
-        if self.resolution_class not in tuple(f"Q{i}" for i in range(6)):
+        if self.resolution_class not in ("Q0", "Q1", "Q2", "Q3", "Q4", "Q5", "QX"):
             raise ValueError(f"resolution_class {self.resolution_class!r} not Q0..QX")
 
     def to_ddl_row(self) -> Dict[str, Any]:

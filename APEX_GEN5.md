@@ -18334,6 +18334,8 @@ extensions governed by SL-12.
 | 23 | `lineage` | `lineage` | derivation chain down to `observation_id` |
 | 24 | `resolution_class` | (side-table, Q0..QX) | cross-engine reference frame |
 
+**Session-CP-14 D31:** The validator is aligned to the documented Q0..QX set, with no schema change.
+
 The DDL columns `authority` / `authority_scope` and the contract field
 `authority_scope` are covered by a joint mapping; neither is dropped.
 
@@ -20859,6 +20861,7 @@ Engine v4.0.0 formula bodies were not rewritten.
 | CP-14 D29 PAPER reservation proxy (2026-09-17) | Section 9.5 P7 and Ch.16 P3 CP-15 simulator binding; ISSUE-CP14-018; LIVE unchanged |
 | CP-14 D28 PAPER bootstrap governance and public venue provenance (2026-09-17) | Ch.12 AF.3, Section 2 snapshot binding, Section 9.5 tree; ADR-CP14-005 / ISSUE-CP14-017 |
 | CP-14 D25 decision-runtime YAML (2026-09-17) | Section 9.5 repository tree; ADR-CP14-003 / ISSUE-CP14-008 |
+| CP-14 D31 resolution-class validator correction (2026-09-18) | §8 24-field mapping row 24: validator aligned to the documented Q0..QX set, no schema change; ADR-CP14-006 / ISSUE-CP14-034 |
 | CP-14 D21 first-training label rule (2026-09-17) | E11 Section 3.3; ISSUE-CP14-001 owner resolution |
 | CP-14 D22 catch-up failure separated from freshness (2026-09-17) | Section 9.5 item 14; ISSUE-CP14-002 owner resolution |
 | P1: per-close catch-up + runtime engine order + engine-context producer contract + wiring staleness law (2026-09-17) | §9.5 item 14 (D2/D5/D14; CP-14 interface) |

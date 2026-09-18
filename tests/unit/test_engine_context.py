@@ -1301,15 +1301,14 @@ def test_native_twelve_engine_bundle_persists_full_evidence(tmp_path):
                 assert set(bundle["raw_observation_ids"]).issubset(event.lineage)
                 assert EC._iso_to_ms(event.availability_time) <= EC._iso_to_ms("2026-01-04T18:00:00.000Z")
             assert bundle["regime_state"]["snapshot_id"]
-            # Actual native terminal QX cannot pass the frozen public-store
-            # validator. Refuse the entire later bundle before any writes;
-            # do not drop expired zones or relabel their resolution class.
-            before = (await (await store.db.execute("SELECT COUNT(*) FROM evidence_event")).fetchone())[0]
-            with pytest.raises(BridgeError, match="EVIDENCE_CONTEXT_INVALID: E05 resolution_class=QX"):
-                await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-08T12:00:00.000Z",
-                    rtm_context={"avg_quality": .9, "mtf_align": .5})
-            after = (await (await store.db.execute("SELECT COUNT(*) FROM evidence_event")).fetchone())[0]
-            assert before == after
+            # D31: terminal QX must remain intact, including the native
+            # expiry meaning and every other field, not dropped/relabelled.
+            later = await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-08T12:00:00.000Z",
+                rtm_context={"avg_quality": .9, "mtf_align": .5})
+            expired = [event for event in later["events"] if event.engine_id == "E05"
+                       and event.condition_state.endswith("_EXPIRED")]
+            assert expired and all(event.resolution_class == "QX" for event in expired)
+            assert await EC.read_complete_evidence(store, [event.evidence_id for event in later["events"]]) == later["events"]
         finally:
             await store.close()
     asyncio.run(exercise())
@@ -1322,3 +1321,55 @@ def test_native_bundle_never_uses_e07_default_quality_or_alignment(context):
     artifact = EC.load_classifier(Path(__file__).parents[1] / "fixtures" / "e11_classifier_v1.yaml")
     with pytest.raises(BridgeError, match="E07_CONTEXT_UNAVAILABLE"):
         EC.complete_engine_bundle({}, "BTCUSDT", "1h", artifact, rtm_context=context)
+
+
+def _d31_terminal_e05_event():
+    zone = EC.E05.FVGObject(
+        fid="d31-terminal-zone", direction="UP", lower=99., upper=101., mid=100., width=2.,
+        created_at_ts=1767229200000, created_at_idx=20, quality_tag="QX_EXPIRED",
+        fate="EXPIRED", age_bars=96, freshness=.1, salience=.2)
+    zone.update_snapshot()
+    return EC.E05.E05FVGEngine()._to_evidence(zone, "BTCUSDT", "1h", .9)
+
+
+def test_d31_terminal_e05_qx_public_insert_full_roundtrip(tmp_path):
+    import hashlib
+    from dataclasses import asdict, replace
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def exercise():
+        event = _d31_terminal_e05_event()
+        assert event.resolution_class == "QX"
+        assert event.condition_state.endswith("_EXPIRED")
+        assert event.validity == "DEGRADED"
+        payload = asdict(event)
+        # Construct the transport envelope independently so the pre-fix
+        # failure comes from public insert_evidence's frozen validator.
+        raw = EC.canonical_json({"schema": EC.EVIDENCE_ENVELOPE, "event": payload,
+            "payload_sha256": hashlib.sha256(EC.canonical_json(payload).encode()).hexdigest()})
+        store = await SQLiteStore(str(tmp_path / "terminal.sqlite")).open()
+        try:
+            await store.insert_evidence(replace(event, explanation=raw))
+            assert await EC.read_complete_evidence(store, [event.evidence_id]) == [event]
+            assert await EC.persist_complete_evidence(store, [event]) == [event]
+            restored_raw = (await (await store.db.execute(
+                "SELECT raw FROM evidence_event WHERE evidence_id=?", (event.evidence_id,))).fetchone())[0]
+            assert restored_raw == raw
+            assert EC.canonical_json(EC.evidence_from_raw(restored_raw)) == EC.canonical_json(event)
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("invalid", ["Q6", "QX_EXPIRED", "", None])
+def test_d31_public_insert_still_rejects_invalid_resolution_tags(tmp_path, invalid):
+    from dataclasses import replace
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "invalid.sqlite")).open()
+        try:
+            with pytest.raises(ValueError, match="resolution_class"):
+                await store.insert_evidence(replace(_d31_terminal_e05_event(), resolution_class=invalid))
+            assert (await (await store.db.execute("SELECT COUNT(*) FROM evidence_event")).fetchone())[0] == 0
+        finally:
+            await store.close()
+    asyncio.run(exercise())
