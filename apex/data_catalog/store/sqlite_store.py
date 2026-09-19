@@ -557,6 +557,7 @@ class SQLiteStore:
 
     # -- snapshots + evidence ----------------------------------------------
     async def insert_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        from apex.identity.canonical_json import canonical_json
         qs = snapshot.get("quality_state", {})
         await self.db.execute(
             "INSERT INTO snapshot_pit (snapshot_id, as_of, symbol_scope, "
@@ -569,7 +570,7 @@ class SQLiteStore:
              ",".join(snapshot.get("timeframe_scope", [])),
              snapshot.get("source_state", "VALID"),
              snapshot.get("manifest_hash"), snapshot.get("parameter_package_id"),
-             snapshot.get("code_version"), snapshot.get("quality_state"),
+             snapshot.get("code_version"), canonical_json(qs),
              qs.get("min_q"), qs.get("weighted_q"), _utc_now_ms_iso()))
         await self.db.commit()
 

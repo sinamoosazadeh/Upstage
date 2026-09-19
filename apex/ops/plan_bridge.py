@@ -215,6 +215,17 @@ def _finite_float(value: Any, name: str) -> float:
     return out
 
 
+def _arbitration_measurement(inputs: Mapping[str, Any], weights: Mapping[str, Any], key: str) -> Any:
+    """D28 zero-weight UNAVAILABLE survives as a marker, never an imputation."""
+    weight = _finite_float(_required(weights, key), "arbitration.weight." + key)
+    value = inputs.get(key)
+    if value is None or value == "UNAVAILABLE":
+        if weight == 0:
+            return "UNAVAILABLE"
+        raise BridgeError("ARBITRATION_INPUT_UNAVAILABLE", key)
+    return _finite_float(value, "arbitration." + key)
+
+
 def _required(mapping: Mapping[str, Any], key: str) -> Any:
     if key not in mapping or mapping[key] is None:
         raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE", key)
@@ -462,6 +473,18 @@ def _validate_e11_context(value: Any) -> None:
             _finite_float(item, "e11_classifier")
 
 
+def _regime_label(value: Any) -> str:
+    """Read the label without stringifying or discarding full E11 state.
+
+    P1's producer supplies the native object. Legacy CP-9 source adapters
+    may still supply the label alone; neither path invents an alias.
+    """
+    label = value.get("state") if isinstance(value, Mapping) else value
+    if not isinstance(label, str) or not label:
+        raise BridgeError("E11_CONTEXT_INVALID", "regime_state.state unavailable")
+    return label
+
+
 def _pattern_entity(pattern_id: Any, supplied: Any = None) -> PatternEntity:
     if isinstance(supplied, PatternEntity):
         entity = supplied
@@ -489,16 +512,29 @@ class PaperPlanBridge:
 
     def __init__(self, *, store: Any, environment: str = "PAPER",
                  context_source: Optional[ContextSource] = None,
+                 context_preparer: Optional[ContextSource] = None,
                  max_bars: int = 300) -> None:
         self.store = store
         self.environment = str(environment)
         self.context_source = context_source
+        self.context_preparer = context_preparer
         self.max_bars = int(max_bars)
         if self.max_bars <= 0:
             raise ValueError("max_bars must be positive")
         self.refusals: Dict[str, Dict[str, str]] = {}
         self.traces: Dict[str, Dict[str, Any]] = {}
         self.plans: Dict[str, Dict[str, Any]] = {}
+
+    async def prepare(self, symbol: str, timeframe: str, as_of: str) -> None:
+        """Outside-budget preparation, explicitly bound at composition time.
+
+        Never call the plan builder here: preparation may publish/read
+        evidence but cannot materialize a decision or consume a trade slot.
+        """
+        if self.context_preparer is not None:
+            if self.environment != "PAPER":
+                raise BridgeError("PAPER_ONLY_EXECUTION", self.environment)
+            await _maybe_await(self.context_preparer(symbol, timeframe, as_of))
 
     async def __call__(self, symbol: str, timeframe: str, as_of: str
                        ) -> Optional[Mapping[str, Any]]:
@@ -579,12 +615,49 @@ class PaperPlanBridge:
             raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE",
                               ",".join(missing_context))
         _validate_e11_context(context["e11_context"])
+        transport = context["e11_context"].get("bridge_inputs")
+        if transport is not None:
+            if not isinstance(transport, Mapping) or set(transport) & set(REQUIRED_CONTEXT_KEYS):
+                raise BridgeError("PRODUCER_TRANSPORT_INVALID", "optional inputs overwrite required context")
+            context.update(transport)
+        regime_label = _regime_label(context["regime_state"])
         # ``events`` is the only evidence path.  A reduced SQL row fails in
         # _fabric_ref rather than being silently upgraded to ACTIVE.
         events = _event_list(_required(context, "events"))
         as_of_ms = _as_of_ms(as_of)
         refs = [_fabric_ref(event, symbol=symbol, timeframe=timeframe,
                             as_of_ms=as_of_ms) for event in events]
+        ages = context.get("evidence_age_bars")
+        if ages is not None:
+            from apex.ops.engine_context import decision_evidence_age
+            if not isinstance(ages,Mapping) or set(ages) != {r.evidence_id for r in refs}:
+                raise BridgeError("EVIDENCE_AGE_UNAVAILABLE", "identity mismatch")
+            for i,(event,ref) in enumerate(zip(events,refs)):
+                stamp = event.event_time if isinstance(event,EvidenceEvent) else event["event_time"]
+                measured = decision_evidence_age(stamp,timeframe,as_of_ms)
+                if (isinstance(ages[ref.evidence_id],bool) or
+                        not isinstance(ages[ref.evidence_id],(int,float)) or ages[ref.evidence_id] != measured):
+                    raise BridgeError("EVIDENCE_AGE_UNAVAILABLE", ref.evidence_id)
+                refs[i] = dataclasses.replace(ref,age_bars=measured)
+        admission = context.get("sl14_admission", {})
+        if admission:
+            from apex.fabric.evidence import advance_lifecycle
+            if not isinstance(admission, Mapping) or set(admission)-{r.evidence_id for r in refs}:
+                raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", "admission identity mismatch")
+            for i, ref in enumerate(refs):
+                change = admission.get(ref.evidence_id)
+                if change is not None:
+                    if (not isinstance(change,Mapping) or set(change) != {"from","to","reason"}
+                            or change["from"] != ref.state or change["reason"] != "NATIVE_EMISSION_OR_ZONE_FATE"):
+                        raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", ref.evidence_id)
+                    event = events[i]
+                    valid = event.validity if isinstance(event,EvidenceEvent) else event.get("validity")
+                    if change["to"] == "ACTIVE":
+                        if ref.state != "CONFIRMED" or valid != "VALID" or ref.resolution_class == "QX":
+                            raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", ref.evidence_id)
+                    elif ref.engine_id != "E05" or change["to"] not in ("EXPIRED","INVALIDATED","MITIGATED"):
+                        raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", ref.evidence_id)
+                    refs[i] = dataclasses.replace(ref,state=advance_lifecycle(ref.state,change["to"]))
         if not refs:
             raise BridgeError("FABRIC_NO_ACTIVE_EVIDENCE", "events is empty")
         data_trust = _finite_float(_required(context, "data_trust"), "data_trust")
@@ -627,7 +700,7 @@ class PaperPlanBridge:
             quality_asymmetry=quality_asymmetry,
             redundancy_rho=(None if context.get("redundancy_rho") is None else
                             _finite_float(context["redundancy_rho"], "redundancy_rho")),
-            regime_state=str(_required(context, "regime_state")),
+            regime_state=regime_label,
             conflict_id=str(context.get("conflict_id", "bridge-conflict")),
             package_id=package_id, snapshot_id=fabric0.hash,
             lineage=_lineage(fabric0.members),
@@ -714,13 +787,14 @@ class PaperPlanBridge:
             direction=direction,
             fvg_zones=_required(context, "fvg_zones"),
             bos=_required(context, "bos"),
-            regime_state=str(_required(context, "regime_state")),
+            regime_state=regime_label,
             mtf_state=str(_required(context, "mtf_state")),
             available_closes=context.get("available_closes"),
             window_qualities=_required(context, "window_qualities"),
             temporal_quality=_required(context, "temporal_quality"),
             volatility_quality=_required(context, "volatility_quality"),
             forecast={"quality": _required(context, "forecast_quality"),
+                      "bootstrap_prior": forecast.bootstrap_prior,
                       "h_norm": _finite_float(_required(context, "h_norm"), "h_norm")},
             q_forecast=forecast.q_forecast,
             package=package,
@@ -750,7 +824,7 @@ class PaperPlanBridge:
             raise BridgeError("FVG_PRICE_CONTEXT_UNAVAILABLE", "low/high")
         playbook = instantiate_playbook(
             lifecycle="VALIDATING",
-            regime_window=tuple(context.get("regime_window", (str(_required(context, "regime_state")),))))
+            regime_window=tuple(context.get("regime_window", (regime_label,))))
         stops = build_stops(
             direction=direction, entry=float(evaluation.entry),
             atr=_finite_float(_required(context, "atr"), "atr"),
@@ -806,14 +880,12 @@ class PaperPlanBridge:
             "composite_weights": dict(weights),
             "quality": _finite_float(arb_input.get("quality", evaluation.final_score),
                                      "arbitration.quality"),
-            "alignment": _finite_float(_required(arb_input, "alignment"),
-                                       "arbitration.alignment"),
-            "recency": _finite_float(_required(arb_input, "recency"),
-                                     "arbitration.recency"),
+            "alignment": _arbitration_measurement(arb_input, weights, "alignment"),
+            "recency": _arbitration_measurement(arb_input, weights, "recency"),
         }
         family_status = str(_required(context, "family_status"))
         arb = arbitrate([arb_candidate],
-                        regime=str(_required(context, "regime_state")),
+                        regime=regime_label,
                         family_statuses={FAMILY_ID: family_status})
         if arb["proposal"] is None or arb["reason"].get("decision") != "TRADE":
             raise BridgeError("DECISION_NO_TRADE", str(arb["reason"]))
@@ -841,6 +913,16 @@ class PaperPlanBridge:
             "package": package,
             "risk_state": str(risk["risk_state"]),
         })
+        transport_risk = context.get("risk_transport", {})
+        if not isinstance(transport_risk,Mapping):
+            raise BridgeError("PRODUCER_TRANSPORT_INVALID", "risk transport mapping")
+        if transport_risk and (set(transport_risk) != {"environment","margin_model","atr_cap"}
+                or self.environment != "PAPER" or transport_risk["environment"] != "PAPER"
+                or transport_risk["margin_model"] != "PAPER_RESERVATION_PROXY_D29"
+                or isinstance(transport_risk["atr_cap"],bool)
+                or transport_risk["atr_cap"] != 1 / _finite_float(context["atr"],"atr")):
+            raise BridgeError("PRODUCER_TRANSPORT_INVALID", "PAPER-only verified risk transport")
+        risk.update(transport_risk)
         risk_result = adjudicate(risk)
         plan = build_trade_plan(
             proposal=proposal, adjudication=risk_result,
@@ -857,7 +939,7 @@ class PaperPlanBridge:
         )
         await self._materialize_setup(evaluation.to_setup_event(),
                                        pattern_id=entity.pattern_id,
-                                       regime=str(context.get("regime_state", "")))
+                                       regime=regime_label)
 
         trace = {
             "fabric": fabric.to_dict(), "conflict": conflict,

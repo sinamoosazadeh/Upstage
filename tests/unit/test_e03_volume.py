@@ -594,3 +594,24 @@ class TestEngineEmission:
         eng = E03VolumeEngine()
         with pytest.raises(ValueError, match="MISSING_WINDOW_CONTEXT_QX"):
             eng.compute("BTCUSDT", "1h", "2026-01-01T00:00:00.000Z")
+
+
+def test_cp14_climax_calibration_uses_actual_bar_closes():
+    """ParticipationEvidence is not an OHLC bar; closes come from its input."""
+    from apex.engines.e03_volume import engine as E
+    events = [E.ParticipationEvidence(as_of_ts=1, climax=True),
+              E.ParticipationEvidence(as_of_ts=2, volume_ratio=1.0)]
+    bars = [{"ts": 1, "o": 100, "c": 101}, {"ts": 2, "o": 101, "c": 102}]
+    assert E.E03VolumeEngine._climax_calibration(events, bars) == E.wilson_ci(1.0, 1)[0]
+    bars[1]["c"] = 100
+    assert E.E03VolumeEngine._climax_calibration(events, bars) == E.wilson_ci(0.0, 1)[0]
+
+
+def test_cp14_climax_calibration_separates_availability_from_source_candle():
+    from apex.engines.e03_volume import engine as E
+    events = [E.ParticipationEvidence(as_of_ts=9000, climax=True), E.ParticipationEvidence(as_of_ts=9000)]
+    bars = [{"ts": i, "o": 100, "c": 101 + i} for i in range(8)]
+    # Equal late receipt timestamps do not collide or become candle indices.
+    assert E.E03VolumeEngine._climax_calibration(events, bars, source_indices=[1, 2]) == E.wilson_ci(1., 1)[0]
+    # Nor can skipping invalid inputs stretch "within five bars" to six.
+    assert E.E03VolumeEngine._climax_calibration(events, bars, source_indices=[1, 7]) == 0

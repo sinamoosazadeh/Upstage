@@ -7,3 +7,6 @@ __pycache__/
 dist/
 build/
 # Chart artifacts: none expected — chart output is in-memory PNG only (Ch.1 Agg rule).
+
+# ADR-CP14-021: owner-produced runtime classifier, never a repository artifact.
+/params/e11_classifier_v1.yaml

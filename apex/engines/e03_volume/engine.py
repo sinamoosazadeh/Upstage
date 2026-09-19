@@ -983,19 +983,28 @@ class E03VolumeEngine(EngineBase):
             atr_series = [atr_prev] * len(window_obs)
         if len(atr_series) < len(window_obs):
             raise ValueError("ATR_UNAVAILABLE_QX")
+        def availability(key: str, index: int):
+            value = context.get(key)
+            if isinstance(value, (list, tuple)):
+                if len(value) != len(window_obs):
+                    raise ValueError("AVAILABILITY_ALIGNMENT_QX")
+                return value[index]
+            return value
         bars = [observation_to_bar(o, timeframe, atr_series[i],
-                                   context.get("oi_availability_time_ms"),
-                                   context.get("atr_availability_time_ms"))
+                                   availability("oi_availability_time_ms", i),
+                                   availability("atr_availability_time_ms", i))
                 for i, o in enumerate(window_obs)]
         params = get_params(context.get("e03_params"))
         eng = VolumeEngineV4(params)
         results: List[ParticipationEvidence] = []
-        for b in bars:
+        source_indices: List[int] = []
+        for index, b in enumerate(bars):
             ev = eng.ingest_bar(b)
             if ev is not None:
                 results.append(ev)
+                source_indices.append(index)
         quality = self._window_quality(window_obs)
-        conf = self._climax_calibration(results)
+        conf = self._climax_calibration(results, bars, source_indices=source_indices)
         input_hash = _sha_of(_canon([
             {k: b[k] for k in ("ts", "o", "h", "l", "c", "v", "atr_prev")}
             for b in bars]))
@@ -1019,21 +1028,29 @@ class E03VolumeEngine(EngineBase):
         return min(1.0, sum(comps) / len(comps))
 
     @staticmethod
-    def _climax_calibration(results: Sequence[ParticipationEvidence]
+    def _climax_calibration(results: Sequence[ParticipationEvidence],
+                            bars: Sequence[dict], *,
+                            source_indices: Optional[Sequence[int]] = None
                             ) -> float:
         """§8.5: Wilson lower bound over in-window climax outcomes (a climax
         bar followed within 5 bars by a close beyond the climax close —
         continuation ground truth), else 0 (uncalibrated)."""
+        # Evidence as_of is dependency availability, NOT a candle identity.
+        # Preserve exact source indices even if an intermediate input refused.
+        indices = list(source_indices) if source_indices is not None else list(range(len(results)))
+        if len(indices) != len(results) or any(i < 0 or i >= len(bars) for i in indices):
+            raise ValueError("E03_CALIBRATION_ALIGNMENT_QX")
         n = cont = 0
         for i, ev in enumerate(results):
             if not ev.climax:
                 continue
-            future = results[i + 1:i + 6]
+            future = [bars[j] for j in indices[i + 1:i + 6] if j <= indices[i] + 5]
             if not future:
                 continue
             n += 1
-            if any(f.c is not None and ev is not None
-                   and (f.volume_ratio or 0) >= 0.6 for f in future):
+            origin = bars[indices[i]]
+            direction = 1 if origin["c"] >= origin["o"] else -1
+            if any((bar["c"] - origin["c"]) * direction > 0 for bar in future):
                 cont += 1
         if n == 0:
             return 0.0

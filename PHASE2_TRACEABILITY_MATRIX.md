@@ -513,7 +513,7 @@ Additive-file rule: any file outside §9.5's list traces to a DECISION_LOG ADR o
 
 | Artifact | Owner | Requirement → evidence |
 |---|---|---|
-| `APEX_GEN5.md` P1 (§9.5 item 14: catch-up + engine order + producer contract + staleness law) | Session A | D2/D5/D14 → per-close catch-up through the CP-13 frontier rule before engines (one process, one writer); runtime order E01→E02→E12→E04→E03→E10→E09→E05→E06→E11→E07→E08 derived from the engine Dependencies declarations (E10-before-E09 via optionality, E02 on OHLCV only); producer contract for all 38 `REQUIRED_CONTEXT_KEYS` + 23 `REQUIRED_RISK_KEYS` with one authoritative producer per key, store seam = public methods only, `events` = persisted SQL rows, `get_bridge_context` named as the CP-14 interface; wiring staleness `max(0, receipt_time − close_time_ms)`, frozen `availability_time` not reinterpreted; closes ISSUE-SESSION-A-001/005/007 doc-side |
+| `APEX_GEN5.md` P1 (§9.5 item 14: catch-up + engine order + producer contract + staleness law) | Session A | D2/D5/D14 → per-close catch-up through the CP-13 frontier rule before engines (one process, one writer); runtime order E01→E02→E12→E04→E03→E10→E09→E05→E06→E11→E07→E08 derived from the engine Dependencies declarations (E10-before-E09 via optionality, E02 on OHLCV only); producer contract for all 38 `REQUIRED_CONTEXT_KEYS` + 23 `REQUIRED_RISK_KEYS` with one authoritative producer per key, store seam = public methods only, `events` = complete EvidenceEvent payloads via get_bridge_context, `get_bridge_context` named as the CP-14 interface; wiring staleness `max(0, receipt_time − close_time_ms)`, frozen `availability_time` not reinterpreted; closes ISSUE-SESSION-A-001/005/007 doc-side |
 | `APEX_GEN5.md` P2 (E11 §3.3: classifier artifact + training) | Session A | D2/D3 → `params/e11_classifier_v1.yaml` (W 9×8, b 9, K 9, label_delay 48, seed, training window/count/query-sha, artifact_sha256; renamed Session-A F2 2026-09-17) named (CP-14 additive file); deterministic procedure (§3.2-rule-tree labels, 48-candle delayed confirmation, train ≤ t−48, fixed seed, never zeros/random); degenerate-class refusal (no synthetic members, K stays 9, no artifact); runtime without valid artifact fails closed; no formula rewritten; closes ISSUE-SESSION-A-002 doc-side |
 | `APEX_GEN5.md` P3 (Ch.16: PAPER simulator) | Session A | D1/D2 → same five-op surface (`submit_order/cancel_order/query_order_state/query_open_positions/query_account_margin_health`) off the same `fsm.submit`/`seal` path with a no-packet no-signature simulator Transport; W.6 `APEX_ALLOW_SIGNED=1` reconciled (permits the loop, never a packet); closes ISSUE-SESSION-A-004 |
 | `APEX_GEN5.md` P4 (W.6 Phase 2: replay CLI contract) | Session A | D2/D6/D7 → `scripts/run_apex.py replay` over the whole local store (frozen deterministic path, X.4 precedence, fee 0.0002, α_spread 0.25); per-cell `SHA256(canonical_json(replay_outcome))`; verdict = byte-identical double-run hashes + zero exceptions; printed envelope feeds G-PAPER-001; CP-15 builds it, run once before PAPER |
@@ -523,3 +523,43 @@ Additive-file rule: any file outside §9.5's list traces to a DECISION_LOG ADR o
 | `APEX_GEN5.md` P8 (Ch.23 + AI.13: host/secrets/watchdog) | Session A | D17–D20/D6 → 24/7 host = owner phone (Termux+proot+Boot), repo PRIVATE; secrets only in phone git-ignored `.env` (never committed/pasted/printed); watchdog chat = owner chat; new G-TOOBIT-004 key-custody/rotation-evidence row on the pre-LIVE checklist |
 
 **Result:** PASS(2026-09-17, 2728 passed / 0 failed on each of two `python -m pytest tests -q` runs — code untouched, deterministic; `sha256(APEX_GEN5.md)` BEFORE rechecked immediately pre-edit and AFTER recorded on the board; commit + PR recorded in the board continuation line and `HANDOFF_SESSION_A`).
+
+
+### CP-14 — closeout traceability (2026-09-19)
+
+| Gate | Implementation and executable evidence | Status |
+|---|---|---|
+| G1 | Real SQLite/native 38+23 producer; seven source tests and bound PAPER-loop JSON; unchanged downstream refusal gates | Implemented; final full-suite evidence in HANDOFF_CP14 |
+| G2 | Store-derived nine-class training in two processes; identical artifact bytes/hash; no pre-labelled matrix or existing classifier | Implemented; final full-suite evidence in HANDOFF_CP14 |
+| G3 | Exact CIRCUIT_OPEN registry and veto10–12 mapping; registry 23→24 only | Implemented; final full-suite evidence in HANDOFF_CP14 |
+| G4 | Native per-cycle catch-up/frontier retry and isolated CATCH_UP_FAILED; fresh-but-failed regression | Implemented; final full-suite evidence in HANDOFF_CP14 |
+| G5 | Actual receipt minus calendar close <= SLA; future available bars excluded; no catch-up freshness override | Implemented; final full-suite evidence in HANDOFF_CP14 |
+| G6 | Governed PAPER capital/ledger balance, D29 strict reservation health, PAPER/LIVE separation | Implemented; final full-suite evidence in HANDOFF_CP14 |
+
+| Decision | Binding subject / implementation |
+|---|---|
+| D21 | Independent rule0 labels, omit only entropy; all nine classes; delayed BOS/CHoCH; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D22 | Separate per-cell CATCH_UP_FAILED and retry; D14 unchanged; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D23 | Non-AVAILABLE OI uses VolumeZ only, explicit PARTIAL, Q5 cap only; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D24 | Written decisions only; bare clicks VOID; two explicit pin corrections; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D25 | .60 hard cap, all-14 P_min table, .50 C_min and strictest SL-12 horizon; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D26 | Canonical E04 ATR14 lagged Method B; native E02 live density/MAX age/sweeps; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D27 | regime_uncertainty=1-p_max; raw entropy and h_norm separate; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D28 | Canonical governed package, ACCUMULATING only if absent, PAPER arbitration/public provenance; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D29 | Exact durable reservation fraction (C-N)/C, strict PAPER .60/.40/.20; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D30 | Default 1h/4h×Core-10, progress, 20-minute hard abort; authorized fallback opt-in; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D31 | Exact Q0–Q5/QX validator membership, no schema change; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D32 | Native prior HV30 mid-rank, finite N>=50 and native window cap; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D33 | Native quality/MTF/components/pattern/temporal projections and normalized gate10; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D34 | Versioned uncertainty, ADV/costs, sizing, marks, trend and loss/latch laws; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+
+APEX AFTER `8e8fa12935d8cc38cd95702cfeb2c439acb4f7247a704b97f0b8897179da0da1` / 20924 lines. Exactly two frozen exceptions: insert_snapshot body (003), validator membership line (D31/034). Conservative/unassigned issue dispositions and phone STOP rules are in HANDOFF_CP14. Final totals are recorded there and on the board after both actual clean runs; no interim result is relabelled final.
+
+Final evidence (clean code commit 68f04e4, identical command, no deselection):
+
+```text
+2960 passed, 14 warnings in 934.90s (0:15:34)
+2960 passed, 14 warnings in 936.11s (0:15:36)
+```
+
+G1–G6 and D21–D34 repository verification: PASS; conservative runtime refusals and owner-only phone/LIVE gates remain explicitly disclosed in HANDOFF_CP14.

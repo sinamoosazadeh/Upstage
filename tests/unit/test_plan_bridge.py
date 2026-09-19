@@ -37,6 +37,7 @@ def _complete_context(*, events: Any) -> Dict[str, Any]:
         },
         "direction": 1, "pattern_id": "PAT-WYC-001", "x": {"s_struct": 0.5},
         "forecast_quality": "Q3", "forecast_rr": 3.0,
+        "forecast_uncertainty": {"calibration": .2, "data_quality": .2, "disagreement": .2},
         "forecast_cost_r": 0.05, "h_norm": 0.4,
         "window_qualities": [(1.0, 0.0)],
         "temporal_quality": "Q2", "volatility_quality": "Q2",
@@ -94,3 +95,23 @@ def test_reduced_evidence_row_is_not_promoted_to_active():
         assert "direction" in refusal["detail"]
 
     asyncio.run(scenario())
+
+
+def test_full_e11_state_label_projection_preserves_payload_and_legacy_source():
+    from apex.ops.plan_bridge import _regime_label
+    from apex.identity.canonical_json import canonical_json
+    state = {"state": "TRANSITION", "state_raw": "AMBIGUOUS",
+             "entropy": 2.1, "probs": {"TRANSITION": .6, "RANGE": .4},
+             "snapshot_id": "fixture-native-object-shape"}
+    before = canonical_json(state)
+    assert _regime_label(state) == "TRANSITION"
+    assert canonical_json(state) == before
+    assert _regime_label("TREND") == "TREND"
+
+
+def test_regime_label_projection_never_stringifies_missing_or_invalid_state():
+    import pytest
+    from apex.ops.plan_bridge import BridgeError, _regime_label
+    for value in ({}, {"state_raw": "TREND"}, {"state": None}, {"state": ""}, 1, None):
+        with pytest.raises(BridgeError, match="E11_CONTEXT_INVALID"):
+            _regime_label(value)

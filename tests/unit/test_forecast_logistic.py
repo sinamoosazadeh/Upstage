@@ -47,6 +47,8 @@ from apex.forecast.registry import (
 )
 
 X0 = {k: 0.0 for k in X_FEATURES}
+# Explicit test observations, never runtime uncertainty defaults.
+TEST_U = {"calibration": .2, "data_quality": .2, "disagreement": .2}
 
 
 def ev(**over):
@@ -92,7 +94,7 @@ class TestFrozenContract:
             logistic_bootstrap_p({**X0, "log_rr": float("nan")})
 
     def test_q_forecast_default_is_the_bootstrap_value(self):
-        rec = build_forecast(ev(), x=X0, environment="PAPER")
+        rec = build_forecast(ev(), x=X0, uncertainty=TEST_U, environment="PAPER")
         assert rec.q_forecast == BOOTSTRAP_Q_FORECAST == 0.5
 
     def test_seven_invalidation_reasons_in_order(self):
@@ -122,10 +124,10 @@ class TestPUCSemantics:
             "data_quality": 0.3, "regime_shift": 0.5, "tail_risk": 0.6},
             environment="PAPER")
         assert set(rec.uncertainty) == set(UNCERTAINTY_COMPONENTS)
-        # C = 1 − max(U) (the §13.1 binding), bounded and reported
-        assert rec.c == pytest.approx(1.0 - 0.6)
+        # D34 corrects the former max-component mismatch: Ch.13 C = 1 - U.
+        assert rec.c == pytest.approx(1.0 - (0.5*.1 + 0.3*.3 + 0.2*.4))
         assert rec.components["u_structured"] == pytest.approx(rec.u)
-        assert rec.components["c_from_max_u"] == pytest.approx(rec.c)
+        assert rec.components["c_from_u"] == pytest.approx(rec.c)
 
     def test_out_of_range_component_fails_closed(self):
         with pytest.raises(ForecastError, match="UNCERTAINTY_COMPONENT_QX"):
@@ -232,18 +234,18 @@ class TestCompositeEstimator:
 class TestPaperOnlyPrior:
     def test_bootstrap_prior_eligible_in_research_and_paper(self):
         for env in ("RESEARCH", "PAPER", "BACKTEST"):
-            rec = build_forecast(ev(), x=X0, environment=env)
+            rec = build_forecast(ev(), x=X0, uncertainty=TEST_U, environment=env)
             assert rec.bootstrap_prior is True
             assert rec.is_admissible(env) is True
 
     def test_live_capital_is_refused_not_degraded(self):
         with pytest.raises(ForecastError,
                           match="FORECAST_BOOTSTRAP_NOT_LIVE_ELIGIBLE"):
-            build_forecast(ev(), x=X0, environment="LIVE")
+            build_forecast(ev(), x=X0, uncertainty=TEST_U, environment="LIVE")
 
     def test_calibrated_package_unlocks_live(self):
         pkg = {"p_hat": 0.62, "q_forecast": 0.71}
-        rec = build_forecast(ev(), x=X0, package=pkg, environment="LIVE")
+        rec = build_forecast(ev(), x=X0, uncertainty=TEST_U, package=pkg, environment="LIVE")
         assert rec.bootstrap_prior is False
         assert "LIVE" in rec.eligible_environments
         assert rec.p_hat == pytest.approx(0.62)
@@ -259,7 +261,7 @@ class TestPaperOnlyPrior:
 
 class TestInvalidation:
     def test_seven_reasons_unique_traceable_immutable(self):
-        rec = build_forecast(ev(), x=X0, environment="PAPER")
+        rec = build_forecast(ev(), x=X0, uncertainty=TEST_U, environment="PAPER")
         assert rec.invalidation is None and rec.state == "ACTIVE"
         rec.invalidate("REGIME_SHIFT", at=5,
                       trigger_observation_id="obs-77")
@@ -276,12 +278,12 @@ class TestInvalidation:
 
     @pytest.mark.parametrize("reason", INVALIDATION_REASONS)
     def test_every_reason_is_accepted(self, reason):
-        rec = build_forecast(ev(), x=X0, environment="PAPER")
+        rec = build_forecast(ev(), x=X0, uncertainty=TEST_U, environment="PAPER")
         rec.invalidate(reason, at=1, trigger_observation_id="obs-1")
         assert rec.invalidation["reason"] == reason
 
     def test_unknown_reason_and_missing_trigger_fail_closed(self):
-        rec = build_forecast(ev(), x=X0, environment="PAPER")
+        rec = build_forecast(ev(), x=X0, uncertainty=TEST_U, environment="PAPER")
         with pytest.raises(ForecastError,
                           match="FORECAST_INVALIDATION_REASON_QX"):
             rec.invalidate("PRICE_MOVED", at=1, trigger_observation_id="obs-1")
@@ -293,15 +295,15 @@ class TestInvalidation:
 class TestTDR003Replay:
     def test_replay_is_byte_identical(self):
         from apex.identity.canonical_json import canonical_json
-        a = build_forecast(ev(), x=X0, uncertainty={"calibration": 0.2},
+        a = build_forecast(ev(), x=X0, uncertainty=dict(TEST_U),
                           rr=3.0, cost_r=0.02, risk_state="MediumRisk",
                           environment="PAPER")
-        b = build_forecast(ev(), x=X0, uncertainty={"calibration": 0.2},
+        b = build_forecast(ev(), x=X0, uncertainty=dict(TEST_U),
                           rr=3.0, cost_r=0.02, risk_state="MediumRisk",
                           environment="PAPER")
         assert canonical_json(a.to_dict()) == canonical_json(b.to_dict())
         # a different as_of changes the record (no cross-scenario leakage)
-        c = build_forecast(ev(timestamp=2), x=X0, environment="PAPER")
+        c = build_forecast(ev(timestamp=2), x=X0, uncertainty=TEST_U, environment="PAPER")
         assert canonical_json(c.to_dict()) != canonical_json(a.to_dict())
 
 
@@ -363,3 +365,11 @@ class TestAGRegistry:
         for key, _binding, status in AG_REGISTRY_SUMMARY:
             assert key in by_key
             assert status.startswith(by_key[key].status.split(" ")[0])
+
+
+def test_d34_confidence_is_one_minus_weighted_uncertainty_before_after():
+    rec = build_forecast(ev(), x=X0, uncertainty={
+        "calibration": .5, "data_quality": .5, "disagreement": .2,
+        "sampling": .1, "regime_shift": .1, "tail_risk": .1})
+    assert rec.u == pytest.approx(.44)
+    assert rec.c == pytest.approx(.56)

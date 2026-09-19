@@ -145,6 +145,10 @@ def test_params_loader_reads_only():
     """params YAML is the ONLY source of parameter values (no hardcoding)."""
     p = config.load_params()
     for name in config.PARAMS_FILES:
-        assert isinstance(p[name], dict)
+        if name == "e11_classifier":
+            with pytest.raises(FileNotFoundError):
+                p[name]
+        else:
+            assert isinstance(p[name], dict)
     with pytest.raises(KeyError):
         p["invented_params_file"]

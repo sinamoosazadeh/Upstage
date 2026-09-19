@@ -428,6 +428,8 @@ raw OHLCV (e.g. a `get_ohlcv()` call) is forbidden; access is always via
 
 ### 2.1 Quality Vector (Q0–QX)
 
+**Session-CP-14 (2026-09-18; D33 / ISSUE-037):** Native minimum-veto plus exponentially weighted window quality supplies both q_raw and data_trust, with the separate full-window gate2 preserved and unknown provenance refusing.
+
 **Mission:** transform a raw `MarketObservation` (Toobit OHLCV + separately
 tracked Open Interest) into a Quality Vector,
 
@@ -972,6 +974,8 @@ A Snapshot binds: `snapshot_id` (deterministic SHA-256 identity), `as_of`, `symb
 `timeframe_scope`, `source_state`, manifest hash, `parameter_package_id`,
 `code_version`, a combined quality state (minimum-veto plus weighted
 average), and `created_at`.
+
+**Session-CP-14 (2026-09-17):** D28's PAPER bootstrap binds `parameter_package_id = "cp14_paper_bootstrap-v1.0.0-" + SHA256(canonical_parameter_bytes)[:12]`. Canonical parameter bytes are UTF-8 `canonical_json({filename: parsed_YAML_document, ...})` using the repository's sole canonical serializer over every present governed `params/*.yaml` document; the optional `params/e11_classifier_v1.yaml` is included once. Filenames bind package membership, ordering/formatting/comments do not change parameter values, and any governed-value change yields a new package identity. The full parameter digest remains available for provenance; the snapshot identity itself remains the full 64-hex canonical hash, not the 12-hex package suffix. LIVE obtains no PAPER bootstrap package.
 
 Snapshots are immutable; any new artifact triggers supertemporal_window:
 OLD → CORRECTION EVENT → NEW VERSION → SUPERSEDES, producing a new `as_of`
@@ -11713,8 +11717,10 @@ Produce a transparent, explainable, PIT-safe classification of market behavioral
   - `E09 TrendStack v4.0.0` → `trendiness_raw, bias_per_TF, structure_score`
   - `E10 Momentum v4.0.0` → `momentum_state_raw (enum {IMPULSIVE, NEUTRAL, EXHAUSTED}), impulse_score`
   - `E04 Volatility v4.0.0` → `vol_short, vol_long, vol_ratio, ATR_z`
+    - Session-CP-14 (2026-09-17): D26-A maps the frozen E04 `VolatilityState.atr14_wilder` to `atr_z_t=(atr14_t−μ_{t−1,W})/(σ_{t−1,W}+ε)` using E11 Method B's same prior same-cell rolling reference, existing 180-day window capped by available history, lag 1, minimum-prior-samples rule and E11 ε in both training and the G1 producer, with insufficient history following `INVALID_E11_HISTORY` and no ATR20 or new window constant.
   - `E03 Volume v4.0.0` → `volume_z, OI_z, participation_raw`
   - `E02 Liquidity v4.0.0` → `level_density, sweep_rate, age_score` via the canonical v4.0.0 consumer projection.
+    - Session-CP-14 (2026-09-17): D26-B uses live E02 ACTIVE/STRENGTHENED levels, `density=count/(max_price−min_price)` and `age=MAX(t−last_touch)`, with density=age=0 below two live levels; `sweep_rate` is five-prerequisite §3.6 confirmed sweeps (not WickOnly) divided by CLOSED bars in E02's existing retained window, including when fewer than two levels remain; train-e11 and G1 both normalize `raw_liq=density*age/(1+sweep_rate)` by existing Method A, whose degenerate-reference result remains 0.5.
 - Outputs: context only, consumed through the canonical L13 Decision/BDI and L14 Risk layer contracts; E12 never authorizes execution and does not directly grant capital permission.
 
 ### 1.3 Boundaries and Self-Sufficiency Guarantee
@@ -11755,6 +11761,8 @@ Produce a transparent, explainable, PIT-safe classification of market behavioral
 | quality Q | $Q$ | $Q0$=Invalid, $Q1$=Degraded, $Q2$=Noisy, $Q3$=Acceptable, $Q4$=Stable, $Q5$=Golden | enum | Yes |
 | hysteresis | $h$ | $r^*$ changes only if 3 consecutive candles repeat the new label | - | Yes |
 | PIT | - | For a **pre-close decision at $t$**, reference/history inputs are bounded by $\le t-1$; at the canonical close-of-candle `as_of=t` boundary, the closed $X_t$ observation may be evaluated against the prior state | - | boundary-specific design rule |
+
+Session-CP-14 (2026-09-17; D23): Non-AVAILABLE OI contributes zero weight, never a zero OI value: renormalize to raw_part=VolumeZ and x6=sigmoid(raw_part), identically in training/runtime; retain oi_state and contributing_features participation=PARTIAL and prohibit Q5 until OI is AVAILABLE, with no other quality change; AVAILABLE keeps 0.6*VolumeZ+0.4*OI_z.
 
 **Versioned dependency contract (normative):**
 ```
@@ -11863,6 +11871,21 @@ hash mismatch, wrong shape) fails closed with
 `CONFIGURATION_INVALID`/`FAIL_CLOSED` (the bridge's `e11_context`
 validation requires exactly `classifier_W (9,8)` + `classifier_b (9)`);
 ISSUE-SESSION-A-002.
+
+**Session-CP-14 (2026-09-17; D21 — first-training label rule):** Initial
+training is self-contained and store-only; it never consumes a prior artifact.
+For training only, form `r_t^rule0` with the Section 3.2 entropy branch removed;
+all other branches retain their order and thresholds (CRISIS turbulence 15.5,
+with the classifier-independent Section 3.6/3.7 EWMA state). Apply Section 3.4
+confirmation in `[t+1,t+48]`: confirmed labels retain `r_t^rule0`, while the
+unconfirmed AMBIGUOUS outcome becomes the training label TRANSITION, its only
+training source. Only samples whose `t+48` is CLOSED in the store are used
+(PIT through window-end minus 48 candles). Fit multinomial logistic regression
+with the recorded fixed seed; K remains 9, with no synthetic members or
+reweighting, and refuse if any of the nine classes is empty. Runtime retains
+the full Section 3.2 tree, including entropy, with the trained W/b.
+
+**Session-CP-14 (2026-09-17; D30, owner decision 2026-09-18):** `train-e11` trains the single runtime classifier only on E11 §1.2 base timeframes 1h/4h across Core-10 (20 default cells), exposes `--timeframes` (default `1h,4h`) and `--symbols` (default all ten) with effective/default scope in artifact `training_window`, prints one per-cell progress line (cell, CLOSED bars, eligible samples, elapsed seconds), and enforces a hard `--max-minutes` (default 20) named abort without writing an artifact, while the nine-class refusal remains unchanged and the resulting W/b serves all runtime timeframes as window-parameter extensions.
 
 PIT-safe softmax:
 $$p_{r,t}= \frac{\exp(z_{r,t} - \max_k z_{k,t})}{\sum_j \exp(z_{j,t} - \max_k z_{k,t})}$$
@@ -14676,6 +14699,8 @@ The catalogue is the 74-feature registry in §3.12 together with the completenes
 
 ## 7. Error Codes
 
+**Session-CP-14 (2026-09-18; D33 / ISSUE-042):** Gate 10 consumes normalized native Q_forecast with Q_forecast < 0.5 blocking (0.5 passes), preserves genuine categorical quality handling and the bootstrap LIVE ban, and receives the actual bootstrap flag rather than an invented Q tier.
+
 | Code | Meaning | Handling |
 |------|---------|----------|
 | E-VAL-020 | Busy Guard MAX_CONCURRENT=1 | If second request comes -> E-VAL-020 + Stop button - State table IDLE -> BUSY -> IDLE |
@@ -14712,9 +14737,13 @@ one-line addition is deferred to CP-14 (Session A is doc-only).
 
 ## 8. Evidence Fabric, Conflict, and Cross-Domain
 
+**Session-CP-14 (2026-09-18; D34 / ISSUE-047):** Risk-increasing requests require consecutive CLOSED same-cell states under matching versions and uncertainty rises iff raw entropy or native conflict restriction rank strictly increases, with equal values not rising and conflict uncertainty bound to D27.
+
 Evidence from multiple engines is assembled for one `(symbol, timeframe)` at one `as_of`. Conflict never creates permission. Correlation between symbols is a portfolio constraint, not a directional signal. Higher timeframes are consumed only as last closed candles.
 
 ### 8.0 Evidence and context fabric
+
+**Session-CP-14 (2026-09-18; D33 / ISSUE-041):** Numeric temporal_window_validity projects native VALID to 1 and DEGRADED/INVALID to 0, refuses missing/unknown categories and is distinct from temporal_core_flag.
 
 **Evidence Fabric** — the normalized set of all ACTIVE evidence at time `t`
 for one `(symbol, timeframe)`:
@@ -14937,6 +14966,8 @@ correlation_exposure(open_positions, new_proposal):
 
 ### 8.3 MTF alignment
 
+**Session-CP-14 (2026-09-18; D33 / ISSUE-038):** MTF compares native E09 directions across base and required coarser cells: opposing signs CONFLICTING, all nonzero equal ALIGNED, otherwise neutral without opposition PARTIALLY_ALIGNED, with missing/stale refusal, top-TF vacuity and the existing E07 state-to-score mapping.
+
 States: `ALIGNED | PARTIALLY_ALIGNED | CONFLICTING | UNAVAILABLE | STALE`.
 HTF information is consumed only up to the last CLOSED candle available at
 decision time. An MTF conflict is **evidence, not an automatic veto** at the
@@ -14949,6 +14980,8 @@ synthetic multi-timeframe data with PIT enforcement.
 ## 9. Pattern Intelligence
 
 ### 9.0 Hierarchy
+
+**Session-CP-14 (2026-09-18; D33 / ISSUE-040):** Only admitted confirmed still-valid native pattern hits compete: opposing directions refuse as PATTERN_SELECTION_AMBIGUOUS; same-direction hits rank by latest confirmation, native strength then lexical pattern ID, with research-only patterns never promoted.
 
 Four contract levels:
 
@@ -15252,6 +15285,8 @@ This chapter, AC, serves as the normative hub for pattern governance and interac
 A setup is a scored composition of required evidence plus pattern plus context. Thirteen hard gates can quarantine it. One family is instantiated for implementation: FVG + sweep reversal, on every symbol and every timeframe. No second family may be invented in code.
 
 ### 10.1 Thirteen hard gates
+
+**Session-CP-14 (2026-09-18; D33 / ISSUE-039):** Admitted evidence supplies binary supporting presence and minimum native component quality, known-absent optional components contribute nothing, the five forecast s-features use unweighted E01/E02/E03-volume/E05/E06 presence, trend_stack is native E09 bias and E07 average quality is the mean of actual confirmation contributors, never 1.0/.9 defaults.
 
 | Gate | Condition | Action |
 |------|-----------|--------|
@@ -15956,6 +15991,7 @@ Arbitration accepts exactly the following read-only inputs:
     - Alignment (sum of positive correlations with live positions, capped by correlation_cap 0.70; Liquidity Proxy Models, A07).
     - Recency (trend direction of the setup family's recent outcome history, Beta-Bernoulli posterior, research-registry A06).
     - All weights are **governed**, versioned by SL-12 and Optimizer and First-Run Bootstrap.1; no hardcoded constants.
+  **Session-CP-14 (2026-09-17):** D28 authorizes PAPER-only bootstrap arbitration weights `quality=1.0, alignment=0.0, recency=0.0` in `params/decision_runtime_v1.yaml` under `paper_bootstrap.arbitration_weights` (ADR-CP14-005); inputs without a measured alignment/recency basis are reported `UNAVAILABLE` and excluded from arithmetic at zero weight, while a positive-weight unavailable input fails closed. The package ID is `cp14_paper_bootstrap-v1.0.0-` plus the first 12 hex characters of SHA-256 over canonical bytes of all present governed parameter YAML documents, including `e11_classifier_v1.yaml` when present; changes to governed values produce a new package ID (Section 2 snapshot binding). Only a family with no Setup Family Registry record defaults to `ACCUMULATING` (the backtest/PAPER phase below the 30-trade floor); existing lifecycle records are never overwritten and promotion/demotion remains owner-driven per AD.3. Commission, funding, contract multiplier, contract type and expiry retain public Toobit exchangeInfo/funding provenance; absent facts fail the affected cell closed with a named status, never a default fee or signed fallback. LIVE ignores this section and receives no bootstrap permission.
   - Arbitration proposes the ranked list to the Decision layer (SL-4, economic utility ranking); **execution of more than one same-direction candidate remains subject to the existing exposure ceilings** (SL-5, risk veto logic). Arbitration allocates **nothing**; that responsibility is frozen in the Risk Kernel.
 
 - **(Rule 4) Opposite-Direction Candidates (Conflict Resolution, Default NO-TRADE):** When candidates have conflicting directional intent (LONG vs. SHORT):
@@ -16016,6 +16052,8 @@ Forecast answers only: probability that target is touched before stop within the
 
 ### 13.1 Contract
 
+**Session-CP-14 (2026-09-18; D34 / ISSUE-043):** PAPER-only `cp14_paper_bootstrap_uncertainty-v1` records its E11 snapshot_id and uses U_cal=0.5, U_ood=0.5 and U_dis=1-p_max from that snapshot, U=clip(0.5*U_cal+0.3*U_ood+0.2*U_dis,0,1), C=1-U, with other named fields typed UNAVAILABLE and unconsumed, no zero defaults, and no use of this model in LIVE.
+
 Forecast event definition (exact, PIT-stamped):
 
 ```
@@ -16030,6 +16068,7 @@ the PIT evidence `X`.
 **Bootstrap P model (until WFO package exists):**
 `p_raw = 1/(1+exp(-(β0+β·x)))` with **β=0, β0=0 → p_raw=0.5**, `Q_forecast=0.5`.
 `x = [s_struct, s_liq, s_vol, s_fvg, s_ob, trend_stack, momentum_z, regime_entropy, vol_quantile, temporal_core_flag, log_rr, log_cost_R]`.
+**Session-CP-14 (2026-09-18; D32):** `vol_quantile = (count(prior_HV30 < HV30_t) + 0.5*count(prior_HV30 == HV30_t))/N` uses finite same-cell native E04 HV30 strictly before t within the native 180-day regime-window bar cap, requires N>=50 (not a full window), gives 0.5 for constant history, and refuses nonfinite current/insufficient history as VOL_QUANTILE_UNAVAILABLE.
 Constant-0.5 is eligible for PAPER/RESEARCH only. LIVE capital: Setup Gates 10/12 fail until a calibrated package exists (the Promotion Protocol Wilson on the forecast family).
 `p_hat` = Platt/isotonic OOS (never on the decision bar). `U = clip(0.5 U_cal + 0.3 U_ood + 0.2 U_dis, 0, 1)`, `C=clip(1-U,0,1)`.
 `EU = p_hat*RR − (1-p_hat)*1 − cost_R − R_penalty` with R_penalty 0/0/0.10/0.25/+∞ by risk_state. If spread UNAVAILABLE, `cost_R ≥ 0.05`.
@@ -16631,6 +16670,12 @@ Selection is by `EU` only, up to the exposure/capital caps; the Risk Kernel
 
 ## 15. Risk Kernel
 
+**Session-CP-14 (2026-09-18; D34 / ISSUE-048):** Realized loss is max(0,-net period completed PAPER P/L)/current D29 capital over UTC days and ISO UTC weeks, nonnegative completed outcomes break the streak, and immutable-outcome replay preserves threshold-crossing circuit latches until their existing UTC/OWNER reset conditions are satisfied.
+
+**Session-CP-14 (2026-09-18; D34 / ISSUE-046):** Each PIT account view shares one fresh last-CLOSED 1m close per held symbol labeled PAPER_CLOSE_MARK, never an exchange mark or entry-price fallback, and missing/stale marks invoke D29 refusal.
+
+**Session-CP-14 (2026-09-18; D34 / ISSUE-045):** ATR_cap is 1/native E04 ATR14 with ATR <= EPS refused, native sizing produces only a read-only request bound, proposed_notional includes quantity times entry times contract_multiplier, new entries are risk-increasing and all vetoes still precede authorization.
+
 Risk is independent. Fourteen named vetoes, sizing, and capital ceilings apply to every cell. Optimizer output cannot soften them.
 
 ### 15.1 Contract
@@ -16789,6 +16834,8 @@ maintenance distance, action at 40% — the action blocks all new entries
 
 
 ## 16. Execution, Venue Adapter, and Ledger
+
+**Session-CP-14 (2026-09-18; D34 / ISSUE-044):** ADV is mean daily base-asset volume from CLOSED 1h bars over the previous 30 complete UTC days, costs use actual round-trip fees and side-specific nonnegative funding across publicly verified settlement intervals within the governed holding horizon, endpoint/schedule failure yields FUNDING_UNAVAILABLE for retry, and unavailable spread retains cost_R >= 0.05.
 
 The execution state machine is the only path to Toobit. Identity is `intent_id` (UUIDv7) as `clientOrderId`. Unknown venue outcomes are reconciled, never blindly retried. The ledger is append-only.
 
@@ -16969,8 +17016,16 @@ a gap-through fills at the bar open; (c) `query_open_positions`,
 `query_account_margin_health` answer from the simulator's own durable
 state, so `reconcile_boot` reaches READY without any network; (d) balance
 = `params/paper_account_v1.yaml` `capital_usdt` + realised P/L from the
-ledger; margin health = simulated from that balance and open notional per
-the P7 `simulated_margin` fractions; (e) simulator state is persisted in
+ledger; **Session-CP-14 (2026-09-17), D29, binding for CP-15:** the simulator's
+`query_account_margin_health` must return exactly `(C-N)/C` from its durable
+state, where C is that PAPER balance and N is gross marked open PAPER
+notional plus full unfilled risk-increasing order notional, excluding
+reduce-only reservations and filled-quantity double counting, with no
+leverage discount. Apply P7's strictly-below 0.60 warning, 0.40 action/veto
+14, and 0.20 liquidation-approach/Emergency L3 CANCEL_ALL thresholds;
+missing marks/order state, C <= 0 or a fraction outside [0,1] fails closed,
+never clipped. This is the PAPER reservation proxy, not exchange liquidation
+distance; exposure caps remain independent and LIVE is unchanged; (e) simulator state is persisted in
 the same SQLite file under the additive table `paper_sim_state`
 (ADR-P2-003 additive migration; CP-15 defines its columns against the
 five-op surface above), so a restart reconciles against it; (f) LIVE is
@@ -18303,6 +18358,8 @@ extensions governed by SL-12.
 | 22 | `parameter_version` | (side-table) | parameter class + version |
 | 23 | `lineage` | `lineage` | derivation chain down to `observation_id` |
 | 24 | `resolution_class` | (side-table, Q0..QX) | cross-engine reference frame |
+
+**Session-CP-14 D31:** The validator is aligned to the documented Q0..QX set, with no schema change.
 
 The DDL columns `authority` / `authority_scope` and the contract field
 `authority_scope` are covered by a joint mapping; neither is dropped.
@@ -20313,6 +20370,7 @@ apex/telegram/control_plane.py
 apex/telegram/signaling.py
 apex/ops/watchdog.py
 apex/ops/backup.py
+apex/ops/engine_context.py
 params/universe_v1.yaml
 params/risk_defaults_v1.yaml
 params/setup_weights_v1.yaml
@@ -20320,12 +20378,28 @@ params/quality_weights_v1.yaml
 params/toobit_wire_v1.yaml
 params/e11_params_v4.yaml
 params/paper_account_v1.yaml
-params/e11_classifier_v1.yaml
+params/decision_runtime_v1.yaml  # D25 policy + D28 PAPER-only paper_bootstrap (ADR-CP14-005)
+params/e11_classifier_v1.yaml  # phone-generated, gitignored; never committed
 tests/unit/
 tests/integration/
+tests/integration/test_cp14_producer.py
+tests/unit/test_engine_context_store_sources.py
 tests/fixtures/gf_sc_01.json
 tests/fixtures/gf_sc_02.json
+tests/fixtures/e11_classifier_v1.yaml
 ```
+
+**Session-CP-14 (2026-09-17; D25):** `params/decision_runtime_v1.yaml` stores
+capital_hard_cap_fraction=0.60, c_min=0.50 and all 14 p_min_tf values:
+1m=0.52, 1h=0.55, 1d=0.50; every other TF takes the strictest governed
+anchor 0.55 (no interpolation). PAPER and LIVE read it separately from
+account state; absent/invalid file fails closed. Ch.17 SL-12 wins on a twin
+mismatch; no risk_defaults value is duplicated.
+
+**Session-CP-14 (2026-09-17):** `apex/ops/engine_context.py` owns the
+engine-context, classifier artifact, and PAPER account wiring; the small
+`tests/fixtures/e11_classifier_v1.yaml` is loader-test data, never a runtime
+training fallback. Its battery is `tests/unit/test_engine_context.py`.
 
 Every package directory has `__init__.py`.
 
@@ -20355,6 +20429,7 @@ ADR-P2-003):
 capital_usdt: 10000.0
 simulated_margin: {warning_fraction: 0.60, action_fraction: 0.40, liquidation_approach_fraction: 0.20}
 ```
+**Session-CP-14 (2026-09-17):** D29 defines the PAPER reservation proxy, not exchange liquidation distance: `C = capital_usdt + realized PAPER ledger P/L`; `N = gross marked notional of open PAPER positions + full notional of unfilled risk-increasing orders`; `margin_health_fraction = (C-N)/C`. Reduce-only orders reserve nothing; filled quantity is removed from the pending reservation and counted only in the marked position; there is no leverage discount. P7 thresholds are strictly below 0.60 for warning, below 0.40 for action (veto 14 MARGIN_HEALTH blocks new entries), and below 0.20 for liquidation-approach (Emergency L3 CANCEL_ALL). Missing marks or order state, nonpositive C, or a fraction outside [0,1] fails closed with a named status; no clipping. Exposure caps remain separate. This definition also binds CP-15's durable-state simulator `query_account_margin_health`; LIVE continues to use its venue `query_account_margin_health` unchanged.
 `capital_usdt` is the authoritative PAPER balance: the Telegram control
 plane's `paper_balance` is fed from this YAML, never a second literal
 (ISSUE-SESSION-A-006); PAPER and LIVE stay separate everywhere they are
@@ -20427,6 +20502,8 @@ contract, and the wiring staleness law):**
    → `bridge_contexts`, and absence fails closed
    (ISSUE-SESSION-A-007). The producer for every key:
 
+   **Session-CP-14 (2026-09-17):** D27 corrects the Session-A uncertainty-source error below: raw entropy remains in the complete E11 state; only `h_norm` carries `H/ln(9)`. The Ch.8 confidence combiner and its weights are unchanged.
+
    | Context key | Authoritative producer |
    |---|---|
    | `events` | E01–E12 versioned event channels: complete EvidenceEvent payloads via `insert_evidence`, read back through `get_bridge_context` (reduced projections refused) |
@@ -20439,14 +20516,16 @@ contract, and the wiring staleness law):**
    | `volatility_state` | E04 `VolatilityState.regime` |
    | `structure_state` | E01 structure output (`APEX-CONTRACT-STRUCT-V4.0.0`) |
    | `regime_confidence` | producer-derived from E11 `regime_state` probabilities (`p_max` at `as_of`) |
-   | `regime_uncertainty` | E11 entropy `H_t` (§3.3) |
+   | `regime_uncertainty` | 1 − regime_confidence = 1 − p_max (Ch.8) |
    | `divergence_magnitude` | E10 divergence outputs |
    | `temporal_window_validity` | E12 window validity |
    | `atr` | E04 ATR |
    | `fvg_zones` | E05 FVG objects |
    | `bos` | E01 BOS events |
    | `regime_state` | E11 full `regime_state` object |
-   | `e11_context` | E11 IC inputs + classifier artifact + history windows (P2 contract) |
+   | `e11_context` | E11 IC inputs + classifier artifact + history windows (P2 contract); optional bridge transport remains nested, not a 39th required key |
+   | `sweep` (nested bridge input) | Native setup-family sweep/reclaim over the same CLOSED bars; E02 five-prerequisite sweep evidence remains separately native |
+   | `sl14_admission` / `evidence_age_bars` (nested bridge inputs) | Identity-bound PAPER decision-view transitions and timestamp-derived elapsed age; native 24 fields retained; ADR-CP14-020 |
    | `direction` | pattern layer (Ch.9): the detected pattern's direction |
    | `pattern_id` | pattern layer catalogue (`apex/pattern/detect.py`) |
    | `x` | producer-assembled forecast feature vector from `s_i`/`q_i` + fabric context (Ch.13 SL-3 inputs) |
@@ -20502,6 +20581,7 @@ contract, and the wiring staleness law):**
    column is **not** reinterpreted (the 1970 value stands as the venue's
    own fact). `freshness_ok ⇔ staleness_seconds ≤
    freshness_sla_seconds`; `Q_fresh` uses the same derivation.
+**Session-CP-14 (2026-09-17):** D22: a catch-up failure is the separate per-cycle blocking status `CATCH_UP_FAILED` (cell, error code, attempted frontier in `catch_up.failures[]`), never a freshness override; retry next cycle, preserve D14 measurements and other cells' progress.
 15. **Identity:** `intent_id` = UUIDv7. Fibonacci is `apex/pattern/fibonacci.py` (not a network service).
 
 ### 9.6 Round-2 re-freeze (owner decision integration)
@@ -20783,6 +20863,19 @@ Engine v4.0.0 formula bodies were not rewritten.
 
 | Decision / fill | Home section now |
 |---|---|
+| CP-14 D34 ISSUE-044 projection | 16. Execution, Venue Adapter, and Ledger; ADR-CP14-015 |
+| CP-14 D34 ISSUE-045 projection | 15. Risk Kernel; ADR-CP14-016 |
+| CP-14 D34 ISSUE-046 projection | 15. Risk Kernel; ADR-CP14-017 |
+| CP-14 D34 ISSUE-047 projection | 8. Evidence Fabric, Conflict, and Cross-Domain; ADR-CP14-018 |
+| CP-14 D34 ISSUE-048 projection | 15. Risk Kernel; ADR-CP14-019 |
+| CP-14 D33 ISSUE-037 projection | 2.1 Quality Vector (Q0–QX); ADR-CP14-008 |
+| CP-14 D33 ISSUE-038 projection | 8.3 MTF alignment; ADR-CP14-009 |
+| CP-14 D33 ISSUE-039 projection | 10.1 Thirteen hard gates; ADR-CP14-010 |
+| CP-14 D33 ISSUE-040 projection | 9.0 Hierarchy; ADR-CP14-011 |
+| CP-14 D33 ISSUE-041 projection | 8.0 Evidence and context fabric; ADR-CP14-012 |
+| CP-14 D33 normalized forecast quality | Ch.7; ADR-CP14-013 / ISSUE-042; native 0.5 passes gate10 |
+| CP-14 D34 PAPER uncertainty and C=1-U | Ch.13.1; ADR-CP14-014 / ISSUE-043; version/snapshot-bound, no zero defaults |
+| CP-14 D32 native HV forecast mid-rank | Ch.13 bootstrap vector; ADR-CP14-007 / ISSUE-CP14-036 |
 | Q_oi STALE=0.5 | §2.1 + the Data Plane note |
 | Latency UNVERIFIED | §1 Latency Budget heading |
 | Gate 11 = lineage/snapshot | the Setup Engine table |
@@ -20801,6 +20894,20 @@ Engine v4.0.0 formula bodies were not rewritten.
 | TRADE key, withdraw disabled | §2.5 + SL-6 |
 | Still NOT filled with invented numbers | live Toobit depth, device p95, Sharpe/winrate, fixture SHA-256, ECONOMIC_GATE costs, restore RTO |
 | Repo tree, YAML, P model p_raw=0.5, Q/OI tables, 7 invariants, pattern tolerances, GF_SC_01/02, depth protocol, ECONOMIC_GATE empty grid, signaling P0–P3, termux-battery-status, requirements.lock name | merged 2026-09-08 into G/U/AD/AE/SL-2/SL-3/SL-6/T/Y/O/W.6/§2.1/§9.5 |
+| CP-14 engine-context producer and loader fixture paths (2026-09-17) | Section 9.5 repository tree; ADR-CP14-001 under ADR-P2-003 |
+| CP-14 D23 participation with missing OI (2026-09-17) | E11 Section 2; ISSUE-CP14-007 owner resolution |
+| CP-14 D26-B native liquidity projection (2026-09-17) | E11 Section 1.2; live density/MAX age/confirmed sweep rate; shared train/runtime Method A |
+| CP-14 D26-A ATR14-to-atr_z consumer projection (2026-09-17) | E11 Section 1.2; ISSUE-CP14-011 part 1 owner resolution |
+| CP-14 D27 confidence-complement uncertainty (2026-09-17) | Section 9.5 P1 source row corrected to Ch.8 `1-p_max`; raw H and h_norm remain distinct; ISSUE-CP14-019 |
+| CP-14 D30 bounded base-timeframe training (2026-09-18) | E11 Section 3.3; ISSUE-CP14-032; 20 default cells, progress and hard deadline; single shared classifier |
+| CP-14 D29 PAPER reservation proxy (2026-09-17) | Section 9.5 P7 and Ch.16 P3 CP-15 simulator binding; ISSUE-CP14-018; LIVE unchanged |
+| CP-14 D28 PAPER bootstrap governance and public venue provenance (2026-09-17) | Ch.12 AF.3, Section 2 snapshot binding, Section 9.5 tree; ADR-CP14-005 / ISSUE-CP14-017 |
+| CP-14 D24 written authority / bare-click audit | DECISION_LOG OWNER ANSWERS; only the two explicit extra test-pin corrections; bare clicks are VOID |
+| CP-14 closeout producer and phone fallback | Section 9.5 tree/context catalogue; ADR-CP14-020/021; exact 38+23 seam, test-only fixture, runtime artifact gitignored; D30 defaults unchanged |
+| CP-14 D25 decision-runtime YAML (2026-09-17) | Section 9.5 repository tree; ADR-CP14-003 / ISSUE-CP14-008 |
+| CP-14 D31 resolution-class validator correction (2026-09-18) | §8 24-field mapping row 24: validator aligned to the documented Q0..QX set, no schema change; ADR-CP14-006 / ISSUE-CP14-034 |
+| CP-14 D21 first-training label rule (2026-09-17) | E11 Section 3.3; ISSUE-CP14-001 owner resolution |
+| CP-14 D22 catch-up failure separated from freshness (2026-09-17) | Section 9.5 item 14; ISSUE-CP14-002 owner resolution |
 | P1: per-close catch-up + runtime engine order + engine-context producer contract + wiring staleness law (2026-09-17) | §9.5 item 14 (D2/D5/D14; CP-14 interface) |
 | P2: E11 classifier artifact + deterministic training procedure + degenerate-class handling (2026-09-17) | E11 §3.3 (D2/D3) |
 | P3: PAPER simulator transport + APEX_ALLOW_SIGNED reconciliation (2026-09-17) | Ch.16 Toobit wire (D1/D2) |

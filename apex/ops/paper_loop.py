@@ -247,6 +247,7 @@ class PaperRuntime:
                  cells: Optional[Sequence[Any]] = None,
                  notifier: Optional[Callable[[str], Awaitable[Any]]] = None,
                  plan_provider: Optional[Callable[..., Any]] = None,
+                 catch_up: Optional[Callable[[int], Awaitable[Any]]] = None,
                  signal_source: str = SIGNAL_SOURCE_DECISION_BRIDGE,
                  max_trades_per_cycle: int = 4,
                  max_cells_per_cycle: Optional[int] = None,
@@ -267,6 +268,10 @@ class PaperRuntime:
         self.cells = tuple(cells) if cells is not None else ()
         self.notifier = notifier
         self.plan_provider = plan_provider
+        self.catch_up = catch_up
+        self._catch_up_failed: Dict[str, Any] = {}
+        self._context_preparation_failed: Dict[str, Any] = {}
+        self._decision_as_of: Dict[str, str] = {}
         self.signal_source = signal_source
         self.max_trades_per_cycle = int(max_trades_per_cycle)
         self.max_cells_per_cycle = (None if max_cells_per_cycle is None
@@ -304,7 +309,7 @@ class PaperRuntime:
 
     # -- stages --------------------------------------------------------------
     def _stage_handlers(self) -> Dict[str, Any]:
-        return {
+        handlers = {
             "ingest": self._stage_ingest,
             "quality": self._stage_quality,
             "features": self._stage_features,
@@ -315,6 +320,16 @@ class PaperRuntime:
             "decision": self._stage_decision,
             "execution": self._stage_execution,
         }
+        if self.environment != "PAPER":
+            return handlers
+        def receipt_view(handler):
+            async def run(payload):
+                # Scheduling still keys off close_ms. PAPER reads are at the
+                # actual cycle receipt frontier, not before the bar arrived.
+                as_of = self._decision_as_of.get(payload["cell_id"],payload["as_of"])
+                return await handler({**payload,"as_of":as_of})
+            return run
+        return {stage:receipt_view(handler) for stage,handler in handlers.items()}
 
     async def _stage_ingest(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         window = await self.store.get_window(payload["symbol"], payload["timeframe"],
@@ -379,6 +394,12 @@ class PaperRuntime:
         return True
 
     async def _stage_setup(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        if payload["cell_id"] in self._catch_up_failed:
+            raise CellRefusal("CATCH_UP_FAILED",
+                              self._catch_up_failed[payload["cell_id"]]["error_code"])
+        if payload["cell_id"] in self._context_preparation_failed:
+            failed = self._context_preparation_failed[payload["cell_id"]]
+            raise CellRefusal(failed["reason"], failed["detail"])
         # The cycle trade budget is checked BEFORE the plan is asked for: once
         # it is exhausted the cell halts by name instead of materializing work
         # that can never be sent (the execution stage keeps the same guard).
@@ -484,6 +505,9 @@ class PaperRuntime:
                                       payload["as_of"])
         plan = await provided if hasattr(provided, "__await__") else provided
         if plan is None:
+            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+            if self.environment == "PAPER" and refusal:
+                raise CellRefusal(refusal["reason"],refusal.get("detail",""))
             raise CellRefusal("NO_PLAN_FOR_CELL",
                               f"{payload['cell_id']} has no governed plan at "
                               f"{payload['as_of']}")
@@ -695,6 +719,11 @@ class PaperRuntime:
         cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
                                  "signal_source": self.signal_source,
                                  "trading_enabled": self.trading_enabled}
+        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+                             {"cells_checked": 0, "cells_updated": 0,
+                              "bars_ingested": 0, "failures": []})
+        self._catch_up_failed = {row["cell"]: row
+                                 for row in cycle["catch_up"]["failures"]}
         if self.watchdog is not None:
             cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
         cycle["storage"] = await self._storage_guard()
@@ -707,10 +736,37 @@ class PaperRuntime:
                if item[1] > self._last_close.get(item[0].cell_id, -1)]
         if self.max_cells_per_cycle is not None:
             due = due[:self.max_cells_per_cycle]
+        # G1: all expensive source preparation completes before run_cell
+        # starts its latency clock. D22 failures never enter preparation;
+        # a failed source must not fall back to its previous cached success.
+        self._context_preparation_failed = {}
+        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+        receipt_ms = max(moment,self.clock.now_ms())
+        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+                                for cell,close in due} if self.environment == "PAPER" else {})
+        cycle["decision_as_of"] = dict(self._decision_as_of)
+        prepare = getattr(self.plan_provider, "prepare", None)
+        if callable(prepare):
+            for cell, close in due:
+                if cell.cell_id in self._catch_up_failed:
+                    continue
+                preparation["cells_checked"] += 1
+                try:
+                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+                    preparation["cells_prepared"] += 1
+                except Exception as exc:
+                    failed = {"cell": cell.cell_id,
+                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+                              "detail": getattr(exc, "detail", type(exc).__name__)}
+                    self._context_preparation_failed[cell.cell_id] = failed
+                    preparation["failures"].append(failed)
+        cycle["context_preparation"] = preparation
         tasks = [asyncio.create_task(self.scheduler.run_cell(
                     cell, close_ms=close, context={"cell_state": {}}))
                  for cell, close in due]
         runs = list(await asyncio.gather(*tasks)) if tasks else []
+        import dataclasses
+        cycle["cell_runs"] = [dataclasses.asdict(run) for run in runs]
         cycle["cells_due"] = len(due)
         cycle["cells_complete"] = sum(1 for r in runs if r.status == "COMPLETE")
         cycle["cells_halted"] = sum(1 for r in runs if r.status == "HALTED")
@@ -729,6 +785,9 @@ class PaperRuntime:
         cycle["halt_reasons"] = halt_reasons
         cycle["halt_stages"] = halt_stages
         for run in runs:
+            if (run.cell_id in self._catch_up_failed
+                    or run.cell_id in self._context_preparation_failed):
+                continue
             self._last_close[run.cell_id] = max(
                 self._last_close.get(run.cell_id, -1), int(run.close_ms))
         cycle["trades"] = [r for r in runs if r.status == "COMPLETE"]

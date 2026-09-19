@@ -1,0 +1,25 @@
+# Synthetic loader-test artifact only; never a runtime training fallback.
+W:
+  - [-0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0.0, 0.1]
+  - [-0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8, -0.7]
+  - [-0.2, 0.1, 0.4, 0.7, -0.7, -0.4, -0.1, 0.2]
+  - [0.0, 0.4, 0.8, -0.5, -0.1, 0.3, 0.7, -0.6]
+  - [0.2, 0.7, -0.5, 0.0, 0.5, -0.7, -0.2, 0.3]
+  - [0.4, -0.7, -0.1, 0.5, -0.6, 0.0, 0.6, -0.5]
+  - [0.6, -0.4, 0.3, -0.7, 0.0, 0.7, -0.3, 0.4]
+  - [0.8, -0.1, 0.7, -0.2, 0.6, -0.3, 0.5, -0.4]
+  - [-0.7, 0.2, -0.6, 0.3, -0.5, 0.4, -0.4, 0.5]
+b: [-0.4, -0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4]
+K: 9
+label_delay_candles: 48
+seed: 20260917
+training_window:
+  start: "2026-01-01T00:00:00.000Z"
+  end: "2026-01-02T00:00:00.000Z"
+  timeframes: ["1h", "4h"]
+  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "LTCUSDT"]
+  default_timeframes: ["1h", "4h"]
+  default_symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "LTCUSDT"]
+sample_count: 9
+training_query_sha256: 2b9cc4a9db471dbe900f09fbe469af30efdd8a740f938e325120903fb274339d
+artifact_sha256: 4f49242b939c366c91d7a64ac84b851d94f3557257c4ef74023cb76506b83430

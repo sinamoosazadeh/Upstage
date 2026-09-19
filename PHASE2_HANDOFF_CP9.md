@@ -480,3 +480,207 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 
 ### PUSH RECORD
 - Branch `arena/01a0ae7b-upstage` → exactly ONE PR to `main` (number/URL recorded in the Session A checkpoint board line and the executor's report) — `[Session A] DESIGN PATCH P1–P8 per owner D1–D20`. Suite twice: 2728 passed / 0 failed.
+
+## HANDOFF_CP14 — CLOSEOUT (2026-09-19)
+
+### ARTIFACTS
+
+- `.gitignore` — Ignore only the phone-produced runtime classifier in this checkpoint.
+- `APEX_GEN5.md` — Governed CP-14 home sentences, repository tree, source catalogue, E11 table and AJ index.
+- `PHASE2_CHECKPOINT_STATUS.md` — Final CP-14 board, verification totals and two exact frozen exceptions.
+- `PHASE2_DECISION_LOG.md` — D21–D34 verbatim authority, ADRs, historical recovery record and all individual issue dispositions.
+- `PHASE2_HANDOFF_CP9.md` — This final CP-14 handoff and CP-15 interface contract.
+- `PHASE2_TRACEABILITY_MATRIX.md` — G1–G6 and D21–D34 implementation/evidence rows.
+- `apex/config.py` — Lazy governed parameter allowlist for the additive CP-14 files/classifier.
+- `apex/data_catalog/contracts.py` — D31 membership line only: Q0–Q5 and QX.
+- `apex/data_catalog/store/sqlite_store.py` — insert_snapshot body only: canonical mapping serialization at SQLite binding.
+- `apex/decision/pipeline.py` — D28 zero-weight UNAVAILABLE exclusion and PAPER bootstrap arbitration.
+- `apex/engines/e01_structure/engine.py` — Equivalent native prefix/ATR memoization for store-derived feature history.
+- `apex/engines/e03_volume/engine.py` — Climax calibration reads actual OHLC bars rather than nonexistent evidence.c.
+- `apex/engines/e11_regime/engine.py` — D23 participation and shared D26 canonical normalization, artifact identity/provenance.
+- `apex/errors.py` — Exact CIRCUIT_OPEN registry row.
+- `apex/forecast/logistic.py` — D34 C=1-U and explicit versioned bootstrap uncertainty consumption.
+- `apex/ops/bootstrap_service.py` — Due-cell catch-up using native frontier law with isolated failures and retry.
+- `apex/ops/engine_context.py` — SQLite/native 38+23 source, cache, classifier trainer/loader, quality/account/risk/cost projections.
+- `apex/ops/paper_loop.py` — Catch-up, outside-budget preparation, receipt-aware PAPER reads and named cell refusals.
+- `apex/ops/plan_bridge.py` — Full E11 state and validated PAPER producer transport into unchanged native downstream authorities.
+- `apex/risk/kernel.py` — Strict D29 PAPER thresholds and typed perpetual applicability; LIVE numeric path unchanged.
+- `apex/setup/gates.py` — D33 normalized native Q_forecast gate10; categorical handling/LIVE bootstrap ban retained.
+- `apex/telegram/control_plane.py` — PAPER-only YAML/ledger balance; no PAPER amount in LIVE titles.
+- `params/decision_runtime_v1.yaml` — Only D25 homeless governance plus D28 PAPER bootstrap weights.
+- `params/paper_account_v1.yaml` — Exact P7 PAPER capital and simulated margin twins.
+- `scripts/run_apex.py` — Bound PAPER source/preparer, catch-up, balance and bounded train-e11 CLI.
+- `tests/fixtures/e11_classifier_v1.yaml` — Explicitly test-only loader artifact, never runtime training fallback.
+- `tests/integration/test_context_to_trade_paper.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/integration/test_cp14_producer.py` — Real SQLite seven-test G1 proof plus bound PAPER-loop one-cycle JSON harness.
+- `tests/integration/test_ops_paper_loop.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/integration/test_store_integration.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_config.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_decision_pipeline.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_e03_volume.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_engine_context.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_engine_context_store_sources.py` — Actual-store quality/MTF/ADV/account/ladder source acceptance and refusal tests.
+- `tests/unit/test_errors.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_forecast_logistic.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_plan_bridge.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_risk_kernel.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_telegram_control_plane.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+
+### RECORD
+
+- APEX BEFORE SHA-256 `683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56`; **20817 lines**.
+- APEX AFTER SHA-256 `8e8fa12935d8cc38cd95702cfeb2c439acb4f7247a704b97f0b8897179da0da1`; **20924 lines**.
+- Final full suite 1: `2960 passed, 14 warnings in 934.90s (0:15:34)`.
+- Final full suite 2: `2960 passed, 14 warnings in 936.11s (0:15:36)`.
+- Both final commands are exactly `python -m pytest -q -p no:cacheprovider`, run sequentially with a clean tree and no deselection, including G2. Both lines above are copied from actual completed exit-0 runs at code commit 68f04e4; no prior/interim or interrupted run counts as final evidence.
+- G1 actual-source proof and bound one-cycle harness: `13 passed, 13 warnings in 223.11s (0:03:43)` with the existing bridge battery. Expanded real-source/bridge/risk proof: `289 passed, 1 deselected in 305.38s (0:05:05)`, excluding only long G2 at that checkpoint. The final full runs include it.
+- D24 bare-click audit remains in DECISION_LOG. ISSUE-008's accidental supply_policy click is VOID; D25 is the written authority. Historical checkout absence of commit 583d021 and unverified 2804-test claims remains recorded, not rewritten as a reset diagnosis.
+- Exactly two frozen exceptions: `SQLiteStore.insert_snapshot` BODY (003), and `EvidenceEvent.validate_24_fields` resolution_class membership line accepting exactly Q0–Q5/QX (D31/034). No other frozen source, DDL, to_ddl_row or original six YAML change. Additive decision_runtime/paper_account YAMLs only.
+- Issues 015/016/020–024 were never assigned in the current log or the read-only owner archive; they are explicitly UNASSIGNED below, not fabricated closures.
+
+#### D21–D34 authority index
+
+| Decision | Binding subject / implementation |
+|---|---|
+| D21 | Independent rule0 labels, omit only entropy; all nine classes; delayed BOS/CHoCH; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D22 | Separate per-cell CATCH_UP_FAILED and retry; D14 unchanged; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D23 | Non-AVAILABLE OI uses VolumeZ only, explicit PARTIAL, Q5 cap only; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D24 | Written decisions only; bare clicks VOID; two explicit pin corrections; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D25 | .60 hard cap, all-14 P_min table, .50 C_min and strictest SL-12 horizon; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D26 | Canonical E04 ATR14 lagged Method B; native E02 live density/MAX age/sweeps; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D27 | regime_uncertainty=1-p_max; raw entropy and h_norm separate; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D28 | Canonical governed package, ACCUMULATING only if absent, PAPER arbitration/public provenance; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D29 | Exact durable reservation fraction (C-N)/C, strict PAPER .60/.40/.20; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D30 | Default 1h/4h×Core-10, progress, 20-minute hard abort; authorized fallback opt-in; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D31 | Exact Q0–Q5/QX validator membership, no schema change; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D32 | Native prior HV30 mid-rank, finite N>=50 and native window cap; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D33 | Native quality/MTF/components/pattern/temporal projections and normalized gate10; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D34 | Versioned uncertainty, ADV/costs, sizing, marks, trend and loss/latch laws; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+
+#### ISSUE-CP14-001..059 final dispositions
+
+| Issue | Final disposition | Subject / evidence |
+|---|---|---|
+| ISSUE-CP14-001 | CLOSED — implementation/evidence | Independent nine-class first-training labels |
+| ISSUE-CP14-002 | CLOSED — implementation/evidence | Catch-up versus freshness |
+| ISSUE-CP14-003 | CLOSED — implementation/evidence | Snapshot mapping bind bug |
+| ISSUE-CP14-004 | CLOSED — implementation/evidence | CIRCUIT_OPEN registry schema |
+| ISSUE-CP14-005 | CLOSED — implementation/evidence | PAPER/LIVE balances |
+| ISSUE-CP14-006 | CLOSED — implementation/evidence | E03 climax OHLC calibration |
+| ISSUE-CP14-007 | CLOSED — implementation/evidence | Missing OI participation |
+| ISSUE-CP14-008 | CLOSED — implementation/evidence | Governed caps/P_min and storage |
+| ISSUE-CP14-009 | CLOSED — implementation/evidence | Two explicit extra pin corrections / VOID clicks |
+| ISSUE-CP14-010 | CLOSED — implementation/evidence | Provisional ATR20 discarded |
+| ISSUE-CP14-011 | CLOSED — implementation/evidence | Canonical ATR14 and native liquidity projections |
+| ISSUE-CP14-012 | CLOSED — implementation/evidence | Complete native event envelope persistence/readback |
+| ISSUE-CP14-013 | CLOSED — implementation/evidence | Close-stamped engine views and local sequence/availability alignment |
+| ISSUE-CP14-014 | CLOSED — implementation/evidence | Authorized YAML cleanliness before commit |
+| ISSUE-CP14-015 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-016 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-017 | CLOSED — implementation/evidence | PAPER bootstrap governance/public facts |
+| ISSUE-CP14-018 | CLOSED — implementation/evidence | D29 reservation margin |
+| ISSUE-CP14-019 | CLOSED — implementation/evidence | Uncertainty complement |
+| ISSUE-CP14-020 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-021 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-022 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-023 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-024 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-025 | CLOSED — implementation/evidence | Strict PAPER margin / unchanged inclusive LIVE |
+| ISSUE-CP14-026 | CLOSED — implementation/evidence | Scoped liquidity Method-A degenerate reference |
+| ISSUE-CP14-027 | CLOSED — implementation/evidence | Raw identity/PIT metadata |
+| ISSUE-CP14-028 | CLOSED — implementation/evidence | Delayed structural-label confirmation |
+| ISSUE-CP14-029 | CLOSED — implementation/evidence | E03 calibration source-index binding with late receipts |
+| ISSUE-CP14-030 | CLOSED — implementation/evidence | Native E04 chronological state/history |
+| ISSUE-CP14-031 | CLOSED — implementation/evidence | Native E01 prefix memoization |
+| ISSUE-CP14-032 | CLOSED — implementation/evidence | Bounded default training scope |
+| ISSUE-CP14-033 | CLOSED — implementation/evidence | E10 explicit close boundary |
+| ISSUE-CP14-034 | CLOSED — implementation/evidence | D31 terminal QX validator |
+| ISSUE-CP14-035 | CLOSED — implementation/evidence | Complete E11 state versus consumer label |
+| ISSUE-CP14-036 | CLOSED — implementation/evidence | Prior native HV mid-rank |
+| ISSUE-CP14-037 | CLOSED — implementation/evidence | Native window minimum-veto/weighted quality |
+| ISSUE-CP14-038 | CLOSED — implementation/evidence | Native required-coarser MTF |
+| ISSUE-CP14-039 | CLOSED — implementation/evidence | Admitted components and real E07 contributor mean |
+| ISSUE-CP14-040 | CLOSED — implementation/evidence | Deterministic admitted pattern selection |
+| ISSUE-CP14-041 | CLOSED — implementation/evidence | Native temporal validity projection |
+| ISSUE-CP14-042 | CLOSED — implementation/evidence | Normalized forecast gate-10 quality |
+| ISSUE-CP14-043 | CLOSED — implementation/evidence | Versioned PAPER bootstrap uncertainty |
+| ISSUE-CP14-044 | CLOSED — implementation/evidence | Actual ADV/fees/public funding horizon |
+| ISSUE-CP14-045 | CLOSED — implementation/evidence | Native request-only sizing and reciprocal ATR |
+| ISSUE-CP14-046 | CLOSED — implementation/evidence | PIT PAPER_CLOSE_MARK with Decimal fidelity |
+| ISSUE-CP14-047 | CLOSED — implementation/evidence | Consecutive version-matched uncertainty trend |
+| ISSUE-CP14-048 | CLOSED — implementation/evidence | Net realized losses/streak/latches |
+| ISSUE-CP14-049 | CLOSED — conservative refusal | Absent public funding interval |
+| ISSUE-CP14-050 | CLOSED — implementation/evidence | Decimal close-mark preservation |
+| ISSUE-CP14-051 | CLOSED — conservative refusal | Corrections/authenticated reset source gap |
+| ISSUE-CP14-052 | CLOSED — conservative refusal | Public base/contract volume-unit declaration |
+| ISSUE-CP14-053 | CLOSED — implementation/evidence | Confirmed native fact decision admission |
+| ISSUE-CP14-054 | CLOSED — implementation/evidence | Elapsed decision age versus sample count |
+| ISSUE-CP14-055 | CLOSED — conservative refusal | Native lineage token grammar at gate 11 |
+| ISSUE-CP14-056 | CLOSED — conservative refusal | Historical measured-quality publication gap |
+| ISSUE-CP14-057 | CLOSED — conservative refusal | Absent complete durable risk ladder |
+| ISSUE-CP14-058 | CLOSED — conservative refusal | Native floating-point quality upper edge |
+| ISSUE-CP14-059 | CLOSED — implementation/evidence | Bounded consumer-only timestamp/native content-hash memo; native values and failures preserved; final suites restarted after interrupted attempt. |
+
+
+### INTERFACES FOR CP-15
+
+- `await EngineContextProducer(store, ledger=ledger, environment="PAPER").get_bridge_context(symbol, timeframe, as_of)` returns exactly the 38 `REQUIRED_CONTEXT_KEYS` and nested 23 `REQUIRED_RISK_KEYS` in plan_bridge. `await producer.prepare(...)` is the separate outside-budget phase; serve binds both bound methods on the runtime store. Full native events are public-inserted/read back through the canonical envelope, all 24 fields retained. Cache identities bind PIT inputs, parameters and classifier; no previous success survives a failed refresh.
+- Native call order: E01→E02→E12→E04→E03→E10→E09→E05→E06→E11→E07→E08. No padding for non-emitting engines. `e11_context.bridge_inputs` carries optional bars, sweep, actual lineage, native decision-view lifecycle/elapsed age, quality IDs, uncertainty/cost/account/ladder provenance; it may not overwrite any required context key. `sweep` is not a new 39th key.
+- `await BootstrapService.catch_up(now_ms)` returns `{cells_checked, cells_updated, bars_ingested, failures}`; each failure has cell/symbol/timeframe/status/error_code/frontier. It blocks only that cell/cycle, preserves actual D14 freshness, and retries. Cycle JSON includes cell_runs and preparation diagnostics. Scheduling keys stay close_ms; PAPER reads use the receipt frontier after catch-up, excluding data available later.
+- `await paper_balance(ledger)` supplies the PAPER report/control balance from governed YAML plus classified PAPER realized outcomes; never display it in LIVE. `paper_account_inputs(as_of)` joins PIT PAPER outcomes, canonical order states, pending reservations and one shared fresh last-CLOSED 1m mark per held symbol, explicitly `PAPER_CLOSE_MARK` (not an exchange mark).
+- D29: `C = capital_usdt + realized PAPER P/L`; `N = gross marked open notional + full unfilled risk-increasing order notional`; `margin_health_fraction = (C-N)/C`. Reduce-only reserves zero, filled amounts counted once, no leverage discount. CP-15 **must implement `query_account_margin_health` from its durable paper_sim_state and return exactly this fraction**, not exchange liquidation distance, an exposure cap, or a second formula. WARNING <.60; veto14/action <.40; Emergency L3 CANCEL_ALL <.20. Missing marks/order state, C<=0 or outside [0,1] refuses without clipping. LIVE venue query remains unchanged. This checkpoint does not build the CP-15 simulator/table/transport/replay CLI.
+- PAPER uncertainty model `cp14_paper_bootstrap_uncertainty-v1`: U_cal=.5, U_ood=.5, U_dis=1-p_max from the same E11 snapshot, U=.5 U_cal+.3 U_ood+.2 U_dis, C=1-U; remaining fields typed UNAVAILABLE/unconsumed. Raw H is retained; only h_norm=H/ln(9). LIVE ignores this bootstrap model.
+- Cost input is actual public fees, verified funding schedule and governed holding horizon, with base-asset ADV over prior 30 complete UTC days; absent interval/endpoint => FUNDING_UNAVAILABLE. Unavailable spread keeps cost_R>=.05. Sizing is a native request bound, never authorization before the 14 vetoes; PERPETUAL expiry is strictly typed not-applicable, not infinity.
+- `train-e11 --sqlite PATH --out PATH --seed INT --timeframes CSV --symbols CSV --max-minutes N --json`: default 1h/4h×Core-10, 20-minute hard bound; explicit authorized fallback scope above. Exit 0 TRAINED only after all nine classes and validated atomic artifact write; exit 2 REFUSED/no new artifact; unexpected error exit 1. No dependence on any existing classifier while training; runtime absence gives CONFIGURATION_INVALID without preventing boot/status/bootstrap/repair/training.
+
+### PHONE ACCEPTANCE — owner run, not sandbox PASS
+
+1. Update the phone checkout (never bypass a failed fast-forward):
+   ```sh
+   cd ~/Upstage && git pull --ff-only
+   ```
+   Expect a successful fast-forward or `Already up to date.` STOP on local-change, divergence, authentication or network errors; do not reset/rebase/force.
+2. Default training on the phone's harvested SQLite store:
+   ```sh
+   .venv/bin/python scripts/run_apex.py train-e11 --json
+   ```
+   Expect per-cell `TRAIN_CELL cell=... closed_bars=... eligible_samples=... elapsed_seconds=...` progress on stderr; exit 0 JSON has `status: TRAINED`, all nine nonempty class counts, sample_count, training_window and artifact_sha256. Exit 2 JSON `status: REFUSED` writes no new artifact. Defaults remain 1h/4h × Core-10 and a 20-minute hard limit.
+   Only after an empty-class refusal or `TRAINING_TIME_LIMIT`, run the explicitly authorized fallback:
+   ```sh
+   .venv/bin/python scripts/run_apex.py train-e11 --timeframes 15m,30m,1h,2h,4h --max-minutes 90 --json
+   ```
+   If still refused, record the complete emitted class histogram (if available), refusal JSON and progress. STOP at CP-14.1 for the artifact decision; do not manufacture members, drop a class, reweight, reuse a fixture, or claim PASS. A hard timeout may have no finalized histogram: record that absence, not zeros. Other errors also STOP for diagnosis. `params/e11_classifier_v1.yaml` stays local and gitignored.
+3. Only after successful training, export the Telegram values from the phone's private environment (never paste/print secrets), then:
+   ```sh
+   APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 .venv/bin/python scripts/run_apex.py serve --cycles 1 --interval 5 --json
+   ```
+   Required environment: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID`; optional venue variables `TOOBIT_API_KEY`, `TOOBIT_API_SECRET`. Expect boot/outcome JSON and one cycle with `catch_up`, `context_preparation`, `decision_as_of`, `cell_runs`, and a validated plan or named refusal for every attempted cell. Classifier absence is `CONFIGURATION_INVALID`, not a crash. Catch-up failure is isolated `CATCH_UP_FAILED`, never a rewritten freshness measurement. Without signed venue capability boot may be DEGRADED (exit 2); public collection does not require keys. STOP on crash, unexplained status, LIVE mode, or any named refusal needing an unavailable input; do not bypass a gate. See conservative gaps below; a refusal is not trading readiness.
+4. Offline inspection:
+   ```sh
+   .venv/bin/python scripts/run_apex.py status
+   ```
+   Expect stored progress/frontiers and environment/account separation, no orders and no network requirement. STOP on unreadable storage, inconsistent frontier, or error. Do not equate bootstrap completion with classifier/PAPER/LIVE approval.
+
+The phone commands have NOT been executed here. Toobit retains approximately 3500 bars per interval. The still-open 1w/1mo bars remain for the previously governed repair windows 2026-09-21 / 2026-10-01; this closeout does not repair them early.
+
+### CONSERVATIVE LIMITATIONS (not owner design questions)
+
+- FUNDING_UNAVAILABLE when public funding rate/interval/phase is absent or the endpoint fails; retry, never assume eight hours. Actual fees/contract specs must be publicly supplied; no default or signing fallback.
+- ADV_UNAVAILABLE without an explicit public BASE/CONTRACT volume-unit declaration and the actual 720 contiguous prior complete-day 1h volumes.
+- Raw-only historical windows have no measured quality provenance: QUALITY_PROVENANCE_UNAVAILABLE, never health/completeness/receipt defaults or a historical freshness waiver. Ordinary raw ingestion does not manufacture these records. The publication/readback seam is tested with explicit input-only measurements.
+- Missing complete native ladder revision: RISK_LADDER_UNAVAILABLE; an empty-table NORMAL startup message is insufficient. Public venue facts likewise require their durable publisher records; no fixture/runtime fallback.
+- OI lag unavailable blocks risk inputs even though D23 still allows missing-OI training. E12 without sufficient prior profile history and native CANDIDATE/QX evidence remain inadmissible. Missing same-version consecutive uncertainty state refuses a risk increase.
+- Corrections lacking canonical binding and resets lacking authenticated review remain PAPER_CORRECTION_UNAVAILABLE / CIRCUIT_RESET_UNAVAILABLE; profit alone cannot release a latch.
+- Full native lineage may fail unchanged gate11 identifier grammar; retain it and refuse, do not strip/relabel tokens. The genuine composition fixture also has native MTF conflict, so its actual plan result is SETUP_NOT_EMITTED, not a fabricated trade.
+- The native zero-delay quality floating edge can exceed 1 by rounding; range validation refuses rather than clips.
+- Test fixture success is not phone-store classifier success, economic approval, LIVE readiness, or CP-15 simulator/execution delivery.
+
+### OPEN QUESTIONS
+
+No new design question. If both authorized phone training attempts still refuse, STOP for the CP-14.1 artifact decision with the actual histogram/output; do not relax nine-class training. OWNER-CHECKED remains [ ].
+
+### PUSH RECORD
+
+All work stays on `arena/01a0afeb-upstage`; checkpoints pushed without rebase/squash/force or merge. PR creation follows the two actual clean full-suite results. PR number/URL: `#18 — https://github.com/sinamoosazadeh/Upstage/pull/18`. No claim of phone PASS or LIVE permission.
+
+Recovery/verification record (2026-09-19): owner-authorized soft reset to 4d1f492 preserved the working files; recovered implementation 72793a5 and controls 8e3869c were pushed. No hard reset, stash, rebase, force-push, branch change or merge. Test environment rebuilt outside the repo from requirements.lock plus the permitted pytest extra; dependency files unchanged. After the recorded interrupted attempts and ISSUE-059 fix, both complete suites ran sequentially from/to a clean tree with no deselection, including G2. The complete runs took 15:34 and 15:36 on this sandbox, exceeding the requested 15-minute step target by 34/36 seconds; no test or worker deadline was relaxed to hide this.

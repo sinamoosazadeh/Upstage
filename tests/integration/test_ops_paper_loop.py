@@ -348,6 +348,7 @@ async def bridge_context(store: Any, symbol: str, timeframe: str,
         "pattern_id": "PAT-WYC-001",
         "x": {key: 0.5 for key in X_FEATURES},
         "forecast_quality": "Q3", "forecast_rr": 3.0,
+        "forecast_uncertainty": {"calibration": .2, "data_quality": .2, "disagreement": .2},
         "forecast_cost_r": 0.05, "h_norm": 0.4,
         "window_qualities": [(1.0, 0.0)] * 25,
         "temporal_quality": "Q2", "volatility_quality": "Q2",
@@ -849,4 +850,92 @@ def test_governed_bridge_drives_fixture_paper_lifecycle(harness):
         finally:
             await shutdown(h)
 
+    run(scenario())
+
+
+def test_d28_paper_bootstrap_unavailable_components_reach_real_bridge(harness):
+    """Only governance is D28-produced; engine/risk values remain test fixtures."""
+    from apex.ops import engine_context as EC
+    async def scenario():
+        h = await harness()
+        try:
+            await seed_bridge_sweep(h.store)
+            bootstrap = EC.paper_bootstrap_inputs(environment="PAPER", family_record=None)
+            async def source(symbol, timeframe, as_of):
+                context = await bridge_context(h.store, symbol, timeframe, as_of)
+                context.update(bootstrap)
+                # D27: produced uncertainty, rather than a fixture's old value.
+                context["regime_uncertainty"] = EC.regime_uncertainty_input({"probs": [.7] + [.0375] * 8})
+                return context
+            bridge = PaperPlanBridge(store=h.store, context_source=source)
+            plan = await bridge(SYMBOL, TF, _ms_to_iso(START_MS + 24 * HOUR))
+            assert plan is not None and not bridge.refusals
+            assert plan["environment"] == "PAPER" and plan["package_version"] == "v1.0.0"
+            arbitration = bridge.traces[f"{SYMBOL}:{TF}"]["arbitration"]
+            candidate = arbitration["ranked"][0]
+            assert candidate["family_status"] == "ACCUMULATING"
+            assert candidate["composite"]["component_status"]["alignment"] == "UNAVAILABLE"
+            assert candidate["composite"]["component_status"]["recency"] == "UNAVAILABLE"
+        finally:
+            await shutdown(h)
+    run(scenario())
+
+
+def test_cp14_context_preparation_is_outside_budget_and_before_source(harness):
+    async def scenario():
+        h = await harness()
+        calls = []
+        try:
+            await seed_bridge_sweep(h.store)
+            async def prepare(symbol, timeframe, as_of):
+                calls.append(("prepare", symbol, timeframe, as_of))
+                h.clock.advance(seconds=60)  # much longer than stage budget
+            async def source(symbol, timeframe, as_of):
+                assert calls == [("prepare", symbol, timeframe, as_of)]
+                calls.append(("source", symbol, timeframe, as_of))
+                return await bridge_context(h.store, symbol, timeframe, as_of)
+            bridge = PaperPlanBridge(store=h.store, context_source=source, context_preparer=prepare)
+            h.runtime.plan_provider = bridge
+            cycle = await h.runtime.run_cycle(now_ms=START_MS + 24 * HOUR)
+            assert cycle["context_preparation"] == {"cells_checked": 1, "cells_prepared": 1, "failures": []}
+            assert cycle["cells_complete"] == 1
+            assert not cycle["halt_reasons"]
+            assert [call[0] for call in calls] == ["prepare", "source"]
+        finally:
+            await shutdown(h)
+    run(scenario())
+
+
+def test_cp14_preparation_failure_isolated_retry_same_close_and_no_stale_source(harness):
+    from apex.ops.plan_bridge import BridgeError
+    async def scenario():
+        cells = [C.BundleCell("BTCUSDT", "1h"), C.BundleCell("ETHUSDT", "1h")]
+        h = await harness(cells=cells)
+        prepared, sources = [], []
+        failed = True
+        try:
+            from dataclasses import replace
+            for symbol in ("BTCUSDT", "ETHUSDT"):
+                await h.store.ingest_raw(replace(observation("100", START_MS), symbol=symbol), "MISSING")
+            async def prepare(symbol, timeframe, as_of):
+                prepared.append(symbol)
+                if symbol == "BTCUSDT" and failed:
+                    raise BridgeError("EVIDENCE_CONTEXT_INVALID", "fixture corrupt source")
+            async def source(symbol, timeframe, as_of):
+                sources.append(symbol)
+                return None  # no invented plan in this isolation test
+            h.runtime.plan_provider = PaperPlanBridge(store=h.store, context_source=source, context_preparer=prepare)
+            first = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+            assert prepared == ["BTCUSDT", "ETHUSDT"]
+            assert sources == ["ETHUSDT"]
+            assert first["halt_reasons"]["EVIDENCE_CONTEXT_INVALID"] == 1
+            assert first["context_preparation"]["cells_prepared"] == 1
+            assert "BTCUSDT:1h" not in h.runtime._last_close
+            failed = False
+            second = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+            assert second["cells_due"] == 1
+            assert second["context_preparation"]["cells_prepared"] == 1
+            assert sources == ["ETHUSDT", "BTCUSDT"]
+        finally:
+            await shutdown(h)
     run(scenario())

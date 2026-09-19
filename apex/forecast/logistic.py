@@ -165,7 +165,7 @@ class ForecastRecord:
     event: ForecastEvent
     p_raw: float
     p_hat: float
-    uncertainty: Dict[str, float]
+    uncertainty: Dict[str, Any]
     u: float
     c: float
     q_forecast: float
@@ -393,16 +393,41 @@ def build_forecast(event: ForecastEvent, *, x: Mapping[str, float],
     if p_hat is None:
         p_hat = float(package["p_hat"]) if (package and "p_hat" in package) \
             else p_raw
-    u_map = {k: float((uncertainty or {}).get(k, 0.0))
-             for k in UNCERTAINTY_COMPONENTS}
-    for k, v in u_map.items():
-        if not (0.0 <= v <= 1.0):
+    if str(environment).upper() == "LIVE" and bootstrap:
+        raise ForecastError("FORECAST_BOOTSTRAP_NOT_LIVE_ELIGIBLE",
+                            "LIVE requires a calibrated package")
+    supplied = dict(uncertainty or {})
+    model = supplied.pop("model_version", None)
+    snapshot = supplied.pop("e11_snapshot_id", None)
+    if model is not None:
+        if (model != "cp14_paper_bootstrap_uncertainty-v1"
+                or environment != "PAPER" or not bootstrap or not snapshot
+                or q_forecast not in (None, .5)):
+            raise ForecastError("FORECAST_UNCERTAINTY_MODEL_QX", str(model))
+        consumed = ("calibration", "ood", "disagreement")
+        if supplied.get("calibration") != .5 or supplied.get("ood") != .5:
+            raise ForecastError("FORECAST_UNCERTAINTY_MODEL_QX", "bootstrap constants")
+    else:
+        consumed = ("calibration", "data_quality", "disagreement")
+    u_map = {}
+    for k, value in supplied.items():
+        if model and k not in consumed and value != {"state": "UNAVAILABLE"}:
             raise ForecastError("UNCERTAINTY_COMPONENT_QX", k)
-    u_structured = uncertainty_from(u_map["calibration"], u_map["data_quality"],
-                                   u_map["disagreement"])
-    max_u = max(u_map.values()) if u_map else 0.0
-    u = u_structured
-    c_val = max(0.0, min(1.0, 1.0 - max_u))
+        if k not in (*UNCERTAINTY_COMPONENTS, "ood"):
+            raise ForecastError("UNCERTAINTY_COMPONENT_QX", k)
+        if value == {"state": "UNAVAILABLE"} and k not in consumed:
+            u_map[k] = value
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+            raise ForecastError("UNCERTAINTY_COMPONENT_QX", k)
+        u_map[k] = float(value)
+    if any(k not in u_map for k in consumed):
+        raise ForecastError("FORECAST_UNCERTAINTY_UNAVAILABLE", ",".join(consumed))
+    for k in UNCERTAINTY_COMPONENTS:
+        u_map.setdefault(k, {"state": "UNAVAILABLE"})
+    u = uncertainty_from(*(u_map[k] for k in consumed))
+    u_structured = u
+    c_val = 1.0 - u
     r_pen = r_penalty_for(risk_state)
     eu = economic_utility(p_hat, rr, cost_r, r_pen,
                          spread_available=spread_available)
@@ -424,7 +449,8 @@ def build_forecast(event: ForecastEvent, *, x: Mapping[str, float],
         cost_r=eu["cost_R"], r_penalty=r_pen, eu=eu["EU"],
         eligible_environments=eligible, bootstrap_prior=bootstrap,
         components={"eu": eu, "decay": decay(age_bars),
-                    "c_from_max_u": c_val, "u_structured": u_structured,
+                    "c_from_u": c_val, "u_structured": u_structured,
+                    "uncertainty_model": model, "e11_snapshot_id": snapshot,
                     "horizon": event.horizon})
 
 

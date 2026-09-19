@@ -523,7 +523,7 @@ class ControlPlane:
         # (ISSUE-CP7-007).
         return {"screen": "MAIN_MENU",
                 "title": f"APEX — Full Unlock — {self.environment} "
-                         f"{self.paper_balance} USDT — {TIMEZONE_DISPLAY}",
+                         f"{self.paper_balance if self.environment == 'PAPER' else 'UNAVAILABLE'} USDT — {TIMEZONE_DISPLAY}",
                 "rows": MAIN_MENU_ROWS, "global_controls": GLOBAL_CONTROLS,
                 "full_unlock": True,
                 "rule": "§5.1 two domain buttons per row; no environment-based "

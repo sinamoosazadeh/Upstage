@@ -1,0 +1,4 @@
+# PAPER capital and simulated margin inputs (Section 9.5 P7, D4).
+# Risk thresholds remain authoritative in params/risk_defaults_v1.yaml.
+capital_usdt: 10000.0
+simulated_margin: {warning_fraction: 0.60, action_fraction: 0.40, liquidation_approach_fraction: 0.20}
