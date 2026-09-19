@@ -1060,7 +1060,18 @@ from apex.engines.e08_wyckoff import engine as E08
 from apex.engines.e09_trend import engine as E09
 from apex.engines.e10_momentum import engine as E10
 from apex.engines.e12_temporal import engine as E12
-from apex.ops.bootstrap_service import _iso_to_ms, _ms_to_iso
+from apex.ops.bootstrap_service import _iso_to_ms as _native_iso_to_ms, _ms_to_iso
+from functools import lru_cache
+
+
+@lru_cache(maxsize=16384, typed=True)
+def _iso_to_ms(timestamp: str) -> int:
+    """Bounded memo of the unchanged parser, never a different clock law.
+
+    Native rolling windows revisit the same immutable timestamps. This cache
+    is local to the consumer; bootstrap/LIVE parsing and failures are unchanged.
+    """
+    return _native_iso_to_ms(timestamp)
 
 
 def closed_engine_window(window: Any, timeframe: str) -> list[Any]:
@@ -1487,6 +1498,7 @@ class EngineContextProducer:
         self.diagnostics: dict[str, Any] = {}
         self._frames: dict[tuple, dict] = {}
         self._raw_lineage: dict[tuple, dict] = {}
+        self._content_hashes: dict[tuple, str] = {}
         self._ready: dict[tuple, dict] = {}
         self._failed: dict[tuple, BridgeError] = {}
         self._timelines: dict[tuple, dict] = {}
@@ -2053,6 +2065,23 @@ class EngineContextProducer:
                 "contract_specs": {symbol: {k: venue[k] for k in (
                     "contract_multiplier", "contract_type", "expiry_time")}}}
 
+    def _raw_content_hash(self, observation: Any) -> str:
+        """Memo only the frozen content_hash payload, with exact typed values.
+
+        repr preserves Decimal precision (numeric equality alone would alias
+        100.0 and 100.00). Every miss calls the native method on the actual
+        observation; this never constructs or modifies a raw record.
+        """
+        key = (type(observation), tuple((type(value),repr(value)) for value in
+            (observation.symbol,observation.timeframe,observation.timestamp,
+             observation.open,observation.close,observation.volume)))
+        if key not in self._content_hashes:
+            digest = observation.content_hash()
+            if len(self._content_hashes) >= 4096:
+                del self._content_hashes[next(iter(self._content_hashes))]
+            self._content_hashes[key] = digest
+        return self._content_hashes[key]
+
     async def window(self, symbol: str, timeframe: str, as_of: str, bars: int) -> list[Any]:
         end = _iso_to_ms(as_of)
         window = await self.store.get_window(symbol, timeframe, as_of, bars)
@@ -2081,7 +2110,8 @@ class EngineContextProducer:
         result = []
         for obs in window:
             row = metadata.get(obs.timestamp)
-            if row is None or row[3] != obs.content_hash() or row[2] != hashlib.sha256(row[3].encode()).hexdigest():
+            content_hash = self._raw_content_hash(obs)
+            if row is None or row[3] != content_hash or row[2] != hashlib.sha256(row[3].encode()).hexdigest():
                 raise BridgeError("RAW_LINEAGE_INVALID", "observation/raw content binding missing")
             if row[4] is None:
                 raise BridgeError("RAW_LINEAGE_INVALID", "raw availability unavailable")
@@ -2089,7 +2119,7 @@ class EngineContextProducer:
                 continue  # never expose not-yet-available observations
             oi_lag = (max(0., (end - _iso_to_ms(row[5])) / 1000.) if row[5] is not None else None)
             result.append(replace(obs, availability_time=row[4], oi_timestamp=row[5], oi_lag_seconds=oi_lag))
-            self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())] = {
+            self._raw_lineage[(symbol, timeframe, obs.timestamp, content_hash)] = {
                 "observation_id": row[1], "oi_state": row[6], "availability_time": row[4]}
         return result
 

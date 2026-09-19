@@ -971,8 +971,8 @@ Historical milestone statuses above retain their dates; the following final disp
 | ISSUE-CP14-009 | CLOSED — implementation/evidence | Two explicit extra pin corrections / VOID clicks |
 | ISSUE-CP14-010 | CLOSED — implementation/evidence | Provisional ATR20 discarded |
 | ISSUE-CP14-011 | CLOSED — implementation/evidence | Canonical ATR14 and native liquidity projections |
-| ISSUE-CP14-012 | CLOSED — implementation/evidence | Engine dependency/order integration |
-| ISSUE-CP14-013 | CLOSED — implementation/evidence | Complete event persistence/PIT |
+| ISSUE-CP14-012 | CLOSED — implementation/evidence | Complete native event envelope persistence/readback |
+| ISSUE-CP14-013 | CLOSED — implementation/evidence | Close-stamped engine views and local sequence/availability alignment |
 | ISSUE-CP14-014 | CLOSED — implementation/evidence | Authorized YAML cleanliness before commit |
 | ISSUE-CP14-015 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
 | ISSUE-CP14-016 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
@@ -988,7 +988,7 @@ Historical milestone statuses above retain their dates; the following final disp
 | ISSUE-CP14-026 | CLOSED — implementation/evidence | Scoped liquidity Method-A degenerate reference |
 | ISSUE-CP14-027 | CLOSED — implementation/evidence | Raw identity/PIT metadata |
 | ISSUE-CP14-028 | CLOSED — implementation/evidence | Delayed structural-label confirmation |
-| ISSUE-CP14-029 | CLOSED — implementation/evidence | Complete native engine bundle |
+| ISSUE-CP14-029 | CLOSED — implementation/evidence | E03 calibration source-index binding with late receipts |
 | ISSUE-CP14-030 | CLOSED — implementation/evidence | Native E04 chronological state/history |
 | ISSUE-CP14-031 | CLOSED — implementation/evidence | Native E01 prefix memoization |
 | ISSUE-CP14-032 | CLOSED — implementation/evidence | Bounded default training scope |
@@ -1018,3 +1018,10 @@ Historical milestone statuses above retain their dates; the following final disp
 | ISSUE-CP14-056 | CLOSED — conservative refusal | Historical measured-quality publication gap |
 | ISSUE-CP14-057 | CLOSED — conservative refusal | Absent complete durable risk ladder |
 | ISSUE-CP14-058 | CLOSED — conservative refusal | Native floating-point quality upper edge |
+| ISSUE-CP14-059 | CLOSED — implementation/evidence | Bounded consumer-only timestamp/native content-hash memo; native values and failures preserved; final suites restarted after interrupted attempt. |
+
+### Recovery verification / ISSUE-CP14-059 — repeated parsing overhead
+
+A: the fresh sandbox's first full-suite attempt reached a failure at the G2 test and was terminated at the 899-second command bound before a final traceback/summary; one training artifact existed in its temporary fixture directory, the second did not. This is NOT either accepted final run. B: a 120-observation profile measured 107,189 timestamp parses; native rolling windows repeatedly parse identical immutable strings and the metadata join computed each observation's identical canonical hash twice. Rule: preserve all native arithmetic, samples, time limits, validators and frozen methods; do not relax the G2 six-minute worker test or omit it. Interim: a bounded, typed consumer-local memo delegates to the identical existing parser, and each metadata-join iteration reuses its one actual content hash. Bootstrap/LIVE parsing is untouched. Parser parity/error tests and all final suites must pass before closure. Owner need: none; implementation-only redundant-work removal, not a policy change. Both final full-suite runs restart after this fix is committed.
+
+- ISSUE-059 focused verification: `205 passed, 1 deselected in 83.71s (0:01:23)` before the additional native-hash memo; final source battery `41 passed in 48.64s`, including strict parser/error parity and Decimal-precision hash parity. A test-local missing Decimal import failed once and was fixed, without a runtime policy change. The hash memo is bounded to 4096 entries and keys the exact typed native six-field hash payload; no frozen method is edited and actual observation hashing remains the authority.

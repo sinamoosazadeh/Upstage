@@ -557,7 +557,7 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 | D33 | Native quality/MTF/components/pattern/temporal projections and normalized gate10; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
 | D34 | Versioned uncertainty, ADV/costs, sizing, marks, trend and loss/latch laws; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
 
-#### ISSUE-CP14-001..058 final dispositions
+#### ISSUE-CP14-001..059 final dispositions
 
 | Issue | Final disposition | Subject / evidence |
 |---|---|---|
@@ -572,8 +572,8 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 | ISSUE-CP14-009 | CLOSED — implementation/evidence | Two explicit extra pin corrections / VOID clicks |
 | ISSUE-CP14-010 | CLOSED — implementation/evidence | Provisional ATR20 discarded |
 | ISSUE-CP14-011 | CLOSED — implementation/evidence | Canonical ATR14 and native liquidity projections |
-| ISSUE-CP14-012 | CLOSED — implementation/evidence | Engine dependency/order integration |
-| ISSUE-CP14-013 | CLOSED — implementation/evidence | Complete event persistence/PIT |
+| ISSUE-CP14-012 | CLOSED — implementation/evidence | Complete native event envelope persistence/readback |
+| ISSUE-CP14-013 | CLOSED — implementation/evidence | Close-stamped engine views and local sequence/availability alignment |
 | ISSUE-CP14-014 | CLOSED — implementation/evidence | Authorized YAML cleanliness before commit |
 | ISSUE-CP14-015 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
 | ISSUE-CP14-016 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
@@ -589,7 +589,7 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 | ISSUE-CP14-026 | CLOSED — implementation/evidence | Scoped liquidity Method-A degenerate reference |
 | ISSUE-CP14-027 | CLOSED — implementation/evidence | Raw identity/PIT metadata |
 | ISSUE-CP14-028 | CLOSED — implementation/evidence | Delayed structural-label confirmation |
-| ISSUE-CP14-029 | CLOSED — implementation/evidence | Complete native engine bundle |
+| ISSUE-CP14-029 | CLOSED — implementation/evidence | E03 calibration source-index binding with late receipts |
 | ISSUE-CP14-030 | CLOSED — implementation/evidence | Native E04 chronological state/history |
 | ISSUE-CP14-031 | CLOSED — implementation/evidence | Native E01 prefix memoization |
 | ISSUE-CP14-032 | CLOSED — implementation/evidence | Bounded default training scope |
@@ -619,6 +619,7 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 | ISSUE-CP14-056 | CLOSED — conservative refusal | Historical measured-quality publication gap |
 | ISSUE-CP14-057 | CLOSED — conservative refusal | Absent complete durable risk ladder |
 | ISSUE-CP14-058 | CLOSED — conservative refusal | Native floating-point quality upper edge |
+| ISSUE-CP14-059 | CLOSED — implementation/evidence | Bounded consumer-only timestamp/native content-hash memo; native values and failures preserved; final suites restarted after interrupted attempt. |
 
 
 ### INTERFACES FOR CP-15

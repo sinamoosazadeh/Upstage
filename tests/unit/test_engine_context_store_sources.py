@@ -422,3 +422,31 @@ def test_native_frame_cache_ignores_only_unconsumed_query_lag(tmp_path,monkeypat
             assert len(calls)==2
         finally:await store.close()
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('stamp',['2024-02-29T00:00:00.001Z','2026-12-31T23:59:59.999Z'])
+def test_consumer_timestamp_memo_preserves_native_parser(stamp,monkeypatch):
+    native=EC._native_iso_to_ms
+    expected=native(stamp);calls=[]
+    def counted(value):calls.append(value);return native(value)
+    monkeypatch.setattr(EC,'_native_iso_to_ms',counted)
+    EC._iso_to_ms.cache_clear()
+    assert EC._iso_to_ms(stamp)==EC._iso_to_ms(stamp)==expected
+    assert calls==[stamp]
+    assert EC._iso_to_ms.cache_info().maxsize==16384
+    for bad in ('invalid',None,0):
+        with pytest.raises((ValueError,TypeError)): EC._iso_to_ms(bad)
+    EC._iso_to_ms.cache_clear()
+
+
+def test_content_hash_memo_preserves_decimal_precision_and_native_fields():
+    from decimal import Decimal
+    source=EC.EngineContextProducer(None,environment='PAPER')
+    from tests.integration.test_store_integration import make_obs
+    from dataclasses import replace
+    obs=make_obs(o=100,c=102)
+    for changed in (obs,replace(obs,sequence=100),replace(obs,open=Decimal('100.00')),
+                    replace(obs,close=Decimal('103')),replace(obs,volume=Decimal('123'))):
+        assert source._raw_content_hash(changed)==changed.content_hash()
+    assert source._raw_content_hash(obs)!=source._raw_content_hash(replace(obs,open=Decimal('100.00')))
+    assert len(source._content_hashes)==4  # sequence is not a native hash input
