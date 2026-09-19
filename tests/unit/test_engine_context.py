@@ -524,6 +524,7 @@ def test_train_cli_empty_store_refuses_all_nine_without_artifact_write(tmp_path)
     report = json.loads(result.stdout)
     assert report["status"] == "REFUSED" and report["sample_count"] == 0
     assert report["per_class_counts"] == {key: 0 for key in EC.E11.REGIMES}
+    assert report["reason"] == "EMPTY_CLASS:CRISIS"
     assert report["refusing_class"] == "CRISIS" and not report["artifact_written"]
     assert target.read_text() == "unchanged existing artifact\n"
 
@@ -540,7 +541,8 @@ X = [[float(i == j) for j in range(8)] for i in range(9)] * 3
 W,b = fit_multinomial(X, list(E11.REGIMES) * 3, 123)
 a = {"W": W, "b": b, "K": 9, "label_delay_candles": 48, "seed": 123,
      "training_window": {"start": "2026-01-01T00:00:00.000Z", "end": "2026-01-02T00:00:00.000Z", "timeframes": list(DEFAULT_TRAINING_TIMEFRAMES),
-                         "symbols": list(CORE10_SYMBOLS), "default_timeframes": list(DEFAULT_TRAINING_TIMEFRAMES), "default_symbols": list(CORE10_SYMBOLS)},
+                         "symbols": list(CORE10_SYMBOLS), "default_timeframes": list(DEFAULT_TRAINING_TIMEFRAMES), "default_symbols": list(CORE10_SYMBOLS),
+                         "max_bars_per_cell": None},
      "sample_count": 27, "training_query_sha256": "0" * 64, "artifact_sha256": classifier_hash(W,b,123)}
 write_classifier(a, sys.argv[1])
 assert load_classifier(sys.argv[1]) == a
@@ -1150,7 +1152,12 @@ def test_d30_hard_cli_deadline_never_writes_artifact(tmp_path, existing):
                              "--out", str(target), "--json", "--max-minutes", "0.0001"], capture_output=True, text=True, timeout=10)
     assert time.monotonic() - started < 5
     assert result.returncode == 2, result.stdout + result.stderr
-    assert json.loads(result.stdout) == {"status": "REFUSED", "reason": "TRAINING_TIME_LIMIT", "artifact_written": False}
+    from apex.data_catalog.contracts import CORE10_SYMBOLS as _CORE10
+    assert json.loads(result.stdout) == {
+        "status": "REFUSED", "reason": "TRAINING_TIME_LIMIT", "artifact_written": False,
+        "cells_completed": [],
+        "cells_remaining": [f"{symbol}:{tf}" for symbol in _CORE10 for tf in ("1h", "4h")],
+        "next_cell": "BTCUSDT:1h"}
     assert not list(tmp_path.glob(".e11-*"))
     assert target.read_text() == "do not replace this artifact\n" if existing else not target.exists()
 
@@ -1243,6 +1250,10 @@ def test_g2_actual_store_training_in_two_processes_is_byte_identical(tmp_path):
     for target in targets:
         # Each CLI launches its own isolated native-engine training worker.
         # No monkeypatch, pre-labelled matrix or existing classifier is used.
+        # D35(f): every proof run starts cold-cache; warm-cache byte-equality
+        # is proven separately by test_d35_warm_cache_resume_is_byte_identical.
+        import shutil
+        shutil.rmtree(EC.E11_TRAIN_CACHE_ROOT, ignore_errors=True)
         result = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11", "--sqlite", str(path),
             "--out", str(target), "--seed", "20260917", "--max-minutes", "6", "--json"],
             capture_output=True, text=True, timeout=370)

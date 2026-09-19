@@ -16,7 +16,7 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
-from apex.config import Config, PARAMS_DIR, PARAMS_FILES, _YamlSubsetParser, load_params
+from apex.config import Config, PARAMS_DIR, PARAMS_FILES, REPO_ROOT, _YamlSubsetParser, load_params
 from apex.data_catalog.contracts import CORE10_SYMBOLS, parse_utc_ms
 from apex.engines.e11_regime import engine as E11
 from apex.identity.canonical_json import canonical_json
@@ -29,6 +29,23 @@ DEFAULT_TRAINING_SEED = 20260917
 DEFAULT_TRAINING_TIMEFRAMES = ("1h", "4h")
 AUTHORIZED_TRAINING_TIMEFRAMES = ("15m", "30m", "1h", "2h", "4h")
 DEFAULT_TRAINING_MAX_MINUTES = 20.0
+# D35: None keeps the D30 unlimited behavior; a positive int caps every cell
+# at its latest N CLOSED bars and enters training_window + the protocol hash.
+DEFAULT_MAX_BARS_PER_CELL = None
+# D35 liveness: a progress message at least this often inside a long cell.
+TRAIN_PROGRESS_EVERY_BARS = 250
+# D35 --profile engine column order: E01..E11 per the decision, plus E12
+# (temporal runs inside upstream_frame; omitting it would leave real training
+# cost unattributed). E05-E08 never run during training and report 0.0 there.
+PROFILE_ENGINE_ORDER = ("E01", "E02", "E03", "E04", "E05", "E06", "E07",
+                        "E08", "E09", "E10", "E11", "E12")
+# D35 resumable cache. data/ is gitignored (ADR-P2-013); the classifier rule
+# (ADR-CP14-021) is unaffected: the worker writes cache only, never artifacts.
+E11_TRAIN_CACHE_ROOT = REPO_ROOT / "data" / "e11_train_cache"
+E11_TRAIN_CACHE_FORMAT = "e11-train-cache-v1"
+# Fixed UTC durations of the HTF dependency timeframes, for the training-only
+# prefetch margin. Training scopes never include calendar-month timeframes.
+_DEP_TF_SECONDS = {"15m": 900, "1h": 3600, "4h": 14400}
 
 
 
@@ -481,8 +498,12 @@ def validate_classifier(artifact: Mapping[str, Any]) -> dict[str, Any]:
         if not np.isfinite(W).all() or not np.isfinite(b).all():
             raise ValueError("non-finite W/b")
         window = artifact["training_window"]
-        if set(window) != {"start", "end", "timeframes", "symbols", "default_timeframes", "default_symbols"}:
+        if set(window) != {"start", "end", "timeframes", "symbols", "default_timeframes", "default_symbols",
+                           "max_bars_per_cell"}:
             raise ValueError("training_window")
+        if window["max_bars_per_cell"] is not None and (
+                type(window["max_bars_per_cell"]) is not int or window["max_bars_per_cell"] <= 0):
+            raise ValueError("max_bars_per_cell")
         if (window["default_timeframes"] != list(DEFAULT_TRAINING_TIMEFRAMES)
                 or window["default_symbols"] != list(CORE10_SYMBOLS)):
             raise ValueError("training scope defaults")
@@ -1128,7 +1149,23 @@ SWEEP_PREREQUISITES = frozenset({"P1_valid_level", "P2_penetration", "P3_rejecti
                                 "P4_temporal", "P5_data_quality"})
 
 
-def structure_projection(raw_window: list[Any], symbol: str, timeframe: str) -> dict:
+def _time_engine(engine_profile: dict | None, engine: str, func, *args, **kwargs):
+    """D35 --profile: accumulate native-engine seconds. None disables timing.
+
+    Observational only: the wrapped call, its arguments and its return value
+    are unchanged, so profiled and unprofiled runs produce identical outputs.
+    """
+    if engine_profile is None:
+        return func(*args, **kwargs)
+    start = time.monotonic()
+    try:
+        return func(*args, **kwargs)
+    finally:
+        engine_profile[engine] += time.monotonic() - start
+
+
+def structure_projection(raw_window: list[Any], symbol: str, timeframe: str, *,
+                         engine_profile: dict | None = None) -> dict:
     window = closed_engine_window(raw_window, timeframe)
     if not window:
         raise BridgeError("NO_MARKET_DATA", "empty confirmation window")
@@ -1136,11 +1173,14 @@ def structure_projection(raw_window: list[Any], symbol: str, timeframe: str) -> 
                 - _iso_to_ms(raw_window[-1].timestamp)) // 1000
     params = E01.get_params()
     params["tick_size"] = E01.resolve_tick_size(symbol)
-    return E01.run_pipeline([E01.observation_to_candle(o, timeframe, duration) for o in window], params)
+    return _time_engine(engine_profile, "E01", E01.run_pipeline,
+                        [E01.observation_to_candle(o, timeframe, duration) for o in window], params)
 
 
-def structural_confirmation(raw_window: list[Any], symbol: str, timeframe: str, *, result: dict | None = None) -> bool:
-    result = structure_projection(raw_window, symbol, timeframe) if result is None else result
+def structural_confirmation(raw_window: list[Any], symbol: str, timeframe: str, *,
+                            result: dict | None = None, engine_profile: dict | None = None) -> bool:
+    if result is None:
+        result = structure_projection(raw_window, symbol, timeframe, engine_profile=engine_profile)
     return any(event["candle_index"] == len(raw_window) - 1 and event["event_type"].startswith(
         ("EV_STR_007", "EV_STR_008", "EV_STR_009", "EV_STR_010")) for event in result["events"])
 
@@ -1187,7 +1227,8 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
                    atr14_history: list[float] | None = None,
                    structure_result: dict | None = None,
                    volatility_stream: dict | None = None,
-                   temporal_profile: dict | None = None) -> dict[str, Any]:
+                   temporal_profile: dict | None = None,
+                   engine_profile: dict | None = None) -> dict[str, Any]:
     """P1's first seven engines, in order, with explicit producer projections.
 
     A 300-bar engine window is the existing paper runtime window. The E11
@@ -1211,28 +1252,35 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     params["tick_size"] = E01.resolve_tick_size(symbol)
     collect("E01", E01.E01StructureEngine, base)
     candles = [E01.observation_to_candle(o, timeframe, duration) for o in window]
-    structure = E01.run_pipeline(candles, params) if structure_result is None else structure_result
+    structure = structure_result if structure_result is not None else _time_engine(
+        engine_profile, "E01", E01.run_pipeline, candles, params)
     bos_events = [ev for ev in structure["events"] if ev["event_type"].startswith(
         ("EV_STR_007", "EV_STR_008"))]
     structural_events = [ev for ev in structure["events"] if ev["event_type"].startswith(
         ("EV_STR_007", "EV_STR_008", "EV_STR_009", "EV_STR_010"))]
     bos = bos_events[-1] if bos_events else None
     collect("E02", E02.E02LiquidityEngine, base)
-    liquidity = E02.run_engine([E02.observation_to_candle(o) for o in window])
+    liquidity = _time_engine(engine_profile, "E02", E02.run_engine,
+                              [E02.observation_to_candle(o) for o in window])
     collect("E12", E12.E12TemporalEngine, {**base, "profile": temporal_profile})
-    temporal = E12.run_engine([E12.observation_to_candle(o) for o in window], profile=temporal_profile)["temporal_state"]
+    temporal = _time_engine(engine_profile, "E12", E12.run_engine,
+                            [E12.observation_to_candle(o) for o in window],
+                            profile=temporal_profile)["temporal_state"]
     order.append("E04")
     bars = [E04.observation_to_bar(o, timeframe) for o in window]
     if volatility_stream is None:
-        volatility = E04.run_engine(bars, timeframe=timeframe)
+        volatility = _time_engine(engine_profile, "E04", E04.run_engine, bars, timeframe=timeframe)
     else:
         # Native chronological E04, never a partial/reimplemented indicator.
         # Drain only observations already reached by this feature timeline.
+        drain_start = time.monotonic() if engine_profile is not None else 0.0
         for bar in volatility_stream["pending"]:
             evidence = volatility_stream["engine"].ingest_bar(bar)
             if evidence is not None:
                 volatility_stream["evidence"].append(evidence)
         volatility_stream["pending"].clear()
+        if engine_profile is not None:
+            engine_profile["E04"] += time.monotonic() - drain_start
         retained = [e for e in volatility_stream["evidence"] if bars[0]["ts"] <= e.state.as_of <= bars[-1]["ts"]]
         volatility = {"engine": volatility_stream["engine"], "states": [e.state for e in retained],
                       "events": [event for e in retained for event in e.events], "atr_series": [e.atr_scalar for e in retained]}
@@ -1250,7 +1298,7 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     collect("E03", E03.E03VolumeEngine, volume_context)
     volume_bars = [E03.observation_to_bar(o, timeframe, atr_prev[i], None, _iso_to_ms(o.timestamp))
                    for i, o in enumerate(window)]
-    volume = E03.run_engine(volume_bars)
+    volume = _time_engine(engine_profile, "E03", E03.run_engine, volume_bars)
     if not volume.emitted or not volatility["states"]:
         raise BridgeError("INSUFFICIENT_HISTORY", "E03/E04 warmup")
     vol = volume.emitted[-1]
@@ -1265,7 +1313,8 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     momentum_bars = [{**E10.observation_to_bar(raw, timeframe), "is_closed": True,
                       "close_time": _iso_to_ms(closed.timestamp)}
                      for raw, closed in zip(raw_window, window)]
-    momentum_result = E10.run_engine(momentum_bars, symbol=symbol, interval=timeframe,
+    momentum_result = _time_engine(engine_profile, "E10", E10.run_engine, momentum_bars,
+                                    symbol=symbol, interval=timeframe,
                                     volatility_context=vars(vlt))
     momentum = momentum_result["state"]
     if emit and "snapshot_id" in momentum:
@@ -1278,8 +1327,9 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     trend_context = {**base, "swings": swings, "atr": vlt.atr14_wilder,
                      "tf_seconds": duration, "bos_event": bos, "oi_state": vol.oi_state}
     collect("E09", E09.E09TrendEngine, trend_context)
-    trend = E09.run_engine(bars, swings=swings, atr=vlt.atr14_wilder,
-                          tf_seconds=duration, bos_event=bos, oi_state=vol.oi_state)
+    trend = _time_engine(engine_profile, "E09", E09.run_engine, bars, swings=swings,
+                          atr=vlt.atr14_wilder, tf_seconds=duration, bos_event=bos,
+                          oi_state=vol.oi_state)
     # ISSUE-CP14-011 projections are resolved by owner D26-A/B.
     # An explicit empty history is unavailable, never replaced by a fallback.
     prior = ([state.atr14_wilder for state in volatility["states"]
@@ -1482,9 +1532,37 @@ TRAINING_QUERY = canonical_json({
     "raw_metadata": "immutable observation_id/content hash binding restores availability_time and OI timestamp; availability<=as_of",
     "E04_replay": "native chronological VolatilityEngineV4, each CLOSED observation once; no future-state reuse",
     "D30_scope": "selected base timeframes 1h/4h and Core-10 symbols only; default 20 cells; one shared runtime classifier",
+    "D35_resume": "per-cell finalized-sample cache under training_query_sha256; same-hash reruns load completed cells; bar cap recorded; engine/stage timing observational only",
 })
 HISTORY_KEYS = {"trend": "trendiness_raw", "vol": "vol_ratio", "exp": "expansion_raw",
                 "liq": "liquidity_raw", "part": "participation_raw", "sq": "structure_score"}
+
+
+def slice_training_window(rows: list[Any], as_of_ms: int, timeframe: str, bars: int) -> list[Any]:
+    """In-memory equivalent of window(symbol, timeframe, as_of, bars).
+
+    D35 training-only prefetch serving. `rows` are lineage-verified CLOSED
+    observations in ascending open order (see training_dep_window) covering
+    every per-bar slice of one training cell. The open/close/availability
+    gates are re-applied per as_of exactly as window() applies them, and the
+    wiring-only OI lag is recomputed against this as_of, so each slice
+    equals the corresponding live window() call (parity-tested).
+    """
+    from bisect import bisect_right
+    from dataclasses import replace
+    if not rows:
+        return []
+    end = bisect_right(rows, as_of_ms, key=lambda o: _iso_to_ms(o.timestamp))
+    result = []
+    for obs in rows[max(0, end - bars):end]:
+        if close_time_ms(_iso_to_ms(obs.timestamp), timeframe) > as_of_ms:
+            continue
+        if obs.availability_time is None or _iso_to_ms(obs.availability_time) > as_of_ms:
+            continue
+        oi_lag = (max(0., (as_of_ms - _iso_to_ms(obs.oi_timestamp)) / 1000.)
+                  if obs.oi_timestamp is not None else None)
+        result.append(replace(obs, oi_lag_seconds=oi_lag))
+    return result
 
 
 class EngineContextProducer:
@@ -2123,8 +2201,26 @@ class EngineContextProducer:
                 "observation_id": row[1], "oi_state": row[6], "availability_time": row[4]}
         return result
 
-    async def _frame_at(self, symbol: str, timeframe: str, as_of: str) -> dict[str, Any]:
-        window = await self.window(symbol, timeframe, as_of, 301)
+    async def training_dep_window(self, symbol: str, timeframe: str, *,
+                                  open_from_ms: int, close_to_ms: int, count: int) -> list[Any]:
+        """D35 training-only HTF prefetch: one verified read per cell.
+
+        Replaces thousands of identical per-bar window() re-reads over one
+        training cell. The rows cover every per-bar slice of the cell; each
+        slice re-applies the close/availability gates via
+        slice_training_window, so served slices equal live window() calls
+        exactly (parity-tested). Runtime (G1) never uses this path.
+        """
+        rows = await self.window(symbol, timeframe, _ms_to_iso(close_to_ms), count) if count else []
+        return [o for o in rows if _iso_to_ms(o.timestamp) >= open_from_ms]
+
+    async def _frame_at(self, symbol: str, timeframe: str, as_of: str, *,
+                        rows: list[Any] | None = None,
+                        engine_profile: dict | None = None) -> dict[str, Any]:
+        if rows is None:
+            window = await self.window(symbol, timeframe, as_of, 301)
+        else:
+            window = slice_training_window(rows, _iso_to_ms(as_of), timeframe, 301)
         if len(window) < 51:
             raise BridgeError("INSUFFICIENT_HISTORY", f"{symbol}:{timeframe}")
         window = window[-300:]
@@ -2135,17 +2231,22 @@ class EngineContextProducer:
         native_input = [{k:v for k,v in o.to_dict().items() if k != "oi_lag_seconds"} for o in window]
         key = (symbol, timeframe, hashlib.sha256(canonical_json(native_input).encode()).hexdigest())
         if key not in self._frames:
-            self._frames[key] = upstream_frame(window, symbol, timeframe)
+            self._frames[key] = upstream_frame(window, symbol, timeframe, engine_profile=engine_profile)
             if len(self._frames) > 32:
                 del self._frames[next(iter(self._frames))]
         return {**self._frames[key], "raw_window":window,
                 "window":closed_engine_window(window,timeframe)}
 
-    async def feature_timeline(self, symbol: str, timeframe: str, window: list[Any], *, incremental: bool = False):
+    async def feature_timeline(self, symbol: str, timeframe: str, window: list[Any], *,
+                               incremental: bool = False,
+                               dep_rows: dict[str, list[Any]] | None = None,
+                               engine_profile: dict | None = None):
         """Shared PIT training/runtime X_t stream; explicit warmup refusals.
 
         HTF bias observations are strictly last-closed as of each historical
         close, never current bias projected backward into a training sample.
+        Training may serve HTF slices from prefetched rows (parity-tested);
+        runtime always passes nothing and keeps live reads.
         """
         history = {key: [] for key in HISTORY_KEYS}
         atr14_history: list[float] | None = None
@@ -2178,11 +2279,13 @@ class EngineContextProducer:
             if any(o.availability_time is None or _iso_to_ms(o.availability_time) > _iso_to_ms(as_of) for o in source_window):
                 yield {"index": index, "as_of": as_of, "confirmation": None, "reason": "PIT_VIOLATION"}
                 continue
-            structure = structure_projection(source_window, symbol, timeframe)
+            structure = structure_projection(source_window, symbol, timeframe,
+                                               engine_profile=engine_profile)
             confirmation = structural_confirmation(source_window, symbol, timeframe, result=structure)
             try:
                 frame = upstream_frame(source_window, symbol, timeframe, atr14_history=atr14_history,
-                                       structure_result=structure, volatility_stream=volatility_stream)
+                                       structure_result=structure, volatility_stream=volatility_stream,
+                                       engine_profile=engine_profile)
                 # Advance the independent same-cell ATR reference AFTER its
                 # lag-one projection, even while another feature is refused.
                 if atr14_history is None:
@@ -2199,7 +2302,9 @@ class EngineContextProducer:
                 ic = dict(frame["ic"])
                 biases = {}
                 for label, tf in (("H4", "4h"), ("H1", "1h"), ("M15", "15m")):
-                    htf = frame if tf == timeframe else await self._frame_at(symbol, tf, as_of)
+                    htf = (frame if tf == timeframe else await self._frame_at(
+                        symbol, tf, as_of, rows=(dep_rows or {}).get(tf),
+                        engine_profile=engine_profile))
                     biases[label] = float(htf["trend"]["bias"])
                 ic["bias_per_TF"] = biases
                 ic["trendiness_raw"] = sum(w * (frame["trend"]["stack"][scale] * biases["H4"] > 0)
@@ -2212,6 +2317,7 @@ class EngineContextProducer:
                     "volatility_stream": volatility_stream,
                     "confirmation": confirmation, "history": {k: list(v) for k, v in history.items()},
                     "mu": mu.copy(), "Sigma": sigma.copy(), "prev_mom": previous_momentum}
+            mark = time.monotonic() if engine_profile is not None else 0.0
             try:
                 vector, bias = E11.compute_state_vector(ic, history, previous_momentum)
                 x = E11.vector_to_array(vector)
@@ -2222,6 +2328,8 @@ class EngineContextProducer:
                 previous_momentum = vector["momentum_state"]
             except ValueError as exc:
                 item["reason"] = str(exc).split(":")[0]
+            if engine_profile is not None:
+                engine_profile["E11"] += time.monotonic() - mark
             last_item = item
             yield item
             # Normalization history can contain finite observations even when
@@ -2241,7 +2349,17 @@ class DegenerateTraining(BridgeError):
     def __init__(self, histogram: dict[str, int], excluded: dict[str, int], window: dict):
         self.histogram, self.excluded, self.training_window = histogram, excluded, window
         self.refusing_class = next(name for name in E11.REGIMES if histogram[name] == 0)
-        super().__init__("CONFIGURATION_INVALID", f"zero delayed-label members: {self.refusing_class}")
+        super().__init__(f"EMPTY_CLASS:{self.refusing_class}",
+                         f"zero delayed-label members: {self.refusing_class}")
+
+
+class TrainingTimeout(BridgeError):
+    """D35: --max-minutes bounds ONE invocation; completed cells stay cached."""
+
+    def __init__(self, completed: list[str], remaining: list[str], next_cell: str | None):
+        self.cells_completed, self.cells_remaining, self.next_cell = completed, remaining, next_cell
+        super().__init__("TRAINING_TIME_LIMIT",
+                         "D35 one-invocation bound reached; completed cells are cached")
 
 
 def fit_multinomial(X: list[list[float]], labels: list[str], seed: int) -> tuple[list, list]:
@@ -2292,21 +2410,141 @@ def training_time_limit(minutes: float) -> float:
     return value * 60.0
 
 
+def training_bar_cap(value: int | None) -> int | None:
+    """D35 --max-bars-per-cell: None keeps D30 unlimited; else a positive int."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise BridgeError("TRAINING_BARS_INVALID", "max-bars-per-cell must be a positive integer")
+    return value
+
+
+def training_protocol_hash(timeframes: tuple, symbols: tuple, max_bars: int | None) -> str:
+    """D35 cache namespace; the identical value is stored in the artifact."""
+    return hashlib.sha256(canonical_json(
+        {"protocol": TRAINING_QUERY, "timeframes": timeframes, "symbols": symbols,
+         "max_bars_per_cell": max_bars}).encode()).hexdigest()
+
+
+def cell_input_hash(producer: EngineContextProducer, window: list[Any],
+                    dep_rows: Mapping[str, list[Any]], max_bars: int | None) -> str:
+    """D35 per-cell input identity over exactly the consumed CLOSED rows.
+
+    Native raw content hashes (memoized, exact) cover the cell's consumed
+    bars and every prefetched HTF dependency row; clock-derived wiring
+    fields are excluded by construction. Any consumed-row change (new bars,
+    corrections, availability gating under a new clock) changes the digest
+    and forces recomputation; nothing else invalidates a completed cell.
+    """
+    return hashlib.sha256(canonical_json(
+        {"cell": [producer._raw_content_hash(o) for o in window],
+         "deps": {tf: [producer._raw_content_hash(o) for o in rows]
+                  for tf, rows in sorted(dep_rows.items())},
+         "max_bars_per_cell": max_bars}).encode()).hexdigest()
+
+
+def read_cell_cache(path: Path, *, cell: str, protocol_hash: str, input_hash: str) -> dict | None:
+    """Load a completed cell's finalized samples, or None to recompute.
+
+    Missing files, malformed JSON, schema drift, protocol/input mismatch or
+    any non-finite value all mean recompute — never a partial or foreign
+    sample set. Python/JSON float repr round-trips exactly, so a validated
+    payload reproduces the original X/labels bit-for-bit.
+    """
+    import json
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    try:
+        if not isinstance(payload, dict) or payload.get("format") != E11_TRAIN_CACHE_FORMAT:
+            return None
+        if payload.get("cell") != cell or payload.get("training_query_sha256") != protocol_hash:
+            return None
+        if payload.get("input_hash") != input_hash:
+            return None
+        if list(payload.get("vector_keys", [])) != list(E11.VECTOR_KEYS):
+            return None
+        samples = payload.get("samples")
+        excluded = payload.get("excluded")
+        if not isinstance(samples, list) or not isinstance(excluded, dict):
+            return None
+        for sample in samples:
+            if not isinstance(sample, dict) or sample.get("label") not in E11.REGIMES:
+                return None
+            if not isinstance(sample.get("as_of"), str):
+                return None
+            vector = sample.get("vector")
+            if (not isinstance(vector, list) or len(vector) != 8
+                    or any(type(v) is not float or not math.isfinite(v) for v in vector)):
+                return None
+        for reason, count in excluded.items():
+            if not isinstance(reason, str) or type(count) is not int or count < 0:
+                return None
+        if type(payload.get("closed_bars")) is not int:
+            return None
+    except (AttributeError, TypeError):
+        return None
+    return payload
+
+
+def write_cell_cache(path: Path, payload: Mapping[str, Any]) -> None:
+    """Atomically persist one completed cell; failures refuse loudly.
+
+    A torn or silently missing cache would trap a phone campaign in an
+    endless TRAINING_TIME_LIMIT loop, so OSError here is fatal to the run.
+    """
+    import json
+    import os
+    import tempfile
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".cell-", suffix=".json", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+            stream.write("\n")
+        os.replace(temporary, path)
+    except OSError as exc:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise BridgeError("TRAINING_CACHE_UNAVAILABLE", f"cell cache write failed: {path.name}") from exc
+
+
 async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
                            now: Callable[[], float] = time.time,
                            timeframes: Any = DEFAULT_TRAINING_TIMEFRAMES,
                            symbols: Any = CORE10_SYMBOLS,
                            max_minutes: float = DEFAULT_TRAINING_MAX_MINUTES,
+                           max_bars_per_cell: int | None = DEFAULT_MAX_BARS_PER_CELL,
+                           cache_dir: str | Path | None = None,
+                           profile: bool = False,
+                           optimize: bool = True,
                            progress: Callable[[dict], None] | None = None,
                            monotonic: Callable[[], float] = time.monotonic) -> tuple[dict, dict]:
-    """Train from actual store windows only. No file or fixture fallback."""
+    """Train from actual store windows only. No file or fixture fallback.
+
+    D35: each completed cell's finalized samples persist under
+    data/e11_train_cache/<protocol>/ and reload on reruns with the same
+    protocol hash; --max-minutes bounds one invocation. D21 labels, the
+    nine-class refusal and D30 defaults are unchanged. `optimize=False` is
+    the unoptimized reference path for exact-parity tests only.
+    """
     timeframes, symbols = training_scope(timeframes, symbols)
+    max_bars = training_bar_cap(max_bars_per_cell)
     limit = training_time_limit(max_minutes)
     started = monotonic()
     def check_deadline():
         if monotonic() - started >= limit:
-            raise BridgeError("TRAINING_TIME_LIMIT", "D30 maximum elapsed training time reached")
+            raise BridgeError("TRAINING_TIME_LIMIT", "D35 maximum elapsed training time reached")
     check_deadline()
+    protocol_hash = training_protocol_hash(timeframes, symbols, max_bars)
+    cell_dir = (Path(cache_dir) if cache_dir is not None else E11_TRAIN_CACHE_ROOT) / protocol_hash
+    try:
+        cell_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise BridgeError("TRAINING_CACHE_UNAVAILABLE", "cell cache directory unwritable") from exc
     counts = {(r[0], r[1]): r[3] for r in await (await store.db.execute(CELL_QUERY)).fetchall()}
     producer = EngineContextProducer(store, now=now)
     histogram = {name: 0 for name in E11.REGIMES}
@@ -2315,70 +2553,137 @@ async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
     end_ms = int(now() * 1000)
     for symbol, timeframe in [(symbol, tf) for symbol in symbols for tf in timeframes]:
         check_deadline()
+        cell = symbol + ":" + timeframe
         cell_start, eligible_before = monotonic(), len(labels)
         count = counts.get((symbol, timeframe), 0)
+        read_start = time.monotonic()
         window = await producer.window(symbol, timeframe, _ms_to_iso(end_ms), int(count)) if count else []
-        def report_cell(kind="cell"):
+        window_read = time.monotonic() - read_start
+        if max_bars is not None:
+            window = window[-max_bars:]
+        label_seconds = 0.0
+        engines = {name: 0.0 for name in PROFILE_ENGINE_ORDER} if profile else None
+        cell_excluded: dict[str, int] = {}
+        def exclude(reason):
+            excluded[reason] = excluded.get(reason, 0) + 1
+            cell_excluded[reason] = cell_excluded.get(reason, 0) + 1
+        def report_cell(kind="cell", cache="miss", bars_done=None):
             if progress:
-                progress({"kind": kind, "cell": symbol + ":" + timeframe,
-                          "closed_bars": len(window), "eligible_samples": len(labels) - eligible_before,
-                          "elapsed_seconds": monotonic() - cell_start})
+                message = {"kind": kind, "cell": cell,
+                           "closed_bars": len(window), "eligible_samples": len(labels) - eligible_before,
+                           "elapsed_seconds": monotonic() - cell_start}
+                if kind == "tick":
+                    message["bars_done"], message["bars_total"] = bars_done, len(window)
+                else:
+                    message["cache"] = cache
+                    message["excluded"] = dict(cell_excluded)
+                    message["profile"] = {"engines": dict(engines or {}),
+                                          "window_read_seconds": window_read,
+                                          "label_confirmation_seconds": label_seconds}
+                progress(message)
         report_cell("started")
         if not window:
-            excluded["EMPTY_CLOSED_WINDOW"] = excluded.get("EMPTY_CLOSED_WINDOW", 0) + 1
+            exclude("EMPTY_CLOSED_WINDOW")
             report_cell()
             continue
+        dep_rows: dict[str, list[Any]] = {}
+        close_to = close_time_ms(_iso_to_ms(window[-1].timestamp), timeframe)
+        open_from = _iso_to_ms(window[0].timestamp)
+        for dep_tf in [tf for tf in ("4h", "1h", "15m") if tf != timeframe]:
+            read_start = time.monotonic()
+            dep_rows[dep_tf] = await producer.training_dep_window(
+                symbol, dep_tf, open_from_ms=open_from - 302 * _DEP_TF_SECONDS[dep_tf] * 1000,
+                close_to_ms=close_to, count=int(counts.get((symbol, dep_tf), 0)))
+            window_read += time.monotonic() - read_start
+        input_hash = cell_input_hash(producer, window, dep_rows, max_bars)
+        cached = read_cell_cache(cell_dir / f"{symbol}_{timeframe}.json", cell=cell,
+                                 protocol_hash=protocol_hash, input_hash=input_hash)
+        if cached is not None:
+            for sample in cached["samples"]:
+                histogram[sample["label"]] += 1
+                labels.append(sample["label"])
+                X.append([float(value) for value in sample["vector"]])
+                stamps.append(sample["as_of"])
+            for reason, number in cached["excluded"].items():
+                excluded[reason] = excluded.get(reason, 0) + number
+                cell_excluded[reason] = number
+            report_cell(cache="hit")
+            continue
+        serving = dep_rows if optimize else None
         pending = []
-        async for item in producer.feature_timeline(symbol, timeframe, window):
+        async for item in producer.feature_timeline(symbol, timeframe, window, dep_rows=serving,
+                                                   engine_profile=engines):
             check_deadline()
-            report_cell("tick")
+            if (item["index"] + 1) % TRAIN_PROGRESS_EVERY_BARS == 0:
+                report_cell("tick", bars_done=item["index"] + 1)
             # Keep just the 48 delayed candidates, not full engine states.
             pending.append({key: item[key] for key in ("index", "as_of", "confirmation", "vector", "rule0", "reason") if key in item})
             if len(pending) <= 48:
                 continue
+            mark = time.monotonic()
             candidate = pending.pop(0)
             if "vector" not in candidate:
-                reason = candidate.get("reason", "INVALID_FEATURE")
-                excluded[reason] = excluded.get(reason, 0) + 1
-                continue
-            if not contiguous_label_horizon(window, candidate["index"], timeframe):
-                excluded["NONCONTIGUOUS_LABEL_HORIZON"] = excluded.get("NONCONTIGUOUS_LABEL_HORIZON", 0) + 1
-                continue
-            if any(type(f.get("confirmation")) is not bool for f in pending):
-                excluded["LABEL_CONFIRMATION_UNAVAILABLE"] = excluded.get("LABEL_CONFIRMATION_UNAVAILABLE", 0) + 1
-                continue
-            label = candidate["rule0"] if any(f["confirmation"] for f in pending) else "TRANSITION"
-            histogram[label] += 1
-            labels.append(label)
-            X.append([candidate["vector"][key] for key in E11.VECTOR_KEYS])
-            stamps.append(candidate["as_of"])
+                exclude(candidate.get("reason", "INVALID_FEATURE"))
+            elif not contiguous_label_horizon(window, candidate["index"], timeframe):
+                exclude("NONCONTIGUOUS_LABEL_HORIZON")
+            elif any(type(f.get("confirmation")) is not bool for f in pending):
+                exclude("LABEL_CONFIRMATION_UNAVAILABLE")
+            else:
+                label = candidate["rule0"] if any(f["confirmation"] for f in pending) else "TRANSITION"
+                histogram[label] += 1
+                labels.append(label)
+                X.append([candidate["vector"][key] for key in E11.VECTOR_KEYS])
+                stamps.append(candidate["as_of"])
+            label_seconds += time.monotonic() - mark
         excluded["UNFINALIZED_TAIL"] = excluded.get("UNFINALIZED_TAIL", 0) + len(pending)
+        cell_excluded["UNFINALIZED_TAIL"] = cell_excluded.get("UNFINALIZED_TAIL", 0) + len(pending)
+        write_cell_cache(cell_dir / f"{symbol}_{timeframe}.json", {
+            "format": E11_TRAIN_CACHE_FORMAT, "cell": cell,
+            "training_query_sha256": protocol_hash, "input_hash": input_hash,
+            "closed_bars": len(window), "max_bars_per_cell": max_bars,
+            "vector_keys": list(E11.VECTOR_KEYS),
+            "samples": [{"as_of": stamp, "label": label,
+                         "vector": [float(value) for value in row]}
+                        for stamp, label, row in zip(stamps[eligible_before:], labels[eligible_before:],
+                                                    X[eligible_before:])],
+            "excluded": dict(cell_excluded),
+            "window_start": window[0].timestamp, "window_end": window[-1].timestamp})
         report_cell()
     check_deadline()
     training_window = {"start": min(stamps) if stamps else None, "end": max(stamps) if stamps else None,
                        "timeframes": list(timeframes), "symbols": list(symbols),
-                       "default_timeframes": list(DEFAULT_TRAINING_TIMEFRAMES), "default_symbols": list(CORE10_SYMBOLS)}
+                       "default_timeframes": list(DEFAULT_TRAINING_TIMEFRAMES), "default_symbols": list(CORE10_SYMBOLS),
+                       "max_bars_per_cell": max_bars}
     if any(count == 0 for count in histogram.values()):
         raise DegenerateTraining(histogram, excluded, training_window)
+    fit_start = time.monotonic()
     W, b = fit_multinomial(X, labels, seed)
+    fit_seconds = time.monotonic() - fit_start
     check_deadline()
     artifact = {"W": W, "b": b, "K": 9, "label_delay_candles": 48,
                 "seed": seed, "training_window": training_window, "sample_count": len(X),
-                "training_query_sha256": hashlib.sha256(canonical_json({"protocol": TRAINING_QUERY, "timeframes": timeframes, "symbols": symbols}).encode()).hexdigest(),
+                "training_query_sha256": protocol_hash,
                 "artifact_sha256": classifier_hash(W, b, seed)}
     validate_classifier(artifact)
-    return artifact, {"per_class_counts": histogram, "excluded": excluded}
+    return artifact, {"per_class_counts": histogram, "excluded": excluded, "fit_seconds": fit_seconds}
 
 
-def _training_worker(connection, sqlite: str, seed: int, timeframes: tuple, symbols: tuple, max_minutes: float):
-    """Isolated CPU worker. It never knows an output path or writes artifacts."""
+def _training_worker(connection, sqlite: str, seed: int, timeframes: tuple, symbols: tuple, max_minutes: float,
+                     max_bars: int | None, cache_dir: str | None, profile: bool):
+    """Isolated CPU worker. It never knows the artifact output path.
+
+    D35: the worker owns the per-cell resume cache (fixed conventional
+    layout, never the artifact path); only the parent returns a verified
+    artifact to the atomic writer after successful training.
+    """
     import asyncio
     from apex.data_catalog.store.sqlite_store import SQLiteStore
     async def run():
         store = await SQLiteStore(sqlite).open()
         try:
             artifact, report = await train_classifier(store, seed=seed, timeframes=timeframes,
-                symbols=symbols, max_minutes=max_minutes, progress=connection.send)
+                symbols=symbols, max_minutes=max_minutes, max_bars_per_cell=max_bars,
+                cache_dir=cache_dir, profile=profile, progress=connection.send)
             connection.send({"kind": "result", "artifact": artifact, "report": report})
         except DegenerateTraining as exc:
             connection.send({"kind": "degenerate", "histogram": exc.histogram, "excluded": exc.excluded,
@@ -2397,20 +2702,33 @@ def _training_worker(connection, sqlite: str, seed: int, timeframes: tuple, symb
 
 async def train_classifier_bounded(sqlite: str, *, seed=DEFAULT_TRAINING_SEED,
         timeframes=DEFAULT_TRAINING_TIMEFRAMES, symbols=CORE10_SYMBOLS,
-        max_minutes=DEFAULT_TRAINING_MAX_MINUTES, progress=None) -> tuple[dict, dict]:
+        max_minutes=DEFAULT_TRAINING_MAX_MINUTES, max_bars_per_cell=None,
+        cache_dir=None, profile=False, progress=None) -> tuple[dict, dict]:
     """Hard wall-time supervisor, including CPU-bound native engine calls.
 
     asyncio.wait_for alone cannot interrupt those calls. Only the parent may
     return a verified artifact to the atomic writer after successful training.
+    D35: ticks stream through for liveness; a timeout reports the completed,
+    remaining and next cells so the next invocation resumes from the cache.
     """
     import asyncio
     import multiprocessing
     scope = training_scope(timeframes, symbols)
+    ordered = [symbol + ":" + tf for symbol in scope[1] for tf in scope[0]]
+    cache_arg = str(cache_dir) if cache_dir is not None else None
     deadline = time.monotonic() + training_time_limit(max_minutes)
     context = multiprocessing.get_context("spawn")
     receiver, sender = context.Pipe(duplex=False)
-    process = context.Process(target=_training_worker, args=(sender, sqlite, seed, *scope, max_minutes))
+    process = context.Process(target=_training_worker,
+                              args=(sender, sqlite, seed, *scope, max_minutes,
+                                    training_bar_cap(max_bars_per_cell), cache_arg, profile))
+    completed: list[str] = []
     current = None
+    def partial():
+        remaining = [cell for cell in ordered if cell not in completed]
+        if current is not None and current.get("cell") in remaining:
+            return list(completed), remaining, current["cell"]
+        return list(completed), remaining, remaining[0] if remaining else None
     try:
         process.start()
         sender.close()
@@ -2419,7 +2737,7 @@ async def train_classifier_bounded(sqlite: str, *, seed=DEFAULT_TRAINING_SEED,
             if remaining <= 0:
                 if current is not None and progress:
                     progress({**current, "kind": "cell", "status": "ABORTED"})
-                raise BridgeError("TRAINING_TIME_LIMIT", "D30 maximum elapsed training time reached")
+                raise TrainingTimeout(*partial())
             ready = await asyncio.to_thread(receiver.poll, min(.1, remaining))
             if not ready:
                 if not process.is_alive():
@@ -2430,17 +2748,23 @@ async def train_classifier_bounded(sqlite: str, *, seed=DEFAULT_TRAINING_SEED,
             except EOFError as exc:
                 raise BridgeError("TRAINING_WORKER_FAILED", "worker closed its result channel") from exc
             if time.monotonic() >= deadline:
-                raise BridgeError("TRAINING_TIME_LIMIT", "D30 maximum elapsed training time reached")
+                raise TrainingTimeout(*partial())
             kind = message["kind"]
             if kind in ("started", "tick"):
                 current = message
+                if kind == "tick" and progress:
+                    progress(message)
             elif kind == "cell":
                 if progress:
                     progress(message)
+                if message.get("cell") not in completed:
+                    completed.append(message["cell"])
                 current = None
             elif kind == "degenerate":
                 raise DegenerateTraining(message["histogram"], message["excluded"], message["training_window"])
             elif kind == "error":
+                if message["reason"] == "TRAINING_TIME_LIMIT":
+                    raise TrainingTimeout(*partial())
                 raise BridgeError(message["reason"], message["detail"])
             elif kind == "result":
                 validate_classifier(message["artifact"])
@@ -2470,7 +2794,8 @@ def write_classifier(artifact: dict[str, Any], path: str | Path) -> None:
     for key in ("b", "K", "label_delay_candles", "seed"):
         text += key + ": " + json.dumps(artifact[key], separators=(",", ":")) + "\n"
     text += "training_window:\n"
-    for key in ("start", "end", "timeframes", "symbols", "default_timeframes", "default_symbols"):
+    for key in ("start", "end", "timeframes", "symbols", "default_timeframes", "default_symbols",
+                "max_bars_per_cell"):
         text += "  " + key + ": " + json.dumps(artifact["training_window"][key]) + "\n"
     for key in ("sample_count", "training_query_sha256", "artifact_sha256"):
         text += key + ": " + json.dumps(artifact[key]) + "\n"
