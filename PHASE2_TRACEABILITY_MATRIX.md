@@ -525,50 +525,32 @@ Additive-file rule: any file outside §9.5's list traces to a DECISION_LOG ADR o
 **Result:** PASS(2026-09-17, 2728 passed / 0 failed on each of two `python -m pytest tests -q` runs — code untouched, deterministic; `sha256(APEX_GEN5.md)` BEFORE rechecked immediately pre-edit and AFTER recorded on the board; commit + PR recorded in the board continuation line and `HANDOFF_SESSION_A`).
 
 
-### CP-14 — in-progress traceability (2026-09-17)
-| Goal | Authority | Current evidence | Status |
-|---|---|---|---|
-| G1 engine-context producer | Section 9.5 P1, ADR-CP14-001 | native twelve-engine bundle and full persisted round trips (including terminal QX), pre-budget preparation hook, full E11-state label projection; authoritative 38+23-key source/serve binding still pending | OPEN |
-| G2 E11 classifier artifact | E11 P2 and owner D21 | store-only native D21/D23/D26 training and D30 twenty-cell CLI; two independent successful processes, all nine classes, byte-identical artifact; included in interim 2858-test full run | Fixture PASS; phone acceptance pending |
-| G3 CIRCUIT_OPEN | Ch.7 P6, D9 | errors.py exact row and test_errors.py registry/handling tests; no -1021/-2026 changes | Implemented; final suite pending |
-| G4 per-cycle catch-up | Section 9.5 P1, D5/D22 | BootstrapService.catch_up; serve shared store; fake Toobit 140-cell/due-boundary/frontier/failure/retry tests; cycle catch_up JSON | Implemented; full producer integration pending |
-| G5 wiring staleness | Section 9.5 P1, D14/D22 | freshness helper exact boundary tests, availability_time unchanged, fresh-but-CATCH_UP_FAILED regression; full producer hookup pending | OPEN |
-| G6 PAPER account | Section 9.5 P7, D4/D8, ADR-SA-004 | exact paper_account YAML, ledger balance projection, serve feed, LIVE display separation test; obsolete LIVE display assertion awaiting ISSUE-CP14-009 approval | Implemented; final suite pending |
+### CP-14 — closeout traceability (2026-09-19)
 
-CP-14 continuation (2026-09-17; IN-PROGRESS): G1 full-event envelope round trip and first-seven engines now tested; complete get_bridge_context/61-key/serve binding remains pending. G2 train-e11 CLI, all-nine refusal, atomic YAML and fitter-only two-process byte equality tested; successful store training and shared runtime integration blocked by ISSUE-CP14-011 (ATR_z/liquidity projections; D21 unchanged). G3–G6 prior partial status remains; D23 all-OI formulas/markers/Q5 cap and D25 all-TF/strictest/missing-file helpers tested. E03 availability/local-index and E04 ATR20 fixes have regressions. Full run: 2777 passed/1 failed before two further tests; existing git-clean-params assertion awaits normal implementation commit, not a test weakening (ISSUE-CP14-014).
+| Gate | Implementation and executable evidence | Status |
+|---|---|---|
+| G1 | Real SQLite/native 38+23 producer; seven source tests and bound PAPER-loop JSON; unchanged downstream refusal gates | Implemented; final full-suite evidence in HANDOFF_CP14 |
+| G2 | Store-derived nine-class training in two processes; identical artifact bytes/hash; no pre-labelled matrix or existing classifier | Implemented; final full-suite evidence in HANDOFF_CP14 |
+| G3 | Exact CIRCUIT_OPEN registry and veto10–12 mapping; registry 23→24 only | Implemented; final full-suite evidence in HANDOFF_CP14 |
+| G4 | Native per-cycle catch-up/frontier retry and isolated CATCH_UP_FAILED; fresh-but-failed regression | Implemented; final full-suite evidence in HANDOFF_CP14 |
+| G5 | Actual receipt minus calendar close <= SLA; future available bars excluded; no catch-up freshness override | Implemented; final full-suite evidence in HANDOFF_CP14 |
+| G6 | Governed PAPER capital/ledger balance, D29 strict reservation health, PAPER/LIVE separation | Implemented; final full-suite evidence in HANDOFF_CP14 |
 
-CP-14 D26-A (2026-09-17): G1/G2 ATR input projection is now E04 VolatilityState.atr14_wilder standardized by the shared E11 Method-B prior reference and existing constants; no ATR20. Known-series/short-history/lag/source/window/cell-isolation regressions pass (250 targeted including E04/E03, then 134 context/E11). ISSUE-CP14-011 part 1 is owner-resolved; part 2 liquidity and complete producer/trainer acceptance remain pending. No final completion or new full-suite claim.
+| Decision | Binding subject / implementation |
+|---|---|
+| D21 | Independent rule0 labels, omit only entropy; all nine classes; delayed BOS/CHoCH; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D22 | Separate per-cell CATCH_UP_FAILED and retry; D14 unchanged; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D23 | Non-AVAILABLE OI uses VolumeZ only, explicit PARTIAL, Q5 cap only; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D24 | Written decisions only; bare clicks VOID; two explicit pin corrections; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D25 | .60 hard cap, all-14 P_min table, .50 C_min and strictest SL-12 horizon; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D26 | Canonical E04 ATR14 lagged Method B; native E02 live density/MAX age/sweeps; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D27 | regime_uncertainty=1-p_max; raw entropy and h_norm separate; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D28 | Canonical governed package, ACCUMULATING only if absent, PAPER arbitration/public provenance; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D29 | Exact durable reservation fraction (C-N)/C, strict PAPER .60/.40/.20; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D30 | Default 1h/4h×Core-10, progress, 20-minute hard abort; authorized fallback opt-in; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D31 | Exact Q0–Q5/QX validator membership, no schema change; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D32 | Native prior HV30 mid-rank, finite N>=50 and native window cap; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D33 | Native quality/MTF/components/pattern/temporal projections and normalized gate10; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D34 | Versioned uncertainty, ADV/costs, sizing, marks, trend and loss/latch laws; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
 
-CP-14 D27/D28 (2026-09-18; IN PROGRESS): G1's uncertainty projection now follows 1-p_max with a real-combiner regression. D28 bootstrap governance has canonical all-governed-YAML/classifier package binding, non-overwriting family status, measured/unavailable component distinction, public venue-fact provenance/PIT/failure isolation and LIVE-exclusion tests; real bridge integration consumes the bootstrap with test-only engine/risk inputs. Production serve binding and full producer assembly remain pending, as does owner margin decision ISSUE-CP14-018. G2 class/label policy is unchanged; two-process package-ID proof is not two-process classifier-training proof. Current full suite once: 2812 passed / 0 failed, 14 warnings (95.20 s), after local authorized-policy commit 4999d86 fixed the untouched cleanliness test. No final completion/push/PR claim; earlier missing-tree test claims are not reused as current evidence.
-
-| Additional decision | Authority | Evidence | Status |
-|---|---|---|---|
-| D31 terminal QX persistence | §8 row 24; ADR-CP14-006; ISSUE-CP14-034 | test_d31_terminal_e05_qx_public_insert_full_roundtrip fails before at public insert_evidence, passes after; test_d31_public_insert_still_rejects_invalid_resolution_tags covers Q6/QX_EXPIRED/empty/None; native 180-hour bundle retains EXPIRED/QX | CLOSED-with-evidence; exact one-line frozen exception |
-
-CP-14 current verification (2026-09-18): interim whole suite 2858 passed, 14 warnings, 601.85s, with no deselection. Subsequent full-E11-object projection: 149 targeted passed, 1 G2 test deselected, 13 warnings, 31.44s. G1 is not complete; two final full-suite runs, final handoff and PR remain pending.
-
-| G1 new projection gap | Ch.13 §13.1 mandatory `x.vol_quantile`; P1 `x` source; ISSUE-CP14-036 | Actual public-store/native-E04 diagnostic: no rank export, 178 prior HV points vs native 4320-bar window, unavailable percentile thresholds; unchanged forecast rejects omitted vol_quantile | RESOLVED-DESIGN by D32 (mid-rank/N>=50); implementation deferred for the exhaustive batch audit below |
-
-| CP14-D32 receipt | Owner D32 / ISSUE-036 | Exact owner wording in DECISION_LOG; mid-rank, finite same-cell prior HV, capped native window, N>=50 | DESIGN RESOLVED; ADR-007/code/Ch.13/AJ/tests pending, no completion claim |
-| CP14-61-key audit | P1 38 context + 23 risk keys; Ch.13 12 x features | DECISION_LOG ordered native-source/consumer inventory and ISSUE-037–048 A/B/options; AST coverage 38/38, 23/23, 12/12 | STATIC AUDIT ONLY; batch owner decisions pending before implementation |
-
-| CP14-D32 projection | D32 / ADR-007 / ISSUE-036 | Six tests cover ties, 49/50, finite input, native cap and PIT; broader battery 168 passed, 1 deselected | PROJECTION PASS; G1 binding pending |
-
-| CP14-D33 gate10 | ISSUE-042 / ADR-013 | Failing-before .5, passing-after boundaries/categorical/LIVE | TARGETED PASS |
-| CP14-D34 forecast U/C | ISSUE-043 / ADR-014 | Failing-before max mismatch; three components/version/snapshot/typed UNAVAILABLE and strict omissions | PROJECTION PASS; G1 binding pending |
-
-| CP14-D33-037 | ADR-008 / 2.1 Quality Vector (Q0–QX) | window_quality_projection, matching d33 regressions | PROJECTION PASS; G1 binding pending |
-| CP14-D33-038 | ADR-009 / 8.3 MTF alignment | mtf_projection, matching d33 regressions | PROJECTION PASS; G1 binding pending |
-| CP14-D33-039 | ADR-010 / 10.1 Thirteen hard gates | component_projection / confirmation_quality / forecast_features, matching d33 regressions | PROJECTION PASS; G1 binding pending |
-| CP14-D33-040 | ADR-011 / 9.0 Hierarchy | select_native_pattern, matching d33 regressions | PROJECTION PASS; G1 binding pending |
-| CP14-D33-041 | ADR-012 / 8.0 Evidence and context fabric | temporal_validity_projection, matching d33 regressions | PROJECTION PASS; G1 binding pending |
-
-| CP14-D34-044 | ADR-015 / 16. Execution, Venue Adapter, and Ledger | adv_base_volume / forecast_cost_projection / collect_public_funding_schedule, matching d34 regressions | PROJECTION PASS; G1 binding pending |
-| CP14-D34-045 | ADR-016 / 15. Risk Kernel | native_size_request, matching d34 regressions | PROJECTION PASS; G1 binding pending |
-| CP14-D34-046 | ADR-017 / 15. Risk Kernel | paper_close_marks, matching d34 regressions | PROJECTION PASS; G1 binding pending |
-| CP14-D34-047 | ADR-018 / 8. Evidence Fabric, Conflict, and Cross-Domain | uncertainty_trend, matching d34 regressions | PROJECTION PASS; G1 binding pending |
-| CP14-D34-048 | ADR-019 / 15. Risk Kernel | realized_loss_projection, matching d34 regressions | PROJECTION PASS; G1 binding pending |
-
-| CP14-D33-E07 integration | ADR-010 actual confirmation contributors | Native E01/E02/E03/E05 evidence identity join; 90h/180h public-store twelve-engine roundtrips use derived mean | TARGETED PASS; full G1 source not yet complete |
-
-| CP14-interim-D34-full | Clean start e9d01a9; all tests including long G2 | 2904 passed, 14 warnings in 627.84s; no deselection | INTERIM FULL PASS, not either final suite |
+APEX AFTER `8e8fa12935d8cc38cd95702cfeb2c439acb4f7247a704b97f0b8897179da0da1` / 20924 lines. Exactly two frozen exceptions: insert_snapshot body (003), validator membership line (D31/034). Conservative/unassigned issue dispositions and phone STOP rules are in HANDOFF_CP14. Final totals are recorded there and on the board after both actual clean runs; no interim result is relabelled final.

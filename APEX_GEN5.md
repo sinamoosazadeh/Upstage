@@ -20379,9 +20379,11 @@ params/toobit_wire_v1.yaml
 params/e11_params_v4.yaml
 params/paper_account_v1.yaml
 params/decision_runtime_v1.yaml  # D25 policy + D28 PAPER-only paper_bootstrap (ADR-CP14-005)
-params/e11_classifier_v1.yaml
+params/e11_classifier_v1.yaml  # phone-generated, gitignored; never committed
 tests/unit/
 tests/integration/
+tests/integration/test_cp14_producer.py
+tests/unit/test_engine_context_store_sources.py
 tests/fixtures/gf_sc_01.json
 tests/fixtures/gf_sc_02.json
 tests/fixtures/e11_classifier_v1.yaml
@@ -20521,7 +20523,9 @@ contract, and the wiring staleness law):**
    | `fvg_zones` | E05 FVG objects |
    | `bos` | E01 BOS events |
    | `regime_state` | E11 full `regime_state` object |
-   | `e11_context` | E11 IC inputs + classifier artifact + history windows (P2 contract) |
+   | `e11_context` | E11 IC inputs + classifier artifact + history windows (P2 contract); optional bridge transport remains nested, not a 39th required key |
+   | `sweep` (nested bridge input) | Native setup-family sweep/reclaim over the same CLOSED bars; E02 five-prerequisite sweep evidence remains separately native |
+   | `sl14_admission` / `evidence_age_bars` (nested bridge inputs) | Identity-bound PAPER decision-view transitions and timestamp-derived elapsed age; native 24 fields retained; ADR-CP14-020 |
    | `direction` | pattern layer (Ch.9): the detected pattern's direction |
    | `pattern_id` | pattern layer catalogue (`apex/pattern/detect.py`) |
    | `x` | producer-assembled forecast feature vector from `s_i`/`q_i` + fabric context (Ch.13 SL-3 inputs) |
@@ -20898,6 +20902,8 @@ Engine v4.0.0 formula bodies were not rewritten.
 | CP-14 D30 bounded base-timeframe training (2026-09-18) | E11 Section 3.3; ISSUE-CP14-032; 20 default cells, progress and hard deadline; single shared classifier |
 | CP-14 D29 PAPER reservation proxy (2026-09-17) | Section 9.5 P7 and Ch.16 P3 CP-15 simulator binding; ISSUE-CP14-018; LIVE unchanged |
 | CP-14 D28 PAPER bootstrap governance and public venue provenance (2026-09-17) | Ch.12 AF.3, Section 2 snapshot binding, Section 9.5 tree; ADR-CP14-005 / ISSUE-CP14-017 |
+| CP-14 D24 written authority / bare-click audit | DECISION_LOG OWNER ANSWERS; only the two explicit extra test-pin corrections; bare clicks are VOID |
+| CP-14 closeout producer and phone fallback | Section 9.5 tree/context catalogue; ADR-CP14-020/021; exact 38+23 seam, test-only fixture, runtime artifact gitignored; D30 defaults unchanged |
 | CP-14 D25 decision-runtime YAML (2026-09-17) | Section 9.5 repository tree; ADR-CP14-003 / ISSUE-CP14-008 |
 | CP-14 D31 resolution-class validator correction (2026-09-18) | §8 24-field mapping row 24: validator aligned to the documented Q0..QX set, no schema change; ADR-CP14-006 / ISSUE-CP14-034 |
 | CP-14 D21 first-training label rule (2026-09-17) | E11 Section 3.3; ISSUE-CP14-001 owner resolution |

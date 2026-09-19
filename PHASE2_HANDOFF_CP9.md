@@ -481,85 +481,203 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 ### PUSH RECORD
 - Branch `arena/01a0ae7b-upstage` → exactly ONE PR to `main` (number/URL recorded in the Session A checkpoint board line and the executor's report) — `[Session A] DESIGN PATCH P1–P8 per owner D1–D20`. Suite twice: 2728 passed / 0 failed.
 
-## HANDOFF_CP14 — IN PROGRESS (2026-09-17)
+## HANDOFF_CP14 — CLOSEOUT (2026-09-19)
 
 ### ARTIFACTS
-- `apex/ops/engine_context.py`: implemented lazy P2 artifact validation/hash, D21 training rule0 and delayed-label helpers, D14 freshness measurement, and P7 PAPER account/ledger balance readers. **Not yet an engine-context producer or a store-only trainer CLI**; no get_bridge_context completion claim.
-- `params/paper_account_v1.yaml`: exact two-key P7 block, with a comment reference to authoritative risk_defaults; the six existing YAML files are unchanged.
-- `tests/fixtures/e11_classifier_v1.yaml`: explicitly synthetic loader-test artifact only. `params/e11_classifier_v1.yaml` remains absent and is not added to .gitignore.
-- `apex/ops/bootstrap_service.py`: public catch_up(now_ms), calendar-aware per-timeframe boundary detection, per-cell persisted frontier, source retry reset, existing CP-13 validation/closed-bar law/public ingest path, per-cell failure isolation and counts. Existing bootstrap and manual repair contracts unchanged.
-- `apex/ops/paper_loop.py`: optional catch_up callable before stages, JSON catch_up/cell_runs, per-cycle CATCH_UP_FAILED plan admission and next-cycle retry. Execution-stage body unchanged.
-- `scripts/run_apex.py`: serve shares the runtime raw store with BootstrapService, wires catch_up, and feeds the control plane the PAPER YAML/ledger balance. **The engine-context bound method is not wired yet.**
-- `apex/errors.py`: exact Ch.7 CIRCUIT_OPEN row; no new severity schema, no other registry additions.
-- `apex/telegram/control_plane.py`: non-PAPER title no longer displays paper_balance; explicit UNAVAILABLE without that environment's own account source.
-- `apex/config.py`: allowlist extended for the two P2/P7 YAMLs; lazy loading retained.
-- `apex/data_catalog/store/sqlite_store.py`: only insert_snapshot's body changed under ISSUE-CP14-003, after a reproduced SQLite mapping bind failure; canonical JSON binding for quality_state, no DDL or other method change.
-- `apex/engines/e03_volume/engine.py`: ISSUE-CP14-006 fixes the climax calibration's nonexistent ParticipationEvidence.c lookup by passing the actual input bars.
-- Tests: new `tests/unit/test_engine_context.py` (28 passing); appended snapshot and E03 regression tests; owner-authorized 23-to-24 registry pin and exact CIRCUIT_OPEN handling test.
+
+- `.gitignore` — Ignore only the phone-produced runtime classifier in this checkpoint.
+- `APEX_GEN5.md` — Governed CP-14 home sentences, repository tree, source catalogue, E11 table and AJ index.
+- `PHASE2_CHECKPOINT_STATUS.md` — Final CP-14 board, verification totals and two exact frozen exceptions.
+- `PHASE2_DECISION_LOG.md` — D21–D34 verbatim authority, ADRs, historical recovery record and all individual issue dispositions.
+- `PHASE2_HANDOFF_CP9.md` — This final CP-14 handoff and CP-15 interface contract.
+- `PHASE2_TRACEABILITY_MATRIX.md` — G1–G6 and D21–D34 implementation/evidence rows.
+- `apex/config.py` — Lazy governed parameter allowlist for the additive CP-14 files/classifier.
+- `apex/data_catalog/contracts.py` — D31 membership line only: Q0–Q5 and QX.
+- `apex/data_catalog/store/sqlite_store.py` — insert_snapshot body only: canonical mapping serialization at SQLite binding.
+- `apex/decision/pipeline.py` — D28 zero-weight UNAVAILABLE exclusion and PAPER bootstrap arbitration.
+- `apex/engines/e01_structure/engine.py` — Equivalent native prefix/ATR memoization for store-derived feature history.
+- `apex/engines/e03_volume/engine.py` — Climax calibration reads actual OHLC bars rather than nonexistent evidence.c.
+- `apex/engines/e11_regime/engine.py` — D23 participation and shared D26 canonical normalization, artifact identity/provenance.
+- `apex/errors.py` — Exact CIRCUIT_OPEN registry row.
+- `apex/forecast/logistic.py` — D34 C=1-U and explicit versioned bootstrap uncertainty consumption.
+- `apex/ops/bootstrap_service.py` — Due-cell catch-up using native frontier law with isolated failures and retry.
+- `apex/ops/engine_context.py` — SQLite/native 38+23 source, cache, classifier trainer/loader, quality/account/risk/cost projections.
+- `apex/ops/paper_loop.py` — Catch-up, outside-budget preparation, receipt-aware PAPER reads and named cell refusals.
+- `apex/ops/plan_bridge.py` — Full E11 state and validated PAPER producer transport into unchanged native downstream authorities.
+- `apex/risk/kernel.py` — Strict D29 PAPER thresholds and typed perpetual applicability; LIVE numeric path unchanged.
+- `apex/setup/gates.py` — D33 normalized native Q_forecast gate10; categorical handling/LIVE bootstrap ban retained.
+- `apex/telegram/control_plane.py` — PAPER-only YAML/ledger balance; no PAPER amount in LIVE titles.
+- `params/decision_runtime_v1.yaml` — Only D25 homeless governance plus D28 PAPER bootstrap weights.
+- `params/paper_account_v1.yaml` — Exact P7 PAPER capital and simulated margin twins.
+- `scripts/run_apex.py` — Bound PAPER source/preparer, catch-up, balance and bounded train-e11 CLI.
+- `tests/fixtures/e11_classifier_v1.yaml` — Explicitly test-only loader artifact, never runtime training fallback.
+- `tests/integration/test_context_to_trade_paper.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/integration/test_cp14_producer.py` — Real SQLite seven-test G1 proof plus bound PAPER-loop one-cycle JSON harness.
+- `tests/integration/test_ops_paper_loop.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/integration/test_store_integration.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_config.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_decision_pipeline.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_e03_volume.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_engine_context.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_engine_context_store_sources.py` — Actual-store quality/MTF/ADV/account/ladder source acceptance and refusal tests.
+- `tests/unit/test_errors.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_forecast_logistic.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_plan_bridge.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_risk_kernel.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
+- `tests/unit/test_telegram_control_plane.py` — CP-14 regressions for the corresponding native contract and failure boundaries; existing assertions retained except written authorizations.
 
 ### RECORD
-- Branch: `arena/01a0afeb-upstage`; unchanged base HEAD `d77ce13a8cde9d241b2bfa368f2f32fec8317e84`. Fetch/head/hash/line-count guard and push dry-run succeeded before repository edits.
-- BEFORE `sha256(APEX_GEN5.md)` = `683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56` (20817 lines).
-- Current AFTER (not final closeout) = `c26603f708f6dc6dfcdf0afaa2d31d96015079b83cc9714f65a0bedf52fae33f` (20841 lines). Only G1 additive tree/traceability and owner-authorized D21/D22 clarifications; no engine formula rewritten.
-- Baseline full suite: 2728 passed, 14 warnings, 85.54 s. Initial sandbox pytest absence resolved by installing requirements.lock and the permitted pytest dev extra, without dependency-file changes.
-- Post-edit targeted suite: error/config/control-plane/bootstrap/paper-loop = 213 passed, 2 failed (the two obsolete assertions in ISSUE-CP14-009). Snapshot regression passes after its recorded pre-fix ProgrammingError. E03/context/errors targeted = 84 passed before two additional catch-up tests; latest context-only = 28 passed. **No final twice-green suite, no new full-suite total, no completion claim.**
+
+- APEX BEFORE SHA-256 `683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56`; **20817 lines**.
+- APEX AFTER SHA-256 `8e8fa12935d8cc38cd95702cfeb2c439acb4f7247a704b97f0b8897179da0da1`; **20924 lines**.
+- Final full suite 1: `PENDING_FINAL_RUN_1`.
+- Final full suite 2: `PENDING_FINAL_RUN_2`.
+- Both final commands are exactly `python -m pytest -q -p no:cacheprovider`, run sequentially with a clean tree and no deselection, including G2. Placeholders are replaced only from their actual raw output; no prior/interim run counts as final evidence.
+- G1 actual-source proof and bound one-cycle harness: `13 passed, 13 warnings in 223.11s (0:03:43)` with the existing bridge battery. Expanded real-source/bridge/risk proof: `289 passed, 1 deselected in 305.38s (0:05:05)`, excluding only long G2 at that checkpoint. The final full runs include it.
+- D24 bare-click audit remains in DECISION_LOG. ISSUE-008's accidental supply_policy click is VOID; D25 is the written authority. Historical checkout absence of commit 583d021 and unverified 2804-test claims remains recorded, not rewritten as a reset diagnosis.
+- Exactly two frozen exceptions: `SQLiteStore.insert_snapshot` BODY (003), and `EvidenceEvent.validate_24_fields` resolution_class membership line accepting exactly Q0–Q5/QX (D31/034). No other frozen source, DDL, to_ddl_row or original six YAML change. Additive decision_runtime/paper_account YAMLs only.
+- Issues 015/016/020–024 were never assigned in the current log or the read-only owner archive; they are explicitly UNASSIGNED below, not fabricated closures.
+
+#### D21–D34 authority index
+
+| Decision | Binding subject / implementation |
+|---|---|
+| D21 | Independent rule0 labels, omit only entropy; all nine classes; delayed BOS/CHoCH; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D22 | Separate per-cell CATCH_UP_FAILED and retry; D14 unchanged; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D23 | Non-AVAILABLE OI uses VolumeZ only, explicit PARTIAL, Q5 cap only; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D24 | Written decisions only; bare clicks VOID; two explicit pin corrections; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D25 | .60 hard cap, all-14 P_min table, .50 C_min and strictest SL-12 horizon; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D26 | Canonical E04 ATR14 lagged Method B; native E02 live density/MAX age/sweeps; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D27 | regime_uncertainty=1-p_max; raw entropy and h_norm separate; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D28 | Canonical governed package, ACCUMULATING only if absent, PAPER arbitration/public provenance; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D29 | Exact durable reservation fraction (C-N)/C, strict PAPER .60/.40/.20; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D30 | Default 1h/4h×Core-10, progress, 20-minute hard abort; authorized fallback opt-in; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D31 | Exact Q0–Q5/QX validator membership, no schema change; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D32 | Native prior HV30 mid-rank, finite N>=50 and native window cap; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D33 | Native quality/MTF/components/pattern/temporal projections and normalized gate10; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D34 | Versioned uncertainty, ADV/costs, sizing, marks, trend and loss/latch laws; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+
+#### ISSUE-CP14-001..058 final dispositions
+
+| Issue | Final disposition | Subject / evidence |
+|---|---|---|
+| ISSUE-CP14-001 | CLOSED — implementation/evidence | Independent nine-class first-training labels |
+| ISSUE-CP14-002 | CLOSED — implementation/evidence | Catch-up versus freshness |
+| ISSUE-CP14-003 | CLOSED — implementation/evidence | Snapshot mapping bind bug |
+| ISSUE-CP14-004 | CLOSED — implementation/evidence | CIRCUIT_OPEN registry schema |
+| ISSUE-CP14-005 | CLOSED — implementation/evidence | PAPER/LIVE balances |
+| ISSUE-CP14-006 | CLOSED — implementation/evidence | E03 climax OHLC calibration |
+| ISSUE-CP14-007 | CLOSED — implementation/evidence | Missing OI participation |
+| ISSUE-CP14-008 | CLOSED — implementation/evidence | Governed caps/P_min and storage |
+| ISSUE-CP14-009 | CLOSED — implementation/evidence | Two explicit extra pin corrections / VOID clicks |
+| ISSUE-CP14-010 | CLOSED — implementation/evidence | Provisional ATR20 discarded |
+| ISSUE-CP14-011 | CLOSED — implementation/evidence | Canonical ATR14 and native liquidity projections |
+| ISSUE-CP14-012 | CLOSED — implementation/evidence | Engine dependency/order integration |
+| ISSUE-CP14-013 | CLOSED — implementation/evidence | Complete event persistence/PIT |
+| ISSUE-CP14-014 | CLOSED — implementation/evidence | Authorized YAML cleanliness before commit |
+| ISSUE-CP14-015 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-016 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-017 | CLOSED — implementation/evidence | PAPER bootstrap governance/public facts |
+| ISSUE-CP14-018 | CLOSED — implementation/evidence | D29 reservation margin |
+| ISSUE-CP14-019 | CLOSED — implementation/evidence | Uncertainty complement |
+| ISSUE-CP14-020 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-021 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-022 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-023 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-024 | UNASSIGNED | No issue was recorded under this number; not an invented closure or open decision. |
+| ISSUE-CP14-025 | CLOSED — implementation/evidence | Strict PAPER margin / unchanged inclusive LIVE |
+| ISSUE-CP14-026 | CLOSED — implementation/evidence | Scoped liquidity Method-A degenerate reference |
+| ISSUE-CP14-027 | CLOSED — implementation/evidence | Raw identity/PIT metadata |
+| ISSUE-CP14-028 | CLOSED — implementation/evidence | Delayed structural-label confirmation |
+| ISSUE-CP14-029 | CLOSED — implementation/evidence | Complete native engine bundle |
+| ISSUE-CP14-030 | CLOSED — implementation/evidence | Native E04 chronological state/history |
+| ISSUE-CP14-031 | CLOSED — implementation/evidence | Native E01 prefix memoization |
+| ISSUE-CP14-032 | CLOSED — implementation/evidence | Bounded default training scope |
+| ISSUE-CP14-033 | CLOSED — implementation/evidence | E10 explicit close boundary |
+| ISSUE-CP14-034 | CLOSED — implementation/evidence | D31 terminal QX validator |
+| ISSUE-CP14-035 | CLOSED — implementation/evidence | Complete E11 state versus consumer label |
+| ISSUE-CP14-036 | CLOSED — implementation/evidence | Prior native HV mid-rank |
+| ISSUE-CP14-037 | CLOSED — implementation/evidence | Native window minimum-veto/weighted quality |
+| ISSUE-CP14-038 | CLOSED — implementation/evidence | Native required-coarser MTF |
+| ISSUE-CP14-039 | CLOSED — implementation/evidence | Admitted components and real E07 contributor mean |
+| ISSUE-CP14-040 | CLOSED — implementation/evidence | Deterministic admitted pattern selection |
+| ISSUE-CP14-041 | CLOSED — implementation/evidence | Native temporal validity projection |
+| ISSUE-CP14-042 | CLOSED — implementation/evidence | Normalized forecast gate-10 quality |
+| ISSUE-CP14-043 | CLOSED — implementation/evidence | Versioned PAPER bootstrap uncertainty |
+| ISSUE-CP14-044 | CLOSED — implementation/evidence | Actual ADV/fees/public funding horizon |
+| ISSUE-CP14-045 | CLOSED — implementation/evidence | Native request-only sizing and reciprocal ATR |
+| ISSUE-CP14-046 | CLOSED — implementation/evidence | PIT PAPER_CLOSE_MARK with Decimal fidelity |
+| ISSUE-CP14-047 | CLOSED — implementation/evidence | Consecutive version-matched uncertainty trend |
+| ISSUE-CP14-048 | CLOSED — implementation/evidence | Net realized losses/streak/latches |
+| ISSUE-CP14-049 | CLOSED — conservative refusal | Absent public funding interval |
+| ISSUE-CP14-050 | CLOSED — implementation/evidence | Decimal close-mark preservation |
+| ISSUE-CP14-051 | CLOSED — conservative refusal | Corrections/authenticated reset source gap |
+| ISSUE-CP14-052 | CLOSED — conservative refusal | Public base/contract volume-unit declaration |
+| ISSUE-CP14-053 | CLOSED — implementation/evidence | Confirmed native fact decision admission |
+| ISSUE-CP14-054 | CLOSED — implementation/evidence | Elapsed decision age versus sample count |
+| ISSUE-CP14-055 | CLOSED — conservative refusal | Native lineage token grammar at gate 11 |
+| ISSUE-CP14-056 | CLOSED — conservative refusal | Historical measured-quality publication gap |
+| ISSUE-CP14-057 | CLOSED — conservative refusal | Absent complete durable risk ladder |
+| ISSUE-CP14-058 | CLOSED — conservative refusal | Native floating-point quality upper edge |
+
 
 ### INTERFACES FOR CP-15
-- `BootstrapService.catch_up(now_ms)` returns `{cells_checked, cells_updated, bars_ingested, failures}`; each failure carries cell/symbol/timeframe, status CATCH_UP_FAILED, error_code, attempted frontier (open-time milliseconds or null). Retry resets source delivery state to the fresh persisted maximum; failures do not rewrite raw rows or freshness.
-- `PaperRuntime(..., catch_up=async_callable)` invokes catch-up before stages. The failed cell is blocked at setup, no plan_provider call, and its scheduler close is not consumed, allowing retry. Other cells proceed; JSON includes cell_runs. Execution remains unchanged and may not be reached at all if setup/gates refuse. With no adapter and non-READY boot, execution refuses BOOT_NOT_READY; there is no newly added execution DECLARED_SKIP status.
-- D22 regression: failed catch-up while the last stored close is within SLA retains freshness_ok=true, reports CATCH_UP_FAILED, produces no plan, and retries next cycle.
-- `freshness(window, timeframe, receipt_time=UTC_seconds)` implements exact D14 measurement and iff without touching availability_time. Empty windows fail explicitly NO_MARKET_DATA. The full producer must consume this helper; its integration is pending.
-- `load_classifier(path=None)` validates exact P2 schema, 9x8/9 tensors, K=9, delay=48, finite values, recorded metadata and recomputed artifact hash; missing/corrupt artifact raises BridgeError(CONFIGURATION_INVALID). `classifier_hash` uses the canonical JSON authority. No boot-time eager artifact load.
-- `training_rule0` and `delayed_training_labels` implement D21 only; feature production, fitting, serialization, process-determinism tests and train-e11 CLI remain pending.
-- `paper_balance(ledger)` starts at YAML capital, sums only environment-tagged PAPER OUTCOME P/L, refuses unclassified/missing P/L rather than guessing; LIVE/RESEARCH/BACKTEST outcomes never contribute.
+
+- `await EngineContextProducer(store, ledger=ledger, environment="PAPER").get_bridge_context(symbol, timeframe, as_of)` returns exactly the 38 `REQUIRED_CONTEXT_KEYS` and nested 23 `REQUIRED_RISK_KEYS` in plan_bridge. `await producer.prepare(...)` is the separate outside-budget phase; serve binds both bound methods on the runtime store. Full native events are public-inserted/read back through the canonical envelope, all 24 fields retained. Cache identities bind PIT inputs, parameters and classifier; no previous success survives a failed refresh.
+- Native call order: E01→E02→E12→E04→E03→E10→E09→E05→E06→E11→E07→E08. No padding for non-emitting engines. `e11_context.bridge_inputs` carries optional bars, sweep, actual lineage, native decision-view lifecycle/elapsed age, quality IDs, uncertainty/cost/account/ladder provenance; it may not overwrite any required context key. `sweep` is not a new 39th key.
+- `await BootstrapService.catch_up(now_ms)` returns `{cells_checked, cells_updated, bars_ingested, failures}`; each failure has cell/symbol/timeframe/status/error_code/frontier. It blocks only that cell/cycle, preserves actual D14 freshness, and retries. Cycle JSON includes cell_runs and preparation diagnostics. Scheduling keys stay close_ms; PAPER reads use the receipt frontier after catch-up, excluding data available later.
+- `await paper_balance(ledger)` supplies the PAPER report/control balance from governed YAML plus classified PAPER realized outcomes; never display it in LIVE. `paper_account_inputs(as_of)` joins PIT PAPER outcomes, canonical order states, pending reservations and one shared fresh last-CLOSED 1m mark per held symbol, explicitly `PAPER_CLOSE_MARK` (not an exchange mark).
+- D29: `C = capital_usdt + realized PAPER P/L`; `N = gross marked open notional + full unfilled risk-increasing order notional`; `margin_health_fraction = (C-N)/C`. Reduce-only reserves zero, filled amounts counted once, no leverage discount. CP-15 **must implement `query_account_margin_health` from its durable paper_sim_state and return exactly this fraction**, not exchange liquidation distance, an exposure cap, or a second formula. WARNING <.60; veto14/action <.40; Emergency L3 CANCEL_ALL <.20. Missing marks/order state, C<=0 or outside [0,1] refuses without clipping. LIVE venue query remains unchanged. This checkpoint does not build the CP-15 simulator/table/transport/replay CLI.
+- PAPER uncertainty model `cp14_paper_bootstrap_uncertainty-v1`: U_cal=.5, U_ood=.5, U_dis=1-p_max from the same E11 snapshot, U=.5 U_cal+.3 U_ood+.2 U_dis, C=1-U; remaining fields typed UNAVAILABLE/unconsumed. Raw H is retained; only h_norm=H/ln(9). LIVE ignores this bootstrap model.
+- Cost input is actual public fees, verified funding schedule and governed holding horizon, with base-asset ADV over prior 30 complete UTC days; absent interval/endpoint => FUNDING_UNAVAILABLE. Unavailable spread keeps cost_R>=.05. Sizing is a native request bound, never authorization before the 14 vetoes; PERPETUAL expiry is strictly typed not-applicable, not infinity.
+- `train-e11 --sqlite PATH --out PATH --seed INT --timeframes CSV --symbols CSV --max-minutes N --json`: default 1h/4h×Core-10, 20-minute hard bound; explicit authorized fallback scope above. Exit 0 TRAINED only after all nine classes and validated atomic artifact write; exit 2 REFUSED/no new artifact; unexpected error exit 1. No dependence on any existing classifier while training; runtime absence gives CONFIGURATION_INVALID without preventing boot/status/bootstrap/repair/training.
+
+### PHONE ACCEPTANCE — owner run, not sandbox PASS
+
+1. Update the phone checkout (never bypass a failed fast-forward):
+   ```sh
+   cd ~/Upstage && git pull --ff-only
+   ```
+   Expect a successful fast-forward or `Already up to date.` STOP on local-change, divergence, authentication or network errors; do not reset/rebase/force.
+2. Default training on the phone's harvested SQLite store:
+   ```sh
+   .venv/bin/python scripts/run_apex.py train-e11 --json
+   ```
+   Expect per-cell `TRAIN_CELL cell=... closed_bars=... eligible_samples=... elapsed_seconds=...` progress on stderr; exit 0 JSON has `status: TRAINED`, all nine nonempty class counts, sample_count, training_window and artifact_sha256. Exit 2 JSON `status: REFUSED` writes no new artifact. Defaults remain 1h/4h × Core-10 and a 20-minute hard limit.
+   Only after an empty-class refusal or `TRAINING_TIME_LIMIT`, run the explicitly authorized fallback:
+   ```sh
+   .venv/bin/python scripts/run_apex.py train-e11 --timeframes 15m,30m,1h,2h,4h --max-minutes 90 --json
+   ```
+   If still refused, record the complete emitted class histogram (if available), refusal JSON and progress. STOP at CP-14.1 for the artifact decision; do not manufacture members, drop a class, reweight, reuse a fixture, or claim PASS. A hard timeout may have no finalized histogram: record that absence, not zeros. Other errors also STOP for diagnosis. `params/e11_classifier_v1.yaml` stays local and gitignored.
+3. Only after successful training, export the Telegram values from the phone's private environment (never paste/print secrets), then:
+   ```sh
+   APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 .venv/bin/python scripts/run_apex.py serve --cycles 1 --interval 5 --json
+   ```
+   Required environment: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID`; optional venue variables `TOOBIT_API_KEY`, `TOOBIT_API_SECRET`. Expect boot/outcome JSON and one cycle with `catch_up`, `context_preparation`, `decision_as_of`, `cell_runs`, and a validated plan or named refusal for every attempted cell. Classifier absence is `CONFIGURATION_INVALID`, not a crash. Catch-up failure is isolated `CATCH_UP_FAILED`, never a rewritten freshness measurement. Without signed venue capability boot may be DEGRADED (exit 2); public collection does not require keys. STOP on crash, unexplained status, LIVE mode, or any named refusal needing an unavailable input; do not bypass a gate. See conservative gaps below; a refusal is not trading readiness.
+4. Offline inspection:
+   ```sh
+   .venv/bin/python scripts/run_apex.py status
+   ```
+   Expect stored progress/frontiers and environment/account separation, no orders and no network requirement. STOP on unreadable storage, inconsistent frontier, or error. Do not equate bootstrap completion with classifier/PAPER/LIVE approval.
+
+The phone commands have NOT been executed here. Toobit retains approximately 3500 bars per interval. The still-open 1w/1mo bars remain for the previously governed repair windows 2026-09-21 / 2026-10-01; this closeout does not repair them early.
+
+### CONSERVATIVE LIMITATIONS (not owner design questions)
+
+- FUNDING_UNAVAILABLE when public funding rate/interval/phase is absent or the endpoint fails; retry, never assume eight hours. Actual fees/contract specs must be publicly supplied; no default or signing fallback.
+- ADV_UNAVAILABLE without an explicit public BASE/CONTRACT volume-unit declaration and the actual 720 contiguous prior complete-day 1h volumes.
+- Raw-only historical windows have no measured quality provenance: QUALITY_PROVENANCE_UNAVAILABLE, never health/completeness/receipt defaults or a historical freshness waiver. Ordinary raw ingestion does not manufacture these records. The publication/readback seam is tested with explicit input-only measurements.
+- Missing complete native ladder revision: RISK_LADDER_UNAVAILABLE; an empty-table NORMAL startup message is insufficient. Public venue facts likewise require their durable publisher records; no fixture/runtime fallback.
+- OI lag unavailable blocks risk inputs even though D23 still allows missing-OI training. E12 without sufficient prior profile history and native CANDIDATE/QX evidence remain inadmissible. Missing same-version consecutive uncertainty state refuses a risk increase.
+- Corrections lacking canonical binding and resets lacking authenticated review remain PAPER_CORRECTION_UNAVAILABLE / CIRCUIT_RESET_UNAVAILABLE; profit alone cannot release a latch.
+- Full native lineage may fail unchanged gate11 identifier grammar; retain it and refuse, do not strip/relabel tokens. The genuine composition fixture also has native MTF conflict, so its actual plan result is SETUP_NOT_EMITTED, not a fabricated trade.
+- The native zero-delay quality floating edge can exceed 1 by rounding; range validation refuses rather than clips.
+- Test fixture success is not phone-store classifier success, economic approval, LIVE readiness, or CP-15 simulator/execution delivery.
 
 ### OPEN QUESTIONS
-- ISSUE-CP14-007: absent OI term in store-only E11 training; owner decision required.
-- ISSUE-CP14-008: owner capital hard cap and missing P_min timeframe policy/storage; owner decision required.
-- ISSUE-CP14-009: permission to replace two obsolete test assertions conflicting with the new requirements.
-- Remaining known-pitfall verification, full producer, store-only trainer, real 61-key validation, persisted full-event round trip, engine order test, and final twice-green suite are not complete.
-- CP-15 simulator transport, simulator table, replay CLI and execution-stage changes remain out of scope and untouched. Phone acceptance is **not ready**; do not run a nonexistent train-e11 command expecting PASS.
+
+No new design question. If both authorized phone training attempts still refuse, STOP for the CP-14.1 artifact decision with the actual histogram/output; do not relax nine-class training. OWNER-CHECKED remains [ ].
 
 ### PUSH RECORD
-- No implementation commit or push yet; no PR opened. Exactly one final PR to main remains pending CP-14 completion and the required twice-green suite. No other branch touched; no squash or trained runtime artifact.
 
-### CP-14 continuation record — 2026-09-17 (supersedes stale pending statements above)
-- D21(a)–(f) reaffirmed unchanged in explicit owner text, recorded under ISSUE-CP14-001. D23/D24/D25 have resolved issues 007/009/008 design-side; do not re-ask them. The new outstanding decision is ISSUE-CP14-011, the undefined E11 ATR_z and liquidity consumer projections, not initial labels.
-- ARTIFACTS: engine_context now includes EngineContextProducer.window/feature_timeline scaffolding, actual first-seven-engine adapter, deterministic full-batch multinomial fitter, atomic supported-YAML writer, and full 24-field EvidenceEvent envelope persistence/readback through insert_evidence. train-e11 --sqlite/--out/--seed/--json is now a real CLI command, but its feature path fails closed while 011 is unresolved. It has not passed successful whole-store training. No get_bridge_context bound method, remaining E05–E08/E11 pipeline, complete 38+23 inputs or serve context_source integration yet.
-- ARTIFACTS: decision_runtime_v1.yaml has D25 policy and config allowlist. E11 forwards the artifact hash into snapshot param_hash; D23 dependency markers are in the wrapper, evidence observation_window and snapshot payload. Frozen RegimeState schema remains unchanged. Runtime validated-artifact loading into the bound producer is still pending.
-- RECORD: discarded provisional ATR20/20-bar z-score and guessed active-level liquidity aggregation; they were not owner-authorized. The adapter now returns explicit unavailable projections and training refuses, with no artifact write. Raw availability stays unchanged. No trained runtime artifact, no data/ additions, no dependency-file change.
-- RECORD: targeted E11/context = 125 passed in 1.51 s, including two-process byte equality of fitter/writer output from a labelled numerical matrix; this is explicitly NOT the required store-derived successful training determinism proof. Two further tests cover actual first-seven engines and the public store derived-close window boundary. Latest expanded targeted suite = 315 passed in 3.11 s. A final fit-only all-nine-class guard was added after that run and awaits the next targeted verification.
-- RECORD: full suite run = 2777 passed, 1 failed, 14 warnings in 84.95 s. The sole failure is CP-8's params git-clean assertion because two authorized additive YAMLs are not committed (ISSUE-CP14-014). Preserve that test; commit normally only when appropriate, then perform the required final twice-green runs. This was not a final acceptance run.
-- INTERFACES: persist_complete_evidence/read_complete_evidence preserve every semantic field and original explanation; malformed/legacy reduced SQL rows refuse EVIDENCE_CONTEXT_INVALID. Public insert only; no frozen-store change beyond the previously authorized insert_snapshot body.
-- OPEN QUESTIONS: owner adjudication of ISSUE-CP14-011 is needed before completing train/serve features. Subsequent audit must still verify full PIT confirmation availability independent of feature refusals, gaps/zero-volume/gap-vector handling shared with runtime, non-H1 history policy, ledger/risk authorities, and actual successful store training in two processes. None is claimed complete here.
-- PUSH RECORD: still no implementation commit/push/PR. Execution-stage implementation remains untouched; no simulator/replay or fabricated DECLARED_SKIP.
-- Latest verification after the fitter class guard: expanded targeted suite 315 passed in 3.01 s; git diff --check clean. Current AFTER (interim, not closeout) plan SHA256 = acbcd8a32748db3c14179c1383c28023afe6290a242229fa45640eb60740c248, 20856 lines; BEFORE = 683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56, 20817 lines. Frozen-path diff lists only the authorized insert_snapshot body; all six original YAMLs and other frozen paths remain unchanged.
-
-### CP-14 D26-A continuation — 2026-09-17
-- ARTIFACTS: owner D26-A recorded verbatim in DECISION_LOG. E11 Method-B reference calculation is shared with atr_z_input; the adapter and shared training timeline use E04 VolatilityState.atr14_wilder, prior same-cell history, existing E11 window/minimum/EPS, and the explicit sigma+EPS denominator. No added ATR20 implementation remains; E04 source matches HEAD. E03 consumes lagged published ATR14. Known-series, short-history, window-cap, unchanged-sigmoid, source-alignment, lag and cell-isolation tests added.
-- RECORD: before this continuation, plan hash acbcd8a32748db3c14179c1383c28023afe6290a242229fa45640eb60740c248 / 20856 lines; current interim AFTER 6e1570d948767ccdd554f4de2c46368ba46cfe2b67b4fc39cc26a2579049957d / 20858 lines. Exact E11 Section 1.2 sentence and one Appendix AJ row added. Checkpoint BEFORE remains 683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56 / 20817 lines.
-- TESTS: context/E11/E04/E03 = 250 passed in 25.48 s; final context/E11 = 134 passed in 1.85 s; diff-check clean. No new full-suite run or final twice-green claim; prior full-suite result and ISSUE-CP14-014 remain as recorded.
-- INTERFACES / OPEN QUESTIONS: atr_z_input shares E11 rolling_method_b_reference and raises the original INVALID_E11_HISTORY on insufficient/degenerate reference; upstream_frame reports unavailable atr_z, never fills it. ATR history advances independently of unrelated feature refusals, after the current projection. ISSUE-CP14-011 part 1 is resolved by D26-A; awaiting the owner's announced part 2 on liquidity, without reopening D21 or assuming approval of the old recommendation. Complete bound producer/remaining engine order/risk integration and successful store training remain unfinished.
-- PUSH RECORD: no commit/push/PR; CP-14 remains IN-PROGRESS, OWNER-CHECKED:[ ]; CP-15 and execution remain untouched.
-
-### HANDOFF_CP14 — D27/D28 current-checkout continuation (2026-09-18)
-
-**ARTIFACTS:** D27 exact uncertainty helper; D28 canonical package/lifecycle/public-fact helpers and EngineContextProducer.decision_inputs; bridge/arbitration zero-weight UNAVAILABLE support; added unit and real-bridge integration tests; ADR-CP14-005; Ch.12, Section 2 snapshot binding, P1 correction, tree annotation and two separate AJ rows. Local commit `4999d86` adds only paper_account_v1.yaml and decision_runtime_v1.yaml including D28. Remaining implementation/docs/tests are uncommitted, not pushed. Runtime classifier absent and never committed.
-
-**RECORD:** D28 recorded verbatim under OWNER ANSWERS. Canonical package input is a filename-keyed map of parsed governed YAMLs using the existing canonical serializer; optional classifier included once; full parameter SHA retained, package suffix is 12 hex, snapshots retain full 64-hex identity. Existing family records survive unchanged; an absent record yields ACCUMULATING without a write. Public facts come only through unsigned public-client reads and retain source/payload hashes and observed-at. Failure snapshots stop stale-success fallback per symbol. LIVE ignores bootstrap; a missing/invalid positive-weight measurement refuses. G1 composition is still pending, not hidden behind a synthetic complete context.
-
-**INTERFACES:** paper_package_binding / paper_bootstrap_inputs are explicitly environment-scoped. read_family_record reads owner SETUP_FAMILY_REGISTRY snapshot payloads without writes. collect_public_venue_facts uses get_exchange_info/get_funding_rate; persist_public_venue_facts requires an explicit PAPER environment and appends via the public snapshot API; read_public_venue_facts enforces full binding and PIT. decision_inputs assembles these source facts for the future complete producer. Their existence does not mean scripts/run_apex.py serve is already bound to them. The bridge now preserves UNAVAILABLE for zero-weight arbitration inputs and never treats them as measured zero/one.
-
-**VALIDATION:** focused suite = 152 passed, 13 warnings, 7.49 s. Full `python -m pytest tests -q` once = 2812 passed, 0 failed, 14 warnings, 95.20 s. Two-process determinism was verified for D28 package identity only, not a successful E11 store-training artifact. Actual public-client tests use the network-free required fake transport; no assertion that today's venue supplies all fact fields. Original six YAMLs, confidence combiner/weights, execution files and cleanliness test unchanged.
-
-**OPEN QUESTIONS:** ISSUE-CP14-018 has no owner answer; do not select a PAPER margin formula, leverage discount, pending-order treatment or CP-15 state. D27/D28 need no re-asking. The current checkout lacked the earlier reported late G1/G2 implementation; reconciliation remains needed (including authorized D26-B projection and complete twelve-engine runtime assembly). Preserve D21 and D27's acceptance of a genuine missing-class refusal on sandbox data; no fabricated class members. Current targeted/full results do not prove full G1/G2 readiness or authorize completion.
-
-**HASH / PUSH RECORD:** current plan AFTER `ffd0681e3af215fa80359139c6da002d67f8aadc7c0f07ed4c7aa0a910841538` / 20865 lines; checkpoint BEFORE `683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56` / 20817. Branch `arena/01a0afeb-upstage`; local policy commit 4999d86; no push/PR. The ONE owner-titled completion PR remains due after remaining decisions, implementation/reconciliation and final twice-green verification. OWNER-CHECKED:[ ].
-
-### HANDOFF_CP14 INTERFACES — D29 milestone
-
-D29 is binding on CP-15 as well as CP-14: simulator `query_account_margin_health` must return exactly `(C-N)/C` from durable state. C is YAML capital plus realized PAPER ledger P/L; N is gross marked open PAPER notional plus full remaining risk-increasing order notional. Reduce-only reservations are zero; filled quantity is counted in positions, not again in remaining orders; no leverage discount. Thresholds are strictly below 0.60 WARNING, 0.40 ACTION/veto 14, and 0.20 LIQUIDATION_APPROACH/Emergency L3 CANCEL_ALL. Missing marks/order state, nonpositive C or out-of-range fractions refuse by name without clipping. This is a PAPER reservation proxy, not venue liquidation distance. Exposure-cap vetoes remain separate; LIVE metrics and inclusive legacy boundaries are unchanged. The proxy reports the existing emergency action; CP-15 owns its durable simulator response and existing execution owns cancellation, neither is reimplemented here.
-
-Implementation: engine_context.paper_reservation_proxy is a Decimal input/output calculator; paper_account_state reads public LedgerWriter trade-plan/transition/fill/outcome records and external fresh marks/specs. Pending quantity is submission quantity minus recorded OPEN fills; unknown/inconsistent/recovery-required order state refuses. Explicit FSM environment and the PaperRuntime intent projection prevent PAPER/LIVE mixing. `risk.kernel.margin_health_state(..., environment="PAPER")` and explicit PAPER_RESERVATION_PROXY_D29 veto input implement strict PAPER boundaries without changing default/LIVE behavior.
-
-D29 verification: context/risk suite 169 passed, 0 failed, 3.28 s, including 14 new D29 cases: requested examples, all three exact boundaries against unchanged LIVE, invalid capital, partial/cancel/reduce-only reservations, missing marks/state and actual append-only mixed-environment ledger P/L. Full G1 integration remains a separate pending milestone. Per owner instruction, this green D29 milestone is committed and pushed immediately; no PR yet.
+All work stays on `arena/01a0afeb-upstage`; checkpoints pushed without rebase/squash/force or merge. PR creation follows the two actual clean full-suite results. PR number/URL: `PENDING_VERIFIED_PR`. No claim of phone PASS or LIVE permission.
