@@ -389,3 +389,36 @@ def test_account_source_reachable_named_refusals(tmp_path,case):
             with pytest.raises(BridgeError,match=reason): await source.paper_account_inputs(stamp)
         finally: await ledger.stop(); await store.close()
     asyncio.run(run())
+
+
+def test_native_frame_cache_ignores_only_unconsumed_query_lag(tmp_path,monkeypatch):
+    """Actual OI timestamps stay in identity; returned metadata is refreshed."""
+    from tests.integration.test_cp14_producer import raw_observations
+    from dataclasses import replace
+    async def run():
+        store=await SQLiteStore(str(tmp_path/'cache.sqlite')).open()
+        try:
+            source=EC.EngineContextProducer(store,environment='PAPER')
+            raw=raw_observations()[:65]
+            for obs in raw: await store.ingest_raw(obs,oi_state='AVAILABLE')
+            first=EC._ms_to_iso(EC.close_time_ms(EC._iso_to_ms(raw[-1].timestamp),'1d'))
+            later=EC._ms_to_iso(EC._iso_to_ms(first)+86400000)
+            calls=[];native=EC.upstream_frame
+            def tracked(*args,**kwargs):calls.append(1);return native(*args,**kwargs)
+            monkeypatch.setattr(EC,'upstream_frame',tracked)
+            a=await source._frame_at('BTCUSDT','1d',first)
+            b=await source._frame_at('BTCUSDT','1d',later)
+            assert len(calls)==1
+            assert a['raw_window'][-1].oi_lag_seconds!=b['raw_window'][-1].oi_lag_seconds
+            direct=native(b['raw_window'],'BTCUSDT','1d')
+            for key in ('trend','temporal','momentum','ic','structural_events','atr14'):
+                assert EC.canonical_json(b[key])==EC.canonical_json(direct[key])
+            assert b['vlt']==direct['vlt']
+            # A genuine timestamp change must invalidate, even if prices stay.
+            changed=[replace(o,oi_timestamp=o.timestamp) for o in b['raw_window']]
+            async def different(*args):return changed
+            monkeypatch.setattr(source,'window',different)
+            await source._frame_at('BTCUSDT','1d',later)
+            assert len(calls)==2
+        finally:await store.close()
+    asyncio.run(run())

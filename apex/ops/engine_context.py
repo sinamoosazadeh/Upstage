@@ -2098,12 +2098,18 @@ class EngineContextProducer:
         if len(window) < 51:
             raise BridgeError("INSUFFICIENT_HISTORY", f"{symbol}:{timeframe}")
         window = window[-300:]
-        key = (symbol, timeframe, hashlib.sha256(canonical_json(window).encode()).hexdigest())
+        # Native engines consume the actual OI timestamp, not the wiring-only
+        # query-clock lag. Keep that timestamp and every other input in the
+        # identity; refresh both observation views on return. Otherwise an
+        # unchanged HTF replays all native engines at every finer close.
+        native_input = [{k:v for k,v in o.to_dict().items() if k != "oi_lag_seconds"} for o in window]
+        key = (symbol, timeframe, hashlib.sha256(canonical_json(native_input).encode()).hexdigest())
         if key not in self._frames:
             self._frames[key] = upstream_frame(window, symbol, timeframe)
             if len(self._frames) > 32:
                 del self._frames[next(iter(self._frames))]
-        return self._frames[key]
+        return {**self._frames[key], "raw_window":window,
+                "window":closed_engine_window(window,timeframe)}
 
     async def feature_timeline(self, symbol: str, timeframe: str, window: list[Any], *, incremental: bool = False):
         """Shared PIT training/runtime X_t stream; explicit warmup refusals.

@@ -59,7 +59,9 @@ async def seed(path, artifact):
    await ingest(MarketObservation('BTCUSDT','1mo',*[Decimal(str(x)) for x in (p,p+1,p-1,p+.2,1000+200*math.sin(i),10000+10*i)],E._ms_to_iso(stamp),i,'CLOSED',availability_time='1970-01-01T00:00:00.000Z',oi_timestamp=E._ms_to_iso(close)),True)
    stamp=close;i+=1
   for i in range(31*24):
-   stamp=end-31*86400000+i*3600000;p=90+.01*i+math.sin(i)*.3
+   stamp=end-31*86400000+i*3600000;p=90.
+   # ADV needs real base volumes, not a second stochastic price experiment.
+   # Flat prices exercise native degenerate-HV handling without extra GARCH fits.
    await ingest(MarketObservation('BTCUSDT','1h',*[Decimal(str(x)) for x in (p,p+1,p-1,p+.2,1000+200*math.sin(i),10000+10*i)],E._ms_to_iso(stamp),1000+i,'CLOSED',availability_time='1970-01-01T00:00:00.000Z',oi_timestamp=E._ms_to_iso(stamp+3600000)))
   venue=_PublicFactsFixture();venue.record['volumeUnit']='BASE';venue.funding_schedule={'fundingIntervalHours':'4','nextFundingTime':str(end+14400000)}
   now=lambda:E._iso_to_ms('2026-01-01T00:00:00.000Z')/1000
@@ -142,6 +144,24 @@ def test_g1_exact_38_23_and_unchanged_native_validators(real_context):
     for key in REQUIRED_RISK_KEYS:
         altered=copy.deepcopy(context);altered['risk'][key]=None
         with pytest.raises(BridgeError): E.validate_produced_context(altered)
+    # Key-by-key concrete scalar domains, not merely key counts/null checks.
+    for section,keys in ((None,REQUIRED_CONTEXT_KEYS),('risk',REQUIRED_RISK_KEYS)):
+        values=context if section is None else context[section]
+        for key in keys:
+            value=values[key]
+            if isinstance(value,bool): invalid=[0,'true']
+            elif isinstance(value,(int,float)): invalid=[float('nan'),True]
+            elif isinstance(value,str): invalid=[None,0]
+            else: continue  # native structured validators above own these shapes
+            for bad in invalid:
+                altered=copy.deepcopy(context)
+                (altered if section is None else altered[section])[key]=bad
+                with pytest.raises(BridgeError): E.validate_produced_context(altered)
+    for key in ('q_raw','data_trust','regime_confidence','regime_uncertainty','h_norm',
+                'temporal_window_validity','forecast_quality','p_min_tf','c_min'):
+        for bad in (-.001,1.001):
+            altered=copy.deepcopy(context);altered[key]=bad
+            with pytest.raises(BridgeError): E.validate_produced_context(altered)
 
 def test_g1_full_24_field_public_store_readback_every_emitter(real_context):
     async def check(store,source,context):
