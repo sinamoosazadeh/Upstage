@@ -43,9 +43,6 @@ PROFILE_ENGINE_ORDER = ("E01", "E02", "E03", "E04", "E05", "E06", "E07",
 # (ADR-CP14-021) is unaffected: the worker writes cache only, never artifacts.
 E11_TRAIN_CACHE_ROOT = REPO_ROOT / "data" / "e11_train_cache"
 E11_TRAIN_CACHE_FORMAT = "e11-train-cache-v1"
-# Fixed UTC durations of the HTF dependency timeframes, for the training-only
-# prefetch margin. Training scopes never include calendar-month timeframes.
-_DEP_TF_SECONDS = {"15m": 900, "1h": 3600, "4h": 14400}
 
 
 
@@ -2202,17 +2199,17 @@ class EngineContextProducer:
         return result
 
     async def training_dep_window(self, symbol: str, timeframe: str, *,
-                                  open_from_ms: int, close_to_ms: int, count: int) -> list[Any]:
+                                  close_to_ms: int, count: int) -> list[Any]:
         """D35 training-only HTF prefetch: one verified read per cell.
 
         Replaces thousands of identical per-bar window() re-reads over one
-        training cell. The rows cover every per-bar slice of the cell; each
-        slice re-applies the close/availability gates via
-        slice_training_window, so served slices equal live window() calls
-        exactly (parity-tested). Runtime (G1) never uses this path.
+        training cell. Every dependency row closed at or before the cell end
+        is returned (no lower cut: gapped history can reach arbitrarily far
+        back for a 301-bar slice); each per-bar slice re-applies the gates
+        via slice_training_window, so served slices equal live window()
+        calls exactly (parity-tested). Runtime (G1) never uses this path.
         """
-        rows = await self.window(symbol, timeframe, _ms_to_iso(close_to_ms), count) if count else []
-        return [o for o in rows if _iso_to_ms(o.timestamp) >= open_from_ms]
+        return await self.window(symbol, timeframe, _ms_to_iso(close_to_ms), count) if count else []
 
     async def _frame_at(self, symbol: str, timeframe: str, as_of: str, *,
                         rows: list[Any] | None = None,
@@ -2588,12 +2585,11 @@ async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
             continue
         dep_rows: dict[str, list[Any]] = {}
         close_to = close_time_ms(_iso_to_ms(window[-1].timestamp), timeframe)
-        open_from = _iso_to_ms(window[0].timestamp)
         for dep_tf in [tf for tf in ("4h", "1h", "15m") if tf != timeframe]:
             read_start = time.monotonic()
             dep_rows[dep_tf] = await producer.training_dep_window(
-                symbol, dep_tf, open_from_ms=open_from - 302 * _DEP_TF_SECONDS[dep_tf] * 1000,
-                close_to_ms=close_to, count=int(counts.get((symbol, dep_tf), 0)))
+                symbol, dep_tf, close_to_ms=close_to,
+                count=int(counts.get((symbol, dep_tf), 0)))
             window_read += time.monotonic() - read_start
         input_hash = cell_input_hash(producer, window, dep_rows, max_bars)
         cached = read_cell_cache(cell_dir / f"{symbol}_{timeframe}.json", cell=cell,

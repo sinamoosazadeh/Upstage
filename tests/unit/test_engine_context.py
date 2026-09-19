@@ -1715,3 +1715,377 @@ def test_closeout_phone_fallback_does_not_change_training_defaults():
     assert EC.DEFAULT_TRAINING_MAX_MINUTES == 20.
     assert EC.training_scope("15m,30m,1h,2h,4h","BTCUSDT")[0] == ("15m","30m","1h","2h","4h")
     assert EC.training_time_limit(90) == 5400.
+    assert EC.DEFAULT_MAX_BARS_PER_CELL is None
+
+
+# ---------------------------------------------------------------------------
+# CP-14.1 / D35: resumable bar-capped training with profiling.
+
+
+async def _seed_d35_small_store(store, n_1h=120, symbols=("BTCUSDT",)):
+    """Small training store with static adequate HTF (the G2 pattern).
+
+    Unlabelled OHLCV only; the native D21 rule supplies every label. The
+    15m/4h legs end exactly where the 1h leg starts, so every 1h bar sees
+    full 65-bar dependency windows.
+    """
+    import math
+    import random
+    from datetime import datetime, timedelta, timezone
+    from apex.data_catalog.contracts import MarketObservation
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for symbol in symbols:
+        for tf, hours, count, start in (("15m", .25, 65, -16.25), ("4h", 4, 65, -260),
+                                        ("1h", 1, n_1h, 0)):
+            rng, price = random.Random(11), 100.
+            for i in range(count):
+                opening = price
+                if tf != "1h":
+                    price += .15 + math.sin(i) * .5
+                else:
+                    price *= math.exp(rng.gauss(0, .013) + .005 * math.sin(i / 45))
+                high = max(opening, price) + rng.uniform(.1, 2)
+                low = min(opening, price) - rng.uniform(.1, 2)
+                stamp = (base + timedelta(hours=start + i * hours)).isoformat(
+                    timespec="milliseconds").replace("+00:00", "Z")
+                obs = MarketObservation(symbol, tf, *[Decimal(str(v)) for v in
+                    (opening, high, low, price, rng.uniform(500, 2000))], None, stamp, i, "CLOSED",
+                    availability_time="1970-01-01T00:00:00.000Z")
+                await store.ingest_raw(obs, oi_state="MISSING")
+
+
+async def _train_outcome(store, **kwargs):
+    """Run train_classifier; normalize TRAINED/degenerate into one shape."""
+    progress = []
+    try:
+        artifact, report = await EC.train_classifier(store, progress=progress.append, **kwargs)
+        return ("trained", artifact["sample_count"], report["per_class_counts"],
+                report["excluded"], progress)
+    except EC.DegenerateTraining as exc:
+        return ("refused", exc.reason, exc.histogram, exc.excluded, progress)
+
+
+def test_d35_bar_cap_validation():
+    assert EC.training_bar_cap(None) is None
+    assert EC.training_bar_cap(1000) == 1000
+    for bad in (0, -3, True, "100", 2.5):
+        with pytest.raises(BridgeError, match="TRAINING_BARS_INVALID"):
+            EC.training_bar_cap(bad)
+
+
+def test_d35_protocol_hash_separates_namespaces():
+    from apex.data_catalog.contracts import CORE10_SYMBOLS
+    base = EC.training_protocol_hash(("1h", "4h"), tuple(CORE10_SYMBOLS), None)
+    assert len(base) == 64 and all(c in "0123456789abcdef" for c in base)
+    assert EC.training_protocol_hash(("1h", "4h"), tuple(CORE10_SYMBOLS), 1000) != base
+    assert EC.training_protocol_hash(("1h",), tuple(CORE10_SYMBOLS), None) != base
+    assert EC.training_protocol_hash(("1h", "4h"), ("BTCUSDT",), None) != base
+
+
+def test_d35_cache_roundtrip_and_invalidation(tmp_path):
+    proto = EC.training_protocol_hash(("1h",), ("BTCUSDT",), None)
+    path = tmp_path / "cache" / proto / "BTCUSDT_1h.json"
+    assert EC.read_cell_cache(path, cell="BTCUSDT:1h", protocol_hash=proto, input_hash="abc") is None
+    payload = {"format": EC.E11_TRAIN_CACHE_FORMAT, "cell": "BTCUSDT:1h",
+               "training_query_sha256": proto, "input_hash": "abc", "closed_bars": 60,
+               "max_bars_per_cell": None, "vector_keys": list(EC.E11.VECTOR_KEYS),
+               "samples": [{"as_of": "2026-01-02T00:00:00.000Z", "label": "RANGE",
+                            "vector": [float(i) for i in range(8)]}],
+               "excluded": {"UPSTREAM_WARMUP": 50}, "window_start": "s", "window_end": "e"}
+    EC.write_cell_cache(path, payload)
+    assert EC.read_cell_cache(path, cell="BTCUSDT:1h", protocol_hash=proto,
+                              input_hash="abc")["samples"] == payload["samples"]
+    assert EC.read_cell_cache(path, cell="BTCUSDT:1h", protocol_hash=proto,
+                              input_hash="other") is None
+    assert EC.read_cell_cache(path, cell="BTCUSDT:1h", protocol_hash="0" * 64,
+                              input_hash="abc") is None
+    path.write_text("{not json")
+    assert EC.read_cell_cache(path, cell="BTCUSDT:1h", protocol_hash=proto,
+                              input_hash="abc") is None
+    EC.write_cell_cache(path, dict(payload, samples=[{"as_of": "x", "label": "RANGE",
+                                                      "vector": [1.0] * 7}]))
+    assert EC.read_cell_cache(path, cell="BTCUSDT:1h", protocol_hash=proto,
+                              input_hash="abc") is None
+    EC.write_cell_cache(path, dict(payload, samples=[{"as_of": "x", "label": "RANGE",
+                                                      "vector": [float("nan")] * 8}]))
+    assert EC.read_cell_cache(path, cell="BTCUSDT:1h", protocol_hash=proto,
+                              input_hash="abc") is None
+
+
+def test_d35_small_store_cache_resume_reproduces_samples(tmp_path):
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "small.sqlite")).open()
+        try:
+            await _seed_d35_small_store(store)
+            cache = tmp_path / "cache"
+            cold = await _train_outcome(store, symbols="BTCUSDT", timeframes="1h", cache_dir=cache)
+            proto = EC.training_protocol_hash(("1h",), ("BTCUSDT",), None)
+            assert [f.name for f in (cache / proto).glob("*.json")] == ["BTCUSDT_1h.json"]
+            cold_cells = [row for row in cold[-1] if row["kind"] == "cell"]
+            assert len(cold_cells) == 1 and cold_cells[0]["cache"] == "miss"
+            assert cold_cells[0]["eligible_samples"] > 0  # real samples, not an empty set
+            warm = await _train_outcome(store, symbols="BTCUSDT", timeframes="1h", cache_dir=cache)
+            assert warm[:4] == cold[:4]
+            warm_cells = [row for row in warm[-1] if row["kind"] == "cell"]
+            assert len(warm_cells) == 1 and warm_cells[0]["cache"] == "hit"
+            assert warm_cells[0]["eligible_samples"] == cold_cells[0]["eligible_samples"]
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+
+
+def test_d35_bar_cap_caps_window_and_namespace(tmp_path):
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "capped.sqlite")).open()
+        try:
+            await _seed_d35_small_store(store)
+            cache = tmp_path / "cache"
+            capped = await _train_outcome(store, symbols="BTCUSDT", timeframes="1h",
+                                          max_bars_per_cell=100, cache_dir=cache)
+            cells = [row for row in capped[-1] if row["kind"] == "cell"]
+            assert len(cells) == 1 and cells[0]["closed_bars"] == 100
+            capped_proto = EC.training_protocol_hash(("1h",), ("BTCUSDT",), 100)
+            assert (cache / capped_proto / "BTCUSDT_1h.json").exists()
+            assert not (cache / EC.training_protocol_hash(("1h",), ("BTCUSDT",), None)).exists()
+            full = await _train_outcome(store, symbols="BTCUSDT", timeframes="1h", cache_dir=cache)
+            full_cells = [row for row in full[-1] if row["kind"] == "cell"]
+            assert len(full_cells) == 1 and full_cells[0]["closed_bars"] == 120
+            assert full_cells[0]["cache"] == "miss"  # capped run did not populate this namespace
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+
+
+def test_d35_liveness_tick_every_250_bars(tmp_path):
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "live.sqlite")).open()
+        try:
+            await _seed_d35_small_store(store, n_1h=300)
+            outcome = await _train_outcome(store, symbols="BTCUSDT", timeframes="1h",
+                                           cache_dir=tmp_path / "cache")
+            ticks = [row for row in outcome[-1] if row["kind"] == "tick"]
+            assert len(ticks) == 1
+            assert ticks[0]["cell"] == "BTCUSDT:1h"
+            assert ticks[0]["bars_done"] == 250 and ticks[0]["bars_total"] == 300
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+
+
+def test_d35_slice_training_window_equals_live_window(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    from apex.identity.canonical_json import canonical_json
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "slice.sqlite")).open()
+        try:
+            await _seed_d35_small_store(store, n_1h=60)
+            producer = EC.EngineContextProducer(store)
+            base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            stamps = [(base + timedelta(hours=h)).isoformat(timespec="milliseconds").replace(
+                "+00:00", "Z") for h in (1, 30, 60, 200)]
+            for tf in ("15m", "4h"):
+                rows = await producer.training_dep_window(
+                    "BTCUSDT", tf, close_to_ms=int((base + timedelta(hours=200)).timestamp() * 1000),
+                    count=1000)
+                assert len(rows) == 65
+                for as_of in stamps:
+                    as_of_ms = int(datetime.fromisoformat(as_of.replace("Z", "+00:00")).timestamp() * 1000)
+                    live = await producer.window("BTCUSDT", tf, as_of, 301)
+                    sliced = EC.slice_training_window(rows, as_of_ms, tf, 301)
+                    assert canonical_json([o.to_dict() for o in sliced]) == canonical_json(
+                        [o.to_dict() for o in live])
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+
+
+def test_d35_optimized_matches_unoptimized_reference_bytes(tmp_path):
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "parity.sqlite")).open()
+        try:
+            await _seed_d35_small_store(store)
+            proto = EC.training_protocol_hash(("1h",), ("BTCUSDT",), None)
+            first = await _train_outcome(store, symbols="BTCUSDT", timeframes="1h",
+                                         cache_dir=tmp_path / "opt", optimize=True)
+            second = await _train_outcome(store, symbols="BTCUSDT", timeframes="1h",
+                                          cache_dir=tmp_path / "ref", optimize=False)
+            assert second[:4] == first[:4]
+            assert (tmp_path / "ref" / proto / "BTCUSDT_1h.json").read_bytes() == (
+                tmp_path / "opt" / proto / "BTCUSDT_1h.json").read_bytes()
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+
+
+def test_d35_timeout_keeps_completed_cells_and_resumes(tmp_path):
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    class _StepClock:
+        def __init__(self, steps):
+            self.calls, self.steps = 0, steps
+        def __call__(self):
+            self.calls += 1
+            return 0.0 if self.calls <= self.steps else 1e9
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "resume.sqlite")).open()
+        try:
+            await _seed_d35_small_store(store, symbols=("BTCUSDT", "ETHUSDT"))
+            cache = tmp_path / "cache"
+            proto = EC.training_protocol_hash(("1h",), ("BTCUSDT", "ETHUSDT"), None)
+            partial = []
+            with pytest.raises(BridgeError, match="TRAINING_TIME_LIMIT"):
+                await EC.train_classifier(store, symbols="BTCUSDT,ETHUSDT", timeframes="1h",
+                                          cache_dir=cache, progress=partial.append,
+                                          monotonic=_StepClock(150))
+            assert (cache / proto / "BTCUSDT_1h.json").exists()
+            assert not (cache / proto / "ETHUSDT_1h.json").exists()
+            assert [row["cell"] for row in partial if row["kind"] == "cell"] == ["BTCUSDT:1h"]
+            resumed = await _train_outcome(store, symbols="BTCUSDT,ETHUSDT", timeframes="1h",
+                                           cache_dir=cache)
+            assert resumed[0] in ("trained", "refused")
+            cells = {row["cell"]: row for row in resumed[-1] if row["kind"] == "cell"}
+            assert cells["BTCUSDT:1h"]["cache"] == "hit"
+            assert cells["ETHUSDT:1h"]["cache"] == "miss"
+            assert (cache / proto / "ETHUSDT_1h.json").exists()
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+
+
+def test_d35_warm_cache_resume_is_byte_identical(tmp_path):
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    path = tmp_path / "warm.sqlite"
+    async def seed():
+        store = await SQLiteStore(str(path)).open()
+        try:
+            await _seed_full_training_fixture(store)
+        finally:
+            await store.close()
+    asyncio.run(seed())
+    async def exercise(cache_dir, target):
+        store = await SQLiteStore(str(path)).open()
+        try:
+            progress = []
+            artifact, report = await EC.train_classifier(
+                store, cache_dir=cache_dir, max_minutes=6, progress=progress.append)
+            EC.write_classifier(artifact, target)
+            return artifact, report, progress
+        finally:
+            await store.close()
+    cache = tmp_path / "cache"
+    cold_artifact, cold_report, cold_progress = asyncio.run(exercise(cache, tmp_path / "cold.yaml"))
+    assert all(n > 0 for n in cold_report["per_class_counts"].values())
+    assert sorted(f.name for f in (cache / cold_artifact["training_query_sha256"]).glob("*.json")) == [
+        "BTCUSDT_1h.json", "BTCUSDT_4h.json", "ETHUSDT_1h.json", "ETHUSDT_4h.json"]
+    warm_artifact, warm_report, warm_progress = asyncio.run(exercise(cache, tmp_path / "warm.yaml"))
+    assert (tmp_path / "warm.yaml").read_bytes() == (tmp_path / "cold.yaml").read_bytes()
+    assert warm_artifact["artifact_sha256"] == cold_artifact["artifact_sha256"]
+    assert warm_report["per_class_counts"] == cold_report["per_class_counts"]
+    for row in warm_progress:
+        if row["kind"] != "cell":
+            continue
+        assert row["cache"] == ("hit" if row["closed_bars"] else "miss")
+
+
+def test_d35_cli_profile_lines_on_empty_store(tmp_path):
+    import json
+    import subprocess
+    import sys
+    result = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11",
+                             "--sqlite", str(tmp_path / "empty.sqlite"),
+                             "--out", str(tmp_path / "o.yaml"), "--profile", "--json"],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert json.loads(result.stdout)["reason"] == "EMPTY_CLASS:CRISIS"
+    lines = result.stderr.splitlines()
+    assert len([line for line in lines if line.startswith("TRAIN_CELL ")]) == 20
+    profiles = [line for line in lines if line.startswith("TRAIN_PROFILE ")]
+    assert len(profiles) == 20
+    assert all("cache=miss" in line and "engines=E01:0.000" in line for line in profiles)
+    assert all("excluded=EMPTY_CLOSED_WINDOW:1" in line for line in profiles)
+    assert all("stages=window_read:" in line and "label_confirmation:" in line for line in profiles)
+    assert not [line for line in lines if line.startswith("TRAIN_PROGRESS ")]
+    assert not [line for line in lines if line.startswith("TRAIN_PROFILE_FIT ")]
+
+
+def test_d35_cli_timeout_zero_reports_cells_and_writes_nothing(tmp_path):
+    import json
+    import shutil
+    import subprocess
+    import sys
+    from apex.data_catalog.contracts import CORE10_SYMBOLS
+    target = tmp_path / "o.yaml"
+    proto = EC.training_protocol_hash(("1h", "4h"), tuple(CORE10_SYMBOLS), None)
+    try:
+        result = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11",
+                                 "--sqlite", str(tmp_path / "empty.sqlite"),
+                                 "--out", str(target), "--json", "--max-minutes", "0"],
+                                capture_output=True, text=True, timeout=60)
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert json.loads(result.stdout) == {
+            "status": "REFUSED", "reason": "TRAINING_TIME_LIMIT", "artifact_written": False,
+            "cells_completed": [],
+            "cells_remaining": [f"{symbol}:{tf}" for symbol in CORE10_SYMBOLS for tf in ("1h", "4h")],
+            "next_cell": "BTCUSDT:1h"}
+        assert not target.exists()
+        assert not list((EC.E11_TRAIN_CACHE_ROOT / proto).glob("*.json"))
+    finally:
+        shutil.rmtree(EC.E11_TRAIN_CACHE_ROOT / proto, ignore_errors=True)
+
+
+def test_d35_cli_bar_cap_records_window_and_rejects_invalid(tmp_path):
+    import json
+    import shutil
+    import subprocess
+    import sys
+    from apex.data_catalog.contracts import CORE10_SYMBOLS
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    from datetime import datetime, timedelta, timezone
+    async def seed():
+        store = await SQLiteStore(str(tmp_path / "bars.sqlite")).open()
+        try:
+            base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+            for i in range(5):
+                stamp = (base + timedelta(hours=i)).isoformat(timespec="milliseconds").replace(
+                    "+00:00", "Z")
+                await store.ingest_raw(make_obs(symbol="BTCUSDT", timeframe="1h", ts=stamp),
+                                       oi_state="AVAILABLE")
+        finally:
+            await store.close()
+    asyncio.run(seed())
+    try:
+        result = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11",
+                                 "--sqlite", str(tmp_path / "bars.sqlite"),
+                                 "--out", str(tmp_path / "capped.yaml"), "--json",
+                                 "--symbols", "BTCUSDT", "--timeframes", "1h",
+                                 "--max-bars-per-cell", "3"],
+                                capture_output=True, text=True, timeout=120)
+        assert result.returncode == 2, result.stdout + result.stderr
+        report = json.loads(result.stdout)
+        assert report["training_window"]["max_bars_per_cell"] == 3
+        assert "cell=BTCUSDT:1h closed_bars=3 " in result.stderr
+        uncapped = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11",
+                                   "--sqlite", str(tmp_path / "bars.sqlite"),
+                                   "--out", str(tmp_path / "full.yaml"), "--json",
+                                   "--symbols", "BTCUSDT", "--timeframes", "1h"],
+                                  capture_output=True, text=True, timeout=120)
+        assert uncapped.returncode == 2, uncapped.stdout + uncapped.stderr
+        assert json.loads(uncapped.stdout)["training_window"]["max_bars_per_cell"] is None
+        assert "cell=BTCUSDT:1h closed_bars=5 " in uncapped.stderr
+        invalid = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11",
+                                  "--sqlite", str(tmp_path / "bars.sqlite"),
+                                  "--out", str(tmp_path / "bad.yaml"), "--json",
+                                  "--max-bars-per-cell", "0"],
+                                 capture_output=True, text=True, timeout=60)
+        assert invalid.returncode == 2, invalid.stdout + invalid.stderr
+        assert json.loads(invalid.stdout) == {"status": "REFUSED", "reason": "TRAINING_BARS_INVALID",
+                                              "artifact_written": False}
+        assert not (tmp_path / "bad.yaml").exists()
+    finally:
+        for proto in (EC.training_protocol_hash(("1h",), ("BTCUSDT",), 3),
+                      EC.training_protocol_hash(("1h",), ("BTCUSDT",), None)):
+            shutil.rmtree(EC.E11_TRAIN_CACHE_ROOT / proto, ignore_errors=True)
