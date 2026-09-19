@@ -142,9 +142,9 @@ CONTINUE(CP-14) — CLOSEOUT (2026-09-19), branch `arena/01a0afeb-upstage`; OWNE
 [x] Native SQLite 38+23 producer and full-event persistence, actual 12-engine call order, PIT exclusion, deterministic persisted context, bound PAPER source/preparer and one-cycle fixture JSON.
 [x] D21–D34 implementation and G1–G6 traceability; D30 phone defaults preserved, explicit fallback enabled, runtime classifier gitignored and absent from Git. Conservative gaps remain named refusals, not guessed values or phone readiness.
 [x] Final HANDOFF_CP14 replaces stale in-progress handoffs; ISSUE-001..059 table and CP-15 exact D29 fraction interface recorded. Unassigned historical issue numbers are identified, not invented.
-[ ] Final clean full suite 1: `PENDING_FINAL_RUN_1`.
-[ ] Final clean full suite 2: `PENDING_FINAL_RUN_2`.
-STATUS: CLOSEOUT VERIFICATION PENDING; change to DONE only after both actual equal-count green runs.
+[x] Final clean full suite 1: `2960 passed, 14 warnings in 934.90s (0:15:34)`.
+[x] Final clean full suite 2: `2960 passed, 14 warnings in 936.11s (0:15:36)`.
+STATUS: CP-14 DONE — repository closeout; both clean full runs green with equal counts. OWNER-CHECKED:[ ]. Phone/economic/LIVE acceptance is not claimed.
 APEX BEFORE `683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56` / 20817 lines; AFTER `8e8fa12935d8cc38cd95702cfeb2c439acb4f7247a704b97f0b8897179da0da1` / 20924 lines.
 Exactly TWO frozen exceptions (unchanged scope): (1) `apex/data_catalog/store/sqlite_store.py::SQLiteStore.insert_snapshot` BODY only, ISSUE-CP14-003; (2) `apex/data_catalog/contracts.py::EvidenceEvent.validate_24_fields` resolution_class membership line ONLY, D31 / ISSUE-034, exact Q0–Q5/QX. No DDL/to_ddl_row/other frozen authorization; six original YAMLs unchanged.
 PR: `PENDING_VERIFIED_PR`; OWNER-CHECKED:[ ]. Phone acceptance is owner-run; refusal after both authorized training attempts stops at CP-14.1. No merge or LIVE permission.

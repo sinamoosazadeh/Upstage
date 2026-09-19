@@ -1025,3 +1025,14 @@ Historical milestone statuses above retain their dates; the following final disp
 A: the fresh sandbox's first full-suite attempt reached a failure at the G2 test and was terminated at the 899-second command bound before a final traceback/summary; one training artifact existed in its temporary fixture directory, the second did not. This is NOT either accepted final run. B: a 120-observation profile measured 107,189 timestamp parses; native rolling windows repeatedly parse identical immutable strings and the metadata join computed each observation's identical canonical hash twice. Rule: preserve all native arithmetic, samples, time limits, validators and frozen methods; do not relax the G2 six-minute worker test or omit it. Interim: a bounded, typed consumer-local memo delegates to the identical existing parser, and each metadata-join iteration reuses its one actual content hash. Bootstrap/LIVE parsing is untouched. Parser parity/error tests and all final suites must pass before closure. Owner need: none; implementation-only redundant-work removal, not a policy change. Both final full-suite runs restart after this fix is committed.
 
 - ISSUE-059 focused verification: `205 passed, 1 deselected in 83.71s (0:01:23)` before the additional native-hash memo; final source battery `41 passed in 48.64s`, including strict parser/error parity and Decimal-precision hash parity. A test-local missing Decimal import failed once and was fixed, without a runtime policy change. The hash memo is bounded to 4096 entries and keys the exact typed native six-field hash payload; no frozen method is edited and actual observation hashing remains the authority.
+
+### Final twice-clean verification (2026-09-19)
+
+Code commit 68f04e4; exact command `python -m pytest -q -p no:cacheprovider`, twice sequentially with empty `git status --short` before and after each, all tests including G2, no deselection:
+
+```text
+2960 passed, 14 warnings in 934.90s (0:15:34)
+2960 passed, 14 warnings in 936.11s (0:15:36)
+```
+
+Both commands exited 0. The completed durations exceed the 15-minute step target by 34/36 seconds on this sandbox; this deviation is disclosed, not hidden by omitting tests or relaxing the existing training worker bound. Earlier 899-second tool-bounded attempts have no accepted full summary and are not counted. Exactly two frozen exceptions remain; runtime classifier absence check OK and tracked-artifact grep returns only tests/fixtures/e11_classifier_v1.yaml.

@@ -530,9 +530,9 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 
 - APEX BEFORE SHA-256 `683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56`; **20817 lines**.
 - APEX AFTER SHA-256 `8e8fa12935d8cc38cd95702cfeb2c439acb4f7247a704b97f0b8897179da0da1`; **20924 lines**.
-- Final full suite 1: `PENDING_FINAL_RUN_1`.
-- Final full suite 2: `PENDING_FINAL_RUN_2`.
-- Both final commands are exactly `python -m pytest -q -p no:cacheprovider`, run sequentially with a clean tree and no deselection, including G2. Placeholders are replaced only from their actual raw output; no prior/interim run counts as final evidence.
+- Final full suite 1: `2960 passed, 14 warnings in 934.90s (0:15:34)`.
+- Final full suite 2: `2960 passed, 14 warnings in 936.11s (0:15:36)`.
+- Both final commands are exactly `python -m pytest -q -p no:cacheprovider`, run sequentially with a clean tree and no deselection, including G2. Both lines above are copied from actual completed exit-0 runs at code commit 68f04e4; no prior/interim or interrupted run counts as final evidence.
 - G1 actual-source proof and bound one-cycle harness: `13 passed, 13 warnings in 223.11s (0:03:43)` with the existing bridge battery. Expanded real-source/bridge/risk proof: `289 passed, 1 deselected in 305.38s (0:05:05)`, excluding only long G2 at that checkpoint. The final full runs include it.
 - D24 bare-click audit remains in DECISION_LOG. ISSUE-008's accidental supply_policy click is VOID; D25 is the written authority. Historical checkout absence of commit 583d021 and unverified 2804-test claims remains recorded, not rewritten as a reset diagnosis.
 - Exactly two frozen exceptions: `SQLiteStore.insert_snapshot` BODY (003), and `EvidenceEvent.validate_24_fields` resolution_class membership line accepting exactly Q0–Q5/QX (D31/034). No other frozen source, DDL, to_ddl_row or original six YAML change. Additive decision_runtime/paper_account YAMLs only.
@@ -682,3 +682,5 @@ No new design question. If both authorized phone training attempts still refuse,
 ### PUSH RECORD
 
 All work stays on `arena/01a0afeb-upstage`; checkpoints pushed without rebase/squash/force or merge. PR creation follows the two actual clean full-suite results. PR number/URL: `PENDING_VERIFIED_PR`. No claim of phone PASS or LIVE permission.
+
+Recovery/verification record (2026-09-19): owner-authorized soft reset to 4d1f492 preserved the working files; recovered implementation 72793a5 and controls 8e3869c were pushed. No hard reset, stash, rebase, force-push, branch change or merge. Test environment rebuilt outside the repo from requirements.lock plus the permitted pytest extra; dependency files unchanged. After the recorded interrupted attempts and ISSUE-059 fix, both complete suites ran sequentially from/to a clean tree with no deselection, including G2. The complete runs took 15:34 and 15:36 on this sandbox, exceeding the requested 15-minute step target by 34/36 seconds; no test or worker deadline was relaxed to hide this.

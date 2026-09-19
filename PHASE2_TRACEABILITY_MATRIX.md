@@ -554,3 +554,12 @@ Additive-file rule: any file outside §9.5's list traces to a DECISION_LOG ADR o
 | D34 | Versioned uncertainty, ADV/costs, sizing, marks, trend and loss/latch laws; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
 
 APEX AFTER `8e8fa12935d8cc38cd95702cfeb2c439acb4f7247a704b97f0b8897179da0da1` / 20924 lines. Exactly two frozen exceptions: insert_snapshot body (003), validator membership line (D31/034). Conservative/unassigned issue dispositions and phone STOP rules are in HANDOFF_CP14. Final totals are recorded there and on the board after both actual clean runs; no interim result is relabelled final.
+
+Final evidence (clean code commit 68f04e4, identical command, no deselection):
+
+```text
+2960 passed, 14 warnings in 934.90s (0:15:34)
+2960 passed, 14 warnings in 936.11s (0:15:36)
+```
+
+G1–G6 and D21–D34 repository verification: PASS; conservative runtime refusals and owner-only phone/LIVE gates remain explicitly disclosed in HANDOFF_CP14.
