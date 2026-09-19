@@ -681,6 +681,6 @@ No new design question. If both authorized phone training attempts still refuse,
 
 ### PUSH RECORD
 
-All work stays on `arena/01a0afeb-upstage`; checkpoints pushed without rebase/squash/force or merge. PR creation follows the two actual clean full-suite results. PR number/URL: `PENDING_VERIFIED_PR`. No claim of phone PASS or LIVE permission.
+All work stays on `arena/01a0afeb-upstage`; checkpoints pushed without rebase/squash/force or merge. PR creation follows the two actual clean full-suite results. PR number/URL: `#18 — https://github.com/sinamoosazadeh/Upstage/pull/18`. No claim of phone PASS or LIVE permission.
 
 Recovery/verification record (2026-09-19): owner-authorized soft reset to 4d1f492 preserved the working files; recovered implementation 72793a5 and controls 8e3869c were pushed. No hard reset, stash, rebase, force-push, branch change or merge. Test environment rebuilt outside the repo from requirements.lock plus the permitted pytest extra; dependency files unchanged. After the recorded interrupted attempts and ISSUE-059 fix, both complete suites ran sequentially from/to a clean tree with no deselection, including G2. The complete runs took 15:34 and 15:36 on this sandbox, exceeding the requested 15-minute step target by 34/36 seconds; no test or worker deadline was relaxed to hide this.

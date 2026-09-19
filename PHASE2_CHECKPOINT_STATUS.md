@@ -147,4 +147,4 @@ CONTINUE(CP-14) — CLOSEOUT (2026-09-19), branch `arena/01a0afeb-upstage`; OWNE
 STATUS: CP-14 DONE — repository closeout; both clean full runs green with equal counts. OWNER-CHECKED:[ ]. Phone/economic/LIVE acceptance is not claimed.
 APEX BEFORE `683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56` / 20817 lines; AFTER `8e8fa12935d8cc38cd95702cfeb2c439acb4f7247a704b97f0b8897179da0da1` / 20924 lines.
 Exactly TWO frozen exceptions (unchanged scope): (1) `apex/data_catalog/store/sqlite_store.py::SQLiteStore.insert_snapshot` BODY only, ISSUE-CP14-003; (2) `apex/data_catalog/contracts.py::EvidenceEvent.validate_24_fields` resolution_class membership line ONLY, D31 / ISSUE-034, exact Q0–Q5/QX. No DDL/to_ddl_row/other frozen authorization; six original YAMLs unchanged.
-PR: `PENDING_VERIFIED_PR`; OWNER-CHECKED:[ ]. Phone acceptance is owner-run; refusal after both authorized training attempts stops at CP-14.1. No merge or LIVE permission.
+PR: `#18 — https://github.com/sinamoosazadeh/Upstage/pull/18`; OWNER-CHECKED:[ ]. Phone acceptance is owner-run; refusal after both authorized training attempts stops at CP-14.1. No merge or LIVE permission.
