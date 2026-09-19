@@ -614,3 +614,17 @@ class TestAuthorityAndIndependence:
         assert RISK_LADDER_STATES == ("NoRisk", "LowRisk", "MediumRisk",
                                      "HighRisk", "CriticalRisk")
         assert len(RISK_LADDER_STATES) == 5   # no new operational states
+
+
+@pytest.mark.parametrize('applicable',[0,1,True,None,'false'])
+def test_cp14_perpetual_descriptor_is_strictly_typed(applicable):
+    with pytest.raises(RiskError,match='CONTRACT_APPLICABILITY_QX'):
+        evaluate_vetoes(ri(environment='PAPER',time_to_expiry_days={
+            'applicable':applicable,'contract_type':'PERPETUAL'}))
+
+
+def test_cp14_perpetual_applicability_preserves_fourteen_vetoes():
+    result=evaluate_vetoes(ri(environment='PAPER',time_to_expiry_days={
+        'applicable':False,'contract_type':'PERPETUAL'}))
+    assert result['evaluated_in_order']==list(range(1,15))
+    assert 13 not in result['fired_numbers']

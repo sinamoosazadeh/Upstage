@@ -731,8 +731,12 @@ async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
         # → gates → forecast → risk/decision chain for a real plan.  Missing
         # persisted engine context remains a named fail-closed refusal; the
         # provider never falls back to a hand-built plan.
+        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
         plan_bridge = PB.PaperPlanBridge(
-            store=runtime.store, environment=cfg.apex_env)
+            store=runtime.store, environment=cfg.apex_env,
+            context_source=producer.get_bridge_context if producer is not None else None,
+            context_preparer=producer.prepare if producer is not None else None)
         async def catch_up(now_ms: int) -> Dict[str, Any]:
             result = await service.catch_up(now_ms)
             if cfg.apex_env == "PAPER":

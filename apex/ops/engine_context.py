@@ -27,6 +27,7 @@ ENGINE_ORDER = ("E01", "E02", "E12", "E04", "E03", "E10", "E09", "E05",
                 "E06", "E11", "E07", "E08")
 DEFAULT_TRAINING_SEED = 20260917
 DEFAULT_TRAINING_TIMEFRAMES = ("1h", "4h")
+AUTHORIZED_TRAINING_TIMEFRAMES = ("15m", "30m", "1h", "2h", "4h")
 DEFAULT_TRAINING_MAX_MINUTES = 20.0
 
 
@@ -2239,13 +2240,13 @@ def fit_multinomial(X: list[list[float]], labels: list[str], seed: int) -> tuple
 
 
 def training_scope(timeframes=DEFAULT_TRAINING_TIMEFRAMES, symbols=CORE10_SYMBOLS) -> tuple[tuple, tuple]:
-    """D30: only subsets of the two base TFs/Core-10, in canonical order."""
+    """D30 defaults unchanged; explicit closeout fallback scope is opt-in."""
     def selected(value, allowed):
         values = [v.strip() for v in value.split(",")] if isinstance(value, str) else list(value)
         if not values or len(values) != len(set(values)) or any(v not in allowed for v in values):
-            raise BridgeError("TRAINING_SCOPE_INVALID", "use base timeframes 1h,4h and Core-10 symbols only")
+            raise BridgeError("TRAINING_SCOPE_INVALID", "use authorized timeframes 15m,30m,1h,2h,4h and Core-10 symbols only")
         return tuple(v for v in allowed if v in values)
-    return selected(timeframes, DEFAULT_TRAINING_TIMEFRAMES), selected(symbols, CORE10_SYMBOLS)
+    return selected(timeframes, AUTHORIZED_TRAINING_TIMEFRAMES), selected(symbols, CORE10_SYMBOLS)
 
 
 def training_time_limit(minutes: float) -> float:

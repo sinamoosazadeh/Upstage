@@ -630,12 +630,13 @@ class PaperPlanBridge:
         ages = context.get("evidence_age_bars")
         if ages is not None:
             from apex.ops.engine_context import decision_evidence_age
-            if set(ages) != {r.evidence_id for r in refs}:
+            if not isinstance(ages,Mapping) or set(ages) != {r.evidence_id for r in refs}:
                 raise BridgeError("EVIDENCE_AGE_UNAVAILABLE", "identity mismatch")
             for i,(event,ref) in enumerate(zip(events,refs)):
                 stamp = event.event_time if isinstance(event,EvidenceEvent) else event["event_time"]
                 measured = decision_evidence_age(stamp,timeframe,as_of_ms)
-                if ages[ref.evidence_id] != measured:
+                if (isinstance(ages[ref.evidence_id],bool) or
+                        not isinstance(ages[ref.evidence_id],(int,float)) or ages[ref.evidence_id] != measured):
                     raise BridgeError("EVIDENCE_AGE_UNAVAILABLE", ref.evidence_id)
                 refs[i] = dataclasses.replace(ref,age_bars=measured)
         admission = context.get("sl14_admission", {})
@@ -646,7 +647,15 @@ class PaperPlanBridge:
             for i, ref in enumerate(refs):
                 change = admission.get(ref.evidence_id)
                 if change is not None:
-                    if change.get("from") != ref.state or not change.get("reason"):
+                    if (not isinstance(change,Mapping) or set(change) != {"from","to","reason"}
+                            or change["from"] != ref.state or change["reason"] != "NATIVE_EMISSION_OR_ZONE_FATE"):
+                        raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", ref.evidence_id)
+                    event = events[i]
+                    valid = event.validity if isinstance(event,EvidenceEvent) else event.get("validity")
+                    if change["to"] == "ACTIVE":
+                        if ref.state != "CONFIRMED" or valid != "VALID" or ref.resolution_class == "QX":
+                            raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", ref.evidence_id)
+                    elif ref.engine_id != "E05" or change["to"] not in ("EXPIRED","INVALIDATED","MITIGATED"):
                         raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", ref.evidence_id)
                     refs[i] = dataclasses.replace(ref,state=advance_lifecycle(ref.state,change["to"]))
         if not refs:
@@ -905,10 +914,14 @@ class PaperPlanBridge:
             "risk_state": str(risk["risk_state"]),
         })
         transport_risk = context.get("risk_transport", {})
-        if set(transport_risk) - {"environment", "margin_model", "atr_cap"}:
-            raise BridgeError("PRODUCER_TRANSPORT_INVALID", "risk transport keys")
-        if transport_risk and (self.environment != "PAPER" or transport_risk.get("environment") != "PAPER"):
-            raise BridgeError("PRODUCER_TRANSPORT_INVALID", "PAPER-only risk transport")
+        if not isinstance(transport_risk,Mapping):
+            raise BridgeError("PRODUCER_TRANSPORT_INVALID", "risk transport mapping")
+        if transport_risk and (set(transport_risk) != {"environment","margin_model","atr_cap"}
+                or self.environment != "PAPER" or transport_risk["environment"] != "PAPER"
+                or transport_risk["margin_model"] != "PAPER_RESERVATION_PROXY_D29"
+                or isinstance(transport_risk["atr_cap"],bool)
+                or transport_risk["atr_cap"] != 1 / _finite_float(context["atr"],"atr")):
+            raise BridgeError("PRODUCER_TRANSPORT_INVALID", "PAPER-only verified risk transport")
         risk.update(transport_risk)
         risk_result = adjudicate(risk)
         plan = build_trade_plan(

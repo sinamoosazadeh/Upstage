@@ -271,6 +271,7 @@ class PaperRuntime:
         self.catch_up = catch_up
         self._catch_up_failed: Dict[str, Any] = {}
         self._context_preparation_failed: Dict[str, Any] = {}
+        self._decision_as_of: Dict[str, str] = {}
         self.signal_source = signal_source
         self.max_trades_per_cycle = int(max_trades_per_cycle)
         self.max_cells_per_cycle = (None if max_cells_per_cycle is None
@@ -308,7 +309,7 @@ class PaperRuntime:
 
     # -- stages --------------------------------------------------------------
     def _stage_handlers(self) -> Dict[str, Any]:
-        return {
+        handlers = {
             "ingest": self._stage_ingest,
             "quality": self._stage_quality,
             "features": self._stage_features,
@@ -319,6 +320,16 @@ class PaperRuntime:
             "decision": self._stage_decision,
             "execution": self._stage_execution,
         }
+        if self.environment != "PAPER":
+            return handlers
+        def receipt_view(handler):
+            async def run(payload):
+                # Scheduling still keys off close_ms. PAPER reads are at the
+                # actual cycle receipt frontier, not before the bar arrived.
+                as_of = self._decision_as_of.get(payload["cell_id"],payload["as_of"])
+                return await handler({**payload,"as_of":as_of})
+            return run
+        return {stage:receipt_view(handler) for stage,handler in handlers.items()}
 
     async def _stage_ingest(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         window = await self.store.get_window(payload["symbol"], payload["timeframe"],
@@ -494,6 +505,9 @@ class PaperRuntime:
                                       payload["as_of"])
         plan = await provided if hasattr(provided, "__await__") else provided
         if plan is None:
+            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+            if self.environment == "PAPER" and refusal:
+                raise CellRefusal(refusal["reason"],refusal.get("detail",""))
             raise CellRefusal("NO_PLAN_FOR_CELL",
                               f"{payload['cell_id']} has no governed plan at "
                               f"{payload['as_of']}")
@@ -727,6 +741,10 @@ class PaperRuntime:
         # a failed source must not fall back to its previous cached success.
         self._context_preparation_failed = {}
         preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+        receipt_ms = max(moment,self.clock.now_ms())
+        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+                                for cell,close in due} if self.environment == "PAPER" else {})
+        cycle["decision_as_of"] = dict(self._decision_as_of)
         prepare = getattr(self.plan_provider, "prepare", None)
         if callable(prepare):
             for cell, close in due:
@@ -734,7 +752,7 @@ class PaperRuntime:
                     continue
                 preparation["cells_checked"] += 1
                 try:
-                    await _maybe_await(prepare(cell.symbol, cell.timeframe, _ms_to_iso(close)))
+                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
                     preparation["cells_prepared"] += 1
                 except Exception as exc:
                     failed = {"cell": cell.cell_id,

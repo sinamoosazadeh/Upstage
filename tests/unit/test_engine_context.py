@@ -1155,7 +1155,7 @@ def test_d30_hard_cli_deadline_never_writes_artifact(tmp_path, existing):
     assert target.read_text() == "do not replace this artifact\n" if existing else not target.exists()
 
 
-@pytest.mark.parametrize("timeframes,symbols", [("15m", "BTCUSDT"), ("1h,1h", "BTCUSDT"), ("", "BTCUSDT"), ("1h", "UNKNOWN")])
+@pytest.mark.parametrize("timeframes,symbols", [("8h", "BTCUSDT"), ("1h,1h", "BTCUSDT"), ("", "BTCUSDT"), ("1h", "UNKNOWN")])
 def test_d30_scope_rejects_nonbase_or_ambiguous_selection(timeframes, symbols):
     with pytest.raises(BridgeError, match="TRAINING_SCOPE_INVALID"):
         EC.training_scope(timeframes, symbols)
@@ -1697,3 +1697,10 @@ def test_d34_losses_utc_week_reset_requires_review_pit_and_integrity():
     for bad in (rows*2, [{**rows[0], "completed": False}], [{**rows[0], "environment": None}]):
         with pytest.raises(BridgeError, match="PAPER_LOSS_UNAVAILABLE"):
             EC.realized_loss_projection(bad, capital=9300, as_of_ms=at)
+
+
+def test_closeout_phone_fallback_does_not_change_training_defaults():
+    assert EC.DEFAULT_TRAINING_TIMEFRAMES == ("1h","4h")
+    assert EC.DEFAULT_TRAINING_MAX_MINUTES == 20.
+    assert EC.training_scope("15m,30m,1h,2h,4h","BTCUSDT")[0] == ("15m","30m","1h","2h","4h")
+    assert EC.training_time_limit(90) == 5400.

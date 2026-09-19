@@ -202,3 +202,47 @@ def test_g1_missing_classifier_and_scope_are_named_refusals(real_context,tmp_pat
         with pytest.raises(BridgeError,match='PAPER_ONLY_EXECUTION'):
             await source.prepare('BTCUSDT','1d',ASOF)
     asyncio.run(reopened(real_context,check))
+
+
+def test_bound_producer_existing_paper_loop_one_cycle_json(real_context,monkeypatch):
+    import json
+    from apex.bus import EventBus
+    from apex.config import Config
+    from apex.ops.bootstrap_service import BootstrapService
+    from apex.ops.paper_loop import PaperRuntime
+    from apex.scheduler.clock import FixtureClock, BundleCell
+    from tests.integration.test_ops_paper_loop import FakeAdapter
+    monkeypatch.setenv('APEX_ENV','PAPER')
+    monkeypatch.setenv('APEX_ALLOW_SIGNED','1')
+    class EmptyVenuePage:
+        # Native catch-up, an already-caught-up real fixture store.
+        def begin_catch_up(self,symbol,timeframe,frontier):
+            assert frontier==E._iso_to_ms('2026-01-07T00:00:00.000Z')
+        def __call__(self,symbol,timeframe,start,end,limit):
+            return {'rows':[],'next_cursor_ms':end,'code':None}
+    async def check(store,source,context):
+        service=BootstrapService(config=Config(),store=store,source=EmptyVenuePage(),
+                                 cells=[('BTCUSDT','1d')])
+        bus=EventBus();bus.start();notices=[]
+        async def telegram_stub(text): notices.append(text);return {'sent':True}
+        bridge=PaperPlanBridge(store=store,environment='PAPER',context_source=source.get_bridge_context,
+                               context_preparer=source.prepare)
+        runtime=PaperRuntime(config=Config(),store=store,ledger=source.ledger,bus=bus,
+            adapter=FakeAdapter(),clock=FixtureClock(ASOF),environment='PAPER',
+            cells=[BundleCell('BTCUSDT','1d')],notifier=telegram_stub,
+            plan_provider=bridge,catch_up=service.catch_up)
+        try:
+            await runtime.boot(drift_seconds=0.)
+            await runtime.run(cycles=1,interval=0)
+            cycle=json.loads(json.dumps(runtime.cycles[-1],default=str))
+            assert cycle['catch_up']['cells_checked']==1
+            assert cycle['catch_up']['failures']==[]
+            assert cycle['context_preparation']['cells_prepared']==1
+            assert cycle['decision_as_of']['BTCUSDT:1d']==ASOF
+            assert cycle['halt_reasons']=={'SETUP_NOT_EMITTED':1}
+            assert cycle['cell_runs']
+            assert notices
+            print(json.dumps(cycle,sort_keys=True))
+        finally:
+            await service.close();await bus.stop()
+    asyncio.run(reopened(real_context,check))
