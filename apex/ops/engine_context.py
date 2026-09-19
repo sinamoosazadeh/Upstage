@@ -1174,7 +1174,8 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
                    *, emit: bool = False,
                    atr14_history: list[float] | None = None,
                    structure_result: dict | None = None,
-                   volatility_stream: dict | None = None) -> dict[str, Any]:
+                   volatility_stream: dict | None = None,
+                   temporal_profile: dict | None = None) -> dict[str, Any]:
     """P1's first seven engines, in order, with explicit producer projections.
 
     A 300-bar engine window is the existing paper runtime window. The E11
@@ -1206,8 +1207,8 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     bos = bos_events[-1] if bos_events else None
     collect("E02", E02.E02LiquidityEngine, base)
     liquidity = E02.run_engine([E02.observation_to_candle(o) for o in window])
-    collect("E12", E12.E12TemporalEngine, base)
-    temporal = E12.run_engine([E12.observation_to_candle(o) for o in window])["temporal_state"]
+    collect("E12", E12.E12TemporalEngine, {**base, "profile": temporal_profile})
+    temporal = E12.run_engine([E12.observation_to_candle(o) for o in window], profile=temporal_profile)["temporal_state"]
     order.append("E04")
     bars = [E04.observation_to_bar(o, timeframe) for o in window]
     if volatility_stream is None:
@@ -1323,7 +1324,7 @@ def complete_engine_bundle(item: Mapping[str, Any], symbol: str, timeframe: str,
     prior_atr = [state.atr14_wilder for state in original["volatility"]["states"][:-1]]
     frame = upstream_frame(original["raw_window"], symbol, timeframe, emit=True,
         atr14_history=prior_atr, structure_result=original["structure"],
-        volatility_stream=item["volatility_stream"])
+        volatility_stream=item["volatility_stream"], temporal_profile=item.get("temporal_profile"))
     # The timeline's IC/history is authoritative, including the full prior
     # ATR reference; emission preparation must not replace it with a slice.
     frame["ic"] = dict(item["ic"])
@@ -1485,6 +1486,257 @@ class EngineContextProducer:
         self.diagnostics: dict[str, Any] = {}
         self._frames: dict[tuple, dict] = {}
         self._raw_lineage: dict[tuple, dict] = {}
+        self._ready: dict[tuple, dict] = {}
+        self._failed: dict[tuple, BridgeError] = {}
+        self._timelines: dict[tuple, dict] = {}
+
+    async def _input_fingerprint(self, symbol: str, timeframe: str, as_of: str) -> str:
+        """Cache inputs, never its own output; additions invalidate a success."""
+        from apex.ops.bootstrap_service import latest_close_boundary
+        artifact = load_classifier(self.classifier_path)
+        tables = {}
+        for name, sql, args in (
+            ("raw", "SELECT m.observation_id,m.raw_payload_hash,r.availability_time,r.oi_timestamp,r.oi_state "
+             "FROM market_observation m JOIN raw_observation r ON m.observation_id='obs-'||r.event_id "
+             "WHERE m.symbol=? AND r.availability_time<=? ORDER BY m.timeframe,m.open_time,m.observation_id",(symbol,as_of)),
+            ("facts", "SELECT snapshot_id FROM snapshot_pit WHERE as_of<=? AND "
+             "source_state NOT IN ('CP14_BRIDGE_CONTEXT','CP14_UNCERTAINTY','CP14_COMPONENTS','CP14_SL14_ADMISSION') ORDER BY snapshot_id",(as_of,)),
+            ("prior", "SELECT snapshot_id FROM snapshot_pit WHERE source_state IN ('CP14_UNCERTAINTY','CP14_COMPONENTS') "
+             "AND symbol_scope=? AND timeframe_scope=? AND as_of<? ORDER BY snapshot_id",
+             (symbol,timeframe,_ms_to_iso(latest_close_boundary(_iso_to_ms(as_of),timeframe)))),
+            ("ledger", "SELECT ledger_id,payload_hash FROM ledger WHERE timestamp<=? ORDER BY rowid",(as_of,))):
+            tables[name] = [list(row) for row in await (await self.store.db.execute(sql,args)).fetchall()]
+        exists = await (await self.store.db.execute("SELECT name FROM sqlite_master WHERE name='apex_risk_ladder_state'")).fetchone()
+        if exists:
+            tables["ladder"] = [list(r) for r in await (await self.store.db.execute(
+                "SELECT * FROM apex_risk_ladder_state WHERE applied_at<=? ORDER BY rowid",(as_of,))).fetchall()]
+        return hashlib.sha256(canonical_json({"inputs":tables,"classifier":artifact["artifact_sha256"],
+            "package":paper_package_binding(environment=self.environment),"symbol":symbol,"timeframe":timeframe,"as_of":as_of}).encode()).hexdigest()
+
+    async def prepare(self, symbol: str, timeframe: str, as_of: str) -> None:
+        """Outside-budget source preparation; a failed refresh clears success."""
+        key = (symbol,timeframe,as_of)
+        self._ready.pop(key,None)
+        self._failed.pop(key,None)
+        try:
+            if self.environment != "PAPER":
+                raise BridgeError("PAPER_ONLY_EXECUTION",self.environment)
+            from apex.data_catalog.contracts import TIMEFRAMES_14
+            if symbol not in CORE10_SYMBOLS or timeframe not in TIMEFRAMES_14:
+                raise BridgeError("CELL_OUT_OF_UNIVERSE",f"{symbol}:{timeframe}")
+            parse_utc_ms(as_of)
+            fingerprint = await self._input_fingerprint(symbol,timeframe,as_of)
+            saved = await read_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,exact=True)
+            if saved and saved["input_fingerprint"] == fingerprint:
+                context = saved["context"]
+                context["events"] = await read_complete_evidence(self.store,context["events"])
+            else:
+                context = await self._compose_bridge_context(symbol,timeframe,as_of)
+                await append_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,
+                    {"input_fingerprint":fingerprint,"context":{**context,"events":[e.evidence_id for e in context["events"]]}})
+            validate_produced_context(context)
+            self._ready[key] = context
+        except BridgeError as exc:
+            self._failed[key] = exc
+            raise
+        except (ValueError,KeyError,TypeError,ArithmeticError) as exc:
+            refusal = BridgeError("ENGINE_CONTEXT_INVALID",f"{type(exc).__name__}: {exc}")
+            self._failed[key] = refusal
+            raise refusal from exc
+
+    async def get_bridge_context(self, symbol: str, timeframe: str, as_of: str) -> dict:
+        """Exactly 38 context fields / 23 risk fields; no fixture fallback.
+
+        PAPER serve binds prepare separately so this accessor is a cheap copy
+        inside the scheduler budget. A standalone caller may prepare lazily.
+        """
+        import copy
+        key = (symbol,timeframe,as_of)
+        if key in self._failed:
+            raise self._failed[key]
+        if key not in self._ready:
+            await self.prepare(symbol,timeframe,as_of)
+        return copy.deepcopy(self._ready[key])
+
+    async def _compose_bridge_context(self, symbol: str, timeframe: str, as_of: str) -> dict:
+        from dataclasses import asdict
+        from apex.ops.plan_bridge import _fabric_ref, _normalise_bars
+        from apex.fabric.evidence import EvidenceFabric, expiry_age_bars
+        from apex.fabric.conflict import resolve, disagreement_of, quality_asymmetry_of, stale_fraction_of, penalties
+        from apex.fabric.context import COMPONENT_ENGINE, redundancy_rho
+        from apex.pattern.detect import detect_all, CATALOGUE, entity_for
+        from apex.setup.family_sf_fvg_sweep_rev import sweep_and_reclaim, ENTRY_LOGIC_REF, PLAYBOOK_ID, HORIZON_BARS
+        from apex.playbook.pb_fvg_sweep_rev_a import build_stops
+        from apex.forecast.logistic import ForecastEvent, build_forecast
+        from apex.research.governance import GOVERNED_DEFAULTS
+        import json
+        end = _iso_to_ms(as_of)
+        bundle = await self.prepare_engine_bundle(symbol,timeframe,as_of)
+        q, mtf = bundle["measured_quality"], bundle["measured_mtf"]
+        governance = await self.decision_inputs(symbol,timeframe,as_of)
+        package = governance["package"]
+        state = bundle["regime_state"]
+        uncertainty = regime_uncertainty_input(state)
+        refs = [_fabric_ref(e,symbol=symbol,timeframe=timeframe,as_of_ms=end) for e in bundle["events"]]
+        ages = {e.evidence_id: decision_evidence_age(e.event_time,timeframe,end) for e in bundle["events"]}
+        from dataclasses import replace
+        refs = [replace(r,age_bars=ages[r.evidence_id]) for r in refs]
+        from apex.fabric.evidence import advance_lifecycle
+        admission = {}
+        for i,(event,ref) in enumerate(zip(bundle["events"],refs)):
+            target = None
+            if ref.state == "CONFIRMED" and event.validity == "VALID" and event.resolution_class != "QX" and ref.as_of <= end:
+                target = "ACTIVE"
+            if ref.state == "ACTIVE" and event.engine_id == "E05":
+                obj = next((o for o in bundle["fvg_objects"] if o.snapshot_id == event.snapshot_id),None)
+                if obj is not None and obj.fate in ("EXPIRED","INVALIDATED","MITIGATED"):
+                    target = obj.fate
+                elif obj is not None and obj.fate == "FILLED":
+                    target = "MITIGATED"
+            if target is not None:
+                state_to = advance_lifecycle(ref.state,target)
+                admission[event.evidence_id] = {"from":ref.state,"to":state_to,"reason":"NATIVE_EMISSION_OR_ZONE_FATE"}
+                refs[i] = replace(ref,state=state_to)
+        await append_context_fact(self.store,"SL14_ADMISSION",symbol,timeframe,as_of,{"transitions":admission})
+        fabric = EvidenceFabric.assemble(symbol=symbol,timeframe=timeframe,as_of=end,evidence=refs,
+            data_trust=q["data_trust"],raw_observation_ids=bundle["raw_observation_ids"])
+        if fabric.is_empty():
+            raise BridgeError("FABRIC_NO_ACTIVE_EVIDENCE",str(fabric.excluded))
+        close = _iso_to_ms(bundle["window"][-1].timestamp)
+        history_rows = await (await self.store.db.execute("SELECT vector_quality_state FROM snapshot_pit "
+            "WHERE source_state='CP14_COMPONENTS' AND symbol_scope=? AND timeframe_scope=? AND as_of<? "
+            "ORDER BY as_of DESC,rowid DESC LIMIT 48",(symbol,timeframe,_ms_to_iso(close)))).fetchall()
+        histories = [json.loads(row[0])["data"] for row in reversed(history_rows)]
+        histories = [h for h in histories if h["parameter_version"] == package["parameter_package_id"]
+                     and h["classifier_version"] == bundle["classifier_artifact_sha256"]]
+        series = {name:[h["s_i"][name] for h in histories if name in h["s_i"]] for name in COMPONENT_ENGINE}
+        rho_records = [redundancy_rho(series[a],series[b]) for i,a in enumerate(series)
+                       for b in list(series)[i+1:]]
+        known_rhos = [r["rho"] for r in rho_records if r["rho"] is not None]
+        rho = max(known_rhos,key=abs) if known_rhos else None
+        redundancy = penalties("CONSENSUS",redundancy_rho=rho)["redundancy_penalty"]
+        conflict = resolve(disagreement=disagreement_of(fabric.members),data_trust=q["data_trust"],q_raw=q["q_raw"],
+            timeframe=timeframe,mtf_conflict=mtf["mtf_state"],uncertainty=uncertainty,
+            stale_fraction=stale_fraction_of([r.age_bars for r in fabric.members],expiry_age_bars(timeframe)),
+            redundancy=redundancy,redundancy_rho=rho,quality_asymmetry=quality_asymmetry_of([r.quality for r in fabric.members]),
+            regime_state=state["state"],package_id=package["parameter_package_id"],snapshot_id=fabric.hash,
+            lineage=bundle["raw_observation_ids"])
+        current = {"symbol":symbol,"timeframe":timeframe,"closed":True,"close_ms":close,
+            "parameter_version":package["parameter_package_id"],"classifier_version":bundle["classifier_artifact_sha256"],
+            "entropy":state["entropy"],"conflict_state":conflict["output"],"e11_snapshot_id":state["snapshot_id"]}
+        previous = await read_context_fact(self.store,"UNCERTAINTY",symbol,timeframe,_ms_to_iso(close-1))
+        await append_context_fact(self.store,"UNCERTAINTY",symbol,timeframe,as_of,current)
+        rising = uncertainty_trend(current,previous,is_risk_increase=True)
+        bars = _normalise_bars(bundle["raw_window"])
+        atr = measured_number(bundle["vlt"].atr14_wilder,"ATR_UNAVAILABLE",lower=E04.EPS)
+        hits = detect_all(bars,atr)["hits"]
+        hit = select_native_pattern(hits.values(),{row.pattern_id:entity_for(row) for row in CATALOGUE},bars)
+        direction = hit.direction
+        components = component_projection(fabric.members,direction)
+        sweep = sweep_and_reclaim(bars,direction=direction)
+        if not sweep["ok"]:
+            raise BridgeError("NO_SETUP_GEOMETRY",sweep["reason"])
+        zones = [{"index":o.created_at_idx,"low":o.lower,"high":o.upper,
+                  "filled":o.fate in ("FILLED","INVALIDATED","EXPIRED"),"fate":o.fate,"snapshot_id":o.snapshot_id}
+                 for o in bundle["fvg_objects"]]
+        zone = next((z for z in reversed(zones) if not z["filled"] and len(bars)-1-z["index"] <= 12),None)
+        if zone is None:
+            raise BridgeError("NO_UNFILLED_FVG","native lifecycle/retained window")
+        bos_native = next((b for b in reversed(bundle["structural_events"]) if "strength" in b),None)
+        if bos_native is None:
+            raise BridgeError("BOS_STRENGTH_UNAVAILABLE","native E01 strength.S required")
+        bos = {"s_struct":bos_native["strength"]["S"],"direction":1 if "BULLISH" in bos_native["event_type"] else -1,
+               "snapshot_id":bos_native["snapshot_id"],"event_type":bos_native["event_type"]}
+        stops = build_stops(direction=direction,entry=bars[-1]["c"],atr=atr,sweep_extreme=sweep["extreme"],
+                            fvg_low=zone["low"],fvg_high=zone["high"])
+        account = await self.paper_account_inputs(as_of)
+        ladder = await self.ladder_input(as_of)
+        venue = governance["venue_provenance"]
+        multiplier = Decimal(str(venue["contract_multiplier"]))
+        filters = venue["sources"]["exchange_info"]["record"].get("filters",[])
+        lot = [f for f in filters if f.get("filterType") == "LOT_SIZE"]
+        if len(lot) > 1:
+            raise BridgeError("QUANTITY_FILTER_UNAVAILABLE","ambiguous LOT_SIZE")
+        step = (Decimal(str(lot[0]["stepSize"])) if lot else load_params()["universe"]["quantity_step"][symbol])
+        request = native_size_request(capital=account["capital"],exposure=account["open_notional"],risk_state=ladder["state"],
+            atr=atr,stop_distance=stops["R"],entry=bars[-1]["c"],contract_multiplier=multiplier,quantity_step=step)
+        funding = await read_public_funding_schedule(self.store,symbol,as_of)
+        adv = await self.adv_input(symbol,as_of)
+        cost = forecast_cost_projection(quantity=request["sized_quantity"],entry=bars[-1]["c"],stop_distance=stops["R"],
+            contract_multiplier=multiplier,commission_rate=Decimal(str(venue["commission_rate"])),adv=adv["adv"],
+            funding=funding,direction=direction,start_ms=end,end_ms=governed_holding_end(end,timeframe),spread_available=False)
+        rr = abs(stops["target"]-bars[-1]["c"])/stops["R"]
+        temporal = bundle["temporal"]
+        x = forecast_features(scores=components["s_i"],trend_bias=bundle["trend"]["bias"],
+            momentum_z=bundle["momentum"]["momentum"]["momentum_z"],regime_entropy=state["entropy"],
+            vol_quantile=forecast_vol_quantile(bundle["volatility_history"],bundle["vlt"],timeframe=timeframe),
+            temporal_core=temporal["is_utc_activity_window"],rr=rr,cost_r=cost["forecast_cost_r"])
+        model = paper_bootstrap_uncertainty(state,environment=self.environment)
+        forecast = build_forecast(ForecastEvent(f"{PLAYBOOK_ID}:TARGET_3R",f"{ENTRY_LOGIC_REF}:SWEEP_LOW_INVALIDATION",
+            HORIZON_BARS,ENTRY_LOGIC_REF,symbol,timeframe,end),x=x,uncertainty=model,rr=rr,cost_r=cost["forecast_cost_r"],
+            risk_state=ladder["state"],spread_available=cost["spread_available"],environment="PAPER")
+        if venue["contract_type"] == "PERPETUAL" and venue["expiry_time"] is None:
+            expiry = {"applicable":False,"contract_type":"PERPETUAL"}
+        elif venue["contract_type"] in ("CURRENT_QUARTER","NEXT_QUARTER","DELIVERY") and venue["expiry_time"]:
+            expiry = (_iso_to_ms(venue["expiry_time"])-end)/86400000
+        else:
+            raise BridgeError("VENUE_EXPIRY_UNAVAILABLE",symbol)
+        latest = bundle["raw_window"][-1]
+        if latest.oi_timestamp is None or latest.oi is None:
+            raise BridgeError("OI_LAG_UNAVAILABLE",symbol)
+        oi_lag = max(0.,(end-_iso_to_ms(latest.oi_timestamp))/1000)
+        cfg = load_decision_runtime(environment="PAPER")
+        def cap(name):
+            text = next(p.l1_default for p in GOVERNED_DEFAULTS if p.name == name)
+            return float(str(text).rstrip("%"))/100*float(account["capital"])
+        risk = {"capital":float(account["capital"]),"portfolio_exposure":float(account["open_notional"]),
+            "proposed_notional":request["proposed_notional"],"capital_hard_cap":cfg["capital_hard_cap_fraction"]*float(account["capital"]),
+            "circuit_breaker_engaged":account["circuit_breaker_engaged"] or ladder["emergency_state"] != "NORMAL",
+            "emergency_state":ladder["emergency_state"],"per_symbol_exposure":float(sum(v for s,v in account["per_symbol_exposure"].items() if s == symbol)),
+            "symbol_cap":cap("symbol_exposure_cap"),"portfolio_cap":cap("portfolio_exposure_cap"),
+            "staleness_seconds":q["staleness_seconds"],"freshness_sla_seconds":q["freshness_sla_seconds"],
+            "oi_lag_seconds":oi_lag,"oi_lag_threshold_seconds":load_params()["quality_weights"]["oi_lag_threshold_seconds"][timeframe],
+            "is_risk_increase":request["is_risk_increase"],"uncertainty_is_rising":rising,
+            **{k:account[k] for k in ("realized_daily_loss_fraction","realized_weekly_loss_fraction","consecutive_losses")},
+            "time_to_expiry_days":expiry,"margin_health_fraction":float(account["margin_health_fraction"]),
+            "min_quantity":float(step),"contract_multiplier":float(multiplier),"risk_state":ladder["state"]}
+        divergence = bundle["momentum"]["events"]["divergence"]
+        if divergence["present"] is False:
+            divergence_magnitude = float(divergence["D_mag"])
+        else:
+            div_events = [e for e in bundle["events"] if e.engine_id == "E10" and
+                any(e.condition_state.startswith(code) for code in E10.KIND_TO_EVENT.values())]
+            if not div_events:
+                raise BridgeError("DIVERGENCE_UNAVAILABLE","native normalized event required")
+            divergence_magnitude = max(div_events,key=lambda e:e.event_time).strength
+        temporal_event = next(e for e in reversed(bundle["events"]) if e.engine_id == "E12")
+        transport = {"bars":bars,"raw_observation_ids":list(bundle["raw_observation_ids"]),
+            "available_closes":mtf["available_closes"],"sl14_admission":admission,"evidence_age_bars":ages,"forecast_uncertainty":model,"uncertainty":uncertainty,
+            "q_forecast":forecast.q_forecast,"spread_available":cost["spread_available"],"component_series":series,
+            "redundancy":redundancy,"redundancy_observations":rho_records,"sweep":sweep,"pattern_hit":asdict(hit),"cost_model":cost,
+            "account":account,"risk_revision":ladder,"engine_order":list(bundle["engine_order"]),
+            "quality_snapshot_ids":q["quality_snapshot_ids"],"risk_transport":{"environment":"PAPER",
+                "margin_model":account["margin_model"],"atr_cap":request["atr_cap"]}}
+        if rho is not None: transport["redundancy_rho"] = rho
+        context = {"events":bundle["events"],"data_trust":q["data_trust"],"q_raw":q["q_raw"],
+            "market_regime":state["state"],"mtf_state":mtf["mtf_state"],"utc_window_state":temporal["temporal_window"],
+            "is_overlap":temporal["is_overlap"],"volatility_state":bundle["vlt"].regime,
+            "structure_state":bos_native["event_type"],"regime_confidence":max(state["probs"]),"regime_uncertainty":uncertainty,
+            "divergence_magnitude":divergence_magnitude,"temporal_window_validity":temporal_validity_projection(temporal_event.validity),
+            "atr":atr,"fvg_zones":zones,"bos":bos,"regime_state":state,
+            "e11_context":{**bundle["e11_context"],"bridge_inputs":transport},"direction":direction,"pattern_id":hit.pattern_id,
+            "x":x,"forecast_quality":forecast.q_forecast,"forecast_rr":rr,"forecast_cost_r":cost["forecast_cost_r"],
+            "window_qualities":q["window_qualities"],"temporal_quality":temporal["quality"],"volatility_quality":bundle["vlt"].q_tag,
+            **components,"package":package,"p_min_tf":cfg["p_min_tf"][timeframe],"c_min":cfg["c_min"],
+            "freshness_ok":q["freshness_ok"],"risk":risk,"risk_state":ladder["state"],"h_norm":E11.entropy_normalized(state["entropy"]),
+            "family_status":governance["family_status"],"arbitration":governance["arbitration"]}
+        await append_context_fact(self.store,"COMPONENTS",symbol,timeframe,as_of,
+            {"s_i":{k:components["s_i"].get(k,0.) for k in COMPONENT_ENGINE},"parameter_version":package["parameter_package_id"],"classifier_version":bundle["classifier_artifact_sha256"]})
+        # JSON-normalize metadata so cold SQLite recovery equals the first call.
+        events = context.pop("events")
+        context = json.loads(canonical_json(context))
+        context["events"] = events
+        return context
 
     async def quality_window(self, symbol: str, timeframe: str, as_of: str,
                              bars: int = 300) -> dict:
@@ -1755,7 +2007,7 @@ class EngineContextProducer:
         if not window:
             raise BridgeError("NO_MARKET_DATA", f"{symbol}:{timeframe}")
         last = None
-        async for item in self.feature_timeline(symbol, timeframe, window):
+        async for item in self.feature_timeline(symbol, timeframe, window, incremental=True):
             last = item
         if last is None or "vector" not in last:
             raise BridgeError("E11_CONTEXT_UNAVAILABLE", str((last or {}).get("reason", "empty timeline")))
@@ -1765,6 +2017,9 @@ class EngineContextProducer:
             if actual != expected:
                 raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", "engine/quality window mismatch")
             last["frame"]["raw_window"] = measured["window"]
+            history_candles = [E12.observation_to_candle(o) for o in closed_engine_window(window[:-1],timeframe)]
+            last["temporal_profile"] = E12.compute_temporal_profile(
+                E12.returns_by_tod_from_candles(history_candles),as_of=int(history_candles[-1]["ts"]))
         bundle = complete_engine_bundle(last, symbol, timeframe, artifact, rtm_context=rtm_context)
         bundle["volatility_history"] = [e.state for e in last["volatility_stream"]["evidence"]]
         if measured is not None:
@@ -1849,7 +2104,7 @@ class EngineContextProducer:
                 del self._frames[next(iter(self._frames))]
         return self._frames[key]
 
-    async def feature_timeline(self, symbol: str, timeframe: str, window: list[Any]):
+    async def feature_timeline(self, symbol: str, timeframe: str, window: list[Any], *, incremental: bool = False):
         """Shared PIT training/runtime X_t stream; explicit warmup refusals.
 
         HTF bias observations are strictly last-closed as of each historical
@@ -1860,13 +2115,29 @@ class EngineContextProducer:
         seed_state = E11.RegimeEngine()
         mu, sigma, previous_momentum = seed_state.mu, seed_state.Sigma, seed_state.prev_mom
         volatility_stream = {"engine": E04.VolatilityEngineV4(timeframe=timeframe), "pending": [], "evidence": []}
-        for index, obs in enumerate(window):
+        from dataclasses import replace
+        signatures = [canonical_json({k:v for k,v in o.to_dict().items() if k != "oi_lag_seconds"}) for o in window]
+        cached = self._timelines.get((symbol,timeframe)) if incremental else None
+        start, last_item = 0, None
+        if cached and signatures[:len(cached["signatures"])] == cached["signatures"]:
+            start = len(cached["signatures"])
+            history, atr14_history = cached["history"], cached["atr14_history"]
+            mu, sigma, previous_momentum = cached["mu"], cached["sigma"], cached["previous_momentum"]
+            volatility_stream, last_item = cached["volatility_stream"], cached["last_item"]
+            if start == len(window):
+                yield last_item
+                return
+        for index in range(start,len(window)):
+            obs = window[index]
             as_of = _ms_to_iso(close_time_ms(_iso_to_ms(obs.timestamp), timeframe))
             volatility_stream["pending"].append(E04.observation_to_bar(closed_engine_window([obs], timeframe)[0], timeframe))
             if index < 50:
                 yield {"index": index, "as_of": as_of, "reason": "UPSTREAM_WARMUP", "confirmation": False}
                 continue
-            source_window = window[max(0, index - 299):index + 1]
+            # Each historical feature uses its own PIT lag, not the final
+            # request's clock. This also makes exact-prefix continuation safe.
+            source_window = [replace(o,oi_lag_seconds=(max(0.,(_iso_to_ms(as_of)-_iso_to_ms(o.oi_timestamp))/1000)
+                if o.oi_timestamp is not None else None)) for o in window[max(0,index-299):index+1]]
             if any(o.availability_time is None or _iso_to_ms(o.availability_time) > _iso_to_ms(as_of) for o in source_window):
                 yield {"index": index, "as_of": as_of, "confirmation": None, "reason": "PIT_VIOLATION"}
                 continue
@@ -1914,12 +2185,19 @@ class EngineContextProducer:
                 previous_momentum = vector["momentum_state"]
             except ValueError as exc:
                 item["reason"] = str(exc).split(":")[0]
+            last_item = item
             yield item
             # Normalization history can contain finite observations even when
             # its old window was degenerate. No invalid X_t updates the EWMA.
             for key, source in HISTORY_KEYS.items():
                 history[key].append(float(ic[source]))
                 history[key] = history[key][-E11.W_180D_H1:]
+
+        if incremental and last_item is not None and last_item.get("index") == len(window)-1 and "vector" in last_item:
+            self._timelines[(symbol,timeframe)] = {"signatures":signatures,"history":history,"atr14_history":atr14_history,
+                "mu":mu,"sigma":sigma,"previous_momentum":previous_momentum,"volatility_stream":volatility_stream,"last_item":last_item}
+        elif incremental:
+            self._timelines.pop((symbol,timeframe),None)
 
 
 class DegenerateTraining(BridgeError):
@@ -2378,3 +2656,110 @@ def governed_holding_end(start_ms: int, timeframe: str) -> int:
     for _ in range(cap):
         end = close_time_ms(end, timeframe)
     return end
+
+
+async def persist_public_funding_schedule(store: Any, symbol: str, *, client: Any = None,
+                                         now: Callable[[],float] = time.time) -> dict:
+    refusal = None
+    try:
+        value = await collect_public_funding_schedule(symbol,client=client,now=now)
+        stamp = _ms_to_iso(value["observed_at_ms"])
+    except BridgeError as exc:
+        refusal = exc
+        stamp = _ms_to_iso(int(now()*1000))
+        value = {"refusal":exc.reason,"detail":exc.detail}
+    await append_context_fact(store,"PUBLIC_FUNDING_SCHEDULE",symbol,"",stamp,value)
+    if refusal is not None: raise refusal
+    return value
+
+
+async def read_public_funding_schedule(store: Any, symbol: str, as_of: str) -> dict:
+    value = await read_context_fact(store,"PUBLIC_FUNDING_SCHEDULE",symbol,"",as_of)
+    if value is None or "refusal" in value:
+        raise BridgeError("FUNDING_UNAVAILABLE",symbol)
+    try:
+        value["rate"] = Decimal(str(value["rate"]))
+        if (not value["rate"].is_finite() or type(value["interval_ms"]) is not int or value["interval_ms"] <= 0
+                or type(value["next_settlement_ms"]) is not int or value["next_settlement_ms"] <= 0
+                or value["observed_at_ms"] != _iso_to_ms(value["fact_as_of"]) or not value["source"]):
+            raise ValueError("invalid stored public funding schedule")
+    except (KeyError,ValueError,TypeError,ArithmeticError) as exc:
+        raise BridgeError("FUNDING_UNAVAILABLE",symbol) from exc
+    return value
+
+
+def validate_produced_context(context: Mapping) -> None:
+    """Producer shape/range check in addition to unchanged native validators."""
+    from apex.ops.plan_bridge import REQUIRED_CONTEXT_KEYS, REQUIRED_RISK_KEYS, _validate_e11_context
+    from apex.risk.kernel import RISK_LADDER_STATES, EMERGENCY_LADDER
+    from apex.fabric.context import COMPONENT_ENGINE
+    if set(context) != set(REQUIRED_CONTEXT_KEYS) or not isinstance(context.get("risk"),Mapping) or set(context["risk"]) != set(REQUIRED_RISK_KEYS):
+        raise BridgeError("PRODUCER_SCHEMA_INVALID","exact 38+23 fields required")
+    if any(context[k] is None for k in REQUIRED_CONTEXT_KEYS):
+        raise BridgeError("PRODUCER_SCHEMA_INVALID","missing context value")
+    _validate_e11_context(context["e11_context"])
+    for key in ("data_trust","q_raw","regime_confidence","regime_uncertainty","divergence_magnitude",
+                "temporal_window_validity","forecast_quality","p_min_tf","c_min","h_norm"):
+        measured_number(context[key],"PRODUCER_RANGE_INVALID",lower=0,upper=1)
+    for key in ("atr","forecast_rr","forecast_cost_r"):
+        if measured_number(context[key],"PRODUCER_RANGE_INVALID",lower=0) <= 0:
+            raise BridgeError("PRODUCER_RANGE_INVALID",key)
+    for key in ("market_regime","mtf_state","utc_window_state","volatility_state","structure_state",
+                "pattern_id","risk_state","family_status","temporal_quality","volatility_quality"):
+        if not isinstance(context[key],str) or not context[key]:
+            raise BridgeError("PRODUCER_TYPE_INVALID",key)
+    for key in ("is_overlap","freshness_ok"):
+        if type(context[key]) is not bool: raise BridgeError("PRODUCER_TYPE_INVALID",key)
+    if type(context["direction"]) is not int or context["direction"] not in (-1,1):
+        raise BridgeError("PRODUCER_RANGE_INVALID","direction")
+    for key in ("bos","regime_state","x","package","arbitration"):
+        if not isinstance(context[key],Mapping) or not context[key]: raise BridgeError("PRODUCER_TYPE_INVALID",key)
+    for key in ("s_i","q_i"):
+        if not isinstance(context[key],Mapping) or set(context[key])-set(COMPONENT_ENGINE):
+            raise BridgeError("PRODUCER_TYPE_INVALID",key)
+        for value in context[key].values():
+            measured_number(value,"PRODUCER_RANGE_INVALID",lower=0,upper=1)
+            if key == "s_i" and value not in (0.,1.): raise BridgeError("PRODUCER_RANGE_INVALID",key)
+    for value in context["x"].values(): measured_number(value,"PRODUCER_RANGE_INVALID")
+    if not isinstance(context["events"],list) or not context["events"] or not isinstance(context["fvg_zones"],list):
+        raise BridgeError("PRODUCER_TYPE_INVALID","events/fvg_zones")
+    for event in context["events"]: event.validate_24_fields()
+    if not isinstance(context["window_qualities"],(list,tuple)) or not context["window_qualities"]:
+        raise BridgeError("PRODUCER_TYPE_INVALID","window_qualities")
+    window_quality_projection(context["window_qualities"])
+    risk = context["risk"]
+    for key in ("circuit_breaker_engaged","is_risk_increase","uncertainty_is_rising"):
+        if type(risk[key]) is not bool: raise BridgeError("PRODUCER_TYPE_INVALID",key)
+    if risk["risk_state"] != context["risk_state"] or risk["risk_state"] not in RISK_LADDER_STATES or risk["emergency_state"] not in EMERGENCY_LADDER:
+        raise BridgeError("PRODUCER_RANGE_INVALID","risk revision")
+    for key in REQUIRED_RISK_KEYS:
+        if key in ("risk_state","emergency_state","circuit_breaker_engaged","is_risk_increase","uncertainty_is_rising","time_to_expiry_days"): continue
+        measured_number(risk[key],"PRODUCER_RANGE_INVALID",lower=0)
+    for key in ("capital","min_quantity","contract_multiplier"):
+        if risk[key] <= 0: raise BridgeError("PRODUCER_RANGE_INVALID",key)
+    for key in ("margin_health_fraction","realized_daily_loss_fraction","realized_weekly_loss_fraction"):
+        measured_number(risk[key],"PRODUCER_RANGE_INVALID",lower=0,upper=1 if key == "margin_health_fraction" else None)
+    if type(risk["consecutive_losses"]) is not int: raise BridgeError("PRODUCER_TYPE_INVALID","consecutive_losses")
+    expiry = risk["time_to_expiry_days"]
+    if isinstance(expiry,Mapping):
+        if (set(expiry) != {"applicable","contract_type"} or expiry.get("applicable") is not False
+                or expiry.get("contract_type") != "PERPETUAL"):
+            raise BridgeError("PRODUCER_RANGE_INVALID","expiry applicability")
+    else: measured_number(expiry,"PRODUCER_RANGE_INVALID")
+
+
+def decision_evidence_age(event_time: str, timeframe: str, as_of_ms: int) -> float:
+    """SL-14 age of the emitted fact, not an engine's history sample count.
+
+    Preserve all 24 native fields in storage; the decision view measures
+    elapsed closed bars from the fact's actual timestamp. No future clipping.
+    """
+    from apex.ops.bootstrap_service import latest_close_boundary
+    start = _iso_to_ms(event_time)
+    if start > as_of_ms:
+        raise BridgeError("BRIDGE_PIT_VIOLATION", "future evidence event time")
+    end = latest_close_boundary(as_of_ms,timeframe)
+    if timeframe != "1mo":
+        return float((end-start)//(close_time_ms(start,timeframe)-start))
+    a,b = parse_utc_ms(event_time),parse_utc_ms(_ms_to_iso(end))
+    return float((b.year-a.year)*12+b.month-a.month)

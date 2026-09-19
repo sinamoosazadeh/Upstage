@@ -241,10 +241,20 @@ def evaluate_vetoes(risk_input: Mapping[str, Any]) -> Dict[str, Any]:
           > int(risk_input.get("consecutive_loss_halt",
                               r["consecutive_loss_halt"])),
           risk_input.get("consecutive_losses"))
-    check(13, float(risk_input.get("time_to_expiry_days", math.inf))
-          < float(risk_input.get("rollover_threshold_days",
-                                DEFAULT_CONTRACT_ROLLOVER_DAYS)),
-          risk_input.get("time_to_expiry_days"))
+    expiry = risk_input.get("time_to_expiry_days", math.inf)
+    if risk_input.get("environment") == "PAPER" and isinstance(expiry, Mapping):
+        # D32 source audit item 8: verified perpetual applicability, not an
+        # infinity/large-day substitute for unavailable dated-contract data.
+        if (set(expiry) != {"applicable", "contract_type"}
+                or expiry.get("applicable") is not False
+                or expiry.get("contract_type") != "PERPETUAL"):
+            raise RiskError("CONTRACT_APPLICABILITY_QX", str(expiry))
+        check(13, False, dict(expiry))
+    else:
+        check(13, float(risk_input.get("time_to_expiry_days", math.inf))
+              < float(risk_input.get("rollover_threshold_days",
+                                    DEFAULT_CONTRACT_ROLLOVER_DAYS)),
+              risk_input.get("time_to_expiry_days"))
     paper_proxy = (risk_input.get("environment") == "PAPER"
                    and risk_input.get("margin_model") == "PAPER_RESERVATION_PROXY_D29")
     if paper_proxy:

@@ -615,6 +615,11 @@ class PaperPlanBridge:
             raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE",
                               ",".join(missing_context))
         _validate_e11_context(context["e11_context"])
+        transport = context["e11_context"].get("bridge_inputs")
+        if transport is not None:
+            if not isinstance(transport, Mapping) or set(transport) & set(REQUIRED_CONTEXT_KEYS):
+                raise BridgeError("PRODUCER_TRANSPORT_INVALID", "optional inputs overwrite required context")
+            context.update(transport)
         regime_label = _regime_label(context["regime_state"])
         # ``events`` is the only evidence path.  A reduced SQL row fails in
         # _fabric_ref rather than being silently upgraded to ACTIVE.
@@ -622,6 +627,28 @@ class PaperPlanBridge:
         as_of_ms = _as_of_ms(as_of)
         refs = [_fabric_ref(event, symbol=symbol, timeframe=timeframe,
                             as_of_ms=as_of_ms) for event in events]
+        ages = context.get("evidence_age_bars")
+        if ages is not None:
+            from apex.ops.engine_context import decision_evidence_age
+            if set(ages) != {r.evidence_id for r in refs}:
+                raise BridgeError("EVIDENCE_AGE_UNAVAILABLE", "identity mismatch")
+            for i,(event,ref) in enumerate(zip(events,refs)):
+                stamp = event.event_time if isinstance(event,EvidenceEvent) else event["event_time"]
+                measured = decision_evidence_age(stamp,timeframe,as_of_ms)
+                if ages[ref.evidence_id] != measured:
+                    raise BridgeError("EVIDENCE_AGE_UNAVAILABLE", ref.evidence_id)
+                refs[i] = dataclasses.replace(ref,age_bars=measured)
+        admission = context.get("sl14_admission", {})
+        if admission:
+            from apex.fabric.evidence import advance_lifecycle
+            if not isinstance(admission, Mapping) or set(admission)-{r.evidence_id for r in refs}:
+                raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", "admission identity mismatch")
+            for i, ref in enumerate(refs):
+                change = admission.get(ref.evidence_id)
+                if change is not None:
+                    if change.get("from") != ref.state or not change.get("reason"):
+                        raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", ref.evidence_id)
+                    refs[i] = dataclasses.replace(ref,state=advance_lifecycle(ref.state,change["to"]))
         if not refs:
             raise BridgeError("FABRIC_NO_ACTIVE_EVIDENCE", "events is empty")
         data_trust = _finite_float(_required(context, "data_trust"), "data_trust")
@@ -877,6 +904,12 @@ class PaperPlanBridge:
             "package": package,
             "risk_state": str(risk["risk_state"]),
         })
+        transport_risk = context.get("risk_transport", {})
+        if set(transport_risk) - {"environment", "margin_model", "atr_cap"}:
+            raise BridgeError("PRODUCER_TRANSPORT_INVALID", "risk transport keys")
+        if transport_risk and (self.environment != "PAPER" or transport_risk.get("environment") != "PAPER"):
+            raise BridgeError("PRODUCER_TRANSPORT_INVALID", "PAPER-only risk transport")
+        risk.update(transport_risk)
         risk_result = adjudicate(risk)
         plan = build_trade_plan(
             proposal=proposal, adjudication=risk_result,
