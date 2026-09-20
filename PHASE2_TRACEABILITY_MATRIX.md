@@ -563,3 +563,16 @@ Final evidence (clean code commit 68f04e4, identical command, no deselection):
 ```
 
 G1–G6 and D21–D34 repository verification: PASS; conservative runtime refusals and owner-only phone/LIVE gates remain explicitly disclosed in HANDOFF_CP14.
+
+### CP-14.1 — closeout traceability (2026-09-20)
+
+| Gate | Implementation and executable evidence | Status |
+|---|---|---|
+| D35 | Resumable per-cell cache + bar cap + profile + liveness; G2 cold-cache byte-identical (`943f82550317cab603b6022f454571ad6de7751db0d03454964357a68a431d21`); warm=cold bytes; timeout-then-resume; exact-parity P0/P2/P4 with parity tests; before/after pairs 150-bar 1.13× / 1000-bar 1.17×, full-3500 BEFORE 7.8337 s/bar | Implemented; final full-suite evidence in HANDOFF_CP14.1 |
+
+```text
+2980 passed, 14 warnings in 1316.21s (0:21:56)
+2980 passed, 14 warnings in 1347.84s (0:22:27)
+```
+
+D35 repository verification: PASS; ≤0.05 s/bar honestly not reached under exact parity (E04 GARCH-MLE + replay residual; streaming proposals in HANDOFF_CP14.1 LIMITATIONS); phone acceptance is owner-run with the measured 120-bar cap.

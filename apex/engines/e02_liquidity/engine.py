@@ -683,6 +683,12 @@ class LiquidityEngineV4:
         self.ofi_series: List[float] = []
         self.vpin: Optional[float] = None
         self._pending_touches: List[Tuple[float, int, str]] = []
+        # D35(e) P2: ISSUE-031-pattern within-run ATR(14) prefix memo,
+        # (candles list, length, last value) or None when cold. The
+        # engine never escapes its run, candles are append-only with
+        # immutable OHLC, so identity+length keys are exact; any mismatch
+        # falls back to the verbatim full recomputation.
+        self._atr14_memo = None
 
     # -- input wiring ----------------------------------------------------
     def set_htf(self, htf_levels: Sequence[Dict[str, Any]],
@@ -706,6 +712,39 @@ class LiquidityEngineV4:
         return min((abs(price - float(h["price"])), float(h["price"]))
                    for h in self.htf_levels)[1]
 
+    def _atr_wilder14_last(self) -> float:
+        """Last value of compute_ATR_wilder(self.candles, 14), memoized.
+
+        D35(e) P2, ISSUE-031 pattern: within one run the candles list only
+        grows and its OHLC never mutates, so when the list identity and
+        length match the memo the repeated O(n) Wilder loop collapses to
+        an O(1) extension that repeats the verbatim loop's final Wilder
+        iteration identically (same operands, same order, bitwise same).
+        The SMA warmup phase (length <= 14), empty candles (0.0, exactly
+        as the _ingest_touch guard), and any identity/length mismatch
+        use the verbatim full recomputation. No formula change.
+        """
+        n = 14
+        candles = self.candles
+        if not candles:
+            return 0.0
+        memo = self._atr14_memo
+        # Identity (not id()) keys the memo: the memoed list stays alive
+        # via this same reference, so address reuse can never alias it,
+        # and a copied engine still hits only on its own equal list.
+        if memo is not None and memo[0] is candles and memo[1] == len(candles):
+            return memo[2]
+        if memo is not None and memo[0] is candles and len(candles) > memo[1] > n:
+            value = memo[2]
+            for i in range(memo[1], len(candles)):
+                tr = compute_TR(candles[i], candles[i - 1])
+                value = (value * (n - 1) + tr) / n
+            self._atr14_memo = (candles, len(candles), value)
+            return value
+        value = compute_ATR_wilder(candles, n)[-1]
+        self._atr14_memo = (candles, len(candles), value)
+        return value
+
     # -- core streaming ---------------------------------------------------
     def on_new_closed_candle(self, c: Candle,
                              htfs: Optional[Sequence[Dict[str, Any]]] = None,
@@ -724,8 +763,7 @@ class LiquidityEngineV4:
                                 "payload": {"high": c.high, "low": c.low}})
             return [self.events[-1]]
         self.candles.append(c)
-        atr_series = compute_ATR_wilder(self.candles, 14)
-        atr_now = atr_series[-1]
+        atr_now = self._atr_wilder14_last()
         vol_sma = (sum(x.volume for x in self.candles[-20:])
                    / min(20, len(self.candles)))
         new_events: List[Dict[str, Any]] = []
@@ -795,8 +833,7 @@ class LiquidityEngineV4:
         """Merge into an existing equal-level group (§3.3 tolerance) or form
         a new level (§9 Step 1/2/3 semantics). Touches arriving before the
         ATR warmup exists are queued deterministically (cold-start swings)."""
-        atr_now = (compute_ATR_wilder(self.candles, 14)[-1]
-                   if self.candles else 0.0)
+        atr_now = self._atr_wilder14_last()
         if atr_now <= EPS:
             self._pending_touches.append((price, bar, ltype))
             return []

@@ -840,16 +840,34 @@ async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None
                      out: Optional[str] = None,
                      seed: int = EC.DEFAULT_TRAINING_SEED,
                      timeframes: str = "1h,4h", symbols: str = ",".join(CORE10_SYMBOLS),
-                     max_minutes: float = EC.DEFAULT_TRAINING_MAX_MINUTES) -> int:
+                     max_minutes: float = EC.DEFAULT_TRAINING_MAX_MINUTES,
+                     max_bars_per_cell: Optional[int] = None,
+                     profile: bool = False) -> int:
     """Store-only first training; a refusal never replaces an artifact."""
     target = Path(out) if out is not None else EC.PARAMS_DIR / "e11_classifier_v1.yaml"
     def progress(row):
+        if row["kind"] == "tick":
+            print(f"TRAIN_PROGRESS cell={row['cell']} bars_done={row['bars_done']} "
+                  f"bars_total={row['bars_total']} elapsed_seconds={row['elapsed_seconds']:.3f}",
+                  file=sys.stderr, flush=True)
+            return
         print(f"TRAIN_CELL cell={row['cell']} closed_bars={row['closed_bars']} "
               f"eligible_samples={row['eligible_samples']} elapsed_seconds={row['elapsed_seconds']:.3f}",
               file=sys.stderr, flush=True)
+        if profile and "profile" in row:
+            engines = ",".join(f"{name}:{row['profile']['engines'].get(name, 0.0):.3f}"
+                               for name in EC.PROFILE_ENGINE_ORDER)
+            excluded = ",".join(f"{reason}:{row['excluded'][reason]}"
+                                for reason in sorted(row["excluded"])) or "-"
+            print(f"TRAIN_PROFILE cell={row['cell']} cache={row.get('cache', 'miss')} "
+                  f"elapsed_seconds={row['elapsed_seconds']:.3f} engines={engines} "
+                  f"stages=window_read:{row['profile']['window_read_seconds']:.3f},"
+                  f"label_confirmation:{row['profile']['label_confirmation_seconds']:.3f} "
+                  f"excluded={excluded}", file=sys.stderr, flush=True)
     try:
         artifact, report = await EC.train_classifier_bounded(sqlite or cfg.sqlite_path, seed=seed,
-            timeframes=timeframes, symbols=symbols, max_minutes=max_minutes, progress=progress)
+            timeframes=timeframes, symbols=symbols, max_minutes=max_minutes,
+            max_bars_per_cell=max_bars_per_cell, profile=profile, progress=progress)
     except EC.DegenerateTraining as exc:
         result = {"status": "REFUSED", "reason": exc.reason,
                   "refusing_class": exc.refusing_class,
@@ -860,11 +878,21 @@ async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None
         _say(json.dumps(result, sort_keys=True) if as_json else
              f"REFUSED {exc.reason}: {exc.detail}; histogram={exc.histogram}")
         return EXIT_DEGRADED
+    except EC.TrainingTimeout as exc:
+        result = {"status": "REFUSED", "reason": exc.reason, "artifact_written": False,
+                  "cells_completed": exc.cells_completed,
+                  "cells_remaining": exc.cells_remaining, "next_cell": exc.next_cell}
+        _say(json.dumps(result, sort_keys=True) if as_json else
+             f"REFUSED {exc.reason}: {exc.detail}; completed={exc.cells_completed}")
+        return EXIT_DEGRADED
     except PB.BridgeError as exc:
         result = {"status": "REFUSED", "reason": exc.reason, "artifact_written": False}
         _say(json.dumps(result, sort_keys=True) if as_json else f"REFUSED {exc.reason}: {exc.detail}")
         return EXIT_DEGRADED
     EC.write_classifier(artifact, target)
+    if profile:
+        print(f"TRAIN_PROFILE_FIT fit_seconds={report['fit_seconds']:.3f} "
+              f"samples={artifact['sample_count']}", file=sys.stderr, flush=True)
     result = {"status": "TRAINED", "sample_count": artifact["sample_count"],
               "training_window": artifact["training_window"],
               "artifact_sha256": artifact["artifact_sha256"],
@@ -922,13 +950,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--symbols", default=",".join(CORE10_SYMBOLS), help="train-e11: Core-10 subset (default all ten)")
     parser.add_argument("--max-minutes", type=float, default=EC.DEFAULT_TRAINING_MAX_MINUTES,
                         help="train-e11: hard training time limit (default 20 minutes)")
+    parser.add_argument("--max-bars-per-cell", type=int, default=None,
+                        help="train-e11: latest N CLOSED bars per cell (default unlimited)")
+    parser.add_argument("--profile", action="store_true",
+                        help="train-e11: per-cell engine/stage timing lines on stderr")
     args = parser.parse_args(argv)
     cfg = Config(args.env_file)          # APEX_DOTENV_PATH/.env fill, no shadow
     try:
         if args.command == "train-e11":
             return asyncio.run(_train_e11(cfg, as_json=args.json,
                                          sqlite=args.sqlite, out=args.out, seed=args.seed,
-                                         timeframes=args.timeframes, symbols=args.symbols, max_minutes=args.max_minutes))
+                                         timeframes=args.timeframes, symbols=args.symbols, max_minutes=args.max_minutes,
+                                         max_bars_per_cell=args.max_bars_per_cell, profile=args.profile))
         if args.command == "bootstrap":
             return asyncio.run(_bootstrap(cfg, as_json=args.json,
                                           cells=args.cells, start=args.start,

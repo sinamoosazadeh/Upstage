@@ -656,3 +656,52 @@ class TestEngineEmission:
         src = Path("apex/engines/e02_liquidity/engine.py").read_text()
         for token in ("TODO", "FIXME", "NotImplementedError"):
             assert token not in src
+
+
+# ------------------------------------------------------- D35(e) P2 ----
+
+def test_d35e_p2_atr_prefix_memo_matches_verbatim():
+    """D35(e) P2: the memoized Wilder(14) extension is bitwise-exact."""
+    from apex.engines.e02_liquidity import LiquidityEngineV4, compute_ATR_wilder
+    assert LiquidityEngineV4()._atr_wilder14_last() == 0.0
+    for length in (1, 2, 13, 14, 15, 16, 20, 50, 100, 300):
+        candles = lcg_candles(length, seed=1000 + length)
+        eng = LiquidityEngineV4()
+        for c in candles:
+            eng.candles.append(c)
+        expected = compute_ATR_wilder(candles, 14)[-1]
+        assert eng._atr_wilder14_last() == expected
+        assert eng._atr_wilder14_last() == expected  # memo hit, same length
+        extra = lcg_candles(7, seed=2000 + length)
+        for offset, c in enumerate(extra):
+            c.bar_index = length + offset
+            c.t_close = (length + offset) * 3600
+            eng.candles.append(c)
+            grown = candles + extra[:offset + 1]
+            assert eng._atr_wilder14_last() == compute_ATR_wilder(grown, 14)[-1]
+
+
+def test_d35e_p2_run_engine_canonical_matches_verbatim_atr(monkeypatch):
+    """D35(e) P2: memoized engine outputs equal the verbatim reference."""
+    from apex.engines.e02_liquidity import (
+        LiquidityEngineV4, compute_ATR_wilder, run_engine)
+    from apex.identity.canonical_json import canonical_json
+
+    def snapshot(eng):
+        return canonical_json({
+            "events": [{k: v for k, v in ev.items() if k != "evidence_id"}
+                       for ev in eng.events],
+            "sweep_log": eng.sweep_log,
+            "vpin": eng.vpin,
+            "levels": {lid: (lvl.fate, lvl.price, lvl.last_touch,
+                             lvl.touch_count, lvl.instances,
+                             lvl.atr_at_formation)
+                       for lid, lvl in eng.levels.items()},
+        })
+
+    memoized = snapshot(run_engine(lcg_candles(120, seed=77)))
+    monkeypatch.setattr(LiquidityEngineV4, "_atr_wilder14_last",
+                        lambda self: (compute_ATR_wilder(self.candles, 14)[-1]
+                                      if self.candles else 0.0))
+    reference = snapshot(run_engine(lcg_candles(120, seed=77)))
+    assert memoized == reference

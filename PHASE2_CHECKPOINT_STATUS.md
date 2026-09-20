@@ -148,3 +148,14 @@ STATUS: CP-14 DONE — repository closeout; both clean full runs green with equa
 APEX BEFORE `683ea01db95b9f41e30900c9ad59636a047507838fa3b82930d8b424d0385d56` / 20817 lines; AFTER `8e8fa12935d8cc38cd95702cfeb2c439acb4f7247a704b97f0b8897179da0da1` / 20924 lines.
 Exactly TWO frozen exceptions (unchanged scope): (1) `apex/data_catalog/store/sqlite_store.py::SQLiteStore.insert_snapshot` BODY only, ISSUE-CP14-003; (2) `apex/data_catalog/contracts.py::EvidenceEvent.validate_24_fields` resolution_class membership line ONLY, D31 / ISSUE-034, exact Q0–Q5/QX. No DDL/to_ddl_row/other frozen authorization; six original YAMLs unchanged.
 PR: `#18 — https://github.com/sinamoosazadeh/Upstage/pull/18`; OWNER-CHECKED:[ ]. Phone acceptance is owner-run; refusal after both authorized training attempts stops at CP-14.1. No merge or LIVE permission.
+
+CONTINUE(CP-14.1) — CLOSEOUT (2026-09-20), branch `arena/01a0ba3a-upstage`; OWNER-CHECKED:[ ].
+[x] D35 resumable training: per-cell cache under `data/e11_train_cache/<protocol>/`, same-hash resume, changed-input recompute; `--max-bars-per-cell` (default unlimited), `--profile` stderr, 250-bar liveness ticks, timeout reports cells_completed/remaining/next_cell; artifact only when all cells complete with nine classes.
+[x] D35(e) exact-parity speedups with parity tests: P0 lazy E01 conversion, P2 Wilder-14 prefix memo, P4 bisect E04 slice; same-data 150-bar 14.4s→12.8s (1.13×), 1000-bar 513.5s→439.5s (1.17×); full-3500 BEFORE 27418s = 7.8337 s/bar recorded; ≤0.05 target honestly not reached (residual is genuine GARCH-MLE + per-tick 300-bar replay compute).
+[x] G2 cold-cache two-process proof green with `--profile` (byte-identical artifact+hash `943f82550317cab603b6022f454571ad6de7751db0d03454964357a68a431d21`); warm-cache resume byte-identical; timeout-then-resume leaves cache only, second run completes.
+[x] HANDOFF_CP14.1 with phone cap `--max-bars-per-cell 120` (measured 437.2s sandbox realistic → ~22 min on 3× device; G2-proven TRAINED regime), rerun-same-command resume, stall rule, EMPTY_CLASS scope-widening fallback; docs D35/ISSUE-060/ADR-022/§3.3/AJ/§9.5.
+[x] Final clean full suite 1: `2980 passed, 14 warnings in 1316.21s (0:21:56)`.
+[x] Final clean full suite 2: `2980 passed, 14 warnings in 1347.84s (0:22:27)`.
+STATUS: CP-14.1 DONE — repository closeout; both clean full runs green with equal counts. OWNER-CHECKED:[ ]. Phone/economic/LIVE acceptance is not claimed.
+Frozen diff `git diff 2448168 --stat -- apex/data_catalog apex/research params/ PROMPT.md` EMPTY; runtime classifier absent from tree.
+PR: `#19 — https://github.com/sinamoosazadeh/Upstage/pull/19`; OWNER-CHECKED:[ ]. Phone acceptance is owner-run. No merge or LIVE permission.

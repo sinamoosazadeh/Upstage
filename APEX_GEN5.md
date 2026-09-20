@@ -11887,6 +11887,8 @@ the full Section 3.2 tree, including entropy, with the trained W/b.
 
 **Session-CP-14 (2026-09-17; D30, owner decision 2026-09-18):** `train-e11` trains the single runtime classifier only on E11 §1.2 base timeframes 1h/4h across Core-10 (20 default cells), exposes `--timeframes` (default `1h,4h`) and `--symbols` (default all ten) with effective/default scope in artifact `training_window`, prints one per-cell progress line (cell, CLOSED bars, eligible samples, elapsed seconds), and enforces a hard `--max-minutes` (default 20) named abort without writing an artifact, while the nine-class refusal remains unchanged and the resulting W/b serves all runtime timeframes as window-parameter extensions.
 
+**Session-CP-14.1 (2026-09-19; D35):** `train-e11` is resumable across invocations through a gitignored per-cell finalized-sample cache keyed by the artifact's `training_query_sha256` (completed cells reload, changed inputs recompute, `--max-minutes` bounds one invocation and reports completed/remaining/next cells), accepts `--max-bars-per-cell N` capping each cell at its latest N CLOSED bars with N recorded in artifact `training_window` and the protocol hash, emits 250-bar liveness and `--profile` engine/stage timing lines on stderr, and leaves the artifact schema unchanged with D21 labels and the nine-class refusal intact.
+
 PIT-safe softmax:
 $$p_{r,t}= \frac{\exp(z_{r,t} - \max_k z_{k,t})}{\sum_j \exp(z_{j,t} - \max_k z_{k,t})}$$
 subtracting the max for numerical stability.
@@ -20380,6 +20382,7 @@ params/e11_params_v4.yaml
 params/paper_account_v1.yaml
 params/decision_runtime_v1.yaml  # D25 policy + D28 PAPER-only paper_bootstrap (ADR-CP14-005)
 params/e11_classifier_v1.yaml  # phone-generated, gitignored; never committed
+data/e11_train_cache/  # CP-14.1 per-cell resume cache, gitignored; never committed
 tests/unit/
 tests/integration/
 tests/integration/test_cp14_producer.py
@@ -20908,6 +20911,7 @@ Engine v4.0.0 formula bodies were not rewritten.
 | CP-14 D31 resolution-class validator correction (2026-09-18) | §8 24-field mapping row 24: validator aligned to the documented Q0..QX set, no schema change; ADR-CP14-006 / ISSUE-CP14-034 |
 | CP-14 D21 first-training label rule (2026-09-17) | E11 Section 3.3; ISSUE-CP14-001 owner resolution |
 | CP-14 D22 catch-up failure separated from freshness (2026-09-17) | Section 9.5 item 14; ISSUE-CP14-002 owner resolution |
+| CP-14.1 D35 resumable bar-capped training (2026-09-19) | E11 Section 3.3 + Section 9.5 tree; ISSUE-CP14-060; per-cell cache, bar cap, profile, liveness; artifact schema unchanged |
 | P1: per-close catch-up + runtime engine order + engine-context producer contract + wiring staleness law (2026-09-17) | §9.5 item 14 (D2/D5/D14; CP-14 interface) |
 | P2: E11 classifier artifact + deterministic training procedure + degenerate-class handling (2026-09-17) | E11 §3.3 (D2/D3) |
 | P3: PAPER simulator transport + APEX_ALLOW_SIGNED reconciliation (2026-09-17) | Ch.16 Toobit wire (D1/D2) |
