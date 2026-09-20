@@ -762,4 +762,4 @@ The phone commands have NOT been executed here. Each invocation completes roughl
 
 ### PUSH RECORD
 
-All work stays on `arena/01a0ba3a-upstage`; pushed without rebase/squash/force or merge. PR: `PR-TBD`. No claim of phone PASS or LIVE permission.
+All work stays on `arena/01a0ba3a-upstage`; pushed without rebase/squash/force or merge. PR: `#19 — https://github.com/sinamoosazadeh/Upstage/pull/19`. No claim of phone PASS or LIVE permission.

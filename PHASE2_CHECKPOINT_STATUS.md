@@ -158,4 +158,4 @@ CONTINUE(CP-14.1) — CLOSEOUT (2026-09-20), branch `arena/01a0ba3a-upstage`; OW
 [x] Final clean full suite 2: `2980 passed, 14 warnings in 1347.84s (0:22:27)`.
 STATUS: CP-14.1 DONE — repository closeout; both clean full runs green with equal counts. OWNER-CHECKED:[ ]. Phone/economic/LIVE acceptance is not claimed.
 Frozen diff `git diff 2448168 --stat -- apex/data_catalog apex/research params/ PROMPT.md` EMPTY; runtime classifier absent from tree.
-PR: `PR-TBD`; OWNER-CHECKED:[ ]. Phone acceptance is owner-run. No merge or LIVE permission.
+PR: `#19 — https://github.com/sinamoosazadeh/Upstage/pull/19`; OWNER-CHECKED:[ ]. Phone acceptance is owner-run. No merge or LIVE permission.
