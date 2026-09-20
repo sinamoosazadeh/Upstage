@@ -684,3 +684,82 @@ No new design question. If both authorized phone training attempts still refuse,
 All work stays on `arena/01a0afeb-upstage`; checkpoints pushed without rebase/squash/force or merge. PR creation follows the two actual clean full-suite results. PR number/URL: `#18 — https://github.com/sinamoosazadeh/Upstage/pull/18`. No claim of phone PASS or LIVE permission.
 
 Recovery/verification record (2026-09-19): owner-authorized soft reset to 4d1f492 preserved the working files; recovered implementation 72793a5 and controls 8e3869c were pushed. No hard reset, stash, rebase, force-push, branch change or merge. Test environment rebuilt outside the repo from requirements.lock plus the permitted pytest extra; dependency files unchanged. After the recorded interrupted attempts and ISSUE-059 fix, both complete suites ran sequentially from/to a clean tree with no deselection, including G2. The complete runs took 15:34 and 15:36 on this sandbox, exceeding the requested 15-minute step target by 34/36 seconds; no test or worker deadline was relaxed to hide this.
+
+## HANDOFF_CP14.1 — CLOSEOUT (2026-09-20)
+
+Branch `arena/01a0ba3a-upstage`, base `2448168` (main at PR #18 merge). D35 (a)–(g) implemented, tested, measured. D1–D35 binding; no frozen-file change (frozen diff empty, pasted in RECORD).
+
+### ARTIFACTS
+
+- `apex/ops/engine_context.py` — D35 (a) per-cell resume cache (`read_cell_cache`/`write_cell_cache`, `training_protocol_hash`, `cell_input_hash` over full consumed payloads) with `TrainingTimeout(cells_completed/remaining/next_cell)`; (b) `--max-bars-per-cell` in `training_window` + protocol hash; (c) `--profile` engine/stage accumulators (`_time_engine`); (d) liveness tick every 250 bars; (e) P0 lazy E01 conversion + P4 bisect E04 slice; training-only HTF prefetch (`training_dep_window`/`slice_training_window`, `optimize=False` reference path kept).
+- `apex/engines/e02_liquidity/engine.py` — D35(e) P2 `_atr_wilder14_last` prefix memo only (two call sites; serving path verbatim; no formula change).
+- `scripts/run_apex.py` — `train-e11` flags `--max-bars-per-cell`/`--profile`; `TRAIN_CELL`/`TRAIN_PROFILE`/`TRAIN_PROFILE_FIT` stderr lines; exit codes 0/2/1.
+- `tests/unit/test_engine_context.py` — D35 battery (cache resume, bar cap, liveness, CLI, timeout-then-resume, warm=cold byte-identity), G2 with `--profile` asserts, P0/P4 parity tests, 55-bar `--profile` smoke test.
+- `tests/unit/test_e02_liquidity.py` — P2 bitwise + canonical-JSON parity tests.
+- `tests/fixtures/e11_classifier_v1.yaml` — one line: `max_bars_per_cell: null` training_window twin (test-only file).
+- `APEX_GEN5.md` — E11 §3.3 D35 sentence, one AJ row, §9.5 `data/e11_train_cache/` tree line (gitignored).
+- `PHASE2_DECISION_LOG.md` — D35 parts 1–3 verbatim, ISSUE-CP14-060 (part-3 "059" renumbered: 059 already CLOSED by the CP-14 parsing memo), ADR-CP14-022.
+- `PHASE2_HANDOFF_CP9.md` (this file), `PHASE2_CHECKPOINT_STATUS.md` (board), `PHASE2_TRACEABILITY_MATRIX.md` (CP-14.1 row).
+
+### RECORD
+
+Before/after seconds-per-bar (synthetic single-cell BTCUSDT scratch stores, outside Git; `s/bar = elapsed / N`):
+
+| Store (N bars, shape) | Tree | Elapsed | s/bar |
+|---|---|---|---|
+| 150, 1h-only (same rebuilt data) | original 2448168 | 14.4s | 0.0957 (BEFORE; pre-reclone recorded 0.0979 agrees within 2.3%) |
+| 150, 1h-only (same rebuilt data) | new (P0+P2+P4) | 12.8s | 0.0853 (AFTER; 1.13×) |
+| 1000, 1h-only (same rebuilt data) | original 2448168 | 513.5s | 0.5135 (BEFORE) |
+| 1000, 1h-only (same rebuilt data) | new (P0+P2+P4) | 439.5s | 0.4395 (AFTER; 1.17×) |
+| 3500, 1h-only | original 2448168 | 27418s | 7.8337 (BEFORE, recorded pre-reclone; accepted per owner 2026-09-20) |
+| 3500, 1h-only | new | not run | per owner time-box (1): full-3500 NEW only if <30 min; it is hours. 1000-bar pair stands instead. |
+| 120, realistic full-HTF legs | new | 437.2s | 3.6436 (70 ticks; drives the phone cap) |
+| 150, realistic full-HTF legs | new | 630.8s | 4.2053 (profile: E04 566.9s = 90%, E02 30.9s, E01 8.8s, E03 8.2s, E10 4.7s, E12 4.0s) |
+
+- The ≤0.05 s/bar target is NOT reached; per owner instruction (1) the honest numbers stand. Residual is genuine native compute, not removable redundancy: E04 GARCH-MLE refits are 83% of a 300-bar E04 replay (micro-profiled: 10 fits, 5472 `nll` evals each over growing history), and every tick replays full ≤300-bar E01/E02/E03/E10/E09/E12 frames plus ~1.25 E04 replays (M15 miss every tick, H4 every 4th). Cost is superlinear in N (window replay × GARCH history growth); the phone evidence line (`1176.762s`, no liveness tick) is consistent with dying ~tick 230, and its `0.33 s/bar` is elapsed/cell-size, not elapsed/processed.
+- Exact-parity reductions shipped (each with a parity test): P0 (threaded-structure path skips the duplicate E01 conversion; canonical-JSON threaded==fresh; conversion-count test), P2 (Wilder-14 prefix memo, bitwise-exact extension; canonical run_engine == verbatim reference), P4 (bisect E04 slice == linear scan; chronological-drain precondition test).
+- G2 cold-cache two-process proof (with `--profile`, 20 cells): `1 passed, 183 deselected in 612.21s (0:10:12)`; artifact bytes identical, artifact_sha256 `943f82550317cab603b6022f454571ad6de7751db0d03454964357a68a431d21` in both processes; 20 TRAIN_CELL + 20 TRAIN_PROFILE + 1 TRAIN_PROFILE_FIT lines per process.
+- Warm-cache resume is byte-identical to cold (`test_d35_warm_cache_resume_is_byte_identical`); timeout leaves cache files only and the rerun completes from cache (`test_d35_timeout_keeps_completed_cells_and_resumes`).
+- Final full suite 1: `2980 passed, 14 warnings in 1316.21s (0:21:56)`.
+- Final full suite 2: `2980 passed, 14 warnings in 1347.84s (0:22:27)`.
+- Both final commands are exactly `python -m pytest -q -p no:cacheprovider`, run sequentially from a clean tree with no deselection, including G2.
+- Frozen verification (must be empty): `git diff 2448168 --stat -- apex/data_catalog apex/research params/ PROMPT.md` → no output (empty; verified pre-commit and pre-PR).
+- Runtime classifier absent from the tree (`params/e11_classifier_v1.yaml` untracked/absent; cache + scratch outside Git / gitignored).
+- Sandbox re-clone recovery (2026-09-20): the re-clone reset HEAD to base with the full worktree preserved; owner-authorized `fetch + reset --soft 651275c` restored the pointer (no --hard/rebase/stash); venv + scratch rebuilt outside the repo (same committed seeder formulas; rebuilt orig-150 reproduces recorded BEFORE within 2.3%).
+
+### INTERFACES
+
+- Flags: `--max-bars-per-cell N` (default unlimited = D30; in `training_window` + protocol hash), `--max-minutes` (bounds ONE invocation; NOT in the hash, so raising it keeps the cache namespace), `--profile` (stderr only), `--json` (stdout only).
+- Cache: `data/e11_train_cache/<training_query_sha256>/<symbol>_<timeframe>.json` (gitignored), fields `format/cell/training_query_sha256/input_hash/closed_bars/max_bars_per_cell/vector_keys/samples[{as_of,label,vector}]/excluded/window_start/window_end`. Same-hash reruns load completed cells; changed inputs recompute; partial cells are NEVER cached.
+- Exit codes: 0 TRAINED (artifact written, all nine classes present); 2 REFUSED with `TRAINING_TIME_LIMIT` (+ `cells_completed/cells_remaining/next_cell`) or `EMPTY_CLASS:<name>`; 1 error.
+- Liveness: `TRAIN_CELL` at cell start/end; `tick` progress every 250 bars (`bars_done/bars_total/elapsed_seconds`).
+
+### PHONE ACCEPTANCE — owner run, not sandbox PASS
+
+Recommended `--max-bars-per-cell 120`: measured 437.2s sandbox on the realistic 120-bar cell → ~22 min on a ~3×-slower device, inside the 25-min bound; 120-bar cells are the G2-proven TRAINED regime (all nine classes from ~22 eligible samples/cell). TRAINING_TIME_LIMIT now keeps completed cells, so the owner simply reruns the SAME command until TRAINED.
+
+1. In the Termux shell, before proot: `termux-wake-lock`.
+2. Update the phone checkout (never bypass a failed fast-forward): `cd ~/Upstage && git pull --ff-only`. STOP on local-change, divergence, authentication or network errors.
+3. Train (repeat this EXACT command until `status: TRAINED`):
+   ```sh
+   .venv/bin/python scripts/run_apex.py train-e11 --max-bars-per-cell 120 --max-minutes 25 --profile --json
+   ```
+   Expect per-cell `TRAIN_CELL`/`TRAIN_PROFILE` stderr lines. Exit 0 JSON has `status: TRAINED`, nine nonempty class counts, `sample_count`, `training_window` (with `max_bars_per_cell: 120`), `artifact_sha256`. Exit 2 `TRAINING_TIME_LIMIT` JSON carries `cells_completed/cells_remaining/next_cell` and keeps every completed cell: rerun the same command. STALL RULE: if `next_cell` repeats unchanged across two invocations, first raise time only (`--max-minutes 40`, same N — cache namespace kept); only if still stuck, drop to `--max-bars-per-cell 96` (new cache namespace, campaign restarts).
+   REVISION vs the part-3 plan (measured): 1000/2000-bar cells are infeasible on-device (~10 h/cell at ~19 s/tick). On `EMPTY_CLASS`, do NOT raise bars; widen TIMEFRAMES at the same N=120 (`--timeframes 15m,30m,1h,2h,4h`, more cells × same ~22 min/cell) and rerun. STOP and record the histogram + JSON if still refused after the widened scope; never manufacture members, drop a class, or reuse a fixture.
+4. Only after TRAINED: `APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 .venv/bin/python scripts/run_apex.py serve --cycles 1 --interval 5 --json` (needs `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_CHAT_ID`). Expect one cycle with `catch_up`, `context_preparation`, `decision_as_of`, `cell_runs`, validated plan or named refusal per cell. STOP on crash, LIVE mode, or unexplained status.
+5. Offline inspection: `.venv/bin/python scripts/run_apex.py status`. STOP on unreadable storage or error.
+
+The phone commands have NOT been executed here. Each invocation completes roughly one 120-bar cell (~22 min on-device); a 20-cell campaign is ~7 h of reruns, resumable at completed-cell granularity.
+
+### LIMITATIONS (CP-14.1; proposals, not owner design questions)
+
+- E02/E03/E10/E12 incremental streaming is a PROPOSAL only (owner instruction (1)): `observation_to_candle` sets window-relative `bar_index=obs.sequence`, so retained cross-tick state diverges from fresh replay identity; reindexing native state is not an exact-parity technique. Same bar-index poison blocks E01 streaming.
+- E04 HTF-leg streaming is a PROPOSAL only: `_frame_at` uses full `E04.run_engine(slice)` with truncated left-history, while a retained stream from dep-start would see more history (GARCH regime windows) and change fitted values.
+- HAR-OLS prefix accumulation is identified as exact-parity-safe (same left-to-right summation order, bitwise-identical normal equations) but NOT implemented under the time-box; estimated ~12% realistic-cell saving. GARCH-MLE has no such structure (optimizer path).
+- Partial cells are never cached: a cell must fit one invocation. Managed via the 120-bar recommendation + stall rule, not via format change.
+- Cross-host absolute timings carry host/throttle variance (the 7.6 h BEFORE decayed 4.26→8.85 s/bar on a depleted vCPU); the same-data pairs above are the controlled comparison.
+- Toobit retains ~3500 bars/interval; the still-open 1w/1mo bars keep the governed repair windows 2026-09-21 / 2026-10-01.
+
+### PUSH RECORD
+
+All work stays on `arena/01a0ba3a-upstage`; pushed without rebase/squash/force or merge. PR: `PR-TBD`. No claim of phone PASS or LIVE permission.

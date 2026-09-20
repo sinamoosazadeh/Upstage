@@ -1217,7 +1217,18 @@ def liquidity_inputs(liquidity: Any) -> dict:
               and all(event["payload"]["prereq"][key] is True for key in SWEEP_PREREQUISITES)]
     rate = len(sweeps) / len(retained)
     return {"level_density": density, "age_score": age, "sweep_rate": rate,
-            "liquidity_raw": density * age / (1.0 + rate)}
+          "liquidity_raw": density * age / (1.0 + rate)}
+
+def _retained_e04_evidence(evidence: list, start_ms: int, end_ms: int) -> list:
+    """D35(e) P4: bisect slice of chronological E04 evidence, inclusive.
+
+    The volatility_stream drain appends evidence in timeline order, so
+    state.as_of is sorted ascending and this slice equals the linear
+    inclusive scan element-for-element. Values identical, fewer scans.
+    """
+    from bisect import bisect_left, bisect_right
+    keys = [e.state.as_of for e in evidence]
+    return evidence[bisect_left(keys, start_ms):bisect_right(keys, end_ms)]
 
 def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
                    *, emit: bool = False,
@@ -1248,9 +1259,17 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
     params = E01.get_params()
     params["tick_size"] = E01.resolve_tick_size(symbol)
     collect("E01", E01.E01StructureEngine, base)
-    candles = [E01.observation_to_candle(o, timeframe, duration) for o in window]
-    structure = structure_result if structure_result is not None else _time_engine(
-        engine_profile, "E01", E01.run_pipeline, candles, params)
+    # D35(e) P0: the E01 candle conversion (timestamp parse + content hash
+    # per bar) is pure in its inputs and is discarded whenever the caller
+    # threads a structure_result (the training timeline always does), so
+    # build it lazily only for the uncached reference path. Values are
+    # bitwise-identical either way; this removes one repeated re-parse.
+    if structure_result is None:
+        candles = [E01.observation_to_candle(o, timeframe, duration) for o in window]
+        structure = _time_engine(
+            engine_profile, "E01", E01.run_pipeline, candles, params)
+    else:
+        structure = structure_result
     bos_events = [ev for ev in structure["events"] if ev["event_type"].startswith(
         ("EV_STR_007", "EV_STR_008"))]
     structural_events = [ev for ev in structure["events"] if ev["event_type"].startswith(
@@ -1278,7 +1297,7 @@ def upstream_frame(raw_window: list[Any], symbol: str, timeframe: str,
         volatility_stream["pending"].clear()
         if engine_profile is not None:
             engine_profile["E04"] += time.monotonic() - drain_start
-        retained = [e for e in volatility_stream["evidence"] if bars[0]["ts"] <= e.state.as_of <= bars[-1]["ts"]]
+        retained = _retained_e04_evidence(volatility_stream["evidence"], bars[0]["ts"], bars[-1]["ts"])
         volatility = {"engine": volatility_stream["engine"], "states": [e.state for e in retained],
                       "events": [event for e in retained for event in e.events], "atr_series": [e.atr_scalar for e in retained]}
     if emit:
@@ -2423,20 +2442,22 @@ def training_protocol_hash(timeframes: tuple, symbols: tuple, max_bars: int | No
          "max_bars_per_cell": max_bars}).encode()).hexdigest()
 
 
-def cell_input_hash(producer: EngineContextProducer, window: list[Any],
-                    dep_rows: Mapping[str, list[Any]], max_bars: int | None) -> str:
+def cell_input_hash(window: list[Any], dep_rows: Mapping[str, list[Any]],
+                    max_bars: int | None) -> str:
     """D35 per-cell input identity over exactly the consumed CLOSED rows.
 
-    Native raw content hashes (memoized, exact) cover the cell's consumed
-    bars and every prefetched HTF dependency row; clock-derived wiring
-    fields are excluded by construction. Any consumed-row change (new bars,
+    Full observation payloads (including high/low, which the native
+    duplicate-detection hash does not cover) identify the cell's consumed
+    bars and every prefetched HTF dependency row; only the clock-derived
+    wiring lag is excluded. Any consumed-row change (new bars, wick-only
     corrections, availability gating under a new clock) changes the digest
     and forces recomputation; nothing else invalidates a completed cell.
     """
+    def identity(obs):
+        return {k: v for k, v in obs.to_dict().items() if k != "oi_lag_seconds"}
     return hashlib.sha256(canonical_json(
-        {"cell": [producer._raw_content_hash(o) for o in window],
-         "deps": {tf: [producer._raw_content_hash(o) for o in rows]
-                  for tf, rows in sorted(dep_rows.items())},
+        {"cell": [identity(o) for o in window],
+         "deps": {tf: [identity(o) for o in rows] for tf, rows in sorted(dep_rows.items())},
          "max_bars_per_cell": max_bars}).encode()).hexdigest()
 
 
@@ -2591,7 +2612,7 @@ async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
                 symbol, dep_tf, close_to_ms=close_to,
                 count=int(counts.get((symbol, dep_tf), 0)))
             window_read += time.monotonic() - read_start
-        input_hash = cell_input_hash(producer, window, dep_rows, max_bars)
+        input_hash = cell_input_hash(window, dep_rows, max_bars)
         cached = read_cell_cache(cell_dir / f"{symbol}_{timeframe}.json", cell=cell,
                                  protocol_hash=protocol_hash, input_hash=input_hash)
         if cached is not None:

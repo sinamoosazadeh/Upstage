@@ -1255,7 +1255,7 @@ def test_g2_actual_store_training_in_two_processes_is_byte_identical(tmp_path):
         import shutil
         shutil.rmtree(EC.E11_TRAIN_CACHE_ROOT, ignore_errors=True)
         result = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11", "--sqlite", str(path),
-            "--out", str(target), "--seed", "20260917", "--max-minutes", "6", "--json"],
+            "--out", str(target), "--seed", "20260917", "--max-minutes", "6", "--json", "--profile"],
             capture_output=True, text=True, timeout=370)
         assert result.returncode == 0, result.stdout + result.stderr
         report = json.loads(result.stdout)
@@ -1263,6 +1263,10 @@ def test_g2_actual_store_training_in_two_processes_is_byte_identical(tmp_path):
         assert set(report["per_class_counts"]) == set(EC.E11.REGIMES)
         assert all(n > 0 for n in report["per_class_counts"].values())
         assert len([line for line in result.stderr.splitlines() if line.startswith("TRAIN_CELL ")]) == 20
+        # D35(c): --profile is stderr-only so the byte-identity proof is
+        # unaffected; one per-cell line plus the single fit line on TRAINED.
+        assert len([line for line in result.stderr.splitlines() if line.startswith("TRAIN_PROFILE ")]) == 20
+        assert len([line for line in result.stderr.splitlines() if line.startswith("TRAIN_PROFILE_FIT ")]) == 1
         reports.append(report)
     assert targets[0].read_bytes() == targets[1].read_bytes()
     assert reports[0]["artifact_sha256"] == reports[1]["artifact_sha256"]
@@ -2020,6 +2024,9 @@ def test_d35_cli_timeout_zero_reports_cells_and_writes_nothing(tmp_path):
     from apex.data_catalog.contracts import CORE10_SYMBOLS
     target = tmp_path / "o.yaml"
     proto = EC.training_protocol_hash(("1h", "4h"), tuple(CORE10_SYMBOLS), None)
+    # G2's default-scope run leaves its own cell files behind; clear them so
+    # the writes-nothing assertion below tests THIS run only (order-safe).
+    shutil.rmtree(EC.E11_TRAIN_CACHE_ROOT / proto, ignore_errors=True)
     try:
         result = subprocess.run([sys.executable, "scripts/run_apex.py", "train-e11",
                                  "--sqlite", str(tmp_path / "empty.sqlite"),
@@ -2089,3 +2096,162 @@ def test_d35_cli_bar_cap_records_window_and_rejects_invalid(tmp_path):
         for proto in (EC.training_protocol_hash(("1h",), ("BTCUSDT",), 3),
                       EC.training_protocol_hash(("1h",), ("BTCUSDT",), None)):
             shutil.rmtree(EC.E11_TRAIN_CACHE_ROOT / proto, ignore_errors=True)
+
+
+def _strip_evidence_ids(node):
+    if isinstance(node, dict):
+        return {k: _strip_evidence_ids(v) for k, v in node.items() if k != "evidence_id"}
+    if isinstance(node, (list, tuple)):
+        return [_strip_evidence_ids(v) for v in node]
+    return node
+
+
+def test_d35e_p0_threaded_frame_matches_fresh_frame():
+    """D35(e) P0: the threaded-structure path equals the fresh path."""
+    import random
+    from dataclasses import replace
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+    rng = random.Random(20260919)
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    raw = []
+    price = 100.
+    for i in range(80):
+        opening = price; price += rng.uniform(-1, 1)
+        raw.append(replace(make_obs(timeframe="1h", oi=None,
+            ts=(start + timedelta(hours=i)).isoformat(timespec="milliseconds").replace("+00:00", "Z")),
+            open=Decimal(str(opening)), close=Decimal(str(price)),
+            high=Decimal(str(max(opening, price) + 1)),
+            low=Decimal(str(min(opening, price) - 1)),
+            volume=Decimal(str(rng.uniform(300, 1000)))))
+    window = EC.closed_engine_window(raw, "1h")
+    bars = [EC.E04.observation_to_bar(o, "1h") for o in window]
+
+    def fresh_stream():
+        return {"engine": EC.E04.VolatilityEngineV4(timeframe="1h"),
+                "pending": list(bars), "evidence": []}
+
+    def observable(frame):
+        return EC.canonical_json(_strip_evidence_ids({
+            "structure": frame["structure"], "ic": frame["ic"],
+            "atr14": frame["atr14"], "trend_stack": frame["trend"]["stack"],
+            "trend_bias": frame["trend"]["bias"],
+            "confirmation": frame["confirmation"],
+            "engine_order": frame["engine_order"],
+            "projection_refusals": frame["projection_refusals"],
+            "structural": [(e["event_type"], e["candle_index"])
+                           for e in frame["structural_events"]],
+            "e04": [s.to_canonical() for s in frame["volatility"]["states"]],
+        }))
+
+    structure = EC.structure_projection(window, "BTCUSDT", "1h")
+    threaded = EC.upstream_frame(window, "BTCUSDT", "1h",
+                                 structure_result=structure,
+                                 volatility_stream=fresh_stream())
+    fresh = EC.upstream_frame(window, "BTCUSDT", "1h",
+                              volatility_stream=fresh_stream())
+    assert observable(threaded) == observable(fresh)
+
+
+def test_d35e_p0_e01_conversion_runs_once_per_own_bar(tmp_path, monkeypatch):
+    """D35(e) P0: upstream_frame no longer re-parses threaded windows."""
+    import asyncio
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "once.sqlite")).open()
+        try:
+            await _seed_d35_small_store(store, n_1h=120)
+            calls = {"h1": 0, "htf": 0}
+            original = EC.E01.observation_to_candle
+            def counting(obs, timeframe, duration):
+                calls["h1" if obs.timeframe == "1h" else "htf"] += 1
+                return original(obs, timeframe, duration)
+            monkeypatch.setattr(EC.E01, "observation_to_candle", counting)
+            await _train_outcome(store, symbols="BTCUSDT", timeframes="1h",
+                                 cache_dir=tmp_path / "once")
+            # bars 50..119 convert their own 51..120-bar windows exactly once
+            assert calls["h1"] == sum(range(51, 121))
+            # one 65-bar computation per static HTF leg, then memoized
+            assert calls["htf"] == 130
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+
+
+def test_d35e_p4_bisect_slice_matches_linear_scan():
+    """D35(e) P4: the bisect evidence slice equals the inclusive scan."""
+    import random
+    from types import SimpleNamespace
+    rng = random.Random(20260919)
+    for _ in range(50):
+        count = rng.choice((0, 1, 2, 5, 40, 150, 400))
+        stamps = sorted(rng.randint(0, 10) for _ in range(count))
+        evidence = [SimpleNamespace(state=SimpleNamespace(as_of=t))
+                    for t in stamps]
+        start, end = sorted((rng.randint(-2, 12), rng.randint(-2, 12)))
+        expected = [e for e in evidence if start <= e.state.as_of <= end]
+        assert EC._retained_e04_evidence(evidence, start, end) == expected
+
+
+def test_d35e_p4_drain_appends_chronological_evidence():
+    """D35(e) P4 precondition: drained evidence as_of is sorted ascending."""
+    import random
+    from dataclasses import replace
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+    rng = random.Random(20260919)
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    raw = []
+    price = 100.
+    for i in range(60):
+        opening = price; price += rng.uniform(-1, 1)
+        raw.append(replace(make_obs(timeframe="1h", oi=None,
+            ts=(start + timedelta(hours=i)).isoformat(timespec="milliseconds").replace("+00:00", "Z")),
+            open=Decimal(str(opening)), close=Decimal(str(price)),
+            high=Decimal(str(max(opening, price) + 1)),
+            low=Decimal(str(min(opening, price) - 1)),
+            volume=Decimal(str(rng.uniform(300, 1000)))))
+    bars = [EC.E04.observation_to_bar(o, "1h") for o in EC.closed_engine_window(raw, "1h")]
+    engine = EC.E04.VolatilityEngineV4(timeframe="1h")
+    evidence = [ev for bar in bars if (ev := engine.ingest_bar(bar)) is not None]
+    stamps = [e.state.as_of for e in evidence]
+    assert stamps == sorted(stamps) and len(stamps) >= 5
+
+
+def test_d35_cli_profile_lines_on_small_store(tmp_path):
+    """D35(c): --profile prints real engine/stage data on a small store."""
+    import asyncio
+    import json
+    import shutil
+    import subprocess
+    import sys
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "prof55.sqlite")).open()
+        try:
+            await _seed_d35_small_store(store, n_1h=55)
+        finally:
+            await store.close()
+    asyncio.run(exercise())
+    try:
+        result = subprocess.run(
+            [sys.executable, "scripts/run_apex.py", "train-e11",
+             "--sqlite", str(tmp_path / "prof55.sqlite"),
+             "--out", str(tmp_path / "prof55.yaml"), "--json", "--profile",
+             "--symbols", "BTCUSDT", "--timeframes", "1h"],
+            capture_output=True, text=True, timeout=600)
+        assert result.returncode == 2, result.stdout + result.stderr
+        assert json.loads(result.stdout)["status"] == "REFUSED"
+        cells = [line for line in result.stderr.splitlines()
+                 if line.startswith("TRAIN_CELL ")]
+        assert len(cells) == 1 and "cell=BTCUSDT:1h closed_bars=55 " in cells[0]
+        profiles = [line for line in result.stderr.splitlines()
+                    if line.startswith("TRAIN_PROFILE ")]
+        assert len(profiles) == 1
+        assert "engines=E01:" in profiles[0] and "stages=window_read:" in profiles[0]
+        assert "excluded=" in profiles[0] and "cache=miss" in profiles[0]
+        assert "TRAIN_PROFILE_FIT " not in result.stderr
+        assert not (tmp_path / "prof55.yaml").exists()
+    finally:
+        shutil.rmtree(EC.E11_TRAIN_CACHE_ROOT / EC.training_protocol_hash(
+            ("1h",), ("BTCUSDT",), None), ignore_errors=True)
