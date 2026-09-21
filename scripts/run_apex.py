@@ -893,12 +893,29 @@ async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None
     if profile:
         print(f"TRAIN_PROFILE_FIT fit_seconds={report['fit_seconds']:.3f} "
               f"samples={artifact['sample_count']}", file=sys.stderr, flush=True)
+    # D36: mandatory post-fit entropy/confidence validation. The full report
+    # is written to gitignored data/ and its path printed; a WARN verdict is
+    # reported to the owner and never blocks — the exit code stays 0 TRAINED.
+    validation = report["validation"]
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    report_path = REPO_ROOT / "data" / f"e11_train_report_{stamp}.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(validation, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    print(f"TRAIN_VALIDATION verdict={validation['verdict']} "
+          f"share_H_ge_theta={validation['share_H_ge_theta']:.6f} "
+          f"share_pmax_ge_0_50={validation['share_pmax_ge_0_50']:.6f} "
+          f"samples={validation['samples']}", file=sys.stderr, flush=True)
+    print(f"TRAIN_REPORT {report_path}", file=sys.stderr, flush=True)
     result = {"status": "TRAINED", "sample_count": artifact["sample_count"],
               "training_window": artifact["training_window"],
               "artifact_sha256": artifact["artifact_sha256"],
               "artifact_path": str(target), "seed": seed, **report}
     _say(json.dumps(result, sort_keys=True) if as_json else
-         f"TRAINED {artifact['sample_count']} samples; artifact={target}")
+         f"TRAINED {artifact['sample_count']} samples; artifact={target}; "
+         f"validation verdict={validation['verdict']} "
+         f"share_H_ge_theta={validation['share_H_ge_theta']:.6f} "
+         f"share_pmax_ge_0_50={validation['share_pmax_ge_0_50']:.6f}")
     return EXIT_READY
 
 

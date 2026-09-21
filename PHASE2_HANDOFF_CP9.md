@@ -538,7 +538,7 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 - Exactly two frozen exceptions: `SQLiteStore.insert_snapshot` BODY (003), and `EvidenceEvent.validate_24_fields` resolution_class membership line accepting exactly Q0–Q5/QX (D31/034). No other frozen source, DDL, to_ddl_row or original six YAML change. Additive decision_runtime/paper_account YAMLs only.
 - Issues 015/016/020–024 were never assigned in the current log or the read-only owner archive; they are explicitly UNASSIGNED below, not fabricated closures.
 
-#### D21–D34 authority index
+#### D21–D36 authority index
 
 | Decision | Binding subject / implementation |
 |---|---|
@@ -556,6 +556,7 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 | D32 | Native prior HV30 mid-rank, finite N>=50 and native window cap; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
 | D33 | Native quality/MTF/components/pattern/temporal projections and normalized gate10; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
 | D34 | Versioned uncertainty, ADV/costs, sizing, marks, trend and loss/latch laws; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
+| D36 | Eight rule-tree classes required, derived TRANSITION may be empty, K 9 / W (9,8) / b (9,) and artifact/cache hashes unchanged, runtime E11 unchanged, mandatory post-fit entropy/confidence validation report (WARN never blocks); verbatim OWNER DECISION in PHASE2_DECISION_LOG.md |
 
 #### ISSUE-CP14-001..059 final dispositions
 
@@ -763,3 +764,11 @@ The phone commands have NOT been executed here. Each invocation completes roughl
 ### PUSH RECORD
 
 All work stays on `arena/01a0ba3a-upstage`; pushed without rebase/squash/force or merge. PR: `#19 — https://github.com/sinamoosazadeh/Upstage/pull/19`. No claim of phone PASS or LIVE permission.
+
+## HANDOFF_CP14.2 — CLOSEOUT (2026-09-21)
+
+Branch `arena/01a0c4bf-upstage`, base `c5f0261` (main at the PR #19 merge). D36 implemented, tested, recorded; D1–D36 binding; no frozen-file change (frozen diff empty, recorded in the CP-14.2 PR body).
+
+### PUSH RECORD
+
+All work stays on `arena/01a0c4bf-upstage`; pushed without rebase/squash/force or merge. PR: `#20 — https://github.com/sinamoosazadeh/Upstage/pull/20`. No claim of phone PASS or LIVE permission.

@@ -2364,7 +2364,11 @@ class EngineContextProducer:
 class DegenerateTraining(BridgeError):
     def __init__(self, histogram: dict[str, int], excluded: dict[str, int], window: dict):
         self.histogram, self.excluded, self.training_window = histogram, excluded, window
-        self.refusing_class = next(name for name in E11.REGIMES if histogram[name] == 0)
+        # D36: refuse only when one of the eight rule-tree classes is empty;
+        # TRANSITION, a derived state, may be zero. First such name in
+        # E11.REGIMES order.
+        self.refusing_class = next(name for name in E11.REGIMES
+                                   if name != "TRANSITION" and histogram[name] == 0)
         super().__init__(f"EMPTY_CLASS:{self.refusing_class}",
                          f"zero delayed-label members: {self.refusing_class}")
 
@@ -2378,18 +2382,30 @@ class TrainingTimeout(BridgeError):
                          "D35 one-invocation bound reached; completed cells are cached")
 
 
+# D36 (ISSUE-CP14-061 / ADR-CP14-023): TRANSITION is a derived state
+# (E11 Section 1.4 and Section 3.2 branch 2: H >= theta_H implies
+# TRANSITION by construction), never a learned class. The fit requires
+# every E11.REGIMES member except TRANSITION; an empty TRANSITION
+# histogram is accepted.
+FIT_REQUIRED_CLASSES = tuple(name for name in E11.REGIMES if name != "TRANSITION")
+
+
 def fit_multinomial(X: list[list[float]], labels: list[str], seed: int) -> tuple[list, list]:
     """Fixed-order full-batch multinomial log-loss descent, nine classes.
 
-    No class reweighting, synthetic members, dropped classes or runtime random
-    weights. The optimizer's seeded initialization exists only during training.
+    D36: the eight rule-tree classes (FIT_REQUIRED_CLASSES) must all be
+    present; TRANSITION, a derived state, may be absent. No class
+    reweighting, synthetic members, dropped classes or runtime random
+    weights. The optimizer's seeded initialization, 2000 full-batch
+    iterations, learning rate 0.2 and K=9 rows are unchanged, so a
+    nine-class input fits bit-identically to the pre-D36 protocol.
     """
     x = np.asarray(X, dtype=float)
     y = np.array([E11.REGIMES.index(label) for label in labels])
     if x.shape != (len(labels), 8) or not np.isfinite(x).all() or not len(labels):
         raise BridgeError("CONFIGURATION_INVALID", "invalid training matrix")
-    if len(set(y.tolist())) != 9:
-        raise BridgeError("CONFIGURATION_INVALID", "all nine classes required for fitting")
+    if any(name not in set(labels) for name in FIT_REQUIRED_CLASSES):
+        raise BridgeError("CONFIGURATION_INVALID", "eight rule-tree classes required for fitting")
     rng = np.random.default_rng(seed % (2 ** 128))
     W = rng.normal(0.0, 0.01, (9, 8))
     b = np.zeros(9)
@@ -2407,6 +2423,53 @@ def fit_multinomial(X: list[list[float]], labels: list[str], seed: int) -> tuple
     if not np.isfinite(W).all() or not np.isfinite(b).all():
         raise BridgeError("CONFIGURATION_INVALID", "non-finite fitted parameters")
     return W.tolist(), b.tolist()
+
+
+def training_validation(X: list[list[float]], labels: list[str], W: list, b: list) -> dict:
+    """Mandatory post-fit entropy/confidence report (D36 / ADR-CP14-023).
+
+    theta_H drives the Section 3.2 branch 2 (H >= theta_H yields TRANSITION
+    by construction) and the Q-tag cascade; p_max drives D34's
+    U_dis = 1 - p_max and hence C = 0.40 + 0.2 * p_max in PAPER, so
+    C >= C_min (0.50) iff p_max >= 0.50. The verdict is an owner-review
+    signal only: WARN never blocks the artifact. Every sample's H and
+    probabilities come from the runtime function itself
+    (E11.compute_logits_softmax), never a reimplementation.
+    """
+    if not X or len(X) != len(labels) or any(label not in E11.REGIMES for label in labels):
+        raise BridgeError("CONFIGURATION_INVALID", "training validation needs matched regime samples")
+    entropies, pmaxes = [], []
+    per_class: dict[str, dict[str, Any]] = {
+        name: {"n": 0, "share_H_ge_theta": 0.0, "share_pmax_ge_0_50": 0.0}
+        for name in E11.REGIMES}
+    for row, label in zip(X, labels):
+        _, probs, H = E11.compute_logits_softmax(dict(zip(E11.VECTOR_KEYS, row)), W, b)
+        p_max = max(probs)
+        entropies.append(H)
+        pmaxes.append(p_max)
+        stats = per_class[label]
+        stats["n"] += 1
+        if H >= E11.THETA_H:
+            stats["share_H_ge_theta"] += 1.0
+        if p_max >= 0.50:
+            stats["share_pmax_ge_0_50"] += 1.0
+    n = len(X)
+    share_h_ge_theta = sum(1.0 for H in entropies if H >= E11.THETA_H) / n
+    share_pmax_ge_0_50 = sum(1.0 for p in pmaxes if p >= 0.50) / n
+    for stats in per_class.values():
+        if stats["n"]:
+            stats["share_H_ge_theta"] /= stats["n"]
+            stats["share_pmax_ge_0_50"] /= stats["n"]
+    verdict = ("PASS" if 0.05 <= share_h_ge_theta <= 0.25
+               and share_pmax_ge_0_50 >= 0.50 else "WARN")
+    return {"samples": n, "theta_H": E11.THETA_H,
+            "share_H_ge_theta": share_h_ge_theta,
+            "share_H_ge_0_80": sum(1.0 for H in entropies if H >= 0.80) / n,
+            "share_H_lt_0_40": sum(1.0 for H in entropies if H < 0.40) / n,
+            "share_pmax_ge_0_50": share_pmax_ge_0_50,
+            "H_min": float(min(entropies)), "H_median": float(np.median(entropies)),
+            "H_max": float(max(entropies)), "pmax_median": float(np.median(pmaxes)),
+            "per_class": per_class, "verdict": verdict}
 
 
 def training_scope(timeframes=DEFAULT_TRAINING_TIMEFRAMES, symbols=CORE10_SYMBOLS) -> tuple[tuple, tuple]:
@@ -2545,9 +2608,12 @@ async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
 
     D35: each completed cell's finalized samples persist under
     data/e11_train_cache/<protocol>/ and reload on reruns with the same
-    protocol hash; --max-minutes bounds one invocation. D21 labels, the
-    nine-class refusal and D30 defaults are unchanged. `optimize=False` is
-    the unoptimized reference path for exact-parity tests only.
+    protocol hash; --max-minutes bounds one invocation. D21 labels and D30
+    defaults are unchanged. D36: the refusal is the eight rule-tree classes
+    (TRANSITION, a derived state, may be empty) and the report carries a
+    mandatory "validation" entropy/confidence section (never part of the
+    artifact). `optimize=False` is the unoptimized reference path for
+    exact-parity tests only.
     """
     timeframes, symbols = training_scope(timeframes, symbols)
     max_bars = training_bar_cap(max_bars_per_cell)
@@ -2671,7 +2737,10 @@ async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
                        "timeframes": list(timeframes), "symbols": list(symbols),
                        "default_timeframes": list(DEFAULT_TRAINING_TIMEFRAMES), "default_symbols": list(CORE10_SYMBOLS),
                        "max_bars_per_cell": max_bars}
-    if any(count == 0 for count in histogram.values()):
+    # D36: TRANSITION is a derived state (E11 Section 1.4 / Section 3.2
+    # branch 2), so it may be empty. Only the eight rule-tree classes must
+    # have delayed-label members; an empty required class still refuses.
+    if any(histogram[name] == 0 for name in FIT_REQUIRED_CLASSES):
         raise DegenerateTraining(histogram, excluded, training_window)
     fit_start = time.monotonic()
     W, b = fit_multinomial(X, labels, seed)
@@ -2682,7 +2751,10 @@ async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
                 "training_query_sha256": protocol_hash,
                 "artifact_sha256": classifier_hash(W, b, seed)}
     validate_classifier(artifact)
-    return artifact, {"per_class_counts": histogram, "excluded": excluded, "fit_seconds": fit_seconds}
+    report = {"per_class_counts": histogram, "excluded": excluded,
+              "fit_seconds": fit_seconds,
+              "validation": training_validation(X, labels, W, b)}
+    return artifact, report
 
 
 def _training_worker(connection, sqlite: str, seed: int, timeframes: tuple, symbols: tuple, max_minutes: float,

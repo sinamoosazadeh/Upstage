@@ -576,3 +576,9 @@ G1–G6 and D21–D34 repository verification: PASS; conservative runtime refusa
 ```
 
 D35 repository verification: PASS; ≤0.05 s/bar honestly not reached under exact parity (E04 GARCH-MLE + replay residual; streaming proposals in HANDOFF_CP14.1 LIMITATIONS); phone acceptance is owner-run with the measured 120-bar cap.
+
+### CP-14.2 — closeout traceability (2026-09-21)
+
+| Gate | Implementation and executable evidence | Status |
+|---|---|---|
+| D36 | `fit_multinomial` requires the eight rule-tree classes (derived TRANSITION may be empty; refusal "eight rule-tree classes required for fitting"); `train_classifier` raises only when a required class has zero delayed-label members and carries the report under "validation"; `training_validation` post-fit entropy/confidence report computed with the runtime `E11.compute_logits_softmax` (PASS iff 0.05 ≤ share_H_ge_theta ≤ 0.25 and share_pmax_ge_0_50 ≥ 0.50); tests a–h: main@c5f0261 golden W/b bit-identity, nine-minus-TRANSITION fit (W (9,8), b (9,), finite), eight single-missing refusals, TRANSITION=0 end-to-end fit + validation, named EMPTY_CLASS refusal, PASS/WARN shares + native-H equality, protocol/cell hash constants equal main@c5f0261 (phone cache reuse), CLI TRAIN_VALIDATION line + gitignored report file | Implemented; final full-suite evidence in the CP-14.2 PR body |

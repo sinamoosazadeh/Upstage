@@ -511,7 +511,9 @@ def test_complete_evidence_hash_and_schema_reject_corruption():
         EC.evidence_from_raw(json.dumps(envelope))
 
 
-def test_train_cli_empty_store_refuses_all_nine_without_artifact_write(tmp_path):
+def test_train_cli_empty_store_refuses_first_required_class_without_artifact_write(tmp_path):
+    """D36: an empty store refuses on the FIRST of the eight rule-tree
+    classes (CRISIS precedes the derived TRANSITION in E11.REGIMES order)."""
     import json
     import subprocess
     import sys
@@ -2255,3 +2257,295 @@ def test_d35_cli_profile_lines_on_small_store(tmp_path):
     finally:
         shutil.rmtree(EC.E11_TRAIN_CACHE_ROOT / EC.training_protocol_hash(
             ("1h",), ("BTCUSDT",), None), ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# CP-14.2 / D36: eight-class E11 fit (TRANSITION is a derived state) with a
+# mandatory post-fit entropy/confidence validation report (ADR-CP14-023).
+
+
+def _d36_matrix(n_rows):
+    """Deterministic 8-column training matrix for D36 fit tests."""
+    return [[((i * 7 + j * 13 + (i * j) % 5) % 17) / 17.0 - 0.5 for j in range(8)]
+            for i in range(n_rows)]
+
+
+# Golden W/b: produced by the pre-D36 fit_multinomial of main@c5f0261 (the
+# commit this branch starts from, before any CP-14.2 edit) on
+# _d36_matrix(72) with labels list(E11.REGIMES) * 8 and seed 123. The
+# nine-class optimizer protocol is unchanged by D36, so bit-identical
+# equality is the regression proof. Provenance is recorded in the CP-14.2 PR.
+D36_GOLDEN_W = [
+    [0.3430084931737144, -0.6860462797100152, -0.09729552026286134, 0.41951968877902, -1.03414255640865, 1.518643697947403, -1.0987983597920628, 1.0804921356068895],
+    [0.5697348243350109, 1.0088792825111683, -2.9421346137068616, 0.770379031485021, 1.2785242009097715, 0.5756028377800233, 1.9641703669316548, 1.7982597958987756],
+    [0.09683633795593784, -0.35524153890922544, -0.23120010867059726, -1.974526852383974, -0.2262639591514165, -0.6448110381943286, 0.1967635621244828, -0.2217434342486466],
+    [0.8385782176106714, -2.0204134105089233, 2.2117073637457376, 0.5286929171950618, 1.4579139525123663, -0.12002021404265313, 0.7725373217844255, -1.531468917298119],
+    [0.3940459209709419, 1.085473625955572, 1.2373488432029847, 0.90021285871624, -0.6583180139205898, -0.3254618724450695, -2.2438742342725786, -0.37671252715552406],
+    [-0.7927048096034512, 1.0561817586376785, -1.3022842702731086, -1.156281337142635, -0.07410845750148587, -0.33419248282874364, 0.6714184120422343, 2.274742954927828],
+    [-0.9869984960803541, 2.5351021224911388, -1.9283458734404284, -0.5103171378602085, -0.1759244306787494, -1.901896992395156, -0.5194356681587742, 0.5582953876622907],
+    [-0.39834719963120785, -1.5145671782784262, 0.7674937159375179, -0.5539919371918484, 1.0655554268009477, 0.8901829433126912, 1.1000630605197292, -2.1551405427729797],
+    [-0.03488406403770553, -1.1670785322613098, 2.325739519419704, 1.580197565654057, -1.6305758772820813, 0.3511523664342732, -0.8281849749464859, -1.4346202707880533],
+]
+D36_GOLDEN_B = [0.12529475523635025, 0.03429430115365462, 0.03384038199144579,
+                0.04214814242739484, 0.02648333856057313, 0.03543476959000789,
+                -0.1319648679420332, -0.03035999014336817, -0.13517083087402532]
+
+
+def test_d36_nine_class_fit_bit_identical_to_main_golden():
+    """D36(a): all nine classes present -> W/b bit-identical to main@c5f0261."""
+    W, b = EC.fit_multinomial(_d36_matrix(72), list(EC.E11.REGIMES) * 8, 123)
+    assert W == D36_GOLDEN_W
+    assert b == D36_GOLDEN_B
+
+
+def test_d36_nine_minus_transition_fits_nine_by_eight_finite():
+    """D36(b): TRANSITION absent -> fit succeeds, W (9,8), b (9,), finite."""
+    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
+    W, b = EC.fit_multinomial(_d36_matrix(64), required * 8, 123)
+    import numpy as np
+    W_arr, b_arr = np.asarray(W, dtype=float), np.asarray(b, dtype=float)
+    assert W_arr.shape == (9, 8) and b_arr.shape == (9,)
+    assert np.isfinite(W_arr).all() and np.isfinite(b_arr).all()
+
+
+@pytest.mark.parametrize("missing", [name for name in EC.E11.REGIMES if name != "TRANSITION"])
+def test_d36_single_missing_required_class_refuses(missing):
+    """D36(c): any other single missing class refuses CONFIGURATION_INVALID."""
+    labels = [name for name in EC.E11.REGIMES * 8 if name != missing]
+    with pytest.raises(BridgeError, match="eight rule-tree classes required for fitting"):
+        EC.fit_multinomial(_d36_matrix(64), labels, 123)
+
+
+def _d36_fake_feature_timeline(rule0_cycle):
+    """Store-driven samples whose D21 labels are exactly the rule0 cycle.
+
+    Every candidate is structurally confirmed, so the label is always the
+    rule0 value and the derived TRANSITION label never occurs.
+    """
+    def fake(self, symbol, timeframe, window, *, dep_rows=None,
+             engine_profile=None, incremental=False):
+        async def generate():
+            for index, obs in enumerate(window):
+                yield {"index": index, "as_of": obs.timestamp, "confirmation": True,
+                       "vector": {key: float((index * 7 + j) % 11) / 11.0 - 0.4
+                                  for j, key in enumerate(EC.E11.VECTOR_KEYS)},
+                       "rule0": rule0_cycle[index % len(rule0_cycle)]}
+        return generate()
+    return fake
+
+
+def test_d36_train_classifier_zero_transition_fits_and_validates(tmp_path, monkeypatch):
+    """D36(d): TRANSITION count 0 -> artifact written + validation report."""
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
+    monkeypatch.setattr(EC.EngineContextProducer, "feature_timeline",
+                        _d36_fake_feature_timeline(required))
+
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "zero-trans.sqlite")).open()
+        try:
+            await _seed_d35_small_store(store)
+            return await EC.train_classifier(store, symbols="BTCUSDT",
+                                             timeframes="1h",
+                                             cache_dir=tmp_path / "cache")
+        finally:
+            await store.close()
+
+    artifact, report = asyncio.run(exercise())
+    assert artifact["K"] == 9 and artifact["sample_count"] == 72
+    assert report["per_class_counts"]["TRANSITION"] == 0
+    assert all(report["per_class_counts"][name] == 9 for name in required)
+    assert EC.validate_classifier(artifact) == artifact  # schema unchanged
+    validation = report["validation"]
+    assert validation["samples"] == 72
+    assert validation["theta_H"] == EC.E11.THETA_H
+    assert validation["verdict"] in ("PASS", "WARN")
+    assert validation["per_class"]["TRANSITION"]["n"] == 0
+    assert all(validation["per_class"][name]["n"] == 9 for name in required)
+
+
+def test_d36_train_classifier_missing_other_class_refuses_named(tmp_path, monkeypatch):
+    """D36(e): another class at 0 -> DegenerateTraining EMPTY_CLASS:<name>."""
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
+    cycle = [name for name in required if name != "CHOP"]
+    monkeypatch.setattr(EC.EngineContextProducer, "feature_timeline",
+                        _d36_fake_feature_timeline(cycle))
+
+    async def exercise():
+        store = await SQLiteStore(str(tmp_path / "missing-choch.sqlite")).open()
+        try:
+            await _seed_d35_small_store(store)
+            with pytest.raises(EC.DegenerateTraining) as exc:
+                await EC.train_classifier(store, symbols="BTCUSDT",
+                                          timeframes="1h",
+                                          cache_dir=tmp_path / "cache")
+            return exc
+        finally:
+            await store.close()
+
+    exc = asyncio.run(exercise())
+    assert exc.value.reason == "EMPTY_CLASS:CHOP"
+    assert exc.value.refusing_class == "CHOP"
+    assert exc.value.histogram["CHOP"] == 0
+    assert exc.value.histogram["TRANSITION"] == 0
+
+
+def test_d36_training_validation_shares_verdicts_and_native_entropy():
+    """D36(f): shares + verdict on hand-built W/b; H == E11.compute_logits_softmax."""
+    import math
+    import numpy as np
+    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
+    # PASS: 16 confident samples (one-hot x, row-100 logits) + 4 uniform.
+    W_pass = [[100.0 if i == j else 0.0 for j in range(8)] for i in range(9)]
+    X_pass = []
+    for i in range(16):
+        row = [0.0] * 8
+        row[i % 8] = 1.0
+        X_pass.append(row)
+    X_pass += [[0.0] * 8 for _ in range(4)]
+    labels_pass = [required[i % 8] for i in range(20)]
+    report = EC.training_validation(X_pass, labels_pass, W_pass, [0.0] * 9)
+    assert report["verdict"] == "PASS"
+    assert report["samples"] == 20
+    assert report["theta_H"] == EC.E11.THETA_H
+    assert report["share_H_ge_theta"] == 0.2
+    assert report["share_H_ge_0_80"] == 0.2
+    assert report["share_H_lt_0_40"] == 0.8
+    assert report["share_pmax_ge_0_50"] == 0.8
+    assert report["H_max"] == pytest.approx(math.log(9))
+    assert report["pmax_median"] == pytest.approx(1.0)
+    # The report's H is the runtime function's H, sample for sample.
+    hs = [EC.E11.compute_logits_softmax(dict(zip(EC.E11.VECTOR_KEYS, row)),
+                                        W_pass, [0.0] * 9)[2] for row in X_pass]
+    assert report["H_min"] == min(hs)
+    assert report["H_max"] == max(hs)
+    assert report["H_median"] == float(np.median(hs))
+    for name in EC.E11.REGIMES:
+        idxs = [i for i in range(20) if labels_pass[i] == name]
+        n = len(idxs)
+        assert report["per_class"][name]["n"] == n
+        if n:
+            # i=0..15 are confident (H < theta_H, pmax ~ 1); i=16..19 uniform.
+            expected_h = sum(1 for i in idxs if i >= 16) / n
+            expected_p = sum(1 for i in idxs if i < 16) / n
+            assert report["per_class"][name]["share_H_ge_theta"] == pytest.approx(expected_h)
+            assert report["per_class"][name]["share_pmax_ge_0_50"] == pytest.approx(expected_p)
+    # WARN: zero weights/biases -> uniform 1/9 everywhere (H = ln 9, pmax < 0.5).
+    W_zero = [[0.0] * 8 for _ in range(9)]
+    X_warn = [[(i % 8) / 8.0] * 8 for i in range(10)]
+    warn = EC.training_validation(X_warn, ["RANGE"] * 10, W_zero, [0.0] * 9)
+    assert warn["verdict"] == "WARN"
+    assert warn["share_H_ge_theta"] == 1.0
+    assert warn["share_pmax_ge_0_50"] == 0.0
+    assert warn["H_min"] == warn["H_max"] == pytest.approx(math.log(9))
+    assert warn["per_class"]["RANGE"]["n"] == 10
+
+
+def test_d36_cache_hashes_equal_main_constants_reuse_phone_namespaces():
+    """D36(g): protocol/cell hashes equal main@c5f0261 constants (cache reuse)."""
+    from datetime import datetime, timedelta, timezone
+    from decimal import Decimal
+    from apex.data_catalog.contracts import CORE10_SYMBOLS, MarketObservation
+    # Phone-acceptance namespace: (1h,4h) x Core-10 with the 168-bar cap.
+    assert EC.training_protocol_hash(("1h", "4h"), tuple(CORE10_SYMBOLS), 168) == (
+        "3a8efe2d6e9d436276f9b89be140cbda8d9a3ddda964ec12059b9549c9c1113d")
+    base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    def fixed_obs(symbol, timeframe, index):
+        stamp = (base + timedelta(hours=index)).isoformat(
+            timespec="milliseconds").replace("+00:00", "Z")
+        return MarketObservation(
+            symbol=symbol, timeframe=timeframe, open=Decimal(100),
+            high=Decimal(105), low=Decimal(98), close=Decimal(102),
+            volume=Decimal(10), oi=Decimal("500"), timestamp=stamp, sequence=0,
+            status="CLOSED", source="TOOBIT", availability_time=stamp,
+            oi_lag_seconds=0.0, delay_seconds=1.0, completeness_pct=100.0,
+            source_health=1.0)
+    window = [fixed_obs("BTCUSDT", "1h", i) for i in range(4)]
+    dep_rows = {"4h": [fixed_obs("BTCUSDT", "4h", i) for i in range(2)],
+                "15m": [fixed_obs("BTCUSDT", "15m", i) for i in range(3)]}
+    assert EC.cell_input_hash(window, dep_rows, 168) == (
+        "1eabb6da42bcae88ede90354230b9d9257470c56cc02ce6b5e14606e6f929f01")
+
+
+def test_d36_cli_trained_prints_train_validation_and_writes_report(tmp_path):
+    """D36(h): a cache-hit TRAINED run prints TRAIN_VALIDATION + writes the report."""
+    import json
+    import shutil
+    import subprocess
+    import sys
+    import time
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    db_path = tmp_path / "d36-cli.sqlite"
+    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
+    protocol = EC.training_protocol_hash(("1h",), ("BTCUSDT",), None)
+    cache_dir = EC.E11_TRAIN_CACHE_ROOT / protocol
+    data_dir = EC.REPO_ROOT / "data"
+    try:
+        async def seed_and_prime_cache():
+            store = await SQLiteStore(str(db_path)).open()
+            try:
+                await _seed_d35_small_store(store)
+                producer = EC.EngineContextProducer(store)
+                now_ms = int(time.time() * 1000)
+                window = await producer.window("BTCUSDT", "1h", EC._ms_to_iso(now_ms), 120)
+                close_to = EC.close_time_ms(EC._iso_to_ms(window[-1].timestamp), "1h")
+                dep_rows = {}
+                for tf in ("4h", "15m"):
+                    count = (await (await store.db.execute(
+                        "SELECT COUNT(*) FROM market_observation WHERE symbol=? AND "
+                        "timeframe=? AND candle_status IN ('CLOSED','CORRECTED')",
+                        ("BTCUSDT", tf))).fetchone())[0]
+                    dep_rows[tf] = await producer.training_dep_window(
+                        "BTCUSDT", tf, close_to_ms=close_to, count=int(count))
+                input_hash = EC.cell_input_hash(window, dep_rows, None)
+                samples = []
+                for i in range(56):
+                    samples.append({"as_of": f"2026-01-02T{i % 24:02d}:00:00.000Z",
+                                    "label": required[i % 8],
+                                    "vector": [float((i * 7 + j * 3) % 11) / 11.0 - 0.4
+                                               for j in range(8)]})
+                EC.write_cell_cache(cache_dir / "BTCUSDT_1h.json", {
+                    "format": EC.E11_TRAIN_CACHE_FORMAT, "cell": "BTCUSDT:1h",
+                    "training_query_sha256": protocol, "input_hash": input_hash,
+                    "closed_bars": len(window), "max_bars_per_cell": None,
+                    "vector_keys": list(EC.E11.VECTOR_KEYS), "samples": samples,
+                    "excluded": {"UNFINALIZED_TAIL": 48},
+                    "window_start": window[0].timestamp,
+                    "window_end": window[-1].timestamp})
+            finally:
+                await store.close()
+        asyncio.run(seed_and_prime_cache())
+        base = [sys.executable, "scripts/run_apex.py", "train-e11",
+                "--sqlite", str(db_path), "--symbols", "BTCUSDT",
+                "--timeframes", "1h"]
+        json_run = subprocess.run(
+            base + ["--out", str(tmp_path / "d36.yaml"), "--json"],
+            capture_output=True, text=True, timeout=300)
+        assert json_run.returncode == 0, json_run.stdout + json_run.stderr
+        report = json.loads(json_run.stdout)
+        assert report["status"] == "TRAINED"
+        assert report["per_class_counts"]["TRANSITION"] == 0
+        assert all(report["per_class_counts"][name] == 7 for name in required)
+        assert report["validation"]["samples"] == 56
+        assert report["validation"]["verdict"] in ("PASS", "WARN")
+        lines = [line for line in json_run.stderr.splitlines()
+                 if line.startswith("TRAIN_VALIDATION ")]
+        assert len(lines) == 1
+        assert lines[0].startswith("TRAIN_VALIDATION verdict=")
+        for field in ("share_H_ge_theta=", "share_pmax_ge_0_50=", " samples="):
+            assert field in lines[0]
+        reports = sorted(data_dir.glob("e11_train_report_*.json"))
+        assert reports, "no D36 validation report written"
+        assert json.loads(reports[-1].read_text()) == report["validation"]
+        text_run = subprocess.run(
+            base + ["--out", str(tmp_path / "d36b.yaml")],
+            capture_output=True, text=True, timeout=300)
+        assert text_run.returncode == 0, text_run.stdout + text_run.stderr
+        assert "TRAINED 56 samples" in text_run.stdout
+        assert "validation verdict=" in text_run.stdout
+    finally:
+        shutil.rmtree(cache_dir, ignore_errors=True)
+        for report_file in data_dir.glob("e11_train_report_*.json"):
+            report_file.unlink()
