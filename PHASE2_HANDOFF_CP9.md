@@ -538,7 +538,7 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 - Exactly two frozen exceptions: `SQLiteStore.insert_snapshot` BODY (003), and `EvidenceEvent.validate_24_fields` resolution_class membership line accepting exactly Q0–Q5/QX (D31/034). No other frozen source, DDL, to_ddl_row or original six YAML change. Additive decision_runtime/paper_account YAMLs only.
 - Issues 015/016/020–024 were never assigned in the current log or the read-only owner archive; they are explicitly UNASSIGNED below, not fabricated closures.
 
-#### D21–D36 authority index
+#### D21–D46 authority index
 
 | Decision | Binding subject / implementation |
 |---|---|
@@ -557,6 +557,7 @@ Executor for SESSION A DESIGN PATCH on branch `arena/01a0ae7b-upstage`: in-place
 | D33 | Native quality/MTF/components/pattern/temporal projections and normalized gate10; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
 | D34 | Versioned uncertainty, ADV/costs, sizing, marks, trend and loss/latch laws; verbatim OWNER ANSWERS in PHASE2_DECISION_LOG.md |
 | D36 | Eight rule-tree classes required, derived TRANSITION may be empty, K 9 / W (9,8) / b (9,) and artifact/cache hashes unchanged, runtime E11 unchanged, mandatory post-fit entropy/confidence validation report (WARN never blocks); verbatim OWNER DECISION in PHASE2_DECISION_LOG.md |
+| D46 | PAPER-only eligibility minimum P = `paper_bootstrap.bootstrap_p_min = 0.50` for every timeframe while no calibrated walk-forward forecast package exists; D25 SL-12 `p_min_tf` unchanged and authoritative for LIVE and for calibrated PAPER; `C_min` 0.50 unchanged; LIVE never reads `bootstrap_p_min`; producer provenance `p_min_source ∈ {D25_SL12, D46_BOOTSTRAP}`; verbatim OWNER DECISION D46 in PHASE2_DECISION_LOG.md |
 
 #### ISSUE-CP14-001..059 final dispositions
 
@@ -772,3 +773,48 @@ Branch `arena/01a0c4bf-upstage`, base `c5f0261` (main at the PR #19 merge). D36 
 ### PUSH RECORD
 
 All work stays on `arena/01a0c4bf-upstage`; pushed without rebase/squash/force or merge. PR: `#20 — https://github.com/sinamoosazadeh/Upstage/pull/20`. No claim of phone PASS or LIVE permission.
+
+## HANDOFF_CP14.3 — CLOSEOUT (2026-09-21)
+
+Branch `arena/01a0c54a-upstage`, base `9c7835a` (main at the PR #20 merge). D46 implemented, tested, recorded; D1–D46 binding; no frozen-file change (frozen diff empty; pasted in the CP-14.3 PR body). Part 2 of the session (the extended E11 validation fields and the research-only `--fit-study` surface) is recorded as ADR-CP14-025 and is explicitly NON-GOVERNING: no fit protocol, class count, label rule or threshold changed.
+
+### ARTIFACTS
+
+- `apex/ops/engine_context.py` — (a) D46: `validate_paper_bootstrap` now requires exactly `{arbitration_weights, bootstrap_p_min}` (missing key or a non-finite/out-of-[0,1] value ⇒ `CONFIGURATION_INVALID`, no default); new `eligibility_p_min(policy, timeframe, environment, bootstrap_prior)` returning `(value, source)`; the PAPER producer places the D46 value into `p_min_tf` with `p_min_source` and records both plus `c_min` in the `COMPONENTS` fact; `PRODUCER_CONTEXT_ALLOWLIST = ("p_min_source",)` is validated by `validate_produced_context` (`p_min_source` is closed-enum; `plan_bridge.REQUIRED_CONTEXT_KEYS` stays the frozen 38-key contract). (b) `training_validation` gains `train_accuracy`, `train_log_loss`, `share_h_norm_gt_0_85`, `H_percentiles` {p10,p25,p50,p75,p90} and `entropy_by_pmax_bucket` through the shared read-only `training_metrics` core; every D36 key/value is unchanged. (c) `FIT_STUDY_VARIANTS` (P0..P9), `fit_multinomial_study(...)` (research fitter: seeded full-batch, optional L2 on W, inverse-frequency class weights normalised to mean 1 over the present classes, z-score standardisation folded back into W/b), `run_fit_study(...)` and the cache-only `load_fit_study_cache(...)` (`FIT_STUDY_REQUIRES_CACHE`); `fit_multinomial` is byte-for-byte unchanged (D36 golden bit-identity test green, and P0 is bit-identical to it), as are `TRAINING_QUERY`, `training_protocol_hash`, `cell_input_hash` and `E11_TRAIN_CACHE_FORMAT`.
+- `scripts/run_apex.py` — `train-e11 --fit-study`: `_fit_study_e11` prints `FIT_CACHE cell=… cache=hit …` per cell, one `FIT_STUDY variant=Pn …` line per variant, one `FIT_STUDY_THETA` line (P0 only) and one `FIT_STUDY_REPORT <path>`; writes gitignored `data/e11_fit_study_<UTC stamp>.json`; exit 0 = study written, 2 = `FIT_STUDY_REQUIRES_CACHE`, 1 = error. It never writes an artifact (even with `--out`) and never touches `params/`.
+- `params/decision_runtime_v1.yaml` — governed `paper_bootstrap.bootstrap_p_min: 0.50` (D46; not one of the six frozen YAMLs).
+- `tests/unit/test_engine_context.py` — 14 CP-14.3 tests (D46 p_min/LIVE/missing-key/allowlist; extended validation fields on hand-built W/b; P0 bit-identity and standardisation folding; the P0..P9 grid; cache-only loader and refusals; the CLI study end-to-end with no artifact and unchanged `params/` hashes).
+- `tests/integration/test_cp14_producer.py` — `test_d46_producer_records_bootstrap_p_min_and_provenance` plus the two exact-key assertions widened by the one allowlisted provenance key.
+- `APEX_GEN5.md` — Ch.13 §13.1 and Ch.14 D46 sentences, E11 §3.3 ADR-CP14-025 sentence, one Appendix AJ row.
+- `PHASE2_DECISION_LOG.md` — D46 verbatim, ISSUE-CP14-063 (CLOSED by D46 with evidence), ADR-CP14-024, ADR-CP14-025, ISSUE-CP14-064 (OPEN).
+- `PHASE2_HANDOFF_CP9.md` (this file), `PHASE2_CHECKPOINT_STATUS.md` (board), `PHASE2_TRACEABILITY_MATRIX.md` (CP-14.3 rows).
+
+### RECORD
+
+- Frozen verification (must be empty): `git diff 9c7835a --stat -- apex/data_catalog apex/research params/ PROMPT.md` → no output (the D46 governed file is `params/decision_runtime_v1.yaml`, which is NOT one of the six original YAMLs; the six original YAMLs are byte-identical).
+- `apex/engines/**`, `requirements.lock` and `PROMPT.md` untouched; runtime classifier absent from the tree (`params/e11_classifier_v1.yaml` gitignored, never written by this session).
+- Full suite 1: SUITE_LINE_1
+- Full suite 2: SUITE_LINE_2
+- Both commands are exactly `python -m pytest -q -p no:cacheprovider`, run sequentially from a clean tree with no deselection, including the G2 cold-cache two-process proof.
+- Fit-study sandbox measurement (synthetic 1000-sample cache, this host): 10 variants in ~39 s (P2 = 100000 iterations ~14 s); the study is cache-only and never replays an engine.
+
+### INTERFACES
+
+- `validate_paper_bootstrap(section) -> {arbitration_weights, bootstrap_p_min}`; `eligibility_p_min(policy, *, timeframe, environment, bootstrap_prior) -> (float, "D25_SL12"|"D46_BOOTSTRAP")`; `P_MIN_SOURCES`, `PRODUCER_CONTEXT_ALLOWLIST`; `fit_multinomial_study(X, labels, seed, *, iterations, learning_rate, l2, class_weights, standardise) -> (W, b, info)`; `run_fit_study(X, labels, *, seed, variants) -> {samples, seed, variants[], theta_H}`; `load_fit_study_cache(*, timeframes, symbols, max_bars_per_cell, cache_dir) -> {protocol_hash, cache_dir, cells[], X, labels, as_of, samples}`.
+- `train-e11 --fit-study` reuses `--timeframes`, `--symbols`, `--max-bars-per-cell` (the protocol hash) and `--seed`; `--out`, `--max-minutes` and `--profile` have no effect on the study path. Exit codes: 0 study written, 2 REFUSED (`FIT_STUDY_REQUIRES_CACHE`), 1 error.
+- Cache-only mode: `read_cell_cache(..., input_hash=None)` accepts the recorded input hash (the study never reads the store); training always passes the recomputed hash, so its behaviour is unchanged.
+- Context seam: the producer context is the frozen 38 keys plus the allowlisted `p_min_source`; `plan_bridge` and `apex/decision/pipeline.py` consume exactly the same inputs as before.
+
+### PHONE ACCEPTANCE — owner run, not sandbox PASS
+
+Prerequisite: the D35 cache for the same scope already exists (it does after the 168-bar training that produced the WARN artifact).
+
+```sh
+.venv/bin/python scripts/run_apex.py train-e11 --max-bars-per-cell 168 --fit-study 2>&1 | tail -n 40
+```
+
+Expected: one `FIT_CACHE cell=… cache=hit samples=… closed_bars=…` line per scoped cell (all hits — otherwise the command refuses with `FIT_STUDY_REQUIRES_CACHE` and lists the cells that are missing, and the fix is to rerun the training command for the same scope, never to widen the study), ten `FIT_STUDY variant=Pn …` lines, one `FIT_STUDY_THETA …` line, one `FIT_STUDY_REPORT <data/e11_fit_study_….json>` line last, exit 0, and NO new artifact (`params/e11_classifier_v1.yaml` unchanged) — the study is read-only over the cache and writes only the gitignored JSON report. STOP on a non-zero exit or on any `FIT_CACHE … cache=miss`-style refusal text; record the report path instead of retrying blindly.
+
+### PUSH RECORD
+
+All work stays on `arena/01a0c54a-upstage`; pushed without rebase/squash/force or merge. PR: `PR_LINE`. No claim of phone PASS or LIVE permission.

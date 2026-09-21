@@ -19,5 +19,9 @@ p_min_tf:
 # Ch.17 SL-12 / D25: minimum process confidence.
 c_min: 0.50
 # Ch.12 AF.3 / D28: PAPER only; zero-weight unavailable inputs are not measurements.
+# D46 (2026-09-21): PAPER eligibility minimum P while no calibrated walk-forward
+# forecast package exists (build_forecast bootstrap: package None => p_hat = 0.5).
+# LIVE never reads this value; D25 SL-12 p_min_tf stays authoritative otherwise.
 paper_bootstrap:
   arbitration_weights: {quality: 1.0, alignment: 0.0, recency: 0.0}
+  bootstrap_p_min: 0.50

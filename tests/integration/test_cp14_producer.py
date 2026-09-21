@@ -72,7 +72,7 @@ async def seed(path, artifact):
   with pytest.raises(BridgeError, match="UNCERTAINTY_TREND_UNAVAILABLE"):
    await source.get_bridge_context('BTCUSDT','1d','2026-01-07T00:00:00.001Z')
   ctx=await source.get_bridge_context('BTCUSDT','1d',ASOF)
-  assert len(ctx)==38 and len(ctx['risk'])==23
+  assert len(ctx)==38+len(E.PRODUCER_CONTEXT_ALLOWLIST) and len(ctx['risk'])==23
   assert E.canonical_json(ctx)==E.canonical_json(await source.get_bridge_context('BTCUSDT','1d',ASOF))
   return ctx
  finally:await ledger.stop();await store.close()
@@ -134,7 +134,7 @@ async def reopened(real_context, operation):
 
 def test_g1_exact_38_23_and_unchanged_native_validators(real_context):
     context=real_context[2]
-    assert set(context)==set(REQUIRED_CONTEXT_KEYS)
+    assert set(context)==set(REQUIRED_CONTEXT_KEYS)|set(E.PRODUCER_CONTEXT_ALLOWLIST)
     assert set(context['risk'])==set(REQUIRED_RISK_KEYS)
     E.validate_produced_context(context)
     for event in context['events']: event.validate_24_fields()
@@ -265,4 +265,33 @@ def test_bound_producer_existing_paper_loop_one_cycle_json(real_context,monkeypa
             print(json.dumps(cycle,sort_keys=True))
         finally:
             await service.close();await bus.stop()
+    asyncio.run(reopened(real_context,check))
+
+
+def test_d46_producer_records_bootstrap_p_min_and_provenance(real_context):
+    """D46: the PAPER producer puts the governed bootstrap minimum in the context."""
+    from apex.decision.pipeline import eligibility, q_min_tf
+    context=real_context[2]
+    policy=E.load_decision_runtime(environment='PAPER')
+    assert policy['paper_bootstrap']['bootstrap_p_min']==0.50
+    # The fixture cell is 1d; the P value and its provenance come from the
+    # D46 branch because this producer supplies no forecast package.
+    assert context['p_min_tf']==0.50 and context['p_min_source']=='D46_BOOTSTRAP'
+    assert context['p_min_tf']==E.eligibility_p_min(policy,timeframe='1d',environment='PAPER',
+                                                    bootstrap_prior=True)[0]
+    verdict=eligibility({'setup_valid':True,'forecast_quality_ok':True,
+        'conflict_state':'NONE','q_raw':q_min_tf('1d'),'timeframe':'1d','freshness_ok':True,
+        'data_trust':0.9,'p':0.50,'p_min_tf':context['p_min_tf'],'c':context['c_min'],
+        'c_min':context['c_min']})
+    assert 'BELOW_P_MIN' not in verdict['failed']
+    E.validate_produced_context(context)
+    altered=copy.deepcopy(context);altered['p_min_source']='D25_SL12_BOOTSTRAP'
+    with pytest.raises(BridgeError): E.validate_produced_context(altered)
+    altered=copy.deepcopy(context);del altered['p_min_source']
+    with pytest.raises(BridgeError): E.validate_produced_context(altered)
+
+    async def check(store,source,context):
+        fact=await E.read_context_fact(store,'COMPONENTS','BTCUSDT','1d',ASOF)
+        assert fact['p_min_source']=='D46_BOOTSTRAP' and fact['p_min_tf']==0.50
+        assert fact['c_min']==0.50 and fact['parameter_version']==context['package']['parameter_package_id']
     asyncio.run(reopened(real_context,check))

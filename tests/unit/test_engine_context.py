@@ -2549,3 +2549,330 @@ def test_d36_cli_trained_prints_train_validation_and_writes_report(tmp_path):
         shutil.rmtree(cache_dir, ignore_errors=True)
         for report_file in data_dir.glob("e11_train_report_*.json"):
             report_file.unlink()
+
+
+# ---------------------------------------------------------------------------
+# CP-14.3 (D46, ADR-CP14-024/025): PAPER bootstrap P minimum, extended
+# validation fields and the research-only fit study.
+# ---------------------------------------------------------------------------
+
+def test_d46_paper_bootstrap_p_min_resolves_the_1h_p_check():
+    """D46: PAPER + bootstrap forecast ⇒ p_min 0.50 and the P check passes on 1h."""
+    from apex.data_catalog.contracts import TIMEFRAMES_14
+    from apex.decision.pipeline import eligibility, q_min_tf
+    policy = EC.load_decision_runtime(environment="PAPER")
+    assert policy["paper_bootstrap"]["bootstrap_p_min"] == 0.50
+    assert policy["p_min_tf"]["1h"] == 0.55          # D25 table unchanged
+    for timeframe in TIMEFRAMES_14:
+        value, source = EC.eligibility_p_min(policy, timeframe=timeframe,
+                                            environment="PAPER", bootstrap_prior=True)
+        assert (value, source) == (0.50, "D46_BOOTSTRAP")
+    p_min, source = EC.eligibility_p_min(policy, timeframe="1h", environment="PAPER",
+                                         bootstrap_prior=True)
+    checks = {"setup_valid": True, "forecast_quality_ok": True, "conflict_state": "NONE",
+              "q_raw": q_min_tf("1h"), "timeframe": "1h", "freshness_ok": True,
+              "data_trust": 0.9, "p": 0.50, "p_min_tf": p_min, "c": 0.50, "c_min": 0.50}
+    verdict = eligibility(checks)
+    assert verdict["eligible"] is True and verdict["failed"] == []
+    assert source == "D46_BOOTSTRAP" and p_min == 0.50
+    # The D25 value fails the same check: D46 is what removes BELOW_P_MIN.
+    assert eligibility(dict(checks, p_min_tf=0.55))["failed"] == ["BELOW_P_MIN"]
+    assert eligibility(dict(checks, p_min_tf=0.55))["verdict"] == "INSUFFICIENT_EVIDENCE"
+    # A calibrated package (bootstrap_prior False) restores the D25 table.
+    for timeframe, expected in (("1h", 0.55), ("1m", 0.52), ("1d", 0.50)):
+        assert EC.eligibility_p_min(policy, timeframe=timeframe, environment="PAPER",
+                                    bootstrap_prior=False) == (expected, "D25_SL12")
+
+
+def test_d46_live_never_reads_bootstrap_p_min(monkeypatch):
+    """D46: LIVE policy carries no bootstrap section and never consults it."""
+    import json
+    live = EC.load_decision_runtime(environment="LIVE")
+    assert "paper_bootstrap" not in live
+    for bootstrap_prior in (True, False):
+        for timeframe in ("1h", "1m", "1d"):
+            value, source = EC.eligibility_p_min(live, timeframe=timeframe,
+                                                 environment="LIVE",
+                                                 bootstrap_prior=bootstrap_prior)
+            assert (value, source) == (live["p_min_tf"][timeframe], "D25_SL12")
+    assert live["p_min_tf"]["1h"] == 0.55
+    # Even with an invalid bootstrap_p_min on disk, LIVE still loads and reads
+    # only the D25 table; PAPER fails closed on the same file.
+    broken = json.loads(json.dumps(EC.load_params()["decision_runtime"]))
+    broken["paper_bootstrap"]["bootstrap_p_min"] = 1.5
+
+    class Params:
+        def __getitem__(self, key):
+            return broken
+
+    monkeypatch.setattr(EC, "load_params", Params)
+    assert EC.load_decision_runtime(environment="LIVE")["p_min_tf"]["1h"] == 0.55
+    with pytest.raises(BridgeError, match="CONFIGURATION_INVALID"):
+        EC.load_decision_runtime(environment="PAPER")
+
+
+@pytest.mark.parametrize("bad", ["missing", "high", "low", "text", "boolean", "none"])
+def test_d46_invalid_or_missing_bootstrap_p_min_fails_closed(bad):
+    """D46: exactly two keys, bootstrap_p_min a finite float in [0,1]; no default."""
+    section = {"arbitration_weights": {"quality": 1.0, "alignment": 0.0, "recency": 0.0},
+               "bootstrap_p_min": 0.50}
+    if bad == "missing":
+        section.pop("bootstrap_p_min")
+    elif bad == "high":
+        section["bootstrap_p_min"] = 1.5
+    elif bad == "low":
+        section["bootstrap_p_min"] = -0.01
+    elif bad == "text":
+        section["bootstrap_p_min"] = "0.50"
+    elif bad == "boolean":
+        section["bootstrap_p_min"] = True
+    elif bad == "none":
+        section["bootstrap_p_min"] = None
+    with pytest.raises(BridgeError, match="CONFIGURATION_INVALID"):
+        EC.validate_paper_bootstrap(section)
+    with pytest.raises(BridgeError, match="CONFIGURATION_INVALID"):
+        EC.validate_paper_bootstrap(dict(section, extra=1.0))
+    # The governed file itself is valid and keeps the D28 weights.
+    governed = EC.validate_paper_bootstrap(
+        EC.load_params()["decision_runtime"]["paper_bootstrap"])
+    assert governed == {"arbitration_weights": {"quality": 1.0, "alignment": 0.0,
+                                                "recency": 0.0}, "bootstrap_p_min": 0.50}
+    # A missing policy key is not a defaulted 0.50 either.
+    with pytest.raises(BridgeError, match="CONFIGURATION_INVALID"):
+        EC.eligibility_p_min({"p_min_tf": {"1h": 0.55}}, timeframe="1h",
+                             environment="PAPER", bootstrap_prior=True)
+
+
+def test_d46_p_min_source_is_an_allowlisted_context_provenance_key():
+    """D46: p_min_source is validated, closed-enum, and not a 39th required key."""
+    from apex.ops.plan_bridge import REQUIRED_CONTEXT_KEYS
+    assert "p_min_source" not in REQUIRED_CONTEXT_KEYS
+    assert EC.PRODUCER_CONTEXT_ALLOWLIST == ("p_min_source",)
+    assert set(EC.P_MIN_SOURCES) == {"D25_SL12", "D46_BOOTSTRAP"}
+
+
+def _cp143_hand_built_validation():
+    """16 confident one-hot samples (H≈0) + 4 uniform samples (H = ln 9).
+
+    W is built through ``E11.REGIMES.index`` so argmax resolves to the sample's
+    own regime index: the 16 one-hot samples are argued correctly, the four
+    uniform ones decay to argmax 0 (CRISIS) and are all wrong.
+    """
+    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
+    W = [[0.0] * 8 for _ in range(9)]
+    for column, label in enumerate(required):
+        W[EC.E11.REGIMES.index(label)][column] = 100.0
+    X = []
+    for i in range(16):
+        row = [0.0] * 8
+        row[i % 8] = 1.0
+        X.append(row)
+    X += [[0.0] * 8 for _ in range(4)]
+    labels = [required[i % 8] for i in range(16)] + required[4:8]
+    return X, labels, W, [0.0] * 9
+
+
+def test_cp143_training_validation_extended_fields_on_hand_built_w_b():
+    """ADR-CP-14-025: train accuracy/log-loss, Gate 7 share, percentiles, buckets."""
+    import math
+    import numpy as np
+    X, labels, W, b = _cp143_hand_built_validation()
+    report = EC.training_validation(X, labels, W, b)
+    # D36 keys and values are unchanged by the extension.
+    assert report["samples"] == 20 and report["theta_H"] == EC.E11.THETA_H
+    assert report["share_H_ge_theta"] == 0.2 and report["share_H_ge_0_80"] == 0.2
+    assert report["share_H_lt_0_40"] == 0.8 and report["share_pmax_ge_0_50"] == 0.8
+    assert report["verdict"] == "PASS"
+    # Extended: 16 of 20 one-hot samples are argued correctly by argmax; the
+    # four uniform ones decay to argmax 0 (CRISIS) and are all wrong.
+    assert report["train_accuracy"] == 0.80
+    # -ln p for the 16 saturated samples ~ 0; the 4 uniform ones cost ln 9.
+    assert report["train_log_loss"] == pytest.approx(4 * math.log(9) / 20, abs=1e-9)
+    assert report["per_class"]["CRISIS"]["n"] == 2
+    # Gate 7 fail share counts H/ln 9 > 0.85: exactly the four uniform samples.
+    assert report["share_h_norm_gt_0_85"] == 4 / 20
+    entropies = [EC.E11.compute_logits_softmax(dict(zip(EC.E11.VECTOR_KEYS, row)), W, b)[2]
+                 for row in X]
+    percentiles = np.percentile(np.asarray(entropies), [10.0, 25.0, 50.0, 75.0, 90.0])
+    assert report["H_percentiles"] == {"p10": float(percentiles[0]), "p25": float(percentiles[1]),
+                                       "p50": float(percentiles[2]), "p75": float(percentiles[3]),
+                                       "p90": float(percentiles[4])}
+    assert report["H_percentiles"]["p50"] == report["H_median"]
+    assert report["H_percentiles"]["p90"] == pytest.approx(math.log(9), abs=1e-9)
+    buckets = report["entropy_by_pmax_bucket"]
+    assert list(buckets) == ["[0.0,0.3)", "[0.3,0.5)", "[0.5,0.7)", "[0.7,1.0]"]
+    assert buckets["[0.0,0.3)"] == pytest.approx(math.log(9), abs=1e-9)  # p_max = 1/9
+    assert buckets["[0.3,0.5)"] is None and buckets["[0.5,0.7)"] is None
+    # Saturated samples reach p_max = 1.0 exactly, so the last bucket is closed
+    # at 1.0; every sample lands in exactly one bucket.
+    assert buckets["[0.7,1.0]"] == pytest.approx(0.0, abs=1e-9)
+    assert sum(1 for value in buckets.values() if value is None) == 2
+    # The strict Gate 7 boundary: a raw entropy of exactly 0.85*ln 9 does not count.
+    assert EC.GATE7_ENTROPY_NORM_MAX == 0.85
+
+
+def test_cp143_fit_study_p0_is_bit_identical_to_the_runtime_fitter():
+    """ADR-CP-14-025: P0 IS today's protocol; the study never forks fit_multinomial."""
+    X, labels, W, b = _cp143_hand_built_validation()
+    study_W, study_b, info = EC.fit_multinomial_study(X, labels, 123)
+    assert (study_W, study_b) == EC.fit_multinomial(X, labels, 123)
+    assert (info["iterations"], info["learning_rate"], info["l2"]) == (2000, 0.2, 0.0)
+    assert info["weights"] is False and info["standardised"] is False
+    assert info["standardisation"] is None
+    # Standardisation is folded back: the runtime contract stays raw-8 -> logits.
+    folded_W, folded_b, folded = EC.fit_multinomial_study(X, labels, 123, standardise=True)
+    logits, probs, H = EC.E11.compute_logits_softmax(
+        dict(zip(EC.E11.VECTOR_KEYS, X[0])), folded_W, folded_b)
+    assert len(logits) == 9 and pytest.approx(sum(probs), abs=1e-12) == 1.0
+    assert folded["standardised"] is True and folded["standardisation"]["std"]
+
+
+def test_cp143_fit_study_grid_names_and_metrics():
+    """The fixed, named grid P0..P9 with its recorded protocol fields."""
+    grid = [(spec["variant"], spec["iterations"], spec["l2"], spec["class_weights"],
+             spec["standardise"]) for spec in EC.FIT_STUDY_VARIANTS]
+    assert grid == [("P0", 2000, 0.0, False, False), ("P1", 20000, 0.0, False, False),
+                    ("P2", 100000, 0.0, False, False), ("P3", 20000, 1e-3, False, False),
+                    ("P4", 20000, 1e-2, False, False), ("P5", 20000, 0.0, True, False),
+                    ("P6", 20000, 1e-3, True, False), ("P7", 20000, 1e-2, True, False),
+                    ("P8", 20000, 0.0, False, True), ("P9", 20000, 0.0, True, True)]
+    assert all(spec["learning_rate"] == 0.2 for spec in EC.FIT_STUDY_VARIANTS)
+    X, labels, W, b = _cp143_hand_built_validation()
+    study = EC.run_fit_study(X, labels, seed=123,
+                             variants=(EC.FIT_STUDY_VARIANTS[0], EC.FIT_STUDY_VARIANTS[5]))
+    assert study["samples"] == 20 and study["seed"] == 123
+    first, weighted = study["variants"]
+    for record in study["variants"]:
+        for key in ("variant", "iterations", "learning_rate", "l2", "weights", "standardised",
+                    "train_accuracy", "train_log_loss", "share_H_ge_theta", "share_H_ge_0_80",
+                    "share_pmax_ge_0_50", "share_h_norm_gt_0_85", "H_percentiles",
+                    "pmax_median", "seconds", "per_class", "entropy_by_pmax_bucket"):
+            assert key in record, key
+        for name in EC.FIT_STUDY_PER_CLASS_ROW:
+            assert name in record["per_class"]
+    assert weighted["weights"] is True and weighted["iterations"] == 20000
+    # P0 carries the empirical cut-offs; later variants do not.
+    assert first["theta_for_10pct"] >= first["theta_for_20pct"] >= first["theta_for_30pct"]
+    # ln 9 = 2.1972...: the 10% threshold sits at the top of a saturated fit.
+    assert "theta_for_10pct" not in weighted
+    # The per-class share is the share of that class's samples with p_max >= 0.50.
+    for name in EC.FIT_STUDY_PER_CLASS_ROW:
+        stats = first["per_class"][name]
+        assert stats["n"] and 0.0 <= stats["share_pmax_ge_0_50"] <= 1.0
+
+
+def test_cp143_fit_study_cache_only_loader_and_refusal(tmp_path):
+    """Cache-only load: protocol hash, per-cell hits, FIT_STUDY_REQUIRES_CACHE."""
+    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
+    protocol = EC.training_protocol_hash(("1h",), ("BTCUSDT",), None)
+    cell_dir = tmp_path / protocol
+    samples = [{"as_of": f"2026-01-02T{i % 24:02d}:00:00.000Z", "label": required[i % 8],
+                "vector": [float((i * 7 + j * 3) % 11) / 11.0 - 0.4 for j in range(8)]}
+               for i in range(64)]
+    EC.write_cell_cache(cell_dir / "BTCUSDT_1h.json", {
+        "format": EC.E11_TRAIN_CACHE_FORMAT, "cell": "BTCUSDT:1h",
+        "training_query_sha256": protocol, "input_hash": "a" * 64, "closed_bars": 120,
+        "max_bars_per_cell": None, "vector_keys": list(EC.E11.VECTOR_KEYS),
+        "samples": samples, "excluded": {"UNFINALIZED_TAIL": 48},
+        "window_start": "2026-01-01T00:00:00.000Z", "window_end": "2026-01-02T00:00:00.000Z"})
+    loaded = EC.load_fit_study_cache(timeframes="1h", symbols="BTCUSDT",
+                                     max_bars_per_cell=None, cache_dir=tmp_path)
+    assert loaded["samples"] == 64 and loaded["protocol_hash"] == protocol
+    assert loaded["cells"] == [{"cell": "BTCUSDT:1h", "samples": 64, "closed_bars": 120,
+                                "input_hash": "a" * 64}]
+    assert loaded["labels"][:2] == [required[0], required[1]]
+    assert loaded["X"][0] == samples[0]["vector"]
+    # A different scope (no cache file) and a different protocol hash both refuse.
+    for scope in ({"symbols": "BTCUSDT,ETHUSDT", "max_bars_per_cell": None},
+                  {"symbols": "BTCUSDT", "max_bars_per_cell": 168}):
+        with pytest.raises(BridgeError, match="FIT_STUDY_REQUIRES_CACHE"):
+            EC.load_fit_study_cache(timeframes="1h", cache_dir=tmp_path, **scope)
+    # A cache file for another protocol is not a hit either.
+    other = tmp_path / EC.training_protocol_hash(("1h",), ("BTCUSDT",), 168)
+    other.mkdir(parents=True, exist_ok=True)
+    (other / "BTCUSDT_1h.json").write_text((cell_dir / "BTCUSDT_1h.json").read_text())
+    with pytest.raises(BridgeError, match="FIT_STUDY_REQUIRES_CACHE"):
+        EC.load_fit_study_cache(timeframes="1h", symbols="BTCUSDT",
+                                max_bars_per_cell=168, cache_dir=tmp_path)
+
+
+def test_cp143_cli_fit_study_writes_report_no_artifact_and_refuses(tmp_path):
+    """CLI: cache-only study writes the JSON report, never an artifact or params/."""
+    import hashlib
+    import json
+    import shutil
+    import subprocess
+    import sys
+    from apex.config import PARAMS_DIR
+    data_dir = EC.REPO_ROOT / "data"
+    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
+    protocol = EC.training_protocol_hash(("1h",), ("BTCUSDT",), None)
+    cell_dir = EC.E11_TRAIN_CACHE_ROOT / protocol
+    artifact = tmp_path / "study-artifact.yaml"
+    params_before = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                     for path in sorted(PARAMS_DIR.glob("*.yaml"))}
+    reports_before = set(data_dir.glob("e11_fit_study_*.json"))
+    try:
+        samples = [{"as_of": f"2026-01-02T{i % 24:02d}:00:00.000Z", "label": required[i % 8],
+                    "vector": [float((i * 7 + j * 3) % 11) / 11.0 - 0.4 for j in range(8)]}
+                   for i in range(64)]
+        EC.write_cell_cache(cell_dir / "BTCUSDT_1h.json", {
+            "format": EC.E11_TRAIN_CACHE_FORMAT, "cell": "BTCUSDT:1h",
+            "training_query_sha256": protocol, "input_hash": "c" * 64, "closed_bars": 120,
+            "max_bars_per_cell": None, "vector_keys": list(EC.E11.VECTOR_KEYS),
+            "samples": samples, "excluded": {},
+            "window_start": "2026-01-01T00:00:00.000Z",
+            "window_end": "2026-01-02T00:00:00.000Z"})
+        base = [sys.executable, "scripts/run_apex.py", "train-e11", "--symbols", "BTCUSDT",
+                "--timeframes", "1h", "--fit-study"]
+        run = subprocess.run(base + ["--out", str(artifact), "--json"],
+                             capture_output=True, text=True, timeout=600)
+        assert run.returncode == 0, run.stdout + run.stderr
+        assert "cache=hit" in run.stderr and "FIT_CACHE cell=BTCUSDT:1h" in run.stderr
+        study_lines = [line for line in run.stderr.splitlines()
+                       if line.startswith("FIT_STUDY ")]
+        assert len(study_lines) == 10, run.stderr
+        assert [line.split()[1] for line in study_lines] == [
+            f"variant=P{i}" for i in range(10)]
+        for token in ("iters=", "lr=", "l2=", "weights=", "standardised=", "train_accuracy=",
+                      "train_log_loss=", "share_H_ge_theta=", "share_H_ge_0_80=",
+                      "share_pmax_ge_0_50=", "share_h_norm_gt_0_85=", "H_p10=", "H_p50=",
+                      "H_p90=", "pmax_median=", "seconds=", "per_class_pmax_ge_0_50="):
+            assert token in study_lines[0], token
+        for name in EC.FIT_STUDY_PER_CLASS_ROW:
+            assert name + ":" in study_lines[0]
+        theta_lines = [line for line in run.stderr.splitlines()
+                       if line.startswith("FIT_STUDY_THETA ")]
+        assert len(theta_lines) == 1
+        for token in ("theta_for_10pct=", "theta_for_20pct=", "theta_for_30pct="):
+            assert token in theta_lines[0]
+        report_lines = [line for line in run.stderr.splitlines()
+                        if line.startswith("FIT_STUDY_REPORT ")]
+        assert len(report_lines) == 1
+        report_path = Path(report_lines[0].split(" ", 1)[1])
+        assert report_path.exists() and report_path.name.startswith("e11_fit_study_")
+        payload = json.loads(report_path.read_text())
+        assert payload["status"] == "FIT_STUDY" and payload["artifact_written"] is False
+        assert payload["samples"] == 64 and payload["protocol_hash"] == protocol
+        assert [record["variant"] for record in payload["variants"]] == [
+            f"P{i}" for i in range(10)]
+        # No artifact, no params/ write, and stdout stays machine-readable.
+        assert not artifact.exists()
+        assert not (EC.PARAMS_DIR / "e11_classifier_v1.yaml").exists()
+        assert {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in sorted(PARAMS_DIR.glob("*.yaml"))} == params_before
+        summary = json.loads(run.stdout)
+        assert summary["status"] == "FIT_STUDY" and summary["artifact_written"] is False
+        # Refusal: a cell with no cache file never fabricates a study.
+        refused = subprocess.run(base[:4] + ["ETHUSDT", "--timeframes", "1h", "--fit-study",
+                                             "--out", str(artifact), "--json"],
+                                 capture_output=True, text=True, timeout=600)
+        assert refused.returncode == 2, refused.stdout + refused.stderr
+        assert json.loads(refused.stdout)["reason"] == "FIT_STUDY_REQUIRES_CACHE"
+        assert not artifact.exists()
+        assert set(data_dir.glob("e11_fit_study_*.json")) == reports_before | {report_path}
+    finally:
+        shutil.rmtree(cell_dir, ignore_errors=True)
+        for report_file in data_dir.glob("e11_fit_study_*.json"):
+            if report_file not in reports_before:
+                report_file.unlink()
