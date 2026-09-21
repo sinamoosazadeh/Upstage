@@ -771,4 +771,4 @@ Branch `arena/01a0c4bf-upstage`, base `c5f0261` (main at the PR #19 merge). D36 
 
 ### PUSH RECORD
 
-All work stays on `arena/01a0c4bf-upstage`; pushed without rebase/squash/force or merge. PR: `__PR__`. No claim of phone PASS or LIVE permission.
+All work stays on `arena/01a0c4bf-upstage`; pushed without rebase/squash/force or merge. PR: `#20 — https://github.com/sinamoosazadeh/Upstage/pull/20`. No claim of phone PASS or LIVE permission.
