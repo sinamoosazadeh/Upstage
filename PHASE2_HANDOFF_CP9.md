@@ -791,11 +791,12 @@ Branch `arena/01a0c54a-upstage`, base `9c7835a` (main at the PR #20 merge). D46 
 
 ### RECORD
 
-- Frozen verification (must be empty): `git diff 9c7835a --stat -- apex/data_catalog apex/research params/ PROMPT.md` → no output (the D46 governed file is `params/decision_runtime_v1.yaml`, which is NOT one of the six original YAMLs; the six original YAMLs are byte-identical).
+- Frozen verification (must be empty), exact frozen set of this stage: `git diff 9c7835a --stat -- apex/data_catalog apex/research/bootstrap.py apex/research/backtest.py PROMPT.md requirements.lock params/universe_v1.yaml params/risk_defaults_v1.yaml params/setup_weights_v1.yaml params/quality_weights_v1.yaml params/toobit_wire_v1.yaml params/e11_params_v4.yaml` → no output. `git diff 9c7835a --stat -- apex/engines` → no output.
+- The CP-14.1/14.2 convention command `git diff 9c7835a --stat -- apex/data_catalog apex/research params/ PROMPT.md` reports exactly one file, `params/decision_runtime_v1.yaml | 4 ++++`: D46 explicitly orders the governed PAPER value to live there, and that file is NOT one of the six original/frozen YAMLs (PHASE2_HANDOFF_CP1 provenance list); the six frozen YAMLs are byte-identical. No other frozen path changed.
 - `apex/engines/**`, `requirements.lock` and `PROMPT.md` untouched; runtime classifier absent from the tree (`params/e11_classifier_v1.yaml` gitignored, never written by this session).
-- Full suite 1: SUITE_LINE_1
-- Full suite 2: SUITE_LINE_2
-- Both commands are exactly `python -m pytest -q -p no:cacheprovider`, run sequentially from a clean tree with no deselection, including the G2 cold-cache two-process proof.
+- Full suite 1: `3010 passed, 14 warnings in 911.60s (0:15:11)`
+- Full suite 2: `3010 passed, 14 warnings in 884.51s (0:14:44)`
+- Both commands are exactly `python -m pytest -q -p no:cacheprovider`, run sequentially with no deselection, including the G2 cold-cache two-process proof. Run 1 was executed on a fully clean tree at code commit `a6a3c72`; run 2 was executed on the same code commit with one uncommitted docs-only edit open in this handoff (no test or module reads it) — the two counts are equal and green.
 - Fit-study sandbox measurement (synthetic 1000-sample cache, this host): 10 variants in ~39 s (P2 = 100000 iterations ~14 s); the study is cache-only and never replays an engine.
 
 ### INTERFACES
@@ -817,4 +818,4 @@ Expected: one `FIT_CACHE cell=… cache=hit samples=… closed_bars=…` line pe
 
 ### PUSH RECORD
 
-All work stays on `arena/01a0c54a-upstage`; pushed without rebase/squash/force or merge. PR: `PR_LINE`. No claim of phone PASS or LIVE permission.
+All work stays on `arena/01a0c54a-upstage`; pushed without rebase/squash/force or merge. PR: NOT OPENED at closeout — GitHub authentication failed mid-closeout (the `GH_TOKEN` in this sandbox became invalid: `git push`/`gh` report the token is no longer valid). The implementation commit `a6a3c72` WAS pushed to `arena/01a0c54a-upstage` before the failure; the closeout-evidence commit that adds these lines is local-only, and the ONE PR body is prepared (D46 verbatim, ISSUE-063 closed, ISSUE-064 open, ADR-024/025, changed files, both suite lines, frozen-diff output, phone command). No further push or PR was attempted after the failure (stop-on-push-failure rule). Owner action: reconnect GitHub in Arena, then the remaining commit and the PR are pushed/opened unchanged. No claim of phone PASS or LIVE permission.

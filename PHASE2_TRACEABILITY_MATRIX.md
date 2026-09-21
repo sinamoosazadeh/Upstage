@@ -590,7 +590,8 @@ D35 repository verification: PASS; ≤0.05 s/bar honestly not reached under exac
 | ADR-CP14-025 (part 2) | `training_validation` extended (train_accuracy, train_log_loss, share_h_norm_gt_0_85, H_percentiles, entropy_by_pmax_bucket) with every D36 key unchanged and the D36 golden bit-identity test untouched; `fit_multinomial` byte-for-byte unchanged and bit-identical to study P0; research-only `train-e11 --fit-study` over the D35 cache (cache hits only, `FIT_STUDY_REQUIRES_CACHE` otherwise), ten `FIT_STUDY` lines + `FIT_STUDY_THETA` + `FIT_STUDY_REPORT`, no artifact, no `params/` write, no protocol change | Implemented; non-governing research surface |
 
 ```text
-3000 passed, 0 failed
+3010 passed, 14 warnings in 911.60s (0:15:11)
+3010 passed, 14 warnings in 884.51s (0:14:44)
 ```
 
 D46 repository verification: PASS; the phone acceptance of the study command is owner-run, and no fit-protocol or threshold change is claimed or implied.
