@@ -11863,10 +11863,11 @@ training consumes only data `≤ t−48` (PIT); features are the §2 `X_t`
 vectors; the optimizer uses a fixed recorded `seed`; the artifact's
 `artifact_sha256` is recorded in the snapshot `param_hash` (E11 §6
 governance). Weights are **never zeros,
-never random at runtime**. **Degenerate-class handling:** if any of the 9
-classes has zero delayed-label members in the training window, training
-**refuses** — no synthetic members, no class dropped, `K` stays 9 — and no
-artifact is written. **Runtime without a valid artifact** (missing file,
+never random at runtime**. **Degenerate-class handling:** if any of the
+eight rule-tree classes has zero delayed-label members in the training
+window, training **refuses** — no synthetic members, no class dropped, `K`
+stays 9 — and no artifact is written; TRANSITION, a derived state, may be
+empty (D36). **Runtime without a valid artifact** (missing file,
 hash mismatch, wrong shape) fails closed with
 `CONFIGURATION_INVALID`/`FAIL_CLOSED` (the bridge's `e11_context`
 validation requires exactly `classifier_W (9,8)` + `classifier_b (9)`);
@@ -11888,6 +11889,8 @@ the full Section 3.2 tree, including entropy, with the trained W/b.
 **Session-CP-14 (2026-09-17; D30, owner decision 2026-09-18):** `train-e11` trains the single runtime classifier only on E11 §1.2 base timeframes 1h/4h across Core-10 (20 default cells), exposes `--timeframes` (default `1h,4h`) and `--symbols` (default all ten) with effective/default scope in artifact `training_window`, prints one per-cell progress line (cell, CLOSED bars, eligible samples, elapsed seconds), and enforces a hard `--max-minutes` (default 20) named abort without writing an artifact, while the nine-class refusal remains unchanged and the resulting W/b serves all runtime timeframes as window-parameter extensions.
 
 **Session-CP-14.1 (2026-09-19; D35):** `train-e11` is resumable across invocations through a gitignored per-cell finalized-sample cache keyed by the artifact's `training_query_sha256` (completed cells reload, changed inputs recompute, `--max-minutes` bounds one invocation and reports completed/remaining/next cells), accepts `--max-bars-per-cell N` capping each cell at its latest N CLOSED bars with N recorded in artifact `training_window` and the protocol hash, emits 250-bar liveness and `--profile` engine/stage timing lines on stderr, and leaves the artifact schema unchanged with D21 labels and the nine-class refusal intact.
+
+**Session-CP-14.2 (2026-09-21; D36):** first training now accepts an empty TRANSITION class — the refusal covers only the eight rule-tree classes (CRISIS, EXPANSION, TREND_EXPANSION, TREND_CONTRACTION, TREND, COMPRESSION, CHOP, RANGE), because TRANSITION is a derived state (Section 1.4 / Section 3.2 branch 2), not a learned class, and the D21 delayed-label rule produced 0 TRANSITION members in 1000 real samples (ISSUE-CP14-061) — while K stays 9, W stays (9,8), b (9,), the artifact schema, `TRAINING_QUERY`, `training_protocol_hash`, `cell_input_hash` and `E11_TRAIN_CACHE_FORMAT` are unchanged so existing per-cell caches are reused, runtime E11 is unchanged, and a mandatory post-fit entropy/confidence validation report (one `TRAIN_VALIDATION` stderr line plus `data/e11_train_report_<UTC stamp>.json`, WARN never blocks the artifact) is added, with TRANSITION relabelling as a regime-change neighbourhood deferred to the streaming-engine checkpoint (D38).
 
 PIT-safe softmax:
 $$p_{r,t}= \frac{\exp(z_{r,t} - \max_k z_{k,t})}{\sum_j \exp(z_{j,t} - \max_k z_{k,t})}$$
@@ -20920,6 +20923,7 @@ Engine v4.0.0 formula bodies were not rewritten.
 | P6: CIRCUIT_OPEN joins the error registry (2026-09-17) | Ch.7 (D9; errors.py deferred to CP-14) |
 | P7: paper account YAML + control-plane feed + twin rule (2026-09-17) | §9.5 repo tree + YAML items (D2/D4/D8) |
 | P8: 24/7 host + .env-only secrets + watchdog chat + rotation-evidence row (2026-09-17) | Ch.23 + AI.13 G-TOOBIT-004 (D17-D20) |
+| CP-14.2 D36 eight-class E11 fit + mandatory validation report (2026-09-21) | E11 Section 3.3; ISSUE-CP14-061 (resolved), ISSUE-CP14-062/063 (OPEN); ADR-CP14-023; eight rule-tree classes required, derived TRANSITION may be empty, K 9 / W (9,8) / b (9,) unchanged, artifact schema and cache hashes unchanged, runtime E11 unchanged |
 
 **Honestly still open (protocol only):** those six measurement items; running `apex/` code; ECONOMIC_GATE checkbox.
 
