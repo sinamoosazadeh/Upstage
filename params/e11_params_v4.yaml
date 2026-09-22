@@ -1,8 +1,12 @@
 # params/e11_params_v4.yaml — §9.5-canonical E11 values (ADR-P2-008:
 # YAML is §9.5-canonical; engine §6 tables govern formula internals;
 # runtime loads the YAML, never the other way around).
+# D49: theta_H range widened to [0.3, ln9]; quality_H_Q2/Q5 now governed YAML.
+# Values stay 0.65/0.8/0.4 for this CP (mechanism only, D49 note).
 K: 9
 theta_H: 0.65
+quality_H_Q2: 0.8
+quality_H_Q5: 0.4
 lambda_ewma: 0.94
 hysteresis_candles: 3
 dirichlet_alpha: 0.1

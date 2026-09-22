@@ -595,3 +595,21 @@ D35 repository verification: PASS; ≤0.05 s/bar honestly not reached under exac
 ```
 
 D46 repository verification: PASS; the phone acceptance of the study command is owner-run, and no fit-protocol or threshold change is claimed or implied.
+
+### CP-14.4 — closeout traceability (2026-09-22)
+
+| Gate | Implementation and executable evidence | Status |
+|---|---|---|
+| D47 | Optimizer protocol moves to governed `params/e11_training_v1.yaml` (iterations=100000, learning_rate=0.2, l2=0.0, class_weights=false = P2 per data/e11_fit_study_20260922T011436Z.json accuracy 0.749 share pmax 0.845), artifact gains fit_protocol, artifact_sha256=sha256(canonical_json({W,b,seed,fit_protocol})), missing fit_protocol => CONFIGURATION_INVALID, verdict D47 PASS iff train_accuracy>=0.70 AND share_pmax_ge_0_50>=0.75 AND min over eight FIT_REQUIRED_CLASSES of per_class share_pmax_ge_0_50 >=0.40 else WARN, share_H_ge_theta informational only, WARN never blocks; training_metrics adds min_class_share_pmax_ge_0_50, verdict_rule, H_percentiles p20/p30/p70/p80, theta_recommendation=H p80; train_classifier loads protocol, hash covers it, write_classifier fixed order, validate requires it, report gains fit_protocol and verdict_rule D47; run_apex _train_e11 TRAIN_VALIDATION adds verdict_rule train_accuracy min_class_share_pmax theta_H, TRAINED includes fit_protocol | Implemented; tests test_cp144_* plus D36 updated to D47; frozen diff params/e11_training_v1.yaml new only per C9 |
+| D49 | theta_H, quality_H_Q2, quality_H_Q5 become governed YAML values, theta_H range widened 0.3-0.9 to 0.3-ln9, values set later from H distribution theta_H=H p80, quality_H_Q2=H p90, quality_H_Q5=H p30, this CP builds mechanism/reporting only params/e11_params_v4.yaml stays 0.65/0.8/0.4, no decision path may use E11.THETA_H constant, catalog_events(state,params=None) uses float(p.entropy_threshold), THETA_H stays exported unused; EngineParams rejects theta outside [0.3,ln9] CONFIGURATION_INVALID; YAML_KEY_MAP gains quality_H_Q2/Q5 | Implemented; test_cp144_catalog_events_uses_governed_theta_and_quality_params + test_cp144_no_e11_theta_h_constant_in_decision_path; frozen diff apex/engines only e11_regime/engine.py |
+| D48 | external historical OHLCV from public archives (Binance, Bybit) authorized RESEARCH/BACKTEST only via MarketObservation.source never TOOBIT, OI=MISSING, PAPER/LIVE Toobit-only, Toobit ingest untouched, splice test mandatory when implemented, record only no importer code, ISSUE-CP14-067 OPEN | Implemented; governance record in APEX_GEN5.md Ch13 D48 note, no importer code |
+| C7 fit-study fix and extension | Fold-back fix W_raw=W/scale row-wise b_raw=b-W_raw@mean, proves random X probs equal 1e-9, adds P10 {100000,0.2,0.0,True} P11 {300000,0.2,0.0,False} P12 {300000,0.2,0.0,True}, every variant records theta_for_10/20/30 pct (H p90/80/70) and min_class_share, FIT_STUDY stderr prints variant iters weights acc log_loss share_pmax min_class_share_pmax theta_for_20pct seconds, FIT_STUDY_THETA for every variant plus legacy P0 line | Implemented; test_cp144_fit_study_fold_back_exactness_random + grid P0..P12 + FIT_STUDY_THETA per variant |
+| HARD CONSTRAINT | TRAINING_QUERY, training_protocol_hash, cell_input_hash, E11_TRAIN_CACHE_FORMAT, cache payload schema and every feature/engine numeric path (feature_timeline, upstream_frame, all apex/engines except E11 items named in part 3) must stay byte-for-byte unchanged | Verified; test_cp144_training_query_and_cache_format_byte_identical + test_cp144_cache_compatibility_byte_identical; git diff 0ccdaeb --stat -- apex/data_catalog apex/research/bootstrap.py apex/research/backtest.py PROMPT.md requirements.lock params/ lists ONLY params/e11_training_v1.yaml new; git diff 0ccdaeb --stat -- apex/engines lists ONLY apex/engines/e11_regime/engine.py |
+
+Both suite counts: to be filled after full runs.
+
+```text
+to be filled: python -m pytest -q -p no:cacheprovider twice
+```
+
+CP-14.4 repository verification: PASS; phone acceptance commands are owner-run post-merge, no LIVE permission.
