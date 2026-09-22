@@ -616,3 +616,24 @@ Both suite counts (2026-09-22, full suite twice, no deselection, including G2):
 Previous CP-14.3 was 3010 passed; +10 CP-14.4 tests = 3020. Integration fix test_cp14_producer now green.
 
 CP-14.4 repository verification: PASS; phone acceptance commands are owner-run post-merge, no LIVE permission.
+
+### CP-14.5 - closeout traceability (2026-09-22)
+
+| Gate | Implementation and executable evidence | Status |
+|---|---|---|
+| C1 D49 triple | `training_metrics.theta_recommendation` is the mapping `{"theta_H": H p80, "quality_H_Q2": H p90, "quality_H_Q5": H p30}` (CP-14.4 reported only p80 as a float); `_train_e11` prints `theta_rec_H= theta_rec_Q2= theta_rec_Q5=` on the `TRAIN_VALIDATION` stderr line and the `TRAINED` text line; params/e11_params_v4.yaml untouched (0.65/0.8/0.4) | Implemented; `test_cp145_theta_recommendation_is_the_d49_triple_mapping`, updated `test_cp143_training_validation_extended_fields_on_hand_built_w_b` + `test_d36_cli_trained_prints_train_validation_and_writes_report` |
+| C2 mandatory protocol | `fit_multinomial(X,labels,seed,protocol)` has no default: `None` -> `BridgeError CONFIGURATION_INVALID` ("fit protocol required"), omission -> `TypeError`; legacy {2000,0.2,0.0,False} now explicit and still bit-identical to main@c5f0261 | Implemented; `test_cp145_fit_multinomial_protocol_is_mandatory`, `test_cp144_fit_multinomial_protocol_bit_identical_and_p2_identity`, `test_d36_*` fit tests updated |
+| C3 catalog_events params | `E11RegimeEngine.compute` resolves `EngineParams` once (instance passes through, else `get_params(e11_params)`) and passes them to `catalog_events`; only engine change in the diff, no numeric change | Implemented; `test_cp145_compute_resolves_engine_params_once_for_catalog_events` + existing `tests/unit/test_e11_regime.py` / `tests/integration/test_cp5_engines.py` goldens green |
+| C4 board record | CP-14.4 line names `PR #22`, head `fddfb2d8160d63e31231fc04aadf91505f630975`, merged 2026-09-22; all eleven `OWNER-CHECKED` boxes flipped to `[x 2026-09-22]` per the owner instruction of 2026-09-22 | Recorded |
+| C5 release-gate evidence | Nine `APEX_GEN5.md` Execution Readiness Checklist lines ticked with grep-located test files; G-ADAPTER-001 ticked only as "reported open" (ADR-P2-009); the target-device line rests on documentation (PHASE2 D19 + HANDOFF_CP14.1/CP14.4) and is named as such; lines without owning tests left open | Recorded |
+| ERRATUM | CP-14.4's claim of `E11_DEFAULTS` additions and Q-cascade edits is corrected in `PHASE2_DECISION_LOG.md` (CP-14.5 corrections note): both predate CP-14.4 at base `0ccdaeb` and are absent from the PR #22 engine diff | Recorded, no code change |
+| HARD CONSTRAINT | TRAINING_QUERY, training_protocol_hash, cell_input_hash, E11_TRAIN_CACHE_FORMAT, cache payload schema, feature_timeline, upstream_frame and every apex/engines numeric path byte-for-byte unchanged; `git diff e1cc878 --stat -- params/ apex/data_catalog apex/research PROMPT.md requirements.lock` EMPTY; `apex/engines` diff is only `e11_regime/engine.py` (C3) | Verified |
+
+Both suite counts (2026-09-22, full suite twice from a clean committed tree, no deselection, including G2):
+
+```text
+3023 passed, 14 warnings in 1573.68s (0:26:13)
+3023 passed, 14 warnings in 1525.05s (0:25:25)
+```
+
+Previous CP-14.4 was 3020 passed; +3 CP-14.5 tests = 3023. Repository verification: PASS. Phone acceptance stays owner-run; no LIVE permission and no phone PASS is claimed.

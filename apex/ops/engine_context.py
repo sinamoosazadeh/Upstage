@@ -2569,18 +2569,21 @@ def fit_multinomial(
     X: list[list[float]],
     labels: list[str],
     seed: int,
-    protocol: Mapping[str, Any] | None = None,
+    protocol: Mapping[str, Any],
 ) -> tuple[list, list]:
     """D47 governed fit: fixed-order full-batch multinomial log-loss descent.
 
     protocol is mandatory per D47: {iterations, learning_rate, l2, class_weights}.
-    For backward compatibility during tests, None defaults to legacy
-    {2000,0.2,0.0,False} and is bit-identical to the pre-D47 body.
+    CP-14.5 C2: there is no default — a missing protocol is a TypeError from the
+    signature and an explicit ``None`` is refused CONFIGURATION_INVALID. The
+    legacy {2000,0.2,0.0,False} mapping must be passed explicitly, and is then
+    bit-identical to the pre-D47 body.
     The optimizer's seeded initialization and K=9 rows are unchanged.
     P2 {100000,0.2,0.0,False} identity to fit_multinomial_study non-standardised.
     """
     if protocol is None:
-        protocol = {"iterations": 2000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
+        raise BridgeError("CONFIGURATION_INVALID",
+                          "fit protocol required: protocol is mandatory per D47")
     try:
         if not isinstance(protocol, Mapping) or set(protocol) != {"iterations", "learning_rate", "l2", "class_weights"}:
             raise ValueError("protocol schema")
@@ -2633,8 +2636,11 @@ def training_metrics(
     Verdict D47: PASS iff train_accuracy>=0.70 AND share_pmax_ge_0_50>=0.75 AND
     min over eight FIT_REQUIRED_CLASSES of per_class share_pmax_ge_0_50 >=0.40
     else WARN. share_H_ge_theta is informational only. WARN never blocks.
-    Adds min_class_share_pmax_ge_0_50, verdict_rule, H percentiles p20/p30/p70/p80,
-    theta_recommendation (H p80 per D49).
+    Adds min_class_share_pmax_ge_0_50, verdict_rule, H percentiles p20/p30/p70/p80.
+    theta_recommendation is the D49 triple mapping (CP-14.5 C1): {"theta_H": H p80,
+    "quality_H_Q2": H p90, "quality_H_Q5": H p30} — exactly the values D49 says are
+    to be set later from the H distribution. Informational only: nothing in the
+    decision path consumes it, and params/e11_params_v4.yaml is never written here.
     """
     if type(theta) not in (int, float) or not math.isfinite(float(theta)):
         raise BridgeError("CONFIGURATION_INVALID", "theta_H unavailable")
@@ -2714,7 +2720,14 @@ def training_metrics(
             "p80": float(percentiles[7]),
             "p90": float(percentiles[8]),
         },
-        "theta_recommendation": float(percentiles[7]),
+        # CP-14.5 C1: the D49 triple, not a single float. p80 -> theta_H,
+        # p90 -> quality_H_Q2, p30 -> quality_H_Q5 (percentiles above are
+        # [10, 20, 25, 30, 50, 70, 75, 80, 90]).
+        "theta_recommendation": {
+            "theta_H": float(percentiles[7]),
+            "quality_H_Q2": float(percentiles[8]),
+            "quality_H_Q5": float(percentiles[3]),
+        },
         "entropy_by_pmax_bucket": by_bucket,
         "per_class": per_class,
         "verdict": verdict,

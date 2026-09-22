@@ -2293,9 +2293,17 @@ D36_GOLDEN_B = [0.12529475523635025, 0.03429430115365462, 0.03384038199144579,
                 -0.1319648679420332, -0.03035999014336817, -0.13517083087402532]
 
 
+# CP-14.5 C2: fit_multinomial has no default protocol any more, so the D36
+# regression tests pass the legacy {2000,0.2,0.0,False} mapping explicitly.
+# Explicit legacy must stay bit-identical to the pre-D47 main@c5f0261 golden.
+D36_LEGACY_PROTOCOL = {"iterations": 2000, "learning_rate": 0.2, "l2": 0.0,
+                       "class_weights": False}
+
+
 def test_d36_nine_class_fit_bit_identical_to_main_golden():
     """D36(a): all nine classes present -> W/b bit-identical to main@c5f0261."""
-    W, b = EC.fit_multinomial(_d36_matrix(72), list(EC.E11.REGIMES) * 8, 123)
+    W, b = EC.fit_multinomial(_d36_matrix(72), list(EC.E11.REGIMES) * 8, 123,
+                              protocol=D36_LEGACY_PROTOCOL)
     assert W == D36_GOLDEN_W
     assert b == D36_GOLDEN_B
 
@@ -2303,7 +2311,8 @@ def test_d36_nine_class_fit_bit_identical_to_main_golden():
 def test_d36_nine_minus_transition_fits_nine_by_eight_finite():
     """D36(b): TRANSITION absent -> fit succeeds, W (9,8), b (9,), finite."""
     required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
-    W, b = EC.fit_multinomial(_d36_matrix(64), required * 8, 123)
+    W, b = EC.fit_multinomial(_d36_matrix(64), required * 8, 123,
+                              protocol=D36_LEGACY_PROTOCOL)
     import numpy as np
     W_arr, b_arr = np.asarray(W, dtype=float), np.asarray(b, dtype=float)
     assert W_arr.shape == (9, 8) and b_arr.shape == (9,)
@@ -2315,7 +2324,7 @@ def test_d36_single_missing_required_class_refuses(missing):
     """D36(c): any other single missing class refuses CONFIGURATION_INVALID."""
     labels = [name for name in EC.E11.REGIMES * 8 if name != missing]
     with pytest.raises(BridgeError, match="eight rule-tree classes required for fitting"):
-        EC.fit_multinomial(_d36_matrix(64), labels, 123)
+        EC.fit_multinomial(_d36_matrix(64), labels, 123, protocol=D36_LEGACY_PROTOCOL)
 
 
 def _d36_fake_feature_timeline(rule0_cycle):
@@ -2537,6 +2546,17 @@ def test_d36_cli_trained_prints_train_validation_and_writes_report(tmp_path):
         assert lines[0].startswith("TRAIN_VALIDATION verdict=")
         for field in ("share_H_ge_theta=", "share_pmax_ge_0_50=", " samples="):
             assert field in lines[0]
+        # CP-14.5 C1: the D49 triple is printed in full, all three values.
+        import re
+        for token in ("theta_rec_H=", "theta_rec_Q2=", "theta_rec_Q5="):
+            assert token in lines[0], token
+        printed = {m.group(1): float(m.group(2)) for m in re.finditer(
+            r"(theta_rec_H|theta_rec_Q2|theta_rec_Q5)=(-?\d+\.\d+)", lines[0])}
+        assert set(printed) == {"theta_rec_H", "theta_rec_Q2", "theta_rec_Q5"}
+        expected = report["validation"]["theta_recommendation"]
+        assert printed["theta_rec_H"] == pytest.approx(expected["theta_H"], abs=1e-6)
+        assert printed["theta_rec_Q2"] == pytest.approx(expected["quality_H_Q2"], abs=1e-6)
+        assert printed["theta_rec_Q5"] == pytest.approx(expected["quality_H_Q5"], abs=1e-6)
         reports = sorted(data_dir.glob("e11_train_report_*.json"))
         assert reports, "no D36 validation report written"
         assert json.loads(reports[-1].read_text()) == report["validation"]
@@ -2546,6 +2566,9 @@ def test_d36_cli_trained_prints_train_validation_and_writes_report(tmp_path):
         assert text_run.returncode == 0, text_run.stdout + text_run.stderr
         assert "TRAINED 56 samples" in text_run.stdout
         assert "validation verdict=" in text_run.stdout
+        # CP-14.5 C1: the TRAINED text line prints all three recommendations.
+        for token in ("theta_rec_H=", "theta_rec_Q2=", "theta_rec_Q5="):
+            assert token in text_run.stdout, token
     finally:
         shutil.rmtree(cache_dir, ignore_errors=True)
         for report_file in data_dir.glob("e11_train_report_*.json"):
@@ -2694,7 +2717,7 @@ def test_cp143_training_validation_extended_fields_on_hand_built_w_b():
     entropies = [EC.E11.compute_logits_softmax(dict(zip(EC.E11.VECTOR_KEYS, row)), W, b)[2]
                  for row in X]
     percentiles = np.percentile(np.asarray(entropies), [10.0, 20.0, 25.0, 30.0, 50.0, 70.0, 75.0, 80.0, 90.0])
-    # D47/D49 adds p20/p30/p70/p80 and theta_recommendation (p80)
+    # D47/D49 adds p20/p30/p70/p80 and the theta_recommendation triple (CP-14.5 C1)
     assert report["H_percentiles"]["p10"] == pytest.approx(float(percentiles[0]))
     assert report["H_percentiles"]["p20"] == pytest.approx(float(percentiles[1]))
     assert report["H_percentiles"]["p25"] == pytest.approx(float(percentiles[2]))
@@ -2706,7 +2729,16 @@ def test_cp143_training_validation_extended_fields_on_hand_built_w_b():
     assert report["H_percentiles"]["p90"] == pytest.approx(float(percentiles[8]))
     assert report["H_percentiles"]["p50"] == report["H_median"]
     assert report["H_percentiles"]["p90"] == pytest.approx(math.log(9), abs=1e-9)
-    assert report["theta_recommendation"] == pytest.approx(float(percentiles[7]))
+    # CP-14.5 C1: theta_recommendation is the D49 mapping, not a single float.
+    rec = report["theta_recommendation"]
+    assert isinstance(rec, dict)
+    assert set(rec) == {"theta_H", "quality_H_Q2", "quality_H_Q5"}
+    assert rec["theta_H"] == pytest.approx(float(percentiles[7]))
+    assert rec["quality_H_Q2"] == pytest.approx(float(percentiles[8]))
+    assert rec["quality_H_Q5"] == pytest.approx(float(percentiles[3]))
+    assert rec["theta_H"] == pytest.approx(report["H_percentiles"]["p80"])
+    assert rec["quality_H_Q2"] == pytest.approx(report["H_percentiles"]["p90"])
+    assert rec["quality_H_Q5"] == pytest.approx(report["H_percentiles"]["p30"])
     buckets = report["entropy_by_pmax_bucket"]
     assert list(buckets) == ["[0.0,0.3)", "[0.3,0.5)", "[0.5,0.7)", "[0.7,1.0]"]
     assert buckets["[0.0,0.3)"] == pytest.approx(math.log(9), abs=1e-9)
@@ -2997,12 +3029,18 @@ def test_cp144_fit_multinomial_protocol_bit_identical_and_p2_identity():
     W_gold, b_gold = EC.fit_multinomial(_d36_matrix(72), list(EC.E11.REGIMES) * 8, 123,
                                         protocol={"iterations": 2000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False})
     assert W_gold == D36_GOLDEN_W and b_gold == D36_GOLDEN_B
-    # Default (None) must be bit-identical to explicit legacy
+    # CP-14.5 C2: the CP-14.4 None default is gone. None is refused
+    # CONFIGURATION_INVALID and the argument is mandatory (no default at all),
+    # so the legacy mapping must be passed explicitly - which, above and below,
+    # still reproduces the pre-D47 numbers exactly.
     X, labels, _W, _b = _cp143_hand_built_validation()
     fp_legacy = {"iterations": 2000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
     W_legacy, b_legacy = EC.fit_multinomial(X, labels, 123, protocol=fp_legacy)
-    W_default, b_default = EC.fit_multinomial(X, labels, 123, protocol=None)
-    assert W_legacy == W_default and b_legacy == b_default
+    assert W_legacy and b_legacy
+    with pytest.raises(BridgeError, match="fit protocol required"):
+        EC.fit_multinomial(X, labels, 123, protocol=None)
+    with pytest.raises(TypeError):
+        EC.fit_multinomial(X, labels, 123)
     # P2 identity
     fp_p2 = {"iterations": 100000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
     W_p2, b_p2 = EC.fit_multinomial(X, labels, 123, protocol=fp_p2)
@@ -3225,3 +3263,109 @@ def test_cp144_training_query_and_cache_format_byte_identical():
          "max_bars_per_cell", "vector_keys", "samples", "excluded",
          "window_start", "window_end"}
     )
+
+
+# ---------------------------------------------------------------------------
+# CP-14.5 (C1/C2/C3): the D49 triple recommendation, the mandatory fit
+# protocol and the once-resolved EngineParams handed to catalog_events.
+# ---------------------------------------------------------------------------
+
+def test_cp145_theta_recommendation_is_the_d49_triple_mapping():
+    """C1: theta_recommendation = {theta_H: p80, quality_H_Q2: p90, quality_H_Q5: p30}."""
+    import numpy as np
+    X, labels, W, b = _cp143_hand_built_validation()
+    entropies = [EC.E11.compute_logits_softmax(dict(zip(EC.E11.VECTOR_KEYS, row)), W, b)[2]
+                 for row in X]
+    pmaxes = [max(EC.E11.compute_logits_softmax(dict(zip(EC.E11.VECTOR_KEYS, row)), W, b)[1])
+              for row in X]
+    probs = [EC.E11.compute_logits_softmax(dict(zip(EC.E11.VECTOR_KEYS, row)), W, b)[1]
+             for row in X]
+    theta = float(EC.E11.get_params().entropy_threshold)
+    report = EC.training_metrics(labels, entropies, pmaxes, probs, theta)
+    rec = report["theta_recommendation"]
+    # A mapping, not the CP-14.4 single float.
+    assert isinstance(rec, dict) and not isinstance(rec, float)
+    assert set(rec) == {"theta_H", "quality_H_Q2", "quality_H_Q5"}
+    percentiles = np.percentile(np.asarray(entropies, dtype=float),
+                                [10.0, 20.0, 25.0, 30.0, 50.0, 70.0, 75.0, 80.0, 90.0])
+    assert rec["theta_H"] == pytest.approx(float(percentiles[7]))
+    assert rec["quality_H_Q2"] == pytest.approx(float(percentiles[8]))
+    assert rec["quality_H_Q5"] == pytest.approx(float(percentiles[3]))
+    # Same numbers as the recorded percentiles, and D49 ordering holds.
+    assert rec["theta_H"] == report["H_percentiles"]["p80"]
+    assert rec["quality_H_Q2"] == report["H_percentiles"]["p90"]
+    assert rec["quality_H_Q5"] == report["H_percentiles"]["p30"]
+    assert rec["quality_H_Q5"] <= rec["theta_H"] <= rec["quality_H_Q2"]
+    # The triple is reported, never governed: params/ is not written by this path.
+    assert EC.E11.get_params().entropy_threshold == pytest.approx(theta)
+
+
+def test_cp145_fit_multinomial_protocol_is_mandatory():
+    """C2: no default protocol; None -> CONFIGURATION_INVALID, omission -> TypeError."""
+    import inspect
+    sig = inspect.signature(EC.fit_multinomial)
+    assert sig.parameters["protocol"].default is inspect.Parameter.empty
+    assert sig.parameters["protocol"].empty is inspect.Parameter.empty
+    X, labels, _W, _b = _cp143_hand_built_validation()
+    with pytest.raises(BridgeError) as exc:
+        EC.fit_multinomial(X, labels, 123, protocol=None)
+    assert exc.value.reason == "CONFIGURATION_INVALID"
+    with pytest.raises(TypeError):
+        EC.fit_multinomial(X, labels, 123)
+    # A protocol that is not the four-key D47 mapping stays refused...
+    with pytest.raises(BridgeError):
+        EC.fit_multinomial(X, labels, 123, protocol={"iterations": 2000})
+    # ...while the governed YAML protocol and the explicit legacy mapping both fit.
+    for protocol in (EC.load_e11_training_protocol(),
+                     {"iterations": 2000, "learning_rate": 0.2, "l2": 0.0,
+                      "class_weights": False}):
+        W, b = EC.fit_multinomial(X, labels, 123, protocol=protocol)
+        assert len(W) == 9 and len(b) == 9
+
+
+def test_cp145_compute_resolves_engine_params_once_for_catalog_events(monkeypatch):
+    """C3: compute resolves EngineParams once and passes them to catalog_events."""
+    import apex.engines.e11_regime.engine as e11mod
+    from tests.unit.test_e11_regime import BY_ID, candle
+    fx = BY_ID["GF_01_TREND_EXPANSION"]
+    real = e11mod.catalog_events
+    seen = []
+
+    def spy(state, params=None):
+        seen.append(params)
+        return real(state, params)
+
+    monkeypatch.setattr(e11mod, "catalog_events", spy)
+    eng = e11mod.E11RegimeEngine()
+    as_of = "2026-01-15T00:00:00Z"
+    base = {"candles": [candle(0, fx["inputs"])], "W": fx["W"], "b": fx["b"],
+            "history": fx["history"], "Sigma0": fx["Sigma0"],
+            "prev_mom": fx["prev_mom"]}
+
+    def codes(events):
+        return ["_".join(ev.condition_state.split("_")[:3]) for ev in events]
+
+    # Default context: an EngineParams is now passed, and it carries exactly the
+    # governed YAML values -> emissions are byte-for-byte what the pre-C3
+    # catalog_events(state) fallback produced (no numeric change).
+    default_events = eng.compute("BNBUSDT", "1h", as_of, dict(base))
+    state = eng._last_result["regime_state"]
+    assert seen and seen[-1] is not None
+    resolved = seen[-1]
+    assert isinstance(resolved, e11mod.EngineParams)
+    assert float(resolved.entropy_threshold) == pytest.approx(
+        float(e11mod.get_params().entropy_threshold))
+    assert codes(default_events) == [item["code"] for item in real(state)]
+    assert len(seen) == 1, "params must be resolved once, not per event"
+    # A dict override now reaches the catalog path, consistently with run_engine.
+    override_events = eng.compute("BNBUSDT", "1h", as_of,
+                                  dict(base, e11_params={"entropy_threshold": 1.0}))
+    assert float(seen[-1].entropy_threshold) == pytest.approx(1.0)
+    entropy = float(eng._last_result["regime_state"]["entropy"])
+    assert ("EV_RGM_004" in codes(override_events)) is (entropy >= 1.0)
+    # An EngineParams instance passes through untouched (identity, not a copy).
+    instance = e11mod.get_params({"entropy_threshold": 1.0})
+    eng.compute("BNBUSDT", "1h", as_of, dict(base, e11_params=instance))
+    assert seen[-1] is instance
+    assert codes(eng.compute("BNBUSDT", "1h", as_of,
+                             dict(base, e11_params=instance))) == codes(override_events)
