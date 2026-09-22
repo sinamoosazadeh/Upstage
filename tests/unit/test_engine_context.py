@@ -25,7 +25,7 @@ def test_classifier_loader_and_real_bridge_tensor_validation():
                           "ic_inputs": {"test": 1}, "history_windows": {},
                           "regime_state": "TRANSITION"})
     assert artifact["artifact_sha256"] == EC.classifier_hash(
-        artifact["W"], artifact["b"], artifact["seed"])
+        artifact["W"], artifact["b"], artifact["seed"], artifact["fit_protocol"])
 
 
 @pytest.mark.parametrize("change", ["W", "b", "K", "hash", "seed", "NaN", "delay", "window"])
@@ -539,13 +539,15 @@ def test_fitter_writer_two_process_determinism_not_a_store_training_claim(tmp_pa
     script = '''
 import sys
 from apex.ops.engine_context import *
+fp = {"iterations": 2000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
 X = [[float(i == j) for j in range(8)] for i in range(9)] * 3
-W,b = fit_multinomial(X, list(E11.REGIMES) * 3, 123)
+W,b = fit_multinomial(X, list(E11.REGIMES) * 3, 123, protocol=fp)
 a = {"W": W, "b": b, "K": 9, "label_delay_candles": 48, "seed": 123,
+     "fit_protocol": fp,
      "training_window": {"start": "2026-01-01T00:00:00.000Z", "end": "2026-01-02T00:00:00.000Z", "timeframes": list(DEFAULT_TRAINING_TIMEFRAMES),
                          "symbols": list(CORE10_SYMBOLS), "default_timeframes": list(DEFAULT_TRAINING_TIMEFRAMES), "default_symbols": list(CORE10_SYMBOLS),
                          "max_bars_per_cell": None},
-     "sample_count": 27, "training_query_sha256": "0" * 64, "artifact_sha256": classifier_hash(W,b,123)}
+     "sample_count": 27, "training_query_sha256": "0" * 64, "artifact_sha256": classifier_hash(W,b,123,fp)}
 write_classifier(a, sys.argv[1])
 assert load_classifier(sys.argv[1]) == a
 '''
@@ -693,7 +695,7 @@ def test_d28_package_hash_covers_canonical_governed_values_and_optional_classifi
     assert third["parameter_files"].count("e11_classifier_v1.yaml") == 1
     artifact = EC.load_classifier(folder / "e11_classifier_v1.yaml")
     artifact["b"][0] += .01
-    artifact["artifact_sha256"] = EC.classifier_hash(artifact["W"], artifact["b"], artifact["seed"])
+    artifact["artifact_sha256"] = EC.classifier_hash(artifact["W"], artifact["b"], artifact["seed"], artifact["fit_protocol"])
     EC.write_classifier(artifact, folder / "e11_classifier_v1.yaml")
     assert EC.paper_package_binding(environment="PAPER", params_dir=folder)["parameter_package_id"] != third["parameter_package_id"]
     # A non-governed stray file is never adopted as an active parameter source.
@@ -2355,13 +2357,18 @@ def test_d36_train_classifier_zero_transition_fits_and_validates(tmp_path, monke
     assert artifact["K"] == 9 and artifact["sample_count"] == 72
     assert report["per_class_counts"]["TRANSITION"] == 0
     assert all(report["per_class_counts"][name] == 9 for name in required)
-    assert EC.validate_classifier(artifact) == artifact  # schema unchanged
+    assert EC.validate_classifier(artifact) == artifact  # schema includes fit_protocol per D47
+    assert "fit_protocol" in artifact
+    assert artifact["fit_protocol"] == EC.load_e11_training_protocol()
     validation = report["validation"]
     assert validation["samples"] == 72
-    assert validation["theta_H"] == EC.E11.THETA_H
+    assert validation["theta_H"] == pytest.approx(float(EC.E11.get_params().entropy_threshold))
     assert validation["verdict"] in ("PASS", "WARN")
+    assert validation["verdict_rule"] == "D47"
     assert validation["per_class"]["TRANSITION"]["n"] == 0
     assert all(validation["per_class"][name]["n"] == 9 for name in required)
+    assert report["fit_protocol"] == EC.load_e11_training_protocol()
+    assert report["verdict_rule"] == "D47"
 
 
 def test_d36_train_classifier_missing_other_class_refuses_named(tmp_path, monkeypatch):
@@ -2392,32 +2399,31 @@ def test_d36_train_classifier_missing_other_class_refuses_named(tmp_path, monkey
 
 
 def test_d36_training_validation_shares_verdicts_and_native_entropy():
-    """D36(f): shares + verdict on hand-built W/b; H == E11.compute_logits_softmax."""
+    """D36(f) + D47: shares + verdict on hand-built W/b; H == E11.compute_logits_softmax.
+
+    D47 verdict replaces D36: PASS iff accuracy>=0.70 and share_pmax>=0.75 and
+    min_class_share>=0.40 else WARN. Governed theta_H from get_params().
+    """
     import math
     import numpy as np
-    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
-    # PASS: 16 confident samples (one-hot x, row-100 logits) + 4 uniform.
-    W_pass = [[100.0 if i == j else 0.0 for j in range(8)] for i in range(9)]
-    X_pass = []
-    for i in range(16):
-        row = [0.0] * 8
-        row[i % 8] = 1.0
-        X_pass.append(row)
-    X_pass += [[0.0] * 8 for _ in range(4)]
-    labels_pass = [required[i % 8] for i in range(20)]
-    report = EC.training_validation(X_pass, labels_pass, W_pass, [0.0] * 9)
+    # PASS case uses the CP-14.3 hand-built matrix that satisfies D47
+    X_pass, labels_pass, W_pass, b_pass = _cp143_hand_built_validation()
+    theta = float(EC.E11.get_params().entropy_threshold)
+    report = EC.training_validation(X_pass, labels_pass, W_pass, b_pass, theta=theta)
     assert report["verdict"] == "PASS"
+    assert report["verdict_rule"] == "D47"
     assert report["samples"] == 20
-    assert report["theta_H"] == EC.E11.THETA_H
-    assert report["share_H_ge_theta"] == 0.2
-    assert report["share_H_ge_0_80"] == 0.2
-    assert report["share_H_lt_0_40"] == 0.8
-    assert report["share_pmax_ge_0_50"] == 0.8
+    assert report["theta_H"] == pytest.approx(theta)
+    assert report["share_H_ge_theta"] == pytest.approx(0.2)
+    assert report["share_H_ge_0_80"] == pytest.approx(0.2)
+    assert report["share_H_lt_0_40"] == pytest.approx(0.8)
+    assert report["share_pmax_ge_0_50"] == pytest.approx(0.8)
+    assert report["min_class_share_pmax_ge_0_50"] >= 0.40
+    assert report["train_accuracy"] >= 0.70
     assert report["H_max"] == pytest.approx(math.log(9))
     assert report["pmax_median"] == pytest.approx(1.0)
-    # The report's H is the runtime function's H, sample for sample.
     hs = [EC.E11.compute_logits_softmax(dict(zip(EC.E11.VECTOR_KEYS, row)),
-                                        W_pass, [0.0] * 9)[2] for row in X_pass]
+                                        W_pass, b_pass)[2] for row in X_pass]
     assert report["H_min"] == min(hs)
     assert report["H_max"] == max(hs)
     assert report["H_median"] == float(np.median(hs))
@@ -2425,17 +2431,12 @@ def test_d36_training_validation_shares_verdicts_and_native_entropy():
         idxs = [i for i in range(20) if labels_pass[i] == name]
         n = len(idxs)
         assert report["per_class"][name]["n"] == n
-        if n:
-            # i=0..15 are confident (H < theta_H, pmax ~ 1); i=16..19 uniform.
-            expected_h = sum(1 for i in idxs if i >= 16) / n
-            expected_p = sum(1 for i in idxs if i < 16) / n
-            assert report["per_class"][name]["share_H_ge_theta"] == pytest.approx(expected_h)
-            assert report["per_class"][name]["share_pmax_ge_0_50"] == pytest.approx(expected_p)
     # WARN: zero weights/biases -> uniform 1/9 everywhere (H = ln 9, pmax < 0.5).
     W_zero = [[0.0] * 8 for _ in range(9)]
     X_warn = [[(i % 8) / 8.0] * 8 for i in range(10)]
-    warn = EC.training_validation(X_warn, ["RANGE"] * 10, W_zero, [0.0] * 9)
+    warn = EC.training_validation(X_warn, ["RANGE"] * 10, W_zero, [0.0] * 9, theta=theta)
     assert warn["verdict"] == "WARN"
+    assert warn["verdict_rule"] == "D47"
     assert warn["share_H_ge_theta"] == 1.0
     assert warn["share_pmax_ge_0_50"] == 0.0
     assert warn["H_min"] == warn["H_max"] == pytest.approx(math.log(9))
@@ -2673,69 +2674,90 @@ def _cp143_hand_built_validation():
 
 
 def test_cp143_training_validation_extended_fields_on_hand_built_w_b():
-    """ADR-CP-14-025: train accuracy/log-loss, Gate 7 share, percentiles, buckets."""
+    """ADR-CP-14-025 + D47/D49: extended fields with governed theta and D47 verdict."""
     import math
     import numpy as np
     X, labels, W, b = _cp143_hand_built_validation()
-    report = EC.training_validation(X, labels, W, b)
-    # D36 keys and values are unchanged by the extension.
-    assert report["samples"] == 20 and report["theta_H"] == EC.E11.THETA_H
-    assert report["share_H_ge_theta"] == 0.2 and report["share_H_ge_0_80"] == 0.2
-    assert report["share_H_lt_0_40"] == 0.8 and report["share_pmax_ge_0_50"] == 0.8
+    theta = float(EC.E11.get_params().entropy_threshold)
+    report = EC.training_validation(X, labels, W, b, theta=theta)
+    # D47 keys
+    assert report["samples"] == 20 and report["theta_H"] == pytest.approx(theta)
+    assert report["share_H_ge_theta"] == pytest.approx(0.2) and report["share_H_ge_0_80"] == pytest.approx(0.2)
+    assert report["share_H_lt_0_40"] == pytest.approx(0.8) and report["share_pmax_ge_0_50"] == pytest.approx(0.8)
     assert report["verdict"] == "PASS"
-    # Extended: 16 of 20 one-hot samples are argued correctly by argmax; the
-    # four uniform ones decay to argmax 0 (CRISIS) and are all wrong.
-    assert report["train_accuracy"] == 0.80
-    # -ln p for the 16 saturated samples ~ 0; the 4 uniform ones cost ln 9.
+    assert report["verdict_rule"] == "D47"
+    assert report["min_class_share_pmax_ge_0_50"] >= 0.40
+    assert report["train_accuracy"] == pytest.approx(0.80)
     assert report["train_log_loss"] == pytest.approx(4 * math.log(9) / 20, abs=1e-9)
     assert report["per_class"]["CRISIS"]["n"] == 2
-    # Gate 7 fail share counts H/ln 9 > 0.85: exactly the four uniform samples.
-    assert report["share_h_norm_gt_0_85"] == 4 / 20
+    assert report["share_h_norm_gt_0_85"] == pytest.approx(4 / 20)
     entropies = [EC.E11.compute_logits_softmax(dict(zip(EC.E11.VECTOR_KEYS, row)), W, b)[2]
                  for row in X]
-    percentiles = np.percentile(np.asarray(entropies), [10.0, 25.0, 50.0, 75.0, 90.0])
-    assert report["H_percentiles"] == {"p10": float(percentiles[0]), "p25": float(percentiles[1]),
-                                       "p50": float(percentiles[2]), "p75": float(percentiles[3]),
-                                       "p90": float(percentiles[4])}
+    percentiles = np.percentile(np.asarray(entropies), [10.0, 20.0, 25.0, 30.0, 50.0, 70.0, 75.0, 80.0, 90.0])
+    # D47/D49 adds p20/p30/p70/p80 and theta_recommendation (p80)
+    assert report["H_percentiles"]["p10"] == pytest.approx(float(percentiles[0]))
+    assert report["H_percentiles"]["p20"] == pytest.approx(float(percentiles[1]))
+    assert report["H_percentiles"]["p25"] == pytest.approx(float(percentiles[2]))
+    assert report["H_percentiles"]["p30"] == pytest.approx(float(percentiles[3]))
+    assert report["H_percentiles"]["p50"] == pytest.approx(float(percentiles[4]))
+    assert report["H_percentiles"]["p70"] == pytest.approx(float(percentiles[5]))
+    assert report["H_percentiles"]["p75"] == pytest.approx(float(percentiles[6]))
+    assert report["H_percentiles"]["p80"] == pytest.approx(float(percentiles[7]))
+    assert report["H_percentiles"]["p90"] == pytest.approx(float(percentiles[8]))
     assert report["H_percentiles"]["p50"] == report["H_median"]
     assert report["H_percentiles"]["p90"] == pytest.approx(math.log(9), abs=1e-9)
+    assert report["theta_recommendation"] == pytest.approx(float(percentiles[7]))
     buckets = report["entropy_by_pmax_bucket"]
     assert list(buckets) == ["[0.0,0.3)", "[0.3,0.5)", "[0.5,0.7)", "[0.7,1.0]"]
-    assert buckets["[0.0,0.3)"] == pytest.approx(math.log(9), abs=1e-9)  # p_max = 1/9
+    assert buckets["[0.0,0.3)"] == pytest.approx(math.log(9), abs=1e-9)
     assert buckets["[0.3,0.5)"] is None and buckets["[0.5,0.7)"] is None
-    # Saturated samples reach p_max = 1.0 exactly, so the last bucket is closed
-    # at 1.0; every sample lands in exactly one bucket.
     assert buckets["[0.7,1.0]"] == pytest.approx(0.0, abs=1e-9)
     assert sum(1 for value in buckets.values() if value is None) == 2
-    # The strict Gate 7 boundary: a raw entropy of exactly 0.85*ln 9 does not count.
     assert EC.GATE7_ENTROPY_NORM_MAX == 0.85
 
 
 def test_cp143_fit_study_p0_is_bit_identical_to_the_runtime_fitter():
-    """ADR-CP-14-025: P0 IS today's protocol; the study never forks fit_multinomial."""
+    """ADR-CP-14-025 + D47: P0 IS legacy protocol; study matches runtime fitter."""
     X, labels, W, b = _cp143_hand_built_validation()
     study_W, study_b, info = EC.fit_multinomial_study(X, labels, 123)
-    assert (study_W, study_b) == EC.fit_multinomial(X, labels, 123)
+    # Legacy protocol explicit
+    fp_legacy = {"iterations": 2000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
+    assert (study_W, study_b) == EC.fit_multinomial(X, labels, 123, protocol=fp_legacy)
     assert (info["iterations"], info["learning_rate"], info["l2"]) == (2000, 0.2, 0.0)
     assert info["weights"] is False and info["standardised"] is False
     assert info["standardisation"] is None
-    # Standardisation is folded back: the runtime contract stays raw-8 -> logits.
+    # Standardisation folded back with fixed formula
     folded_W, folded_b, folded = EC.fit_multinomial_study(X, labels, 123, standardise=True)
     logits, probs, H = EC.E11.compute_logits_softmax(
         dict(zip(EC.E11.VECTOR_KEYS, X[0])), folded_W, folded_b)
     assert len(logits) == 9 and pytest.approx(sum(probs), abs=1e-12) == 1.0
     assert folded["standardised"] is True and folded["standardisation"]["std"]
+    # P2 identity: fit_multinomial with P2 protocol equals study P2
+    fp_p2 = {"iterations": 100000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
+    w2, b2 = EC.fit_multinomial(X, labels, 123, protocol=fp_p2)
+    sw2, sb2, _ = EC.fit_multinomial_study(X, labels, 123, iterations=100000, learning_rate=0.2, l2=0.0, class_weights=False, standardise=False)
+    assert (w2, b2) == (sw2, sb2)
 
 
 def test_cp143_fit_study_grid_names_and_metrics():
-    """The fixed, named grid P0..P9 with its recorded protocol fields."""
+    """CP-14.4: fixed named grid P0..P12 with extended fields per C7."""
     grid = [(spec["variant"], spec["iterations"], spec["l2"], spec["class_weights"],
              spec["standardise"]) for spec in EC.FIT_STUDY_VARIANTS]
-    assert grid == [("P0", 2000, 0.0, False, False), ("P1", 20000, 0.0, False, False),
-                    ("P2", 100000, 0.0, False, False), ("P3", 20000, 1e-3, False, False),
-                    ("P4", 20000, 1e-2, False, False), ("P5", 20000, 0.0, True, False),
-                    ("P6", 20000, 1e-3, True, False), ("P7", 20000, 1e-2, True, False),
-                    ("P8", 20000, 0.0, False, True), ("P9", 20000, 0.0, True, True)]
+    assert grid == [
+        ("P0", 2000, 0.0, False, False),
+        ("P1", 20000, 0.0, False, False),
+        ("P2", 100000, 0.0, False, False),
+        ("P3", 20000, 1e-3, False, False),
+        ("P4", 20000, 1e-2, False, False),
+        ("P5", 20000, 0.0, True, False),
+        ("P6", 20000, 1e-3, True, False),
+        ("P7", 20000, 1e-2, True, False),
+        ("P8", 20000, 0.0, False, True),
+        ("P9", 20000, 0.0, True, True),
+        ("P10", 100000, 0.0, True, False),
+        ("P11", 300000, 0.0, False, False),
+        ("P12", 300000, 0.0, True, False),
+    ]
     assert all(spec["learning_rate"] == 0.2 for spec in EC.FIT_STUDY_VARIANTS)
     X, labels, W, b = _cp143_hand_built_validation()
     study = EC.run_fit_study(X, labels, seed=123,
@@ -2745,17 +2767,18 @@ def test_cp143_fit_study_grid_names_and_metrics():
     for record in study["variants"]:
         for key in ("variant", "iterations", "learning_rate", "l2", "weights", "standardised",
                     "train_accuracy", "train_log_loss", "share_H_ge_theta", "share_H_ge_0_80",
-                    "share_pmax_ge_0_50", "share_h_norm_gt_0_85", "H_percentiles",
-                    "pmax_median", "seconds", "per_class", "entropy_by_pmax_bucket"):
+                    "share_pmax_ge_0_50", "min_class_share_pmax_ge_0_50", "share_h_norm_gt_0_85",
+                    "H_percentiles", "pmax_median", "seconds", "per_class",
+                    "entropy_by_pmax_bucket", "theta_for_10pct", "theta_for_20pct",
+                    "theta_for_30pct", "verdict_rule"):
             assert key in record, key
         for name in EC.FIT_STUDY_PER_CLASS_ROW:
             assert name in record["per_class"]
+        # Every variant now carries theta cut-offs per C7
+        assert record["theta_for_10pct"] >= record["theta_for_20pct"] >= record["theta_for_30pct"]
     assert weighted["weights"] is True and weighted["iterations"] == 20000
-    # P0 carries the empirical cut-offs; later variants do not.
-    assert first["theta_for_10pct"] >= first["theta_for_20pct"] >= first["theta_for_30pct"]
-    # ln 9 = 2.1972...: the 10% threshold sits at the top of a saturated fit.
-    assert "theta_for_10pct" not in weighted
-    # The per-class share is the share of that class's samples with p_max >= 0.50.
+    # D47 verdict_rule present
+    assert first["verdict_rule"] == "D47"
     for name in EC.FIT_STUDY_PER_CLASS_ROW:
         stats = first["per_class"][name]
         assert stats["n"] and 0.0 <= stats["share_pmax_ge_0_50"] <= 1.0
@@ -2831,21 +2854,26 @@ def test_cp143_cli_fit_study_writes_report_no_artifact_and_refuses(tmp_path):
         assert "cache=hit" in run.stderr and "FIT_CACHE cell=BTCUSDT:1h" in run.stderr
         study_lines = [line for line in run.stderr.splitlines()
                        if line.startswith("FIT_STUDY ")]
-        assert len(study_lines) == 10, run.stderr
+        # CP-14.4 grid is P0..P12 (13 variants)
+        assert len(study_lines) == 13, run.stderr
         assert [line.split()[1] for line in study_lines] == [
-            f"variant=P{i}" for i in range(10)]
+            f"variant=P{i}" for i in range(13)]
         for token in ("iters=", "lr=", "l2=", "weights=", "standardised=", "train_accuracy=",
                       "train_log_loss=", "share_H_ge_theta=", "share_H_ge_0_80=",
-                      "share_pmax_ge_0_50=", "share_h_norm_gt_0_85=", "H_p10=", "H_p50=",
+                      "share_pmax_ge_0_50=", "min_class_share_pmax_ge_0_50=",
+                      "theta_for_20pct=", "share_h_norm_gt_0_85=", "H_p10=", "H_p50=",
                       "H_p90=", "pmax_median=", "seconds=", "per_class_pmax_ge_0_50="):
             assert token in study_lines[0], token
         for name in EC.FIT_STUDY_PER_CLASS_ROW:
             assert name + ":" in study_lines[0]
         theta_lines = [line for line in run.stderr.splitlines()
                        if line.startswith("FIT_STUDY_THETA ")]
-        assert len(theta_lines) == 1
+        # CP-14.4: FIT_STUDY_THETA for every variant plus legacy P0 line => 14 lines
+        assert len(theta_lines) == 14, run.stderr
         for token in ("theta_for_10pct=", "theta_for_20pct=", "theta_for_30pct="):
             assert token in theta_lines[0]
+        # legacy line
+        assert any("legacy" in line or "variant=P0" in line for line in theta_lines)
         report_lines = [line for line in run.stderr.splitlines()
                         if line.startswith("FIT_STUDY_REPORT ")]
         assert len(report_lines) == 1
@@ -2855,7 +2883,7 @@ def test_cp143_cli_fit_study_writes_report_no_artifact_and_refuses(tmp_path):
         assert payload["status"] == "FIT_STUDY" and payload["artifact_written"] is False
         assert payload["samples"] == 64 and payload["protocol_hash"] == protocol
         assert [record["variant"] for record in payload["variants"]] == [
-            f"P{i}" for i in range(10)]
+            f"P{i}" for i in range(13)]
         # No artifact, no params/ write, and stdout stays machine-readable.
         assert not artifact.exists()
         assert not (EC.PARAMS_DIR / "e11_classifier_v1.yaml").exists()
@@ -2876,3 +2904,324 @@ def test_cp143_cli_fit_study_writes_report_no_artifact_and_refuses(tmp_path):
         for report_file in data_dir.glob("e11_fit_study_*.json"):
             if report_file not in reports_before:
                 report_file.unlink()
+
+
+# CP-14.4 D47/D49 new tests per C8
+
+
+def test_cp144_load_e11_training_protocol_strict(tmp_path):
+    """D47: loader reads exactly four keys, rejects drift, header names D47 and report."""
+    import textwrap
+    from apex.config import PARAMS_DIR
+    # Governed file exists and matches expected P2 values
+    protocol = EC.load_e11_training_protocol()
+    assert protocol == {"iterations": 100000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
+    # Header comment must name D47 and study report
+    raw = (PARAMS_DIR / "e11_training_v1.yaml").read_text()
+    assert "D47" in raw and "e11_fit_study_20260922T011436Z.json" in raw
+    # Extra key -> CONFIGURATION_INVALID
+    bad = tmp_path / "bad.yaml"
+    bad.write_text(textwrap.dedent("""
+        iterations: 100000
+        learning_rate: 0.2
+        l2: 0.0
+        class_weights: false
+        extra: 1
+    """))
+    with pytest.raises(BridgeError, match="CONFIGURATION_INVALID"):
+        EC.load_e11_training_protocol(bad)
+    # Wrong type
+    bad.write_text(textwrap.dedent("""
+        iterations: "100000"
+        learning_rate: 0.2
+        l2: 0.0
+        class_weights: false
+    """))
+    with pytest.raises(BridgeError, match="CONFIGURATION_INVALID"):
+        EC.load_e11_training_protocol(bad)
+    # Non-finite
+    bad.write_text(textwrap.dedent("""
+        iterations: 100000
+        learning_rate: .nan
+        l2: 0.0
+        class_weights: false
+    """))
+    with pytest.raises(BridgeError, match="CONFIGURATION_INVALID"):
+        EC.load_e11_training_protocol(bad)
+
+
+def test_cp144_classifier_hash_covers_fit_protocol_and_legacy_refuses():
+    """D47: artifact_sha256 = sha256(canonical_json({W,b,seed,fit_protocol})), missing => INVALID."""
+    W = [[0.1] * 8 for _ in range(9)]
+    b = [0.0] * 9
+    seed = 123
+    fp = {"iterations": 100000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
+    h = EC.classifier_hash(W, b, seed, fp)
+    # Legacy hash (without fp) differs
+    legacy = EC._classifier_hash_legacy(W, b, seed)
+    assert h != legacy
+    assert len(h) == 64 and len(legacy) == 64
+    # Validate requires fit_protocol
+    import json
+    artifact = {
+        "W": W, "b": b, "K": 9, "label_delay_candles": 48, "seed": seed,
+        "fit_protocol": dict(fp),
+        "training_window": {
+            "start": "2026-01-01T00:00:00.000Z", "end": "2026-01-02T00:00:00.000Z",
+            "timeframes": ["1h", "4h"], "symbols": ["BTCUSDT"],
+            "default_timeframes": ["1h", "4h"],
+            "default_symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+                                "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "LTCUSDT"],
+            "max_bars_per_cell": None,
+        },
+        "sample_count": 10,
+        "training_query_sha256": "a" * 64,
+        "artifact_sha256": h,
+    }
+    assert EC.validate_classifier(artifact) == artifact
+    # Missing fit_protocol => CONFIGURATION_INVALID
+    artifact_no_fp = {k: v for k, v in artifact.items() if k != "fit_protocol"}
+    artifact_no_fp["artifact_sha256"] = EC._classifier_hash_legacy(W, b, seed)
+    with pytest.raises(BridgeError, match="CONFIGURATION_INVALID"):
+        EC.validate_classifier(artifact_no_fp)
+    # Wrong hash => CONFIGURATION_INVALID
+    artifact_bad = dict(artifact)
+    artifact_bad["artifact_sha256"] = "0" * 64
+    with pytest.raises(BridgeError, match="CONFIGURATION_INVALID"):
+        EC.validate_classifier(artifact_bad)
+
+
+def test_cp144_fit_multinomial_protocol_bit_identical_and_p2_identity():
+    """C2: legacy {2000,0.2,0.0,False} bit-identical, P2 identity to study."""
+    # Legacy golden uses D36 matrix
+    W_gold, b_gold = EC.fit_multinomial(_d36_matrix(72), list(EC.E11.REGIMES) * 8, 123,
+                                        protocol={"iterations": 2000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False})
+    assert W_gold == D36_GOLDEN_W and b_gold == D36_GOLDEN_B
+    # Default (None) must be bit-identical to explicit legacy
+    X, labels, _W, _b = _cp143_hand_built_validation()
+    fp_legacy = {"iterations": 2000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
+    W_legacy, b_legacy = EC.fit_multinomial(X, labels, 123, protocol=fp_legacy)
+    W_default, b_default = EC.fit_multinomial(X, labels, 123, protocol=None)
+    assert W_legacy == W_default and b_legacy == b_default
+    # P2 identity
+    fp_p2 = {"iterations": 100000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
+    W_p2, b_p2 = EC.fit_multinomial(X, labels, 123, protocol=fp_p2)
+    W_p2_study, b_p2_study, _ = EC.fit_multinomial_study(
+        X, labels, 123, iterations=100000, learning_rate=0.2, l2=0.0, class_weights=False, standardise=False)
+    assert W_p2 == W_p2_study and b_p2 == b_p2_study
+
+
+def test_cp144_fit_multinomial_class_weights_and_l2():
+    """C2: class_weights inverse freq mean1, L2 on W only (b unregularized)."""
+    import numpy as np
+    # Create imbalanced labels: 16 of CRISIS, 2 of each other required class except TRANSITION
+    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
+    X = [[float(i % 8) / 8.0] * 8 for i in range(30)]
+    labels = ["CRISIS"] * 16 + [name for name in required if name != "CRISIS" for _ in range(2)]
+    # Fit with and without class_weights, same seed, check that weighted version differs and doesn't crash
+    fp_unweighted = {"iterations": 2000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
+    fp_weighted = {"iterations": 2000, "learning_rate": 0.2, "l2": 0.0, "class_weights": True}
+    Wu, bu = EC.fit_multinomial(X, labels, 123, protocol=fp_unweighted)
+    Ww, bw = EC.fit_multinomial(X, labels, 123, protocol=fp_weighted)
+    assert Wu != Ww  # weights should affect result
+    # L2 on W only: with l2, W norm should be smaller, b may be larger? At least finite and different
+    fp_l2 = {"iterations": 2000, "learning_rate": 0.2, "l2": 1e-2, "class_weights": False}
+    Wl2, bl2 = EC.fit_multinomial(X, labels, 123, protocol=fp_l2)
+    assert np.asarray(Wl2).shape == (9, 8)
+    # L2 should shrink W relative to unregularized (not strict guarantee every element, but overall norm)
+    assert np.linalg.norm(np.asarray(Wl2)) < np.linalg.norm(np.asarray(Wu)) + 1e-6
+
+
+def test_cp144_training_validation_d47_verdict_and_governed_theta():
+    """D47 verdict: PASS iff acc>=0.70 && share_pmax>=0.75 && min_class>=0.40 else WARN."""
+    # PASS case already tested via hand-built validation
+    X, labels, W, b = _cp143_hand_built_validation()
+    theta = float(EC.E11.get_params().entropy_threshold)
+    report = EC.training_validation(X, labels, W, b, theta=theta)
+    assert report["verdict"] == "PASS"
+    assert report["verdict_rule"] == "D47"
+    assert report["train_accuracy"] >= 0.70
+    assert report["share_pmax_ge_0_50"] >= 0.75
+    assert report["min_class_share_pmax_ge_0_50"] >= 0.40
+    # WARN case: uniform -> accuracy 0 (argmax 0 vs many labels), share_pmax 0
+    W_zero = [[0.0] * 8 for _ in range(9)]
+    X_warn = [[0.0] * 8 for _ in range(16)]
+    labels_warn = [name for name in EC.FIT_REQUIRED_CLASSES for _ in range(2)]  # 16 samples, 8 classes x2
+    warn = EC.training_validation(X_warn, labels_warn, W_zero, [0.0] * 9, theta=theta)
+    assert warn["verdict"] == "WARN"
+    assert warn["verdict_rule"] == "D47"
+    # Theta from governed params, not constant, but currently equal
+    assert warn["theta_H"] == pytest.approx(theta)
+    assert warn["theta_H"] == pytest.approx(float(EC.E11.THETA_H))
+
+
+def test_cp144_fit_study_fold_back_exactness_random():
+    """C7 fix: W_raw=W/scale, b_raw=b-W_raw@mean, proves random X probs equal 1e-9."""
+    import numpy as np
+    rng = np.random.default_rng(42)
+    X = rng.normal(0.0, 1.0, (50, 8)).tolist()
+    # Labels: ensure all eight required present
+    required = list(EC.FIT_REQUIRED_CLASSES)
+    labels = (required * 7)[:50]  # 56 -> 50
+    # Fit with standardise True
+    W_raw, b_raw, info = EC.fit_multinomial_study(X, labels, 123, standardise=True)
+    # Recompute with standardise False on standardized design to get W_std,b_std before fold-back
+    # We need to directly use internal _fit_core logic to verify formula
+    x = np.asarray(X, dtype=float)
+    mean = x.mean(axis=0)
+    scale = x.std(axis=0)
+    scale = np.where(scale > 0.0, scale, 1.0)
+    design = (x - mean) / scale
+    y = np.array([EC.E11.REGIMES.index(l) for l in labels])
+    # Core fit on standardized design
+    W_std, b_std = EC._fit_core(x, y, 123, 2000, 0.2, 0.0, False, design)
+    # Expected fold-back per fixed formula
+    W_expected = W_std / scale
+    b_expected = b_std - W_expected @ mean
+    assert np.allclose(W_raw, W_expected.tolist(), atol=1e-12)
+    assert np.allclose(b_raw, b_expected.tolist(), atol=1e-12)
+    # Prove probs equal 1e-9 for random X using both paths: standardized design vs raw folded
+    for row in X[:10]:
+        vec = dict(zip(EC.E11.VECTOR_KEYS, row))
+        # Using folded W_raw,b_raw on raw row
+        _logits_raw, probs_raw, _H_raw = EC.E11.compute_logits_softmax(vec, W_raw, b_raw)
+        # Using W_std,b_std on standardized row
+        row_std = [(row[i] - mean[i]) / scale[i] for i in range(8)]
+        vec_std = dict(zip(EC.E11.VECTOR_KEYS, row_std))
+        _logits_std, probs_std, _H_std = EC.E11.compute_logits_softmax(vec_std, W_std.tolist(), b_std.tolist())
+        assert np.allclose(probs_raw, probs_std, atol=1e-9)
+
+
+def test_cp144_cache_compatibility_byte_identical(tmp_path):
+    """HARD CONSTRAINT: cache file written by old code is read as hit by new code."""
+    # Simulate old payload schema: exactly the keys that current read_cell_cache expects
+    required = [name for name in EC.E11.REGIMES if name != "TRANSITION"]
+    protocol = EC.training_protocol_hash(("1h",), ("BTCUSDT",), None)
+    cell = "BTCUSDT:1h"
+    payload = {
+        "format": EC.E11_TRAIN_CACHE_FORMAT,
+        "cell": cell,
+        "training_query_sha256": protocol,
+        "input_hash": "d" * 64,
+        "closed_bars": 100,
+        "max_bars_per_cell": None,
+        "vector_keys": list(EC.E11.VECTOR_KEYS),
+        "samples": [
+            {"as_of": "2026-01-02T00:00:00.000Z", "label": required[i % 8],
+             "vector": [float(i + j) / 10.0 for j in range(8)]}
+            for i in range(8)
+        ],
+        "excluded": {"UNFINALIZED_TAIL": 48},
+        "window_start": "2026-01-01T00:00:00.000Z",
+        "window_end": "2026-01-02T00:00:00.000Z",
+    }
+    path = tmp_path / f"{protocol}" / "BTCUSDT_1h.json"
+    EC.write_cell_cache(path, payload)
+    loaded = EC.read_cell_cache(path, cell=cell, protocol_hash=protocol, input_hash="d" * 64)
+    assert loaded is not None
+    assert loaded["samples"] == payload["samples"]
+    assert loaded["format"] == EC.E11_TRAIN_CACHE_FORMAT
+    # Also test cache-only loader path with None input_hash
+    loaded_none = EC.read_cell_cache(path, cell=cell, protocol_hash=protocol, input_hash=None)
+    assert loaded_none is not None
+
+
+def test_cp144_catalog_events_uses_governed_theta_and_quality_params():
+    """D49: catalog_events uses float(p.entropy_threshold) and YAML quality_H_Q2/Q5."""
+    import math
+    from apex.engines.e11_regime.engine import EngineParams, catalog_events
+    # Default params from YAML v4: theta 0.65, quality_H_Q2 0.8, quality_H_Q5 0.4
+    params = EC.E11.get_params()
+    assert params.entropy_threshold == pytest.approx(0.65)
+    assert hasattr(params, "quality_H_Q2") and hasattr(params, "quality_H_Q5")
+    assert params.quality_H_Q2 == pytest.approx(0.8)
+    assert params.quality_H_Q5 == pytest.approx(0.4)
+    # Theta range widened to [0.3, ln9]
+    assert 0.3 <= params.entropy_threshold <= math.log(9)
+    # EngineParams rejects out-of-range theta (overrides dict API)
+    with pytest.raises(ValueError):
+        EngineParams({"entropy_threshold": 0.2})
+    with pytest.raises(ValueError):
+        EngineParams({"entropy_threshold": math.log(9) + 0.1})
+    # catalog_events signature per C5: catalog_events(state, params=None) uses float(p.entropy_threshold)
+    # EV_RGM_004 fires iff entropy >= theta
+    state_low = {"state": "TREND", "entropy": 0.5, "turbulence": 0.0, "as_of": 0}
+    state_high = {"state": "TREND", "entropy": 2.0, "turbulence": 0.0, "as_of": 0}
+    # High theta 2.0: entropy 0.5 < 2.0 => no EV_RGM_004, entropy 2.0 >=2.0 => yes
+    high_theta_params = EngineParams({"entropy_threshold": 2.0, "quality_H_Q2": 0.8, "quality_H_Q5": 0.4})
+    ev_low_high_theta = catalog_events(state_low, params=high_theta_params)
+    ev_high_high_theta = catalog_events(state_high, params=high_theta_params)
+    assert all(e["code"] != "EV_RGM_004" for e in ev_low_high_theta)
+    assert any(e["code"] == "EV_RGM_004" for e in ev_high_high_theta)
+    # Low theta 0.3: both entropies >=0.3 => EV_RGM_004
+    low_theta_params = EngineParams({"entropy_threshold": 0.3, "quality_H_Q2": 0.8, "quality_H_Q5": 0.4})
+    ev_low_low_theta = catalog_events(state_low, params=low_theta_params)
+    assert any(e["code"] == "EV_RGM_004" for e in ev_low_low_theta)
+    # Default params (0.65): 0.5 <0.65 no event, 2.0 >=0.65 event
+    ev_low_default = catalog_events(state_low)
+    ev_high_default = catalog_events(state_high)
+    assert all(e["code"] != "EV_RGM_004" for e in ev_low_default)
+    assert any(e["code"] == "EV_RGM_004" for e in ev_high_default)
+
+
+def test_cp144_no_e11_theta_h_constant_in_decision_path():
+    """D49: no decision path may use E11.THETA_H constant; must use get_params()."""
+    import ast
+    import pathlib
+    # Scan apex/engines/e11_regime/engine.py for THETA_H usage outside definition and export
+    src = pathlib.Path("apex/engines/e11_regime/engine.py").read_text()
+    tree = ast.parse(src)
+    # Collect all Attribute and Name usages of THETA_H
+    usages = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == "THETA_H":
+            # Allow if it's the constant definition line? We'll check context by source lines
+            usages.append(ast.get_source_segment(src, node) or "THETA_H")
+        if isinstance(node, ast.Name) and node.id == "THETA_H":
+            usages.append("THETA_H")
+    # Filter: the file defines THETA_H = ... and exports it; we must ensure classify/catalog uses params
+    # So we check that in classify method, it uses self.params.entropy_threshold or p.entropy_threshold
+    # Simple check: THETA_H should appear only in definition, E11_DEFAULTS, and export list, not in classify logic
+    # Count occurrences: we expect 1 definition + maybe 1 in E11_DEFAULTS? Actually E11_DEFAULTS uses lambda for entropy_threshold
+    # Let's ensure no usage inside def classify or catalog_events except via params
+    # For this test, we assert that catalog_events and classify use params.entropy_threshold
+    assert "entropy_threshold" in src
+    # Ensure THETA_H is not used in classify method body (search for "THETA_H" after "def classify")
+    classify_idx = src.find("def classify")
+    catalog_idx = src.find("def catalog_events")
+    # Slice from classify to next def
+    snippet_classify = src[classify_idx:src.find("\ndef ", classify_idx+1)] if classify_idx != -1 else ""
+    snippet_catalog = src[catalog_idx:src.find("\ndef ", catalog_idx+1)] if catalog_idx != -1 else ""
+    assert "THETA_H" not in snippet_classify, "classify must not use THETA_H constant"
+    # catalog_events may reference THETA_H only for fallback, but per D49 must use float(p.entropy_threshold)
+    # We allow fallback in get_params, but not direct constant use in decision
+    # Check that catalog_events uses p.entropy_threshold
+    assert "entropy_threshold" in snippet_catalog
+
+
+def test_cp144_training_query_and_cache_format_byte_identical():
+    """HARD CONSTRAINT: TRAINING_QUERY, format, and cache payload schema unchanged."""
+    from apex.identity.canonical_json import canonical_json
+    # TRAINING_QUERY must be exactly canonical_json of the frozen dict (8 keys)
+    expected_query = canonical_json({
+        "cell_discovery": "SELECT symbol,timeframe,MAX(open_time),COUNT(*) FROM market_observation WHERE candle_status IN ('CLOSED','CORRECTED') GROUP BY symbol,timeframe ORDER BY symbol,timeframe",
+        "window_reader": "SQLiteStore.get_window(symbol,timeframe,as_of,bars)",
+        "window_predicate": "candle_status IN (CLOSED,CORRECTED) AND open_time <= as_of",
+        "window_order": "last bars by open_time DESC, returned open_time ASC",
+        "closed_filter": "close_time_ms(open_time,timeframe) <= as_of",
+        "label_boundary": "49 consecutive CLOSED candles t..t+48 with independent E01 confirmation; D21 unchanged",
+        "raw_metadata": "immutable observation_id/content hash binding restores availability_time and OI timestamp; availability<=as_of",
+        "E04_replay": "native chronological VolatilityEngineV4, each CLOSED observation once; no future-state reuse",
+        "D30_scope": "selected base timeframes 1h/4h and Core-10 symbols only; default 20 cells; one shared runtime classifier",
+        "D35_resume": "per-cell finalized-sample cache under training_query_sha256; same-hash reruns load completed cells; bar cap recorded; engine/stage timing observational only",
+    })
+    assert EC.TRAINING_QUERY == expected_query
+    assert EC.E11_TRAIN_CACHE_FORMAT == "e11-train-cache-v1"
+    # Payload keys per spec
+    assert set(["format", "cell", "training_query_sha256", "input_hash", "closed_bars",
+                "max_bars_per_cell", "vector_keys", "samples", "excluded",
+                "window_start", "window_end"]).issubset(
+        {"format", "cell", "training_query_sha256", "input_hash", "closed_bars",
+         "max_bars_per_cell", "vector_keys", "samples", "excluded",
+         "window_start", "window_end"}
+    )

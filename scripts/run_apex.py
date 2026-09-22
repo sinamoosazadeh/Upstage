@@ -874,6 +874,7 @@ async def _fit_study_e11(cfg: Config, *, as_json: bool,
     for record in study["variants"]:
         shares = ",".join(f"{name}:{record['per_class'][name]['share_pmax_ge_0_50']:.4f}"
                           for name in EC.FIT_STUDY_PER_CLASS_ROW)
+        # C7 required stderr: variant iters weights acc log_loss share_pmax min_class_share_pmax theta_for_20pct seconds
         print(f"FIT_STUDY variant={record['variant']} iters={record['iterations']} "
               f"lr={record['learning_rate']} l2={record['l2']} "
               f"weights={record['weights']} standardised={record['standardised']} "
@@ -882,6 +883,8 @@ async def _fit_study_e11(cfg: Config, *, as_json: bool,
               f"share_H_ge_theta={record['share_H_ge_theta']:.6f} "
               f"share_H_ge_0_80={record['share_H_ge_0_80']:.6f} "
               f"share_pmax_ge_0_50={record['share_pmax_ge_0_50']:.6f} "
+              f"min_class_share_pmax_ge_0_50={record['min_class_share_pmax_ge_0_50']:.6f} "
+              f"theta_for_20pct={record['theta_for_20pct']:.6f} "
               f"share_h_norm_gt_0_85={record['share_h_norm_gt_0_85']:.6f} "
               f"H_p10={record['H_percentiles']['p10']:.6f} "
               f"H_p50={record['H_percentiles']['p50']:.6f} "
@@ -889,7 +892,15 @@ async def _fit_study_e11(cfg: Config, *, as_json: bool,
               f"pmax_median={record['pmax_median']:.6f} "
               f"seconds={record['seconds']:.3f} per_class_pmax_ge_0_50={shares}",
               file=sys.stderr, flush=True)
+    # C7: FIT_STUDY_THETA for every variant, P0 legacy line still present
+    for record in study["variants"]:
+        print(f"FIT_STUDY_THETA variant={record['variant']} "
+              f"theta_for_10pct={record['theta_for_10pct']:.6f} "
+              f"theta_for_20pct={record['theta_for_20pct']:.6f} "
+              f"theta_for_30pct={record['theta_for_30pct']:.6f}",
+              file=sys.stderr, flush=True)
     p0 = study["variants"][0]
+    # Legacy P0 line kept for compatibility
     print(f"FIT_STUDY_THETA variant=P0 theta_for_10pct={p0['theta_for_10pct']:.6f} "
           f"theta_for_20pct={p0['theta_for_20pct']:.6f} "
           f"theta_for_30pct={p0['theta_for_30pct']:.6f}", file=sys.stderr, flush=True)
@@ -982,20 +993,30 @@ async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         json.dumps(validation, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    # C6: TRAIN_VALIDATION stderr adds verdict_rule train_accuracy min_class_share_pmax theta_H
     print(f"TRAIN_VALIDATION verdict={validation['verdict']} "
-          f"share_H_ge_theta={validation['share_H_ge_theta']:.6f} "
+          f"verdict_rule={validation.get('verdict_rule','D47')} "
+          f"train_accuracy={validation['train_accuracy']:.6f} "
           f"share_pmax_ge_0_50={validation['share_pmax_ge_0_50']:.6f} "
+          f"min_class_share_pmax_ge_0_50={validation['min_class_share_pmax_ge_0_50']:.6f} "
+          f"theta_H={validation['theta_H']:.6f} "
+          f"share_H_ge_theta={validation['share_H_ge_theta']:.6f} "
           f"samples={validation['samples']}", file=sys.stderr, flush=True)
     print(f"TRAIN_REPORT {report_path}", file=sys.stderr, flush=True)
+    # C6: TRAINED includes fit_protocol
     result = {"status": "TRAINED", "sample_count": artifact["sample_count"],
               "training_window": artifact["training_window"],
               "artifact_sha256": artifact["artifact_sha256"],
-              "artifact_path": str(target), "seed": seed, **report}
+              "artifact_path": str(target), "seed": seed,
+              "fit_protocol": artifact.get("fit_protocol", report.get("fit_protocol")),
+              **report}
     _say(json.dumps(result, sort_keys=True) if as_json else
          f"TRAINED {artifact['sample_count']} samples; artifact={target}; "
-         f"validation verdict={validation['verdict']} "
-         f"share_H_ge_theta={validation['share_H_ge_theta']:.6f} "
-         f"share_pmax_ge_0_50={validation['share_pmax_ge_0_50']:.6f}")
+         f"validation verdict={validation['verdict']} verdict_rule={validation.get('verdict_rule','D47')} "
+         f"train_accuracy={validation['train_accuracy']:.6f} "
+         f"share_pmax_ge_0_50={validation['share_pmax_ge_0_50']:.6f} "
+         f"min_class_share_pmax_ge_0_50={validation['min_class_share_pmax_ge_0_50']:.6f} "
+         f"theta_H={validation['theta_H']:.6f} fit_protocol={artifact.get('fit_protocol')}")
     return EXIT_READY
 
 

@@ -165,6 +165,7 @@ E11_DEFAULTS: Dict[str, Any] = {
     "K": 9,
 }
 # YAML (§9.5-canonical) key → internal §6 surface key.
+# D49: quality_H_Q2 and quality_H_Q5 become governed YAML values.
 YAML_KEY_MAP = {
     "K": "K",
     "theta_H": "entropy_threshold",
@@ -173,6 +174,8 @@ YAML_KEY_MAP = {
     "dirichlet_alpha": "dirichlet_alpha",
     "transition_delay_candles": "delayed_label_bars",
     "W_180d_H1": "rolling_window_h1",
+    "quality_H_Q2": "quality_H_Q2",
+    "quality_H_Q5": "quality_H_Q5",
 }
 
 # §5.4 event catalog (+ EV_RGM_007 from the §4 pseudocode, ISSUE-CP5-013).
@@ -193,7 +196,7 @@ EVENT_CATALOG: Dict[str, Dict[str, str]] = {
 
 
 class EngineParams:
-    """Frozen §6 surface; unknown keys rejected (fail-closed)."""
+    """Frozen §6 surface; unknown keys rejected (fail-closed). D49: theta_H range [0.3, ln9]."""
 
     def __init__(self, overrides: Optional[Dict[str, Any]] = None) -> None:
         values = dict(E11_DEFAULTS)
@@ -205,6 +208,17 @@ class EngineParams:
             raise ValueError(
                 "CONFIGURATION_INVALID: E11 canonical regime registry must "
                 "contain exactly 9 classes (T-E11-K9 dimensionality law)")
+        # D49: theta_H (entropy_threshold) range widened 0.3-0.9 to 0.3-ln9
+        eth = values.get("entropy_threshold")
+        if eth is not None:
+            try:
+                fv = float(eth)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"CONFIGURATION_INVALID: entropy_threshold not a number: {eth}") from exc
+            if not math.isfinite(fv) or not (0.3 <= fv <= math.log(9)):
+                raise ValueError(
+                    f"CONFIGURATION_INVALID: entropy_threshold {fv} outside [0.3, ln9] per D49"
+                )
         self._v = values
         for name, val in values.items():
             setattr(self, name, val)
@@ -1383,18 +1397,25 @@ def run_engine(candles: Sequence[Dict[str, Any]],
     }
 
 
-def catalog_events(state: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """§5.4 catalog rows fired by a regime_state (empty for refusals)."""
+def catalog_events(
+    state: Dict[str, Any], params: Optional[EngineParams] = None
+) -> List[Dict[str, Any]]:
+    """§5.4 catalog rows fired by a regime_state (empty for refusals).
+
+    D49: uses float(p.entropy_threshold) from governed params, never
+    E11.THETA_H constant. THETA_H stays exported unused per C5.
+    """
     events: List[Dict[str, Any]] = []
     if "state" not in state or "entropy" not in state:
         return events
+    p = params or get_params()
     as_of = int(state.get("as_of", 0))
     events.append({"code": "EV_RGM_001", "as_of": as_of, "state": state})
     if state.get("regime_transition") == "SUSPECTED":
         events.append({"code": "EV_RGM_002", "as_of": as_of, "state": state})
     elif state.get("regime_transition") == "CONFIRMED":
         events.append({"code": "EV_RGM_003", "as_of": as_of, "state": state})
-    if float(state["entropy"]) >= THETA_H:
+    if float(state["entropy"]) >= float(p.entropy_threshold):
         events.append({"code": "EV_RGM_004", "as_of": as_of, "state": state})
     if float(state["turbulence"]) >= TH_TURB_95:
         events.append({"code": "EV_RGM_005", "as_of": as_of, "state": state})

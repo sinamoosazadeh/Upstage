@@ -13,6 +13,11 @@ b: [-0.4, -0.3, -0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4]
 K: 9
 label_delay_candles: 48
 seed: 20260917
+fit_protocol:
+  iterations: 100000
+  learning_rate: 0.2
+  l2: 0.0
+  class_weights: false
 training_window:
   start: "2026-01-01T00:00:00.000Z"
   end: "2026-01-02T00:00:00.000Z"
@@ -23,4 +28,4 @@ training_window:
   max_bars_per_cell: null
 sample_count: 9
 training_query_sha256: 2b9cc4a9db471dbe900f09fbe469af30efdd8a740f938e325120903fb274339d
-artifact_sha256: 4f49242b939c366c91d7a64ac84b851d94f3557257c4ef74023cb76506b83430
+artifact_sha256: bf7e14792dc4467831c234680020011cc2a3b4c5787df2edc3400c55184d7914

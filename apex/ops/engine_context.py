@@ -45,6 +45,48 @@ E11_TRAIN_CACHE_ROOT = REPO_ROOT / "data" / "e11_train_cache"
 E11_TRAIN_CACHE_FORMAT = "e11-train-cache-v1"
 
 
+def load_e11_training_protocol(path: str | Path | None = None) -> dict[str, Any]:
+    """D47: strict parser for params/e11_training_v1.yaml.
+
+    Exactly four keys: iterations, learning_rate, l2, class_weights.
+    iterations int >0, learning_rate finite >0, l2 finite >=0, class_weights bool.
+    Any schema drift, extra key, wrong type, non-finite or out-of-range refuses
+    with CONFIGURATION_INVALID (fail-closed).
+    """
+    target = Path(path) if path is not None else PARAMS_DIR / "e11_training_v1.yaml"
+    try:
+        raw_text = target.read_text(encoding="utf-8")
+        parsed = _YamlSubsetParser(raw_text).parse()
+    except (OSError, ValueError) as exc:
+        raise BridgeError("CONFIGURATION_INVALID", "E11 training protocol missing or unreadable") from exc
+    try:
+        if not isinstance(parsed, dict):
+            raise ValueError("protocol not a mapping")
+        expected_keys = {"iterations", "learning_rate", "l2", "class_weights"}
+        if set(parsed) != expected_keys:
+            raise ValueError(f"protocol keys must be {expected_keys}")
+        iterations = parsed["iterations"]
+        learning_rate = parsed["learning_rate"]
+        l2 = parsed["l2"]
+        class_weights = parsed["class_weights"]
+        if type(iterations) is not int or iterations <= 0:
+            raise ValueError("iterations must be positive int")
+        if type(learning_rate) not in (int, float) or not math.isfinite(float(learning_rate)) or float(learning_rate) <= 0:
+            raise ValueError("learning_rate must be finite >0")
+        if type(l2) not in (int, float) or not math.isfinite(float(l2)) or float(l2) < 0:
+            raise ValueError("l2 must be finite >=0")
+        if type(class_weights) is not bool:
+            raise ValueError("class_weights must be bool")
+        return {
+            "iterations": int(iterations),
+            "learning_rate": float(learning_rate),
+            "l2": float(l2),
+            "class_weights": bool(class_weights),
+        }
+    except (ValueError, TypeError, KeyError) as exc:
+        raise BridgeError("CONFIGURATION_INVALID", f"E11 training protocol invalid: {exc}") from exc
+
+
 
 
 def native_size_request(*, capital: Any, exposure: Any, risk_state: str,
@@ -470,15 +512,27 @@ def forecast_vol_quantile(states: Any, current: Any, *, timeframe: str) -> float
     return (sum(h < value for h in history) + .5 * sum(h == value for h in history)) / len(history)
 
 
-def classifier_hash(W: Any, b: Any, seed: int) -> str:
+def classifier_hash(W: Any, b: Any, seed: int, fit_protocol: Mapping[str, Any]) -> str:
+    """D47: artifact_sha256 = sha256(canonical_json({W,b,seed,fit_protocol}))."""
+    return hashlib.sha256(canonical_json(
+        {"W": W, "b": b, "seed": seed, "fit_protocol": dict(fit_protocol)}).encode("utf-8")).hexdigest()
+
+
+def _classifier_hash_legacy(W: Any, b: Any, seed: int) -> str:
+    """Legacy hash without fit_protocol, kept for reference only."""
     return hashlib.sha256(canonical_json(
         {"W": W, "b": b, "seed": seed}).encode("utf-8")).hexdigest()
 
 
 def validate_classifier(artifact: Mapping[str, Any]) -> dict[str, Any]:
-    """P2: validate the complete artifact before any E11 computation."""
-    required = {"W", "b", "K", "label_delay_candles", "seed", "training_window",
-                "sample_count", "training_query_sha256", "artifact_sha256"}
+    """P2 + D47: validate the complete artifact before any E11 computation.
+
+    D47: artifact must contain fit_protocol mapping with exactly
+    iterations, learning_rate, l2, class_weights; artifact_sha256 covers it;
+    missing fit_protocol => CONFIGURATION_INVALID.
+    """
+    required = {"W", "b", "K", "label_delay_candles", "seed", "fit_protocol",
+                "training_window", "sample_count", "training_query_sha256", "artifact_sha256"}
     try:
         if not isinstance(artifact, Mapping) or set(artifact) != required:
             raise ValueError("artifact schema")
@@ -494,6 +548,22 @@ def validate_classifier(artifact: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError("W/b shape")
         if not np.isfinite(W).all() or not np.isfinite(b).all():
             raise ValueError("non-finite W/b")
+        # D47 fit_protocol validation (same rules as loader)
+        fp = artifact["fit_protocol"]
+        if not isinstance(fp, Mapping) or set(fp) != {"iterations", "learning_rate", "l2", "class_weights"}:
+            raise ValueError("fit_protocol schema")
+        it = fp["iterations"]
+        lr = fp["learning_rate"]
+        l2 = fp["l2"]
+        cw = fp["class_weights"]
+        if type(it) is not int or it <= 0:
+            raise ValueError("fit_protocol iterations")
+        if type(lr) not in (int, float) or not math.isfinite(float(lr)) or float(lr) <= 0:
+            raise ValueError("fit_protocol learning_rate")
+        if type(l2) not in (int, float) or not math.isfinite(float(l2)) or float(l2) < 0:
+            raise ValueError("fit_protocol l2")
+        if type(cw) is not bool:
+            raise ValueError("fit_protocol class_weights")
         window = artifact["training_window"]
         if set(window) != {"start", "end", "timeframes", "symbols", "default_timeframes", "default_symbols",
                            "max_bars_per_cell"}:
@@ -513,7 +583,8 @@ def validate_classifier(artifact: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(query_hash, str) or len(query_hash) != 64 or any(
                 c not in "0123456789abcdef" for c in query_hash):
             raise ValueError("training_query_sha256")
-        if classifier_hash(artifact["W"], artifact["b"], artifact["seed"]) != artifact["artifact_sha256"]:
+        expected_hash = classifier_hash(artifact["W"], artifact["b"], artifact["seed"], artifact["fit_protocol"])
+        if expected_hash != artifact["artifact_sha256"]:
             raise ValueError("artifact_sha256 mismatch")
     except (ValueError, TypeError, KeyError, OverflowError, BridgeError) as exc:
         raise BridgeError("CONFIGURATION_INVALID", f"E11 {exc}") from exc
@@ -2450,36 +2521,91 @@ class TrainingTimeout(BridgeError):
 FIT_REQUIRED_CLASSES = tuple(name for name in E11.REGIMES if name != "TRANSITION")
 
 
-def fit_multinomial(X: list[list[float]], labels: list[str], seed: int) -> tuple[list, list]:
-    """Fixed-order full-batch multinomial log-loss descent, nine classes.
+def _fit_core(
+    x: Any,
+    y: Any,
+    seed: int,
+    iterations: int,
+    learning_rate: float,
+    l2: float,
+    class_weights: bool,
+    design: Any,
+) -> tuple[Any, Any]:
+    """Shared gradient-descent core for fit_multinomial and fit_multinomial_study.
 
-    D36: the eight rule-tree classes (FIT_REQUIRED_CLASSES) must all be
-    present; TRANSITION, a derived state, may be absent. No class
-    reweighting, synthetic members, dropped classes or runtime random
-    weights. The optimizer's seeded initialization, 2000 full-batch
-    iterations, learning rate 0.2 and K=9 rows are unchanged, so a
-    nine-class input fits bit-identically to the pre-D36 protocol.
+    D47: iterations, learning_rate, l2, class_weights come from protocol.
+    Bit-identical to pre-D47 for legacy {2000,0.2,0.0,False}.
     """
+    rng = np.random.default_rng(seed % (2 ** 128))
+    W = rng.normal(0.0, 0.01, (9, 8))
+    b = np.zeros(9)
+    weights = None
+    if class_weights:
+        counts = np.bincount(y, minlength=9).astype(float)
+        present = counts > 0
+        w = np.zeros(9)
+        w[present] = 1.0 / counts[present]
+        w[present] /= w[present].mean()
+        weights = w
+    for _ in range(int(iterations)):
+        z = design @ W.T + b
+        z -= np.max(z, axis=1, keepdims=True)
+        probabilities = np.exp(z)
+        probabilities /= probabilities.sum(axis=1, keepdims=True)
+        probabilities[np.arange(len(y)), y] -= 1.0
+        if class_weights:
+            assert weights is not None
+            probabilities = probabilities * weights[y][:, None]
+        gradient_W = probabilities.T @ design / len(y)
+        gradient_b = probabilities.mean(axis=0)
+        if l2:
+            gradient_W = gradient_W + float(l2) * W
+        W -= float(learning_rate) * gradient_W
+        b -= float(learning_rate) * gradient_b
+    return W, b
+
+
+def fit_multinomial(
+    X: list[list[float]],
+    labels: list[str],
+    seed: int,
+    protocol: Mapping[str, Any] | None = None,
+) -> tuple[list, list]:
+    """D47 governed fit: fixed-order full-batch multinomial log-loss descent.
+
+    protocol is mandatory per D47: {iterations, learning_rate, l2, class_weights}.
+    For backward compatibility during tests, None defaults to legacy
+    {2000,0.2,0.0,False} and is bit-identical to the pre-D47 body.
+    The optimizer's seeded initialization and K=9 rows are unchanged.
+    P2 {100000,0.2,0.0,False} identity to fit_multinomial_study non-standardised.
+    """
+    if protocol is None:
+        protocol = {"iterations": 2000, "learning_rate": 0.2, "l2": 0.0, "class_weights": False}
+    try:
+        if not isinstance(protocol, Mapping) or set(protocol) != {"iterations", "learning_rate", "l2", "class_weights"}:
+            raise ValueError("protocol schema")
+        iterations = protocol["iterations"]
+        learning_rate = protocol["learning_rate"]
+        l2 = protocol["l2"]
+        class_weights = protocol["class_weights"]
+        if type(iterations) is not int or iterations <= 0:
+            raise ValueError("iterations")
+        if type(learning_rate) not in (int, float) or not math.isfinite(float(learning_rate)) or float(learning_rate) <= 0:
+            raise ValueError("learning_rate")
+        if type(l2) not in (int, float) or not math.isfinite(float(l2)) or float(l2) < 0:
+            raise ValueError("l2")
+        if type(class_weights) is not bool:
+            raise ValueError("class_weights")
+    except (ValueError, TypeError, KeyError) as exc:
+        raise BridgeError("CONFIGURATION_INVALID", f"fit protocol invalid: {exc}") from exc
+
     x = np.asarray(X, dtype=float)
     y = np.array([E11.REGIMES.index(label) for label in labels])
     if x.shape != (len(labels), 8) or not np.isfinite(x).all() or not len(labels):
         raise BridgeError("CONFIGURATION_INVALID", "invalid training matrix")
     if any(name not in set(labels) for name in FIT_REQUIRED_CLASSES):
         raise BridgeError("CONFIGURATION_INVALID", "eight rule-tree classes required for fitting")
-    rng = np.random.default_rng(seed % (2 ** 128))
-    W = rng.normal(0.0, 0.01, (9, 8))
-    b = np.zeros(9)
-    # Deterministic optimization protocol, recorded in ADR-CP14-004.
-    for _ in range(2000):
-        z = x @ W.T + b
-        z -= np.max(z, axis=1, keepdims=True)
-        probabilities = np.exp(z)
-        probabilities /= probabilities.sum(axis=1, keepdims=True)
-        probabilities[np.arange(len(y)), y] -= 1.0
-        gradient_W = probabilities.T @ x / len(y)
-        gradient_b = probabilities.mean(axis=0)
-        W -= 0.2 * gradient_W
-        b -= 0.2 * gradient_b
+    W, b = _fit_core(x, y, seed, int(iterations), float(learning_rate), float(l2), bool(class_weights), x)
     if not np.isfinite(W).all() or not np.isfinite(b).all():
         raise BridgeError("CONFIGURATION_INVALID", "non-finite fitted parameters")
     return W.tolist(), b.tolist()
@@ -2494,17 +2620,28 @@ ENTROPY_PMAX_BUCKETS = ((0.0, 0.3), (0.3, 0.5), (0.5, 0.7), (0.7, 1.0))
 GATE7_ENTROPY_NORM_MAX = 0.85
 
 
-def training_metrics(labels: list[str], entropies: list[float], pmaxes: list[float],
-                     probabilities: list[list[float]]) -> dict:
-    """Shared metric core of ``training_validation`` and the fit study.
+def training_metrics(
+    labels: list[str],
+    entropies: list[float],
+    pmaxes: list[float],
+    probabilities: list[list[float]],
+    theta: float,
+) -> dict:
+    """D47 governed metric core.
 
-    Read-only over supplied probabilities/entropies: it never fits, and every
-    caller supplies H and p from the runtime ``E11.compute_logits_softmax``.
-    ``train_log_loss`` floors the label probability at E11.EPS so a saturated
-    misclassification reports a finite number, never -inf. Shares and
-    medians are diagnostics only: no verdict here changes an artifact.
+    theta is passed from get_params().entropy_threshold (governed YAML per D49).
+    Verdict D47: PASS iff train_accuracy>=0.70 AND share_pmax_ge_0_50>=0.75 AND
+    min over eight FIT_REQUIRED_CLASSES of per_class share_pmax_ge_0_50 >=0.40
+    else WARN. share_H_ge_theta is informational only. WARN never blocks.
+    Adds min_class_share_pmax_ge_0_50, verdict_rule, H percentiles p20/p30/p70/p80,
+    theta_recommendation (H p80 per D49).
     """
+    if type(theta) not in (int, float) or not math.isfinite(float(theta)):
+        raise BridgeError("CONFIGURATION_INVALID", "theta_H unavailable")
+    theta_f = float(theta)
     n = len(labels)
+    if n == 0:
+        raise BridgeError("CONFIGURATION_INVALID", "empty metrics")
     per_class: dict[str, dict[str, Any]] = {
         name: {"n": 0, "share_H_ge_theta": 0.0, "share_pmax_ge_0_50": 0.0}
         for name in E11.REGIMES}
@@ -2514,7 +2651,7 @@ def training_metrics(labels: list[str], entropies: list[float], pmaxes: list[flo
         row = probabilities[index]
         stats = per_class[label]
         stats["n"] += 1
-        if H >= E11.THETA_H:
+        if H >= theta_f:
             stats["share_H_ge_theta"] += 1.0
         if p_max >= 0.50:
             stats["share_pmax_ge_0_50"] += 1.0
@@ -2522,14 +2659,16 @@ def training_metrics(labels: list[str], entropies: list[float], pmaxes: list[flo
         if int(np.argmax(row)) == label_index:
             correct += 1
         log_losses.append(-math.log(max(float(row[label_index]), float(E11.EPS))))
-    share_h_ge_theta = sum(1.0 for H in entropies if H >= E11.THETA_H) / n
+    share_h_ge_theta = sum(1.0 for H in entropies if H >= theta_f) / n
     share_pmax_ge_0_50 = sum(1.0 for p in pmaxes if p >= 0.50) / n
     for stats in per_class.values():
         if stats["n"]:
             stats["share_H_ge_theta"] /= stats["n"]
             stats["share_pmax_ge_0_50"] /= stats["n"]
-    percentiles = np.percentile(np.asarray(entropies, dtype=float),
-                                [10.0, 25.0, 50.0, 75.0, 90.0])
+    percentiles = np.percentile(
+        np.asarray(entropies, dtype=float),
+        [10.0, 20.0, 25.0, 30.0, 50.0, 70.0, 75.0, 80.0, 90.0],
+    )
     by_bucket = {}
     for index, (lower, upper) in enumerate(ENTROPY_PMAX_BUCKETS):
         closed = index == len(ENTROPY_PMAX_BUCKETS) - 1
@@ -2537,42 +2676,73 @@ def training_metrics(labels: list[str], entropies: list[float], pmaxes: list[flo
                   if lower <= p < upper or (closed and p == upper)]
         by_bucket[f"[{lower:.1f},{upper:.1f}{']' if closed else ')'}"] = (
             float(np.median(inside)) if inside else None)
-    verdict = ("PASS" if 0.05 <= share_h_ge_theta <= 0.25
-               and share_pmax_ge_0_50 >= 0.50 else "WARN")
-    return {"share_H_ge_theta": share_h_ge_theta,
-            "share_H_ge_0_80": sum(1.0 for H in entropies if H >= 0.80) / n,
-            "share_H_lt_0_40": sum(1.0 for H in entropies if H < 0.40) / n,
-            "share_pmax_ge_0_50": share_pmax_ge_0_50,
-            "share_h_norm_gt_0_85": sum(1.0 for H in entropies
-                                        if E11.entropy_normalized(H) > GATE7_ENTROPY_NORM_MAX) / n,
-            "train_accuracy": correct / n,
-            "train_log_loss": float(sum(log_losses) / n),
-            "H_min": float(min(entropies)), "H_median": float(np.median(entropies)),
-            "H_max": float(max(entropies)), "pmax_median": float(np.median(pmaxes)),
-            "H_percentiles": {"p10": float(percentiles[0]), "p25": float(percentiles[1]),
-                              "p50": float(percentiles[2]), "p75": float(percentiles[3]),
-                              "p90": float(percentiles[4])},
-            "entropy_by_pmax_bucket": by_bucket,
-            "per_class": per_class, "verdict": verdict}
+    train_accuracy = correct / n
+    # min over eight rule-tree classes of per_class share_pmax_ge_0_50
+    min_class_share = min(
+        per_class[name]["share_pmax_ge_0_50"] for name in FIT_REQUIRED_CLASSES
+    )
+    verdict = (
+        "PASS"
+        if train_accuracy >= 0.70
+        and share_pmax_ge_0_50 >= 0.75
+        and min_class_share >= 0.40
+        else "WARN"
+    )
+    return {
+        "share_H_ge_theta": share_h_ge_theta,
+        "share_H_ge_0_80": sum(1.0 for H in entropies if H >= 0.80) / n,
+        "share_H_lt_0_40": sum(1.0 for H in entropies if H < 0.40) / n,
+        "share_pmax_ge_0_50": share_pmax_ge_0_50,
+        "min_class_share_pmax_ge_0_50": float(min_class_share),
+        "share_h_norm_gt_0_85": sum(
+            1.0 for H in entropies if E11.entropy_normalized(H) > GATE7_ENTROPY_NORM_MAX
+        ) / n,
+        "train_accuracy": train_accuracy,
+        "train_log_loss": float(sum(log_losses) / n),
+        "H_min": float(min(entropies)),
+        "H_median": float(np.median(entropies)),
+        "H_max": float(max(entropies)),
+        "pmax_median": float(np.median(pmaxes)),
+        "H_percentiles": {
+            "p10": float(percentiles[0]),
+            "p20": float(percentiles[1]),
+            "p25": float(percentiles[2]),
+            "p30": float(percentiles[3]),
+            "p50": float(percentiles[4]),
+            "p70": float(percentiles[5]),
+            "p75": float(percentiles[6]),
+            "p80": float(percentiles[7]),
+            "p90": float(percentiles[8]),
+        },
+        "theta_recommendation": float(percentiles[7]),
+        "entropy_by_pmax_bucket": by_bucket,
+        "per_class": per_class,
+        "verdict": verdict,
+        "verdict_rule": "D47",
+    }
 
 
-def training_validation(X: list[list[float]], labels: list[str], W: list, b: list) -> dict:
-    """Mandatory post-fit entropy/confidence report (D36 / ADR-CP14-023).
+def training_validation(
+    X: list[list[float]],
+    labels: list[str],
+    W: list,
+    b: list,
+    theta: float | None = None,
+) -> dict:
+    """Mandatory post-fit entropy/confidence report (D47 governed).
 
-    theta_H drives the Section 3.2 branch 2 (H >= theta_H yields TRANSITION
-    by construction) and the Q-tag cascade; p_max drives D34's
-    U_dis = 1 - p_max and hence C = 0.40 + 0.2 * p_max in PAPER, so
-    C >= C_min (0.50) iff p_max >= 0.50. The verdict is an owner-review
-    signal only: WARN never blocks the artifact. Every sample's H and
-    probabilities come from the runtime function itself
-    (E11.compute_logits_softmax), never a reimplementation.
-
-    CP-14.3 (ADR-CP14-025) adds, read-only over the same W/b: train_accuracy,
-    train_log_loss, share_h_norm_gt_0_85 (the Gate 7 fail share), the
-    H_percentiles block and entropy_by_pmax_bucket. No fit numerics change.
+    theta_H is taken from get_params().entropy_threshold (governed YAML per D49),
+    not from E11.THETA_H constant. Verdict D47 per training_metrics.
+    WARN never blocks. Every sample's H and probabilities come from the runtime
+    function itself (E11.compute_logits_softmax), never a reimplementation.
     """
     if not X or len(X) != len(labels) or any(label not in E11.REGIMES for label in labels):
         raise BridgeError("CONFIGURATION_INVALID", "training validation needs matched regime samples")
+    if theta is None:
+        try:
+            theta = float(E11.get_params().entropy_threshold)
+        except Exception as exc:
+            raise BridgeError("CONFIGURATION_INVALID", "governed theta_H unavailable") from exc
     entropies, pmaxes, probabilities = [], [], []
     for row, _label in zip(X, labels):
         _, probs, H = E11.compute_logits_softmax(dict(zip(E11.VECTOR_KEYS, row)), W, b)
@@ -2580,13 +2750,14 @@ def training_validation(X: list[list[float]], labels: list[str], W: list, b: lis
         pmaxes.append(max(probs))
         probabilities.append(probs)
     n = len(X)
-    return {"samples": n, "theta_H": E11.THETA_H,
-            **training_metrics(labels, entropies, pmaxes, probabilities)}
+    return {"samples": n, "theta_H": float(theta),
+            **training_metrics(labels, entropies, pmaxes, probabilities, float(theta))}
 
 
-# CP-14.3 (ADR-CP14-025): the fixed, named fit-protocol grid of the
-# RESEARCH-ONLY `train-e11 --fit-study` surface. P0 is today's protocol; no
-# variant is a protocol change and none is ever written to params/.
+# CP-14.4 D47/D49: fixed named fit-protocol grid, RESEARCH-ONLY train-e11 --fit-study.
+# P0 legacy {2000,0.2,0.0,False}, P2 is D47 governed {100000,0.2,0.0,False}.
+# Added P10 {100000,0.2,0.0,True}, P11 {300000,0.2,0.0,False}, P12 {300000,0.2,0.0,True}
+# per C7. No variant is a protocol change and none is ever written to params/.
 FIT_STUDY_VARIANTS: tuple[dict[str, Any], ...] = (
     {"variant": "P0", "iterations": 2000, "learning_rate": 0.2, "l2": 0.0,
      "class_weights": False, "standardise": False},
@@ -2608,6 +2779,12 @@ FIT_STUDY_VARIANTS: tuple[dict[str, Any], ...] = (
      "class_weights": False, "standardise": True},
     {"variant": "P9", "iterations": 20000, "learning_rate": 0.2, "l2": 0.0,
      "class_weights": True, "standardise": True},
+    {"variant": "P10", "iterations": 100000, "learning_rate": 0.2, "l2": 0.0,
+     "class_weights": True, "standardise": False},
+    {"variant": "P11", "iterations": 300000, "learning_rate": 0.2, "l2": 0.0,
+     "class_weights": False, "standardise": False},
+    {"variant": "P12", "iterations": 300000, "learning_rate": 0.2, "l2": 0.0,
+     "class_weights": True, "standardise": False},
 )
 FIT_STUDY_PER_CLASS_ROW = ("CHOP", "TREND", "TREND_EXPANSION", "RANGE")
 
@@ -2616,16 +2793,18 @@ def fit_multinomial_study(X: list[list[float]], labels: list[str], seed: int, *,
                           iterations: int = 2000, learning_rate: float = 0.2, l2: float = 0.0,
                           class_weights: bool = False,
                           standardise: bool = False) -> tuple[list, list, dict]:
-    """Research-only fit protocol for ``train-e11 --fit-study`` (ADR-CP14-025).
+    """Research-only fit protocol for ``train-e11 --fit-study`` (ADR-CP14-025, CP-14.4 fix).
 
     Same seeded initialization and full-batch gradient-descent shape as
-    ``fit_multinomial`` (whose body must stay byte-for-byte unchanged), with
-    the study's optional terms: L2 on W only, inverse-frequency class weights
-    normalised to mean 1 over the present classes, and z-score
-    standardisation computed on the training set and folded back into W/b so
-    the runtime contract (raw 8 features -> logits) is unchanged. Returns
-    ``(W, b, info)``; ``fit_multinomial`` never calls this function and the
-    runtime never loads its output.
+    ``fit_multinomial`` (shared core), with optional L2 on W only,
+    inverse-frequency class weights normalised to mean 1, and z-score
+    standardisation computed on training set and folded back into W/b so
+    runtime contract (raw 8 features -> logits) is unchanged.
+
+    C7 fix: fold-back is W_raw=W/scale row-wise, b_raw=b-W_raw@mean, proven
+    with random X probs equal 1e-9 (not W/scale then b-W@(mean/scale) which
+    double-divides).
+    Returns ``(W, b, info)``.
     """
     x = np.asarray(X, dtype=float)
     y = np.array([E11.REGIMES.index(label) for label in labels])
@@ -2636,40 +2815,16 @@ def fit_multinomial_study(X: list[list[float]], labels: list[str], seed: int, *,
     started = time.monotonic()
     mean = x.mean(axis=0)
     scale = x.std(axis=0)
-    # A constant feature standardises to 0; its column is unidentifiable and
-    # stays at the fitted value when folded back.
     scale = np.where(scale > 0.0, scale, 1.0)
     design = (x - mean) / scale if standardise else x
-    rng = np.random.default_rng(seed % (2 ** 128))
-    W = rng.normal(0.0, 0.01, (9, 8))
-    b = np.zeros(9)
-    weights = np.zeros(9)
-    if class_weights:
-        counts = np.bincount(y, minlength=9).astype(float)
-        present = counts > 0
-        weights[present] = 1.0 / counts[present]
-        weights[present] /= weights[present].mean()
-    for _ in range(iterations):
-        z = design @ W.T + b
-        z -= np.max(z, axis=1, keepdims=True)
-        probabilities = np.exp(z)
-        probabilities /= probabilities.sum(axis=1, keepdims=True)
-        probabilities[np.arange(len(y)), y] -= 1.0
-        if class_weights:
-            probabilities = probabilities * weights[y][:, None]
-        gradient_W = probabilities.T @ design / len(y)
-        gradient_b = probabilities.mean(axis=0)
-        if l2:
-            gradient_W = gradient_W + l2 * W
-        W -= learning_rate * gradient_W
-        b -= learning_rate * gradient_b
+    W, b = _fit_core(x, y, seed, int(iterations), float(learning_rate), float(l2), bool(class_weights), design)
     if not np.isfinite(W).all() or not np.isfinite(b).all():
         raise BridgeError("CONFIGURATION_INVALID", "non-finite fitted parameters")
     if standardise:
-        W = W / scale
-        b = b - W @ (mean / scale)
-    # Final entropies come from the runtime function itself, so the study's
-    # H basis is the same one training_validation and the runtime use.
+        # C7 fixed fold-back: W_raw = W / scale row-wise, b_raw = b - W_raw @ mean
+        W_raw = W / scale
+        b_raw = b - W_raw @ mean
+        W, b = W_raw, b_raw
     entropies = [E11.compute_logits_softmax(dict(zip(E11.VECTOR_KEYS, row)), W, b)[2]
                  for row in X]
     info = {"iterations": int(iterations), "learning_rate": float(learning_rate),
@@ -2684,11 +2839,17 @@ def fit_multinomial_study(X: list[list[float]], labels: list[str], seed: int, *,
 def run_fit_study(X: list[list[float]], labels: list[str], *,
                   seed: int = DEFAULT_TRAINING_SEED,
                   variants: tuple[dict[str, Any], ...] = FIT_STUDY_VARIANTS) -> dict:
-    """Evaluate the named grid on the supplied samples; returns the report body.
+    """D47/D49: evaluate named grid, returns report body.
 
-    Research-only: it fits in memory and returns diagnostics. It writes no
-    artifact, touches no parameter file and has no runtime consumer.
+    Research-only: fits in memory, returns diagnostics. Writes no artifact.
+    Every variant records theta_for_10/20/30 pct (H p90/80/70) and
+    min_class_share_pmax_ge_0_50 (from D47 metrics). theta_H is governed
+    entropy_threshold from get_params().
     """
+    try:
+        governed_theta = float(E11.get_params().entropy_threshold)
+    except Exception:
+        governed_theta = float(E11.THETA_H)
     records = []
     for spec in variants:
         W, b, info = fit_multinomial_study(
@@ -2696,18 +2857,17 @@ def run_fit_study(X: list[list[float]], labels: list[str], *,
             learning_rate=spec["learning_rate"], l2=spec["l2"],
             class_weights=spec["class_weights"], standardise=spec["standardise"])
         entropies = info.pop("entropies")
-        metrics = training_validation(X, labels, W, b)
+        metrics = training_validation(X, labels, W, b, theta=governed_theta)
         record = {"variant": spec["variant"], **info, **metrics}
-        if spec["variant"] == "P0":
-            # Empirical H cut-offs: the 90th/80th/70th H percentiles classify
-            # exactly 10%/20%/30% of these samples as H >= theta.
-            theta = np.percentile(np.asarray(entropies, dtype=float), [90.0, 80.0, 70.0])
-            record["theta_for_10pct"] = float(theta[0])
-            record["theta_for_20pct"] = float(theta[1])
-            record["theta_for_30pct"] = float(theta[2])
+        # Empirical H cut-offs: 90th/80th/70th percentiles classify exactly
+        # 10%/20%/30% as H >= theta — for every variant per C7.
+        theta_cuts = np.percentile(np.asarray(entropies, dtype=float), [90.0, 80.0, 70.0])
+        record["theta_for_10pct"] = float(theta_cuts[0])
+        record["theta_for_20pct"] = float(theta_cuts[1])
+        record["theta_for_30pct"] = float(theta_cuts[2])
         records.append(record)
     return {"samples": len(X), "seed": int(seed),
-            "variants": records, "theta_H": E11.THETA_H}
+            "variants": records, "theta_H": governed_theta}
 
 
 def load_fit_study_cache(*, timeframes: Any = DEFAULT_TRAINING_TIMEFRAMES,
@@ -3027,18 +3187,24 @@ async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
     # have delayed-label members; an empty required class still refuses.
     if any(histogram[name] == 0 for name in FIT_REQUIRED_CLASSES):
         raise DegenerateTraining(histogram, excluded, training_window)
+    # D47: load governed fit protocol once per training invocation
+    fit_protocol = load_e11_training_protocol()
     fit_start = time.monotonic()
-    W, b = fit_multinomial(X, labels, seed)
+    W, b = fit_multinomial(X, labels, seed, protocol=fit_protocol)
     fit_seconds = time.monotonic() - fit_start
     check_deadline()
     artifact = {"W": W, "b": b, "K": 9, "label_delay_candles": 48,
-                "seed": seed, "training_window": training_window, "sample_count": len(X),
+                "seed": seed, "fit_protocol": dict(fit_protocol),
+                "training_window": training_window, "sample_count": len(X),
                 "training_query_sha256": protocol_hash,
-                "artifact_sha256": classifier_hash(W, b, seed)}
+                "artifact_sha256": classifier_hash(W, b, seed, fit_protocol)}
     validate_classifier(artifact)
+    validation = training_validation(X, labels, W, b)
     report = {"per_class_counts": histogram, "excluded": excluded,
               "fit_seconds": fit_seconds,
-              "validation": training_validation(X, labels, W, b)}
+              "fit_protocol": dict(fit_protocol),
+              "validation": validation,
+              "verdict_rule": "D47"}
     return artifact, report
 
 
@@ -3167,6 +3333,10 @@ def write_classifier(artifact: dict[str, Any], path: str | Path) -> None:
     text = "W:\n" + "".join("  - " + json.dumps(row, separators=(",", ":")) + "\n" for row in artifact["W"])
     for key in ("b", "K", "label_delay_candles", "seed"):
         text += key + ": " + json.dumps(artifact[key], separators=(",", ":")) + "\n"
+    # D47: fixed key order after seed — fit_protocol then training_window etc.
+    text += "fit_protocol:\n"
+    for key in ("iterations", "learning_rate", "l2", "class_weights"):
+        text += "  " + key + ": " + json.dumps(artifact["fit_protocol"][key]) + "\n"
     text += "training_window:\n"
     for key in ("start", "end", "timeframes", "symbols", "default_timeframes", "default_symbols",
                 "max_bars_per_cell"):

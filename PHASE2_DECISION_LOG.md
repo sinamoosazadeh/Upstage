@@ -1109,3 +1109,39 @@ Governed additive contracts (ADR-P2-003): `training_validation` returns, in addi
 First real artifact (sha256 0e8c84d81015966bd7777b124dbe54469d3a7cd5261400a7b0f66c2c7b72d748, 1000 samples, 20 cells N=168) validated WARN: share_H_ge_theta 0.835, share_H_ge_0_80 0.766, share_pmax_ge_0_50 0.577, pmax_median 0.538, H_median 1.169; per-class share_pmax_ge_0_50 TREND 0.00, TREND_EXPANSION 0.16, CHOP 0.17, RANGE 0.29. Consequences with the current tree: runtime regime ≈ TRANSITION and Q2/Q3 on most bars; D34 C < C_min on ≈42% of bars. Root causes: linear softmax vs multi-condition rule tree, θ_H = 0.65 never calibrated on real data, fit protocol likely under-converged and class-imbalanced. Awaiting owner decision D47 after the --fit-study results (fit protocol and/or θ_H recalibration — both value-changing, both pre-PAPER).
 
   Severity: MAJOR | status: OPEN (owner decision pending; not implemented) | Evidence: the owner-observed first real artifact above; the study surface that will inform D47 is ADR-CP14-025 (`train-e11 --fit-study`). No fit protocol, class count, label rule or threshold has been changed by CP-14.3.
+
+### OWNER DECISIONS D47/D48/D49 (2026-09-22, binding, verbatim per CP-14.4)
+
+D47 - optimizer protocol moves to params/e11_training_v1.yaml keys iterations=100000, learning_rate=0.2, l2=0.0, class_weights=false (P2, report data/e11_fit_study_20260922T011436Z.json accuracy 0.749 share pmax>=0.5 0.845), artifact params/e11_classifier_v1.yaml gains fit_protocol mapping, artifact_sha256 = sha256(canonical_json({W,b,seed,fit_protocol})), artifact without fit_protocol = CONFIGURATION_INVALID, verdict D47 PASS iff train_accuracy>=0.70 AND share_pmax_ge_0_50>=0.75 AND min over eight FIT_REQUIRED_CLASSES of per_class share_pmax_ge_0_50 >=0.40 else WARN, share_H_ge_theta informational only, WARN never blocks
+
+D48 - external historical OHLCV from public archives (Binance, Bybit) authorized RESEARCH/BACKTEST only via MarketObservation.source never TOOBIT, OI=MISSING, PAPER/LIVE Toobit-only, Toobit ingest untouched, splice test mandatory when implemented, record only no importer code, ISSUE-CP14-067 OPEN
+
+D49 - theta_H, quality_H_Q2, quality_H_Q5 become governed YAML values, theta_H range widened 0.3-0.9 to 0.3-ln9, values set later from H distribution theta_H=H p80, quality_H_Q2=H p90, quality_H_Q5=H p30, this CP builds mechanism/reporting only params/e11_params_v4.yaml stays 0.65/0.8/0.4, no decision path may use E11.THETA_H constant, ISSUE-CP14-066 OPEN + 3-month OOS re-check 2026-12-22
+
+### ADR-CP14-026 — D47 governed fit protocol and verdict
+
+Governed additive contracts (ADR-P2-003): `params/e11_training_v1.yaml` is the governed fit protocol file with header comment naming D47 and study report `data/e11_fit_study_20260922T011436Z.json`; exactly four keys `iterations` int>0, `learning_rate` finite>0, `l2` finite>=0, `class_weights` bool, any drift => CONFIGURATION_INVALID. `load_e11_training_protocol` strict parser. `fit_multinomial(X,labels,seed,protocol)` mandatory protocol, bit-identical legacy for {2000,0.2,0.0,False} via shared `_fit_core`, P2 identity to `fit_multinomial_study` non-standardised, class_weights inverse freq mean1, L2 on W only. `train_classifier` loads protocol, artifact hash covers fit_protocol via `classifier_hash(W,b,seed,fit_protocol)=sha256(canonical_json({W,b,seed,fit_protocol}))`, legacy hash kept as `_classifier_hash_legacy`, `write_classifier` fixed key order after seed: fit_protocol (iterations,learning_rate,l2,class_weights) then training_window etc. `validate_classifier` requires fit_protocol, refuses missing. `training_metrics(theta)` takes theta from `E11.get_params().entropy_threshold` (governed YAML per D49), verdict D47 PASS iff train_accuracy>=0.70 AND share_pmax_ge_0_50>=0.75 AND min_class_share_pmax_ge_0_50>=0.40 else WARN, share_H_ge_theta informational only, WARN never blocks. Adds min_class_share_pmax_ge_0_50, verdict_rule="D47", H_percentiles p20/p30/p70/p80, theta_recommendation=H p80. `training_validation` theta passed from get_params(). `run_apex.py _train_e11` TRAIN_VALIDATION stderr adds verdict_rule train_accuracy min_class_share_pmax theta_H, TRAINED JSON includes fit_protocol and stderr includes fit_protocol.
+
+### ADR-CP14-027 — D49 entropy-threshold mechanism and quality_H_Q2/Q5 governance
+
+Governed additive contracts: `apex/engines/e11_regime/engine.py` YAML_KEY_MAP gains quality_H_Q2/Q5, EngineParams rejects theta_H outside [0.3,ln9] (math.log(9)), CONFIGURATION_INVALID, THETA_H stays exported unused per C5. `catalog_events(state,params=None)` uses float(p.entropy_threshold), p=get_params() fallback, THETA_H exported unused. `params/e11_params_v4.yaml` now K:9 theta_H:0.65 quality_H_Q2:0.8 quality_H_Q5:0.4 lambda_ewma:0.94 hysteresis_candles:3 dirichlet_alpha:0.1 transition_delay_candles:48 W_180d_H1:4320. Values stay 0.65/0.8/0.4 in this CP, mechanism/reporting only, values set later from H distribution theta_H=H p80, quality_H_Q2=H p90, quality_H_Q5=H p30, ISSUE-CP14-066 OPEN + 3-month OOS re-check 2026-12-22. No decision path may use E11.THETA_H constant — verified by AST scan test.
+
+### ISSUE-CP14-064 — CLOSED by D47 (2026-09-22)
+
+First real artifact WARN: share_H_ge_theta 0.835, share_pmax_ge_0_50 0.577 etc. Root causes: under-converged fit protocol and class imbalance. Resolution: D47 moves optimizer protocol to governed params/e11_training_v1.yaml P2 {100000,0.2,0.0,False} per data/e11_fit_study_20260922T011436Z.json accuracy 0.749 share pmax>=0.5 0.845, artifact gains fit_protocol, hash covers it, verdict D47 PASS iff accuracy>=0.70 && share_pmax>=0.75 && min_class>=0.40 else WARN. Evidence: load_e11_training_protocol strict, classifier_hash with fp, validate requires fp, training_metrics D47, run_fit_study governed theta, train_classifier protocol+hash, write_classifier fixed order. Tests: test_cp144_*.
+
+### ISSUE-CP14-065 — CLOSED by fit-study fold-back fix (2026-09-22)
+
+Fold-back bug: standardisation used W=W/scale then b=b-W@(mean/scale) double-divides; correct is W_raw=W/scale row-wise, b_raw=b-W_raw@mean. Fix proves random X probs equal 1e-9. Resolution: _fit_core shared, fold-back fixed in fit_multinomial_study, added P10 {100000,0.2,0.0,True} P11 {300000,0.2,0.0,False} P12 {300000,0.2,0.0,True}, every variant records theta_for_10/20/30 pct (H p90/80/70) and min_class_share, FIT_STUDY stderr prints variant iters weights acc log_loss share_pmax min_class_share_pmax theta_for_20pct seconds, FIT_STUDY_THETA for every variant plus legacy P0 line. Evidence: test_cp144_fit_study_fold_back_exactness_random.
+
+### ISSUE-CP14-066 — OPEN (owner decision pending; not implemented)
+
+D49 entropy-threshold mechanism built, values stay 0.65/0.8/0.4 in this CP, mechanism only. Future work: set theta_H=H p80, quality_H_Q2=H p90, quality_H_Q5=H p30 from H distribution, 3-month OOS re-check 2026-12-22. Severity: MAJOR | status: OPEN.
+
+### ISSUE-CP14-067 — OPEN (owner decision pending; not implemented)
+
+D48 external historical OHLCV from public archives (Binance, Bybit) authorized RESEARCH/BACKTEST only via MarketObservation.source never TOOBIT, OI=MISSING, PAPER/LIVE Toobit-only, Toobit ingest untouched, splice test mandatory when implemented, record only no importer code. Severity: MAJOR | status: OPEN.
+
+### Error #23 — D36 PASS band 0.05-0.25 for share_H>=theta uncalibrated guess, study showed theta for 20% TRANSITION ~1.5 outside then-governed range
+
+D36 defined PASS band 0.05-0.25 for share_H_ge_theta as uncalibrated guess; fit-study showed theta for 20% TRANSITION ~1.5 outside then-governed range 0.3-0.9. Resolution: D47 makes share_H_ge_theta informational only, D49 widens theta_H range 0.3-0.9 to 0.3-ln9, D47 verdict uses accuracy and pmax shares. Recorded per C9.

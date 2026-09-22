@@ -1,0 +1,7 @@
+# D47 governed E11 fit protocol — chosen variant P2 from data/e11_fit_study_20260922T011436Z.json
+# Report accuracy 0.749 share_pmax_ge_0_50 0.845 — optimizer protocol moved from code to YAML per D47
+# Owner decision D47: iterations=100000 learning_rate=0.2 l2=0.0 class_weights=false
+iterations: 100000
+learning_rate: 0.2
+l2: 0.0
+class_weights: false
