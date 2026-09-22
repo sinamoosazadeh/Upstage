@@ -19482,23 +19482,23 @@ All red lines identified for canonicalization are recorded as resolved or gated;
 ### Execution Readiness Checklist
 
 **Before Layer-2 implementation begins (Phase 0):**
-- [ ] Target device specified and documented (G-TARGET-DEVICE-001).
+- [x] Target device specified and documented (G-TARGET-DEVICE-001). Ticked 2026-09-22 on the owner's CP-14.5 documentation evidence (the gate is specified-and-documented, so no test file covers it): the target device is the owner phone (Termux + proot + Termux:Boot) per PHASE2_DECISION_LOG.md D19 and PHASE2_HANDOFF_CP9.md `HANDOFF_CP14.1`/`HANDOFF_CP14.4` PHONE ACCEPTANCE; PHASE2_FINAL_REPORT.md still records the G-TARGET-DEVICE-001 model/OS/compiler measurement row as OPEN/UNVERIFIED.
 - [ ] Integration and Release Gates contract addendum reviewed and signed off by Risk/Owner.
 - [ ] AI.12 phased plan understood by execution team.
 
 **Before Phase 1 (contract compilation and data plane) can be considered "complete":**
-- [ ] All T-DC-001 through T-DC-004 tests pass (data contracts, validation, OHLC, OI).
-- [ ] All T-PIT-001 through T-PIT-004 tests pass (canonical serialization, content_id, replay_key, snapshot_id).
-- [ ] Raw Store Contract (AI.5) DDL schema fully implemented and validated.
+- [x] All T-DC-001 through T-DC-004 tests pass (data contracts, validation, OHLC, OI). Evidence: tests/unit/test_catalog.py::TestTDC (test_tdc_001_schema_fields, test_tdc_002_validation_order_fail_fast, test_tdc_003_random_ohlc_no_false_rejects, test_tdc_003_invalid_rejected, test_tdc_004_missing_oi_never_zero); the OI-less path again in tests/unit/test_toobit_public.py::TestEndpoints and tests/integration/test_store_integration.py::TestMissingOiIngest.
+- [x] All T-PIT-001 through T-PIT-004 tests pass (canonical serialization, content_id, replay_key, snapshot_id). Evidence: tests/unit/test_identity.py::TestCanonicalJson::test_pit_001_byte_identical_reserialization, ::TestContentId::test_pit_002_identical_payloads_identical_content_id, ::TestReplayKey::test_pit_003_stable_key_and_cache_semantics, ::TestSnapshot::test_pit_004_snapshot_id_reproducible.
+- [x] Raw Store Contract (AI.5) DDL schema fully implemented and validated. Evidence: tests/integration/test_store_integration.py::TestDDLVerbatim (test_ch4_tables_and_columns, test_ch5_raw_store_tables_and_indexes, test_wal_pragmas) and tests/unit/test_ledger_store.py::TestMigrations; schema source apex/data_catalog/store/sqlite_store.py.
 
 **Before Phase 2 (features & context) can be considered "complete":**
-- [ ] All T-E01-001 through T-E12 tests pass for instantiated engines (AI.10).
-- [ ] E11 K=9 explicitly validated (T-E11-K9).
-- [ ] E12 UTC window canonicalization verified (T-E12-Windows).
-- [ ] All adapters (v2/v3 → v4.0.0) implemented and tested (T-AD-001, T-AD-002, G-ADAPTER-001).
+- [x] All T-E01-001 through T-E12 tests pass for instantiated engines (AI.10). Evidence: the twelve per-engine suites tests/unit/test_e01_structure.py (T-E01-001: ::TestTE01001Schema::test_50_candles_output_conforms_v4), test_e02_liquidity.py, test_e03_volume.py, test_e04_volatility.py, test_e05_fvg.py, test_e06_orderblock.py, test_e07_rtm.py, test_e08_wyckoff.py, test_e09_trend.py, test_e10_momentum.py, test_e11_regime.py, test_e12_temporal.py, plus the golden-fixture engine integrations tests/integration/test_cp2_engines.py..test_cp5_engines.py and the sealed AI.10 harness tests/unit/test_ai10_harness.py::test_every_golden_case_passes.
+- [x] E11 K=9 explicitly validated (T-E11-K9). Evidence: tests/unit/test_e11_regime.py::TestTE11K9 (registry, state enum, probs/logits and T are 9 / 9x9), enforced at runtime by apex/engines/e11_regime/engine.py EngineParams and run_engine (T-E11-K9 guard).
+- [x] E12 UTC window canonicalization verified (T-E12-Windows). Evidence: tests/unit/test_e12_temporal.py::TestTE12Windows (UTC window boundary table plus §8.8 boundary stability).
+- [x] All adapters (v2/v3 → v4.0.0) implemented and tested (T-AD-001, T-AD-002, G-ADAPTER-001). Evidence: tests/integration/test_cp8_adapters.py::TestTAd001Synthetic and ::TestTAd002AdapterSeam, re-checked in the sealed harness tests/unit/test_ai10_harness.py::test_t_ad_001_and_t_ad_002_are_part_of_the_verdict. G-ADAPTER-001 is ticked only to the extent the tests prove it: the real-owner-export gate is asserted to be REPORTED OPEN (tests/integration/test_cp8_adapters.py::TestTAd001Synthetic::test_the_real_data_gate_stays_open_without_an_export, tests/unit/test_ai10_harness.py::test_the_real_data_gate_is_reported_open, ADR-P2-009) - this tick does not claim that gate is satisfied.
 
 **Before Phase 5 (Risk & Execution) can be considered "complete":**
-- [ ] All T-RS, T-LR, T-MON, T-FB tests pass (raw store, ledger, monotonicity, fallback).
+- [x] All T-RS, T-LR, T-MON, T-FB tests pass (raw store, ledger, monotonicity, fallback). Evidence: T-RS-001..003 tests/integration/test_store_integration.py::TestRawStore (test_rs_001_immutability_at_db_level, test_rs_002_manifest_hash_chain, test_rs_003_retention); T-LR-001..003 tests/unit/test_ledger_store.py::TestTLR001/TestTLR002/TestTLR003 with tests/integration/test_cp7_paper_loop.py; T-MON-001 tests/unit/test_catalog.py::TestReplayAndMonotonic::test_tmon_001_quality_never_improves_with_fewer_inputs and T-MON-002 tests/unit/test_execution_fsm.py::TestTMon002 plus tests/unit/test_base_contract.py; T-FB-001..003 tests/unit/test_ops_watchdog.py::TestFailClosedDrive with tests/unit/test_execution_fsm.py::TestReconcile/TestBootMachine/TestRecoveryReconciliation.
 - [ ] G-RISK-001 (risk veto autonomy) and G-FALLBACK-001 (fail-closed mode drill) pass.
 - [ ] Startup reconciliation algorithm (AI.9) tested on 5 scenarios.
 

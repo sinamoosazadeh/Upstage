@@ -988,18 +988,25 @@ async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None
     # is written to gitignored data/ and its path printed; a WARN verdict is
     # reported to the owner and never blocks — the exit code stays 0 TRAINED.
     validation = report["validation"]
+    # CP-14.5 C1: D49 triple recommendation (theta_H=H p80, quality_H_Q2=H p90,
+    # quality_H_Q5=H p30), printed in full on both the stderr and the text line.
+    theta_rec = validation["theta_recommendation"]
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     report_path = REPO_ROOT / "data" / f"e11_train_report_{stamp}.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         json.dumps(validation, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     # C6: TRAIN_VALIDATION stderr adds verdict_rule train_accuracy min_class_share_pmax theta_H
+    # CP-14.5 C1: and the full D49 triple theta_rec_H/theta_rec_Q2/theta_rec_Q5
     print(f"TRAIN_VALIDATION verdict={validation['verdict']} "
           f"verdict_rule={validation.get('verdict_rule','D47')} "
           f"train_accuracy={validation['train_accuracy']:.6f} "
           f"share_pmax_ge_0_50={validation['share_pmax_ge_0_50']:.6f} "
           f"min_class_share_pmax_ge_0_50={validation['min_class_share_pmax_ge_0_50']:.6f} "
           f"theta_H={validation['theta_H']:.6f} "
+          f"theta_rec_H={theta_rec['theta_H']:.6f} "
+          f"theta_rec_Q2={theta_rec['quality_H_Q2']:.6f} "
+          f"theta_rec_Q5={theta_rec['quality_H_Q5']:.6f} "
           f"share_H_ge_theta={validation['share_H_ge_theta']:.6f} "
           f"samples={validation['samples']}", file=sys.stderr, flush=True)
     print(f"TRAIN_REPORT {report_path}", file=sys.stderr, flush=True)
@@ -1016,7 +1023,11 @@ async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None
          f"train_accuracy={validation['train_accuracy']:.6f} "
          f"share_pmax_ge_0_50={validation['share_pmax_ge_0_50']:.6f} "
          f"min_class_share_pmax_ge_0_50={validation['min_class_share_pmax_ge_0_50']:.6f} "
-         f"theta_H={validation['theta_H']:.6f} fit_protocol={artifact.get('fit_protocol')}")
+         f"theta_H={validation['theta_H']:.6f} "
+         f"theta_rec_H={theta_rec['theta_H']:.6f} "
+         f"theta_rec_Q2={theta_rec['quality_H_Q2']:.6f} "
+         f"theta_rec_Q5={theta_rec['quality_H_Q5']:.6f} "
+         f"fit_protocol={artifact.get('fit_protocol')}")
     return EXIT_READY
 
 

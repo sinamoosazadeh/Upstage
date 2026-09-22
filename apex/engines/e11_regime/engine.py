@@ -1501,9 +1501,16 @@ class E11RegimeEngine(EngineBase):
         if "snapshot_id" not in state:
             return []                        # QX/Q0 refusal — nothing built
         quality = self._window_quality(candles)
+        # CP-14.5 C3: resolve the governed EngineParams ONCE, here, with the
+        # same rule run_engine applies (an EngineParams passes through, any
+        # other value is an override dict for get_params), and hand them to
+        # catalog_events. Values are unchanged — no numeric path is touched.
+        e11_params = context.get("e11_params")
+        params = (e11_params if isinstance(e11_params, EngineParams)
+                  else get_params(e11_params))
         return [self._to_evidence(item, symbol, timeframe, quality, state,
                                   result)
-                for item in catalog_events(state)]
+                for item in catalog_events(state, params)]
 
     def _resolve_candles(self, symbol: str, timeframe: str, as_of: str,
                          context: Dict[str, Any]) -> List[Dict[str, Any]]:
