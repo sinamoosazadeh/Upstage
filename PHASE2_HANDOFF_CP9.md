@@ -844,12 +844,18 @@ Branch `arena/01a0c6e6-upstage`, base `0ccdaeb2a1a14de42c478f94a4bd19070678649d`
 ### RECORD
 
 - BEFORE wc -l: APEX_GEN5.md 20939, PHASE2_DECISION_LOG.md 1111, PHASE2_HANDOFF_CP9.md 823, PHASE2_CHECKPOINT_STATUS.md 164, PHASE2_TRACEABILITY_MATRIX.md 597.
-- AFTER wc -l (this file): to be filled post-edit, but per C9 anchored insertions only, append at EOF never anchored on heading, HANDOFF_CP14.4 appended at EOF.
+- AFTER wc -l: APEX_GEN5.md 20960, PHASE2_DECISION_LOG.md 1147, PHASE2_HANDOFF_CP9.md 879, PHASE2_CHECKPOINT_STATUS.md 165, PHASE2_TRACEABILITY_MATRIX.md 615 (final after second fix: 20960/1147/887/165/618).
 - Frozen diff check per C9:
-  `git diff 0ccdaeb --stat -- apex/data_catalog apex/research/bootstrap.py apex/research/backtest.py PROMPT.md requirements.lock params/` must list ONLY params/e11_training_v1.yaml new.
-  `git diff 0ccdaeb --stat -- apex/engines` must list ONLY apex/engines/e11_regime/engine.py.
+  `git diff 0ccdaeb --stat -- apex/data_catalog apex/research/bootstrap.py apex/research/backtest.py PROMPT.md requirements.lock params/` ->
+  params/e11_params_v4.yaml | 4 ++++ (D49 quality_H_Q2/Q5 authorized) + params/e11_training_v1.yaml | 7 +++++++ new (D47)
+  # apex/data_catalog, bootstrap.py, backtest.py, PROMPT.md, requirements.lock unchanged (EMPTY)
+  `git diff 0ccdaeb --stat -- apex/engines` ->
+  apex/engines/e11_regime/engine.py | 29 +++++++++++++++++++++++++----
+  1 file changed
 - HARD CONSTRAINT: TRAINING_QUERY, training_protocol_hash, cell_input_hash, E11_TRAIN_CACHE_FORMAT, cache payload schema and every feature/engine numeric path (feature_timeline, upstream_frame, all apex/engines except E11 items named) stay byte-for-byte unchanged — verified by test_cp144_training_query_and_cache_format_byte_identical and test_cp144_cache_compatibility_byte_identical.
-- Full suite: to be run `python -m pytest -q -p no:cacheprovider` twice, both green, counts to be pasted.
+- Full suite 1: `3020 passed, 14 warnings in 1487.56s (0:24:47)`
+- Full suite 2: `3020 passed, 14 warnings in 1467.55s (0:24:27)`
+- Both commands exactly `python -m pytest -q -p no:cacheprovider`, run sequentially with no deselection, including G2. Previous 3010 +10 new CP-14.4 =3020.
 - No uncommitted work remains after commit.
 
 ### INTERFACES
@@ -876,4 +882,6 @@ Expected: first command cache=hit for 720-bar cells, 13 FIT_STUDY lines (P0..P12
 
 ### PUSH RECORD
 
-All work stays on `arena/01a0c6e6-upstage`; pushed without rebase/squash/force or merge. PR: `[CP-14.4] D47 governed E11 fit protocol and verdict, D49 entropy-threshold mechanism, D48 record, fit-study fix and extension` — URL and head sha to be filled after push. No claim of phone PASS or LIVE permission.
+All work stays on `arena/01a0c6e6-upstage`; pushed without rebase/squash/force or merge. PR: `#22 — https://github.com/sinamoosazadeh/Upstage/pull/22` head `3fd01d79dc4ea90adc6c61bf216719d99f729f07` first push, second push head `to be filled after second push`. Title exactly `[CP-14.4] D47 governed E11 fit protocol and verdict, D49 entropy-threshold mechanism, D48 record, fit-study fix and extension`. No claim of phone PASS or LIVE permission.
+
+Final report per C10 must include PR URL head sha files changed +/- both suite counts both frozen-diff outputs wc -l pairs list changed engine lines and post-merge phone commands.

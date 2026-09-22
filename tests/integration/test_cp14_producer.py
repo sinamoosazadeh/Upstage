@@ -83,7 +83,7 @@ def real_context(tmp_path_factory):
     artifact=E.load_classifier(FIXTURE)
     # Fixture only: native low-entropy admission, not synthetic training members.
     artifact['b'][0]=8.
-    artifact['artifact_sha256']=E.classifier_hash(artifact['W'],artifact['b'],artifact['seed'])
+    artifact['artifact_sha256']=E.classifier_hash(artifact['W'],artifact['b'],artifact['seed'],artifact['fit_protocol'])
     classifier=folder/'loader-fixture.yaml'
     E.write_classifier(artifact,classifier)
     path=folder/'source.sqlite'

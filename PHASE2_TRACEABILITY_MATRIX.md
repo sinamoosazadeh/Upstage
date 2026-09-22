@@ -606,10 +606,13 @@ D46 repository verification: PASS; the phone acceptance of the study command is 
 | C7 fit-study fix and extension | Fold-back fix W_raw=W/scale row-wise b_raw=b-W_raw@mean, proves random X probs equal 1e-9, adds P10 {100000,0.2,0.0,True} P11 {300000,0.2,0.0,False} P12 {300000,0.2,0.0,True}, every variant records theta_for_10/20/30 pct (H p90/80/70) and min_class_share, FIT_STUDY stderr prints variant iters weights acc log_loss share_pmax min_class_share_pmax theta_for_20pct seconds, FIT_STUDY_THETA for every variant plus legacy P0 line | Implemented; test_cp144_fit_study_fold_back_exactness_random + grid P0..P12 + FIT_STUDY_THETA per variant |
 | HARD CONSTRAINT | TRAINING_QUERY, training_protocol_hash, cell_input_hash, E11_TRAIN_CACHE_FORMAT, cache payload schema and every feature/engine numeric path (feature_timeline, upstream_frame, all apex/engines except E11 items named in part 3) must stay byte-for-byte unchanged | Verified; test_cp144_training_query_and_cache_format_byte_identical + test_cp144_cache_compatibility_byte_identical; git diff 0ccdaeb --stat -- apex/data_catalog apex/research/bootstrap.py apex/research/backtest.py PROMPT.md requirements.lock params/ lists ONLY params/e11_training_v1.yaml new; git diff 0ccdaeb --stat -- apex/engines lists ONLY apex/engines/e11_regime/engine.py |
 
-Both suite counts: to be filled after full runs.
+Both suite counts (2026-09-22, full suite twice, no deselection, including G2):
 
 ```text
-to be filled: python -m pytest -q -p no:cacheprovider twice
+3020 passed, 14 warnings in 1487.56s (0:24:47)
+3020 passed, 14 warnings in 1467.55s (0:24:27)
 ```
+
+Previous CP-14.3 was 3010 passed; +10 CP-14.4 tests = 3020. Integration fix test_cp14_producer now green.
 
 CP-14.4 repository verification: PASS; phone acceptance commands are owner-run post-merge, no LIVE permission.
