@@ -582,3 +582,16 @@ D35 repository verification: PASS; ≤0.05 s/bar honestly not reached under exac
 | Gate | Implementation and executable evidence | Status |
 |---|---|---|
 | D36 | `fit_multinomial` requires the eight rule-tree classes (derived TRANSITION may be empty; refusal "eight rule-tree classes required for fitting"); `train_classifier` raises only when a required class has zero delayed-label members and carries the report under "validation"; `training_validation` post-fit entropy/confidence report computed with the runtime `E11.compute_logits_softmax` (PASS iff 0.05 ≤ share_H_ge_theta ≤ 0.25 and share_pmax_ge_0_50 ≥ 0.50); tests a–h: main@c5f0261 golden W/b bit-identity, nine-minus-TRANSITION fit (W (9,8), b (9,), finite), eight single-missing refusals, TRANSITION=0 end-to-end fit + validation, named EMPTY_CLASS refusal, PASS/WARN shares + native-H equality, protocol/cell hash constants equal main@c5f0261 (phone cache reuse), CLI TRAIN_VALIDATION line + gitignored report file | Implemented; final full-suite evidence in the CP-14.2 PR body |
+### CP-14.3 — closeout traceability (2026-09-21)
+
+| Gate | Implementation and executable evidence | Status |
+|---|---|---|
+| D46 | PAPER-only eligibility minimum P = governed `paper_bootstrap.bootstrap_p_min = 0.50` for every timeframe while no calibrated walk-forward forecast package exists; D25 SL-12 `p_min_tf` table unchanged and authoritative for LIVE and for calibrated PAPER; `C_min` 0.50 unchanged; LIVE never reads `bootstrap_p_min` (`load_decision_runtime("LIVE")` attaches no `paper_bootstrap` section); missing/invalid key ⇒ `CONFIGURATION_INVALID` with no default; provenance `p_min_source ∈ {D25_SL12, D46_BOOTSTRAP}` in the producer context (allowlisted, not a 39th required bridge key) and in the `COMPONENTS` fact; tests: PAPER+1h p_min 0.50 and the P check passes (0.55 reproduces BELOW_P_MIN), LIVE table values for both `bootstrap_prior` values and under a broken on-disk section, six parametrised invalid/missing-key defects, producer-recorded value + provenance | Implemented; frozen diff EMPTY; final full-suite evidence in the CP-14.3 PR body |
+| ADR-CP14-025 (part 2) | `training_validation` extended (train_accuracy, train_log_loss, share_h_norm_gt_0_85, H_percentiles, entropy_by_pmax_bucket) with every D36 key unchanged and the D36 golden bit-identity test untouched; `fit_multinomial` byte-for-byte unchanged and bit-identical to study P0; research-only `train-e11 --fit-study` over the D35 cache (cache hits only, `FIT_STUDY_REQUIRES_CACHE` otherwise), ten `FIT_STUDY` lines + `FIT_STUDY_THETA` + `FIT_STUDY_REPORT`, no artifact, no `params/` write, no protocol change | Implemented; non-governing research surface |
+
+```text
+3010 passed, 14 warnings in 911.60s (0:15:11)
+3010 passed, 14 warnings in 884.51s (0:14:44)
+```
+
+D46 repository verification: PASS; the phone acceptance of the study command is owner-run, and no fit-protocol or threshold change is claimed or implied.

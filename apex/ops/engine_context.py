@@ -820,9 +820,16 @@ def load_decision_runtime(*, environment: str | None = None) -> dict[str, Any]:
 
 
 def validate_paper_bootstrap(section: Any) -> dict[str, Any]:
-    """D28: governed YAML values, never a runtime constant-weight fallback."""
+    """D28 / D46: governed YAML values, never a runtime constant-weight fallback.
+
+    D46 (2026-09-21, binding): exactly two keys — the D28 arbitration weights
+    and the PAPER bootstrap eligibility minimum ``bootstrap_p_min``, a finite
+    float in [0, 1]. A missing key is CONFIGURATION_INVALID: fail closed, no
+    default. This section is read for PAPER only.
+    """
     try:
-        if not isinstance(section, Mapping) or set(section) != {"arbitration_weights"}:
+        if (not isinstance(section, Mapping)
+                or set(section) != {"arbitration_weights", "bootstrap_p_min"}):
             raise ValueError("bootstrap schema")
         weights = section["arbitration_weights"]
         if not isinstance(weights, Mapping) or set(weights) != {"quality", "alignment", "recency"}:
@@ -831,9 +838,55 @@ def validate_paper_bootstrap(section: Any) -> dict[str, Any]:
             raise ValueError("weights must be finite and nonnegative")
         if sum(weights.values()) <= 0:
             raise ValueError("empty weights")
-        return {"arbitration_weights": dict(weights)}
+        bootstrap_p_min = section["bootstrap_p_min"]
+        if (type(bootstrap_p_min) not in (int, float)
+                or not math.isfinite(bootstrap_p_min)
+                or not 0.0 <= bootstrap_p_min <= 1.0):
+            raise ValueError("bootstrap_p_min must be a finite float in [0,1]")
+        return {"arbitration_weights": dict(weights),
+                "bootstrap_p_min": float(bootstrap_p_min)}
     except (ValueError, TypeError, KeyError) as exc:
         raise BridgeError("CONFIGURATION_INVALID", "invalid PAPER bootstrap policy") from exc
+
+
+# D46 (2026-09-21; ADR-CP14-024): while no calibrated walk-forward forecast
+# package exists (build_forecast with package None => p_hat = p_raw = 0.5),
+# the PAPER eligibility minimum P is the governed bootstrap value. The D25
+# SL-12 p_min_tf table stays authoritative for LIVE and for PAPER as soon as
+# a calibrated package is present; LIVE never reads bootstrap_p_min.
+D46_BOOTSTRAP_P_MIN_SOURCE = "D46_BOOTSTRAP"
+D25_SL12_P_MIN_SOURCE = "D25_SL12"
+P_MIN_SOURCES = (D25_SL12_P_MIN_SOURCE, D46_BOOTSTRAP_P_MIN_SOURCE)
+
+# D46 producer-side provenance key. plan_bridge.REQUIRED_CONTEXT_KEYS stays the
+# frozen 38-field bridge contract ("not a 39th required key"); this allowlist
+# is validated here and ignored by the decision bridge.
+PRODUCER_CONTEXT_ALLOWLIST = ("p_min_source",)
+
+
+def eligibility_p_min(policy: Mapping[str, Any], *, timeframe: str, environment: str,
+                      bootstrap_prior: bool) -> tuple[float, str]:
+    """D46: the eligibility minimum P and its provenance for one cell.
+
+    PAPER + bootstrap forecast (no calibrated package) => the governed
+    ``paper_bootstrap.bootstrap_p_min``, source D46_BOOTSTRAP. Everywhere else
+    => the D25 SL-12 ``p_min_tf`` value, source D25_SL12. LIVE never reads
+    bootstrap_p_min, and a missing value fails closed.
+    """
+    try:
+        if str(environment).upper() == "PAPER" and bootstrap_prior:
+            value = policy["paper_bootstrap"]["bootstrap_p_min"]
+            source = D46_BOOTSTRAP_P_MIN_SOURCE
+        else:
+            value = policy["p_min_tf"][timeframe]
+            source = D25_SL12_P_MIN_SOURCE
+        if type(value) not in (int, float) or not math.isfinite(value) or not 0.0 <= value <= 1.0:
+            raise ValueError("eligibility minimum P out of range")
+        reduced = float(value)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise BridgeError("CONFIGURATION_INVALID",
+                          "eligibility minimum P unavailable or invalid") from exc
+    return reduced, source
 
 
 def regime_uncertainty_input(state: Mapping[str, Any]) -> float:
@@ -1793,6 +1846,12 @@ class EngineContextProducer:
             raise BridgeError("OI_LAG_UNAVAILABLE",symbol)
         oi_lag = max(0.,(end-_iso_to_ms(latest.oi_timestamp))/1000)
         cfg = load_decision_runtime(environment="PAPER")
+        # D46 (ADR-CP14-024): PAPER + bootstrap forecast (no calibrated
+        # walk-forward package) uses the governed bootstrap minimum P;
+        # otherwise the D25 SL-12 per-timeframe table.
+        p_min_tf, p_min_source = eligibility_p_min(
+            cfg, timeframe=timeframe, environment="PAPER",
+            bootstrap_prior=bool(forecast.bootstrap_prior))
         def cap(name):
             text = next(p.l1_default for p in GOVERNED_DEFAULTS if p.name == name)
             return float(str(text).rstrip("%"))/100*float(account["capital"])
@@ -1834,11 +1893,12 @@ class EngineContextProducer:
             "e11_context":{**bundle["e11_context"],"bridge_inputs":transport},"direction":direction,"pattern_id":hit.pattern_id,
             "x":x,"forecast_quality":forecast.q_forecast,"forecast_rr":rr,"forecast_cost_r":cost["forecast_cost_r"],
             "window_qualities":q["window_qualities"],"temporal_quality":temporal["quality"],"volatility_quality":bundle["vlt"].q_tag,
-            **components,"package":package,"p_min_tf":cfg["p_min_tf"][timeframe],"c_min":cfg["c_min"],
+            **components,"package":package,"p_min_tf":p_min_tf,"p_min_source":p_min_source,"c_min":cfg["c_min"],
             "freshness_ok":q["freshness_ok"],"risk":risk,"risk_state":ladder["state"],"h_norm":E11.entropy_normalized(state["entropy"]),
             "family_status":governance["family_status"],"arbitration":governance["arbitration"]}
         await append_context_fact(self.store,"COMPONENTS",symbol,timeframe,as_of,
-            {"s_i":{k:components["s_i"].get(k,0.) for k in COMPONENT_ENGINE},"parameter_version":package["parameter_package_id"],"classifier_version":bundle["classifier_artifact_sha256"]})
+            {"s_i":{k:components["s_i"].get(k,0.) for k in COMPONENT_ENGINE},"parameter_version":package["parameter_package_id"],"classifier_version":bundle["classifier_artifact_sha256"],
+             "p_min_tf":p_min_tf,"p_min_source":p_min_source,"c_min":cfg["c_min"]})
         # JSON-normalize metadata so cold SQLite recovery equals the first call.
         events = context.pop("events")
         context = json.loads(canonical_json(context))
@@ -2425,6 +2485,77 @@ def fit_multinomial(X: list[list[float]], labels: list[str], seed: int) -> tuple
     return W.tolist(), b.tolist()
 
 
+# CP-14.3 (ADR-CP14-025): the extended validation surface. The bucket edges
+# are the documented p_max ranges [0,.3) [.3,.5) [.5,.7) [.7,1]; the last one
+# is closed at 1.0 because a saturated fit reaches p_max = 1.0 exactly and no
+# sample may fall outside every bucket. An empty bucket is reported as None,
+# never as a fabricated median.
+ENTROPY_PMAX_BUCKETS = ((0.0, 0.3), (0.3, 0.5), (0.5, 0.7), (0.7, 1.0))
+GATE7_ENTROPY_NORM_MAX = 0.85
+
+
+def training_metrics(labels: list[str], entropies: list[float], pmaxes: list[float],
+                     probabilities: list[list[float]]) -> dict:
+    """Shared metric core of ``training_validation`` and the fit study.
+
+    Read-only over supplied probabilities/entropies: it never fits, and every
+    caller supplies H and p from the runtime ``E11.compute_logits_softmax``.
+    ``train_log_loss`` floors the label probability at E11.EPS so a saturated
+    misclassification reports a finite number, never -inf. Shares and
+    medians are diagnostics only: no verdict here changes an artifact.
+    """
+    n = len(labels)
+    per_class: dict[str, dict[str, Any]] = {
+        name: {"n": 0, "share_H_ge_theta": 0.0, "share_pmax_ge_0_50": 0.0}
+        for name in E11.REGIMES}
+    correct, log_losses = 0, []
+    for index, label in enumerate(labels):
+        H, p_max = entropies[index], pmaxes[index]
+        row = probabilities[index]
+        stats = per_class[label]
+        stats["n"] += 1
+        if H >= E11.THETA_H:
+            stats["share_H_ge_theta"] += 1.0
+        if p_max >= 0.50:
+            stats["share_pmax_ge_0_50"] += 1.0
+        label_index = E11.REGIMES.index(label)
+        if int(np.argmax(row)) == label_index:
+            correct += 1
+        log_losses.append(-math.log(max(float(row[label_index]), float(E11.EPS))))
+    share_h_ge_theta = sum(1.0 for H in entropies if H >= E11.THETA_H) / n
+    share_pmax_ge_0_50 = sum(1.0 for p in pmaxes if p >= 0.50) / n
+    for stats in per_class.values():
+        if stats["n"]:
+            stats["share_H_ge_theta"] /= stats["n"]
+            stats["share_pmax_ge_0_50"] /= stats["n"]
+    percentiles = np.percentile(np.asarray(entropies, dtype=float),
+                                [10.0, 25.0, 50.0, 75.0, 90.0])
+    by_bucket = {}
+    for index, (lower, upper) in enumerate(ENTROPY_PMAX_BUCKETS):
+        closed = index == len(ENTROPY_PMAX_BUCKETS) - 1
+        inside = [H for H, p in zip(entropies, pmaxes)
+                  if lower <= p < upper or (closed and p == upper)]
+        by_bucket[f"[{lower:.1f},{upper:.1f}{']' if closed else ')'}"] = (
+            float(np.median(inside)) if inside else None)
+    verdict = ("PASS" if 0.05 <= share_h_ge_theta <= 0.25
+               and share_pmax_ge_0_50 >= 0.50 else "WARN")
+    return {"share_H_ge_theta": share_h_ge_theta,
+            "share_H_ge_0_80": sum(1.0 for H in entropies if H >= 0.80) / n,
+            "share_H_lt_0_40": sum(1.0 for H in entropies if H < 0.40) / n,
+            "share_pmax_ge_0_50": share_pmax_ge_0_50,
+            "share_h_norm_gt_0_85": sum(1.0 for H in entropies
+                                        if E11.entropy_normalized(H) > GATE7_ENTROPY_NORM_MAX) / n,
+            "train_accuracy": correct / n,
+            "train_log_loss": float(sum(log_losses) / n),
+            "H_min": float(min(entropies)), "H_median": float(np.median(entropies)),
+            "H_max": float(max(entropies)), "pmax_median": float(np.median(pmaxes)),
+            "H_percentiles": {"p10": float(percentiles[0]), "p25": float(percentiles[1]),
+                              "p50": float(percentiles[2]), "p75": float(percentiles[3]),
+                              "p90": float(percentiles[4])},
+            "entropy_by_pmax_bucket": by_bucket,
+            "per_class": per_class, "verdict": verdict}
+
+
 def training_validation(X: list[list[float]], labels: list[str], W: list, b: list) -> dict:
     """Mandatory post-fit entropy/confidence report (D36 / ADR-CP14-023).
 
@@ -2435,41 +2566,189 @@ def training_validation(X: list[list[float]], labels: list[str], W: list, b: lis
     signal only: WARN never blocks the artifact. Every sample's H and
     probabilities come from the runtime function itself
     (E11.compute_logits_softmax), never a reimplementation.
+
+    CP-14.3 (ADR-CP14-025) adds, read-only over the same W/b: train_accuracy,
+    train_log_loss, share_h_norm_gt_0_85 (the Gate 7 fail share), the
+    H_percentiles block and entropy_by_pmax_bucket. No fit numerics change.
     """
     if not X or len(X) != len(labels) or any(label not in E11.REGIMES for label in labels):
         raise BridgeError("CONFIGURATION_INVALID", "training validation needs matched regime samples")
-    entropies, pmaxes = [], []
-    per_class: dict[str, dict[str, Any]] = {
-        name: {"n": 0, "share_H_ge_theta": 0.0, "share_pmax_ge_0_50": 0.0}
-        for name in E11.REGIMES}
-    for row, label in zip(X, labels):
+    entropies, pmaxes, probabilities = [], [], []
+    for row, _label in zip(X, labels):
         _, probs, H = E11.compute_logits_softmax(dict(zip(E11.VECTOR_KEYS, row)), W, b)
-        p_max = max(probs)
         entropies.append(H)
-        pmaxes.append(p_max)
-        stats = per_class[label]
-        stats["n"] += 1
-        if H >= E11.THETA_H:
-            stats["share_H_ge_theta"] += 1.0
-        if p_max >= 0.50:
-            stats["share_pmax_ge_0_50"] += 1.0
+        pmaxes.append(max(probs))
+        probabilities.append(probs)
     n = len(X)
-    share_h_ge_theta = sum(1.0 for H in entropies if H >= E11.THETA_H) / n
-    share_pmax_ge_0_50 = sum(1.0 for p in pmaxes if p >= 0.50) / n
-    for stats in per_class.values():
-        if stats["n"]:
-            stats["share_H_ge_theta"] /= stats["n"]
-            stats["share_pmax_ge_0_50"] /= stats["n"]
-    verdict = ("PASS" if 0.05 <= share_h_ge_theta <= 0.25
-               and share_pmax_ge_0_50 >= 0.50 else "WARN")
     return {"samples": n, "theta_H": E11.THETA_H,
-            "share_H_ge_theta": share_h_ge_theta,
-            "share_H_ge_0_80": sum(1.0 for H in entropies if H >= 0.80) / n,
-            "share_H_lt_0_40": sum(1.0 for H in entropies if H < 0.40) / n,
-            "share_pmax_ge_0_50": share_pmax_ge_0_50,
-            "H_min": float(min(entropies)), "H_median": float(np.median(entropies)),
-            "H_max": float(max(entropies)), "pmax_median": float(np.median(pmaxes)),
-            "per_class": per_class, "verdict": verdict}
+            **training_metrics(labels, entropies, pmaxes, probabilities)}
+
+
+# CP-14.3 (ADR-CP14-025): the fixed, named fit-protocol grid of the
+# RESEARCH-ONLY `train-e11 --fit-study` surface. P0 is today's protocol; no
+# variant is a protocol change and none is ever written to params/.
+FIT_STUDY_VARIANTS: tuple[dict[str, Any], ...] = (
+    {"variant": "P0", "iterations": 2000, "learning_rate": 0.2, "l2": 0.0,
+     "class_weights": False, "standardise": False},
+    {"variant": "P1", "iterations": 20000, "learning_rate": 0.2, "l2": 0.0,
+     "class_weights": False, "standardise": False},
+    {"variant": "P2", "iterations": 100000, "learning_rate": 0.2, "l2": 0.0,
+     "class_weights": False, "standardise": False},
+    {"variant": "P3", "iterations": 20000, "learning_rate": 0.2, "l2": 1e-3,
+     "class_weights": False, "standardise": False},
+    {"variant": "P4", "iterations": 20000, "learning_rate": 0.2, "l2": 1e-2,
+     "class_weights": False, "standardise": False},
+    {"variant": "P5", "iterations": 20000, "learning_rate": 0.2, "l2": 0.0,
+     "class_weights": True, "standardise": False},
+    {"variant": "P6", "iterations": 20000, "learning_rate": 0.2, "l2": 1e-3,
+     "class_weights": True, "standardise": False},
+    {"variant": "P7", "iterations": 20000, "learning_rate": 0.2, "l2": 1e-2,
+     "class_weights": True, "standardise": False},
+    {"variant": "P8", "iterations": 20000, "learning_rate": 0.2, "l2": 0.0,
+     "class_weights": False, "standardise": True},
+    {"variant": "P9", "iterations": 20000, "learning_rate": 0.2, "l2": 0.0,
+     "class_weights": True, "standardise": True},
+)
+FIT_STUDY_PER_CLASS_ROW = ("CHOP", "TREND", "TREND_EXPANSION", "RANGE")
+
+
+def fit_multinomial_study(X: list[list[float]], labels: list[str], seed: int, *,
+                          iterations: int = 2000, learning_rate: float = 0.2, l2: float = 0.0,
+                          class_weights: bool = False,
+                          standardise: bool = False) -> tuple[list, list, dict]:
+    """Research-only fit protocol for ``train-e11 --fit-study`` (ADR-CP14-025).
+
+    Same seeded initialization and full-batch gradient-descent shape as
+    ``fit_multinomial`` (whose body must stay byte-for-byte unchanged), with
+    the study's optional terms: L2 on W only, inverse-frequency class weights
+    normalised to mean 1 over the present classes, and z-score
+    standardisation computed on the training set and folded back into W/b so
+    the runtime contract (raw 8 features -> logits) is unchanged. Returns
+    ``(W, b, info)``; ``fit_multinomial`` never calls this function and the
+    runtime never loads its output.
+    """
+    x = np.asarray(X, dtype=float)
+    y = np.array([E11.REGIMES.index(label) for label in labels])
+    if x.shape != (len(labels), 8) or not np.isfinite(x).all() or not len(labels):
+        raise BridgeError("CONFIGURATION_INVALID", "invalid training matrix")
+    if any(name not in set(labels) for name in FIT_REQUIRED_CLASSES):
+        raise BridgeError("CONFIGURATION_INVALID", "eight rule-tree classes required for fitting")
+    started = time.monotonic()
+    mean = x.mean(axis=0)
+    scale = x.std(axis=0)
+    # A constant feature standardises to 0; its column is unidentifiable and
+    # stays at the fitted value when folded back.
+    scale = np.where(scale > 0.0, scale, 1.0)
+    design = (x - mean) / scale if standardise else x
+    rng = np.random.default_rng(seed % (2 ** 128))
+    W = rng.normal(0.0, 0.01, (9, 8))
+    b = np.zeros(9)
+    weights = np.zeros(9)
+    if class_weights:
+        counts = np.bincount(y, minlength=9).astype(float)
+        present = counts > 0
+        weights[present] = 1.0 / counts[present]
+        weights[present] /= weights[present].mean()
+    for _ in range(iterations):
+        z = design @ W.T + b
+        z -= np.max(z, axis=1, keepdims=True)
+        probabilities = np.exp(z)
+        probabilities /= probabilities.sum(axis=1, keepdims=True)
+        probabilities[np.arange(len(y)), y] -= 1.0
+        if class_weights:
+            probabilities = probabilities * weights[y][:, None]
+        gradient_W = probabilities.T @ design / len(y)
+        gradient_b = probabilities.mean(axis=0)
+        if l2:
+            gradient_W = gradient_W + l2 * W
+        W -= learning_rate * gradient_W
+        b -= learning_rate * gradient_b
+    if not np.isfinite(W).all() or not np.isfinite(b).all():
+        raise BridgeError("CONFIGURATION_INVALID", "non-finite fitted parameters")
+    if standardise:
+        W = W / scale
+        b = b - W @ (mean / scale)
+    # Final entropies come from the runtime function itself, so the study's
+    # H basis is the same one training_validation and the runtime use.
+    entropies = [E11.compute_logits_softmax(dict(zip(E11.VECTOR_KEYS, row)), W, b)[2]
+                 for row in X]
+    info = {"iterations": int(iterations), "learning_rate": float(learning_rate),
+            "l2": float(l2), "weights": bool(class_weights),
+            "standardised": bool(standardise), "seconds": time.monotonic() - started,
+            "standardisation": ({"mean": [float(v) for v in mean],
+                                 "std": [float(v) for v in scale]} if standardise else None),
+            "entropies": entropies}
+    return W.tolist(), b.tolist(), info
+
+
+def run_fit_study(X: list[list[float]], labels: list[str], *,
+                  seed: int = DEFAULT_TRAINING_SEED,
+                  variants: tuple[dict[str, Any], ...] = FIT_STUDY_VARIANTS) -> dict:
+    """Evaluate the named grid on the supplied samples; returns the report body.
+
+    Research-only: it fits in memory and returns diagnostics. It writes no
+    artifact, touches no parameter file and has no runtime consumer.
+    """
+    records = []
+    for spec in variants:
+        W, b, info = fit_multinomial_study(
+            X, labels, seed, iterations=spec["iterations"],
+            learning_rate=spec["learning_rate"], l2=spec["l2"],
+            class_weights=spec["class_weights"], standardise=spec["standardise"])
+        entropies = info.pop("entropies")
+        metrics = training_validation(X, labels, W, b)
+        record = {"variant": spec["variant"], **info, **metrics}
+        if spec["variant"] == "P0":
+            # Empirical H cut-offs: the 90th/80th/70th H percentiles classify
+            # exactly 10%/20%/30% of these samples as H >= theta.
+            theta = np.percentile(np.asarray(entropies, dtype=float), [90.0, 80.0, 70.0])
+            record["theta_for_10pct"] = float(theta[0])
+            record["theta_for_20pct"] = float(theta[1])
+            record["theta_for_30pct"] = float(theta[2])
+        records.append(record)
+    return {"samples": len(X), "seed": int(seed),
+            "variants": records, "theta_H": E11.THETA_H}
+
+
+def load_fit_study_cache(*, timeframes: Any = DEFAULT_TRAINING_TIMEFRAMES,
+                         symbols: Any = CORE10_SYMBOLS,
+                         max_bars_per_cell: int | None = DEFAULT_MAX_BARS_PER_CELL,
+                         cache_dir: str | Path | None = None) -> dict:
+    """Load every scoped cell from the D35 cache only (ADR-CP14-025).
+
+    The study never recomputes a feature and never reads the store: a cell is
+    a hit only when its cache payload matches the same protocol hash, cell
+    identity, vector keys and sample schema that training enforces
+    (``read_cell_cache``). Any missing or invalid cell refuses with
+    ``FIT_STUDY_REQUIRES_CACHE`` and names every cell it needs.
+    """
+    timeframes, symbols = training_scope(timeframes, symbols)
+    max_bars = training_bar_cap(max_bars_per_cell)
+    protocol_hash = training_protocol_hash(timeframes, symbols, max_bars)
+    cell_dir = (Path(cache_dir) if cache_dir is not None else E11_TRAIN_CACHE_ROOT) / protocol_hash
+    X, labels, stamps, cells, missing = [], [], [], [], []
+    for symbol in symbols:
+        for timeframe in timeframes:
+            cell = symbol + ":" + timeframe
+            payload = read_cell_cache(cell_dir / f"{symbol}_{timeframe}.json", cell=cell,
+                                      protocol_hash=protocol_hash, input_hash=None)
+            if payload is None:
+                missing.append(cell)
+                continue
+            for sample in payload["samples"]:
+                labels.append(sample["label"])
+                X.append([float(value) for value in sample["vector"]])
+                stamps.append(sample["as_of"])
+            cells.append({"cell": cell, "samples": len(payload["samples"]),
+                          "closed_bars": payload["closed_bars"],
+                          "input_hash": payload.get("input_hash")})
+    if missing:
+        raise BridgeError("FIT_STUDY_REQUIRES_CACHE",
+                          "cache-only study; missing or invalid cells: " + ",".join(missing))
+    if not X:
+        raise BridgeError("FIT_STUDY_REQUIRES_CACHE", "cache holds no samples for the scope")
+    return {"protocol_hash": protocol_hash, "cache_dir": str(cell_dir), "cells": cells,
+            "X": X, "labels": labels, "as_of": stamps, "samples": len(X)}
 
 
 def training_scope(timeframes=DEFAULT_TRAINING_TIMEFRAMES, symbols=CORE10_SYMBOLS) -> tuple[tuple, tuple]:
@@ -2524,13 +2803,19 @@ def cell_input_hash(window: list[Any], dep_rows: Mapping[str, list[Any]],
          "max_bars_per_cell": max_bars}).encode()).hexdigest()
 
 
-def read_cell_cache(path: Path, *, cell: str, protocol_hash: str, input_hash: str) -> dict | None:
+def read_cell_cache(path: Path, *, cell: str, protocol_hash: str,
+                    input_hash: str | None) -> dict | None:
     """Load a completed cell's finalized samples, or None to recompute.
 
     Missing files, malformed JSON, schema drift, protocol/input mismatch or
     any non-finite value all mean recompute — never a partial or foreign
     sample set. Python/JSON float repr round-trips exactly, so a validated
     payload reproduces the original X/labels bit-for-bit.
+
+    ``input_hash=None`` is the cache-only research mode (ADR-CP14-025): the
+    caller has no store-derived input identity, so the recorded one is
+    accepted as-is; every other guard still applies. Training always passes
+    the recomputed hash.
     """
     import json
     try:
@@ -2542,7 +2827,7 @@ def read_cell_cache(path: Path, *, cell: str, protocol_hash: str, input_hash: st
             return None
         if payload.get("cell") != cell or payload.get("training_query_sha256") != protocol_hash:
             return None
-        if payload.get("input_hash") != input_hash:
+        if input_hash is not None and payload.get("input_hash") != input_hash:
             return None
         if list(payload.get("vector_keys", [])) != list(E11.VECTOR_KEYS):
             return None
@@ -3144,9 +3429,10 @@ def validate_produced_context(context: Mapping) -> None:
     from apex.ops.plan_bridge import REQUIRED_CONTEXT_KEYS, REQUIRED_RISK_KEYS, _validate_e11_context
     from apex.risk.kernel import RISK_LADDER_STATES, EMERGENCY_LADDER
     from apex.fabric.context import COMPONENT_ENGINE
-    if set(context) != set(REQUIRED_CONTEXT_KEYS) or not isinstance(context.get("risk"),Mapping) or set(context["risk"]) != set(REQUIRED_RISK_KEYS):
-        raise BridgeError("PRODUCER_SCHEMA_INVALID","exact 38+23 fields required")
-    if any(context[k] is None for k in REQUIRED_CONTEXT_KEYS):
+    allowed = set(REQUIRED_CONTEXT_KEYS) | set(PRODUCER_CONTEXT_ALLOWLIST)
+    if set(context) != allowed or not isinstance(context.get("risk"),Mapping) or set(context["risk"]) != set(REQUIRED_RISK_KEYS):
+        raise BridgeError("PRODUCER_SCHEMA_INVALID","exact 38 context + provenance + 23 risk fields required")
+    if any(context[k] is None for k in allowed):
         raise BridgeError("PRODUCER_SCHEMA_INVALID","missing context value")
     _validate_e11_context(context["e11_context"])
     for key in ("data_trust","q_raw","regime_confidence","regime_uncertainty","divergence_magnitude",
@@ -3159,6 +3445,9 @@ def validate_produced_context(context: Mapping) -> None:
                 "pattern_id","risk_state","family_status","temporal_quality","volatility_quality"):
         if not isinstance(context[key],str) or not context[key]:
             raise BridgeError("PRODUCER_TYPE_INVALID",key)
+    # D46 (ADR-CP14-024): the allowlisted provenance key is a closed enum.
+    if context["p_min_source"] not in P_MIN_SOURCES:
+        raise BridgeError("PRODUCER_RANGE_INVALID","p_min_source")
     for key in ("is_overlap","freshness_ok"):
         if type(context[key]) is not bool: raise BridgeError("PRODUCER_TYPE_INVALID",key)
     if type(context["direction"]) is not int or context["direction"] not in (-1,1):

@@ -32,6 +32,12 @@ gateway.py`):
                                           # (dry-run by default; --apply
                                           # writes via frozen correct_raw)
 
+CP-14.3 adds ONE research-only surface: `train-e11 --fit-study` evaluates the
+named fit-protocol grid (P0..P9) over the D35 per-cell cache, prints one
+FIT_STUDY line per variant and writes data/e11_fit_study_<UTC stamp>.json. It
+never recomputes a feature, never writes a classifier artifact and never
+touches params/.
+
 Composition (Ch.23 L18253–18260): ONE event loop, ONE ledger writer queue, the
 execution FSM as the only path to the venue, the scheduler as the only source of
 cell timing, Telegram as the only display surface.
@@ -836,6 +842,80 @@ def _telegram_reply(signaling: Any):
     return notifier
 
 
+async def _fit_study_e11(cfg: Config, *, as_json: bool,
+                         seed: int = EC.DEFAULT_TRAINING_SEED,
+                         timeframes: str = "1h,4h",
+                         symbols: str = ",".join(CORE10_SYMBOLS),
+                         max_bars_per_cell: Optional[int] = None,
+                         cache_dir: Optional[str] = None) -> int:
+    """CP-14.3 RESEARCH-ONLY fit study: cache-only, no artifact, no params/.
+
+    Loads the D35 per-cell cache for the same protocol hash (``--timeframes``,
+    ``--symbols``, ``--max-bars-per-cell``), refuses with
+    FIT_STUDY_REQUIRES_CACHE when any scoped cell is not a cache hit, and
+    never recomputes a feature, writes a classifier artifact or touches
+    params/. The report is gitignored data/e11_fit_study_<UTC stamp>.json.
+    """
+    try:
+        loaded = EC.load_fit_study_cache(timeframes=timeframes, symbols=symbols,
+                                         max_bars_per_cell=max_bars_per_cell,
+                                         cache_dir=cache_dir)
+    except PB.BridgeError as exc:
+        result = {"status": "REFUSED", "reason": exc.reason, "detail": exc.detail,
+                  "artifact_written": False}
+        _say(json.dumps(result, sort_keys=True) if as_json else
+             f"REFUSED {exc.reason}: {exc.detail}")
+        return EXIT_DEGRADED
+    for cell in loaded["cells"]:
+        print(f"FIT_CACHE cell={cell['cell']} cache=hit samples={cell['samples']} "
+              f"closed_bars={cell['closed_bars']} "
+              f"input_hash={(cell['input_hash'] or '-')[:12]}", file=sys.stderr, flush=True)
+    study = EC.run_fit_study(loaded["X"], loaded["labels"], seed=seed)
+    for record in study["variants"]:
+        shares = ",".join(f"{name}:{record['per_class'][name]['share_pmax_ge_0_50']:.4f}"
+                          for name in EC.FIT_STUDY_PER_CLASS_ROW)
+        print(f"FIT_STUDY variant={record['variant']} iters={record['iterations']} "
+              f"lr={record['learning_rate']} l2={record['l2']} "
+              f"weights={record['weights']} standardised={record['standardised']} "
+              f"train_accuracy={record['train_accuracy']:.6f} "
+              f"train_log_loss={record['train_log_loss']:.6f} "
+              f"share_H_ge_theta={record['share_H_ge_theta']:.6f} "
+              f"share_H_ge_0_80={record['share_H_ge_0_80']:.6f} "
+              f"share_pmax_ge_0_50={record['share_pmax_ge_0_50']:.6f} "
+              f"share_h_norm_gt_0_85={record['share_h_norm_gt_0_85']:.6f} "
+              f"H_p10={record['H_percentiles']['p10']:.6f} "
+              f"H_p50={record['H_percentiles']['p50']:.6f} "
+              f"H_p90={record['H_percentiles']['p90']:.6f} "
+              f"pmax_median={record['pmax_median']:.6f} "
+              f"seconds={record['seconds']:.3f} per_class_pmax_ge_0_50={shares}",
+              file=sys.stderr, flush=True)
+    p0 = study["variants"][0]
+    print(f"FIT_STUDY_THETA variant=P0 theta_for_10pct={p0['theta_for_10pct']:.6f} "
+          f"theta_for_20pct={p0['theta_for_20pct']:.6f} "
+          f"theta_for_30pct={p0['theta_for_30pct']:.6f}", file=sys.stderr, flush=True)
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    report_path = REPO_ROOT / "data" / f"e11_fit_study_{stamp}.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {**study, "status": "FIT_STUDY", "generated_utc": stamp,
+               "protocol_hash": loaded["protocol_hash"],
+               "cache_dir": loaded["cache_dir"], "cells": loaded["cells"],
+               "artifact_written": False}
+    report_path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n",
+                           encoding="utf-8")
+    print(f"FIT_STUDY_REPORT {report_path}", file=sys.stderr, flush=True)
+    result = {"status": "FIT_STUDY", "samples": loaded["samples"],
+              "cells": len(loaded["cells"]), "protocol_hash": loaded["protocol_hash"],
+              "variants": [record["variant"] for record in study["variants"]],
+              "theta_for_10pct": p0["theta_for_10pct"],
+              "theta_for_20pct": p0["theta_for_20pct"],
+              "theta_for_30pct": p0["theta_for_30pct"],
+              "report_path": str(report_path), "artifact_written": False}
+    _say(json.dumps(result, sort_keys=True) if as_json else
+         f"FIT_STUDY {loaded['samples']} cached samples; report={report_path}; "
+         f"no artifact written")
+    return EXIT_READY
+
+
 async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None,
                      out: Optional[str] = None,
                      seed: int = EC.DEFAULT_TRAINING_SEED,
@@ -971,9 +1051,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="train-e11: latest N CLOSED bars per cell (default unlimited)")
     parser.add_argument("--profile", action="store_true",
                         help="train-e11: per-cell engine/stage timing lines on stderr")
+    parser.add_argument("--fit-study", action="store_true",
+                        help="train-e11: RESEARCH-ONLY fit-protocol study over the D35 "
+                             "cache (no artifact, no params/, never recomputes features)")
     args = parser.parse_args(argv)
     cfg = Config(args.env_file)          # APEX_DOTENV_PATH/.env fill, no shadow
     try:
+        if args.command == "train-e11" and args.fit_study:
+            return asyncio.run(_fit_study_e11(cfg, as_json=args.json, seed=args.seed,
+                                             timeframes=args.timeframes, symbols=args.symbols,
+                                             max_bars_per_cell=args.max_bars_per_cell))
         if args.command == "train-e11":
             return asyncio.run(_train_e11(cfg, as_json=args.json,
                                          sqlite=args.sqlite, out=args.out, seed=args.seed,

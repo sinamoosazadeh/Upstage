@@ -11892,6 +11892,8 @@ the full Section 3.2 tree, including entropy, with the trained W/b.
 
 **Session-CP-14.2 (2026-09-21; D36):** first training now accepts an empty TRANSITION class — the refusal covers only the eight rule-tree classes (CRISIS, EXPANSION, TREND_EXPANSION, TREND_CONTRACTION, TREND, COMPRESSION, CHOP, RANGE), because TRANSITION is a derived state (Section 1.4 / Section 3.2 branch 2), not a learned class, and the D21 delayed-label rule produced 0 TRANSITION members in 1000 real samples (ISSUE-CP14-061) — while K stays 9, W stays (9,8), b (9,), the artifact schema, `TRAINING_QUERY`, `training_protocol_hash`, `cell_input_hash` and `E11_TRAIN_CACHE_FORMAT` are unchanged so existing per-cell caches are reused, runtime E11 is unchanged, and a mandatory post-fit entropy/confidence validation report (one `TRAIN_VALIDATION` stderr line plus `data/e11_train_report_<UTC stamp>.json`, WARN never blocks the artifact) is added, with TRANSITION relabelling as a regime-change neighbourhood deferred to the streaming-engine checkpoint (D38).
 
+**Session-CP-14.3 (2026-09-21; D46 study surface; ADR-CP14-025):** the post-fit validation report additionally carries `train_accuracy`, `train_log_loss`, `share_h_norm_gt_0_85` (the Gate 7 fail share `H/ln 9 > 0.85`), `H_percentiles` {p10, p25, p50, p75, p90} and `entropy_by_pmax_bucket` (H medians over p_max in [0,.3) [.3,.5) [.5,.7) [.7,1]), and the research-only `train-e11 --fit-study` surface evaluates the fixed, named fit-protocol grid P0..P9 over the D35 per-cell cache (cache hits only; `FIT_STUDY_REQUIRES_CACHE` otherwise) by printing one `FIT_STUDY` stderr line per variant and writing gitignored `data/e11_fit_study_<UTC stamp>.json` — no artifact is written, `params/` is untouched and no protocol changes: P0 is exactly the current optimizer, and no other variant becomes the protocol without a further owner decision.
+
 PIT-safe softmax:
 $$p_{r,t}= \frac{\exp(z_{r,t} - \max_k z_{k,t})}{\sum_j \exp(z_{j,t} - \max_k z_{k,t})}$$
 subtracting the max for numerical stability.
@@ -16059,6 +16061,8 @@ Forecast answers only: probability that target is touched before stop within the
 
 **Session-CP-14 (2026-09-18; D34 / ISSUE-043):** PAPER-only `cp14_paper_bootstrap_uncertainty-v1` records its E11 snapshot_id and uses U_cal=0.5, U_ood=0.5 and U_dis=1-p_max from that snapshot, U=clip(0.5*U_cal+0.3*U_ood+0.2*U_dis,0,1), C=1-U, with other named fields typed UNAVAILABLE and unconsumed, no zero defaults, and no use of this model in LIVE.
 
+**Session-CP-14.3 (2026-09-21; D46):** while no calibrated walk-forward forecast package exists (this section's own bootstrap: `package None ⇒ p_hat = p_raw = 0.5`), the PAPER eligibility minimum is the governed `paper_bootstrap.bootstrap_p_min = 0.50` for every timeframe — the value that makes the constant-0.5 prior PAPER-eligible as this section already declares — while the D25 SL-12 `p_min_tf` table is unchanged and stays authoritative for LIVE and for PAPER as soon as a calibrated package is present, `C_min = 0.50` is unchanged, and LIVE never reads `bootstrap_p_min`.
+
 Forecast event definition (exact, PIT-stamped):
 
 ```
@@ -16651,6 +16655,8 @@ eligibility = setup_valid AND forecast_quality_ok AND conflict_state != HARD_CON
 
 `P < P_min` or `C < C_min` ⇒ `INSUFFICIENT_EVIDENCE` ⇒ no permission (never
 a guess-based entry).
+
+**Session-CP-14.3 (2026-09-21; D46):** in PAPER only, and only while no calibrated walk-forward forecast package exists (`build_forecast` bootstrap: `package None ⇒ p_hat = p_raw = 0.5`), `P_min(tf)` is the governed PAPER bootstrap minimum `bootstrap_p_min = 0.50` for every timeframe, stored under `paper_bootstrap` in `params/decision_runtime_v1.yaml`; the D25 SL-12 `p_min_tf` table is unchanged and remains authoritative for LIVE and for PAPER as soon as a calibrated package is present, `C_min = 0.50` is unchanged, LIVE never reads `bootstrap_p_min`, and the producer records the value's provenance as `p_min_source ∈ {D25_SL12, D46_BOOTSTRAP}` (ADR-CP14-024).
 
 **Candidate generation and ranking.**
 
@@ -20924,6 +20930,7 @@ Engine v4.0.0 formula bodies were not rewritten.
 | P7: paper account YAML + control-plane feed + twin rule (2026-09-17) | §9.5 repo tree + YAML items (D2/D4/D8) |
 | P8: 24/7 host + .env-only secrets + watchdog chat + rotation-evidence row (2026-09-17) | Ch.23 + AI.13 G-TOOBIT-004 (D17-D20) |
 | CP-14.2 D36 eight-class E11 fit + mandatory validation report (2026-09-21) | E11 Section 3.3; ISSUE-CP14-061 (resolved), ISSUE-CP14-062/063 (OPEN); ADR-CP14-023; eight rule-tree classes required, derived TRANSITION may be empty, K 9 / W (9,8) / b (9,) unchanged, artifact schema and cache hashes unchanged, runtime E11 unchanged |
+| CP-14.3 D46 PAPER bootstrap P minimum + extended E11 validation and research-only fit study (2026-09-21) | Ch.13 Section 13.1 and Ch.14 eligibility reconciled by the D46 rule (PAPER `bootstrap_p_min` 0.50 for every timeframe while no calibrated forecast package exists; D25 SL-12 `p_min_tf` authoritative otherwise and for LIVE, which never reads `bootstrap_p_min`; `C_min` 0.50 unchanged; provenance `p_min_source`); E11 Section 3.3 validation fields + `train-e11 --fit-study` (P0..P9, cache-only, no artifact, no params/ write, no protocol change); ADR-CP14-024 / ADR-CP14-025; ISSUE-CP14-063 (CLOSED by D46), ISSUE-CP14-064 (OPEN) |
 
 **Honestly still open (protocol only):** those six measurement items; running `apex/` code; ECONOMIC_GATE checkbox.
 
