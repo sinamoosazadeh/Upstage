@@ -960,4 +960,4 @@ The PASS artifact that supplied the three percentiles is `data/e11_train_report_
 
 ### PUSH RECORD
 
-All work stays on `arena/01a0d4bf-upstage`. No rebase, squash, force-push, branch delete or merge. The PR title is `[CP-14.6] deterministic identity, per-cycle budget, runtime publishers + PAPER backfill, venue-aligned scheduler, D49 thresholds, D59 hygiene`.
+All work stays on `arena/01a0d4bf-upstage`. No rebase, squash, force-push, branch delete or merge. The PR title is `[CP-14.6] deterministic identity, per-cycle budget, runtime publishers + PAPER backfill, venue-aligned scheduler, D49 thresholds, D59 hygiene`. PR `#24 — https://github.com/sinamoosazadeh/Upstage/pull/24`. Implementation head at PR open: `a5d08688c758d0b08f62d83bddd3493b70a13c45` (`mergeable=MERGEABLE`). This closeout commit records that URL and cannot name itself.
