@@ -1,0 +1,6 @@
+# params/decision_v1.yaml — D59 (2026-09-24) governed decision scalars.
+# Strict parser: an unknown key is CONFIGURATION_INVALID. No defaults in code.
+direction_conflict_threshold: 0.15
+min_rr: 0.5
+context_confidence_gain: 8.0
+q_forecast_threshold: 0.5

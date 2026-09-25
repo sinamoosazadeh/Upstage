@@ -75,6 +75,7 @@ PARAMS_FILES: Dict[str, str] = {
     "e11_training": "e11_training_v1.yaml",
     "paper_account": "paper_account_v1.yaml",
     "decision_runtime": "decision_runtime_v1.yaml",
+    "decision_v1": "decision_v1.yaml",
 }
 
 
@@ -497,7 +498,11 @@ class Params:
     def toobit_wire(self) -> Dict[str, Any]:
         return self["toobit_wire"]
 
+    @property
     def e11_params(self) -> Dict[str, Any]:
+        # Property, not a method: E11.get_params does dict(load_params().e11_params).
+        # A method object was swallowed by that loader's except, so YAML never won
+        # while it matched the chapter defaults (D49).
         return self["e11_params"]
 
 

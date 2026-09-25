@@ -1,12 +1,14 @@
 # params/e11_params_v4.yaml — §9.5-canonical E11 values (ADR-P2-008:
 # YAML is §9.5-canonical; engine §6 tables govern formula internals;
 # runtime loads the YAML, never the other way around).
-# D49: theta_H range widened to [0.3, ln9]; quality_H_Q2/Q5 now governed YAML.
-# Values stay 0.65/0.8/0.4 for this CP (mechanism only, D49 note).
+# D49 (2026-09-24): theta_H = H p80, quality_H_Q2 = H p90, quality_H_Q5 = H p30
+# of the PASS artifact. Report: data/e11_train_report_20260924T181954Z.json.
+# artifact sha256: see HANDOFF_CP14.6 PHONE ACCEPTANCE.
+# All three are inside [0.3, ln 9]; Q5 < theta_H < Q2. No other E11 parameter changes.
 K: 9
-theta_H: 0.65
-quality_H_Q2: 0.8
-quality_H_Q5: 0.4
+theta_H: 1.105878
+quality_H_Q2: 1.229880
+quality_H_Q5: 0.564415
 lambda_ewma: 0.94
 hysteresis_candles: 3
 dirichlet_alpha: 0.1

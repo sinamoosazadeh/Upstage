@@ -6,8 +6,8 @@ an order (Ch.14 heading; AF.1 authority chain).
 
 from apex.decision.pipeline import (  # noqa: F401
     ARBITRATION_REASON_FIELDS,
+    DECISION_V1_KEYS,
     INELIGIBLE_FAMILIES,
-    MIN_RR,
     NO_TRADE,
     PORTFOLIO_PROPOSAL_FIELDS,
     StrategyProposal,
@@ -21,6 +21,8 @@ from apex.decision.pipeline import (  # noqa: F401
     eu_dollar,
     family_status_ok,
     governed_limits,
+    load_decision_v1,
+    min_rr,
     generate_candidates,
     rank,
     regime_window_ok,

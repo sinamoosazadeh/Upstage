@@ -153,7 +153,8 @@ class TestEvidenceFabric:
                           "evidence", "data_trust", "conflict_state",
                           "redundancy_state", "hash"}
         assert d["fabric_id"].startswith("fab_")
-        assert d["evidence"] == ["ev_1"]
+        assert d["evidence"] == [fab.members[0].content_id]
+        assert d["evidence"] != ["ev_1"]
 
     def test_only_active_evidence_enters(self):
         fab = EvidenceFabric.assemble(
@@ -197,7 +198,9 @@ class TestEvidenceFabric:
             evidence=[mkref("ev_1", age=5.01), mkref("ev_2", age=5.0),
                       mkref("ev_3", age=0.0)],
             data_trust=0.98)
-        assert [m.evidence_id for m in fab.members] == ["ev_2", "ev_3"]
+        # D50: members sort by content_id, not evidence_id. Both ages are admitted.
+        assert {m.evidence_id for m in fab.members} == {"ev_2", "ev_3"}
+        assert [m.content_id for m in fab.members] == sorted(m.content_id for m in fab.members)
         assert fab.excluded == (("ev_1", "EXPIRED_5TF"),)
 
     def test_data_trust_out_of_range_fails_closed(self):
@@ -215,11 +218,14 @@ class TestEvidenceFabric:
                                     data_trust=0.98)
         assert a.hash == b.hash          # member order is normalized
         assert len(a.hash) == 64
+        # D50: the hashed member list is content_id, not the engine UUID.
         expected = sha256_hex(canonical_json({
             "as_of": 1000, "symbol": "BTCUSDT", "timeframe": "1h",
-            "evidence": ["ev_1", "ev_2"], "data_trust": 0.98,
+            "evidence": [m.content_id for m in a.members], "data_trust": 0.98,
             "conflict_state": "NONE", "redundancy_state": {}}))
         assert a.hash == expected
+        assert a.fabric_id == b.fabric_id
+        assert a.fabric_id == "fab_" + a.hash[:32]
 
     def test_fabric_is_read_only_for_engines(self):
         fab = EvidenceFabric.assemble(symbol="BTCUSDT", timeframe="1h",
@@ -296,13 +302,15 @@ class TestFabricFromEvents:
 
 
 class TestIdentityRules:
-    def test_fabric_id_is_operational_only(self):
-        i1, i2 = make_fabric_id(), make_fabric_id()
-        assert i1.startswith("fab_") and i1 != i2
-        # UUIDv7 must never enter the canonical payload (P8): the hash is
-        # computed over a payload that excludes fabric_id.
+    def test_fabric_id_is_derived_from_the_hash(self):
+        # D50: the UUID variant is gone. Identical hashes share an id, and
+        # the id is not itself inside the canonical body.
         body = {"as_of": 1, "symbol": "S", "timeframe": "1h", "evidence": [],
                 "data_trust": 1.0, "conflict_state": "NONE",
                 "redundancy_state": {}}
-        assert make_hash(body) == sha256_hex(canonical_json(body))
-        assert i1 not in canonical_json(body)
+        digest = make_hash(body)
+        assert make_fabric_id(digest) == make_fabric_id(digest)
+        assert make_fabric_id(digest) == "fab_" + digest[:32]
+        assert make_fabric_id(digest) not in canonical_json(body)
+        with pytest.raises(ValueError, match="FABRIC_ID_QX"):
+            make_fabric_id("not-a-hash")

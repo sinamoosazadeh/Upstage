@@ -97,14 +97,43 @@ def _check_nan_inf(obj: Any, _depth: int = 0) -> None:
         _check_nan_inf(obj.model_dump(), _depth + 1)
 
 
+def _normalize_neg_zero(obj: Any, _depth: int = 0) -> Any:
+    """Float ``-0.0`` serialises as ``0`` (D50 / audit ب۵).
+
+    The Decimal path already maps ``-0`` to ``"0"``. ``json.dumps`` would
+    otherwise emit ``-0.0`` for a float, so two equal magnitudes would not
+    hash equal. NaN/Inf are rejected by :func:`_check_nan_inf` first.
+    """
+    if _depth > 100:
+        raise CanonicalJsonError("payload nesting depth exceeds 100")
+    if isinstance(obj, float):
+        if obj == 0.0:
+            return 0.0
+        return obj
+    if isinstance(obj, Mapping):
+        return {k: _normalize_neg_zero(v, _depth + 1) for k, v in obj.items()}
+    if isinstance(obj, tuple):
+        return tuple(_normalize_neg_zero(v, _depth + 1) for v in obj)
+    if isinstance(obj, list):
+        return [_normalize_neg_zero(v, _depth + 1) for v in obj]
+    if isinstance(obj, (set, frozenset)):
+        return obj
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        return _normalize_neg_zero(dataclasses.asdict(obj), _depth + 1)
+    if hasattr(obj, "model_dump"):
+        return _normalize_neg_zero(obj.model_dump(), _depth + 1)
+    return obj
+
+
 def canonical_json(obj: Any) -> str:
     """Serialize ``obj`` to the canonical byte-stable JSON string.
 
     sorted keys, no whitespace, ensure_ascii=False, NaN/Inf forbidden,
-    Decimal fixed-point strings, datetimes ``...Z``.
+    Decimal fixed-point strings, datetimes ``...Z``, float ``-0.0`` → ``0``.
     Deterministic: identical Python values ⇒ identical strings.
     """
     _check_nan_inf(obj)
+    obj = _normalize_neg_zero(obj)
     return json.dumps(
         obj,
         sort_keys=True,

@@ -1,7 +1,6 @@
 # params/quality_weights_v1.yaml — copy the Q_raw / Q_min / OI-lag tables of
-# §2.1 exactly. Do not re-interpolate (§9.5). Q_thr carries the three
-# documented representative rows; the §2.1 algorithm default Q_thr=0.5
-# covers other timeframes (as in the frozen algorithm signature).
+# §2.1 exactly. Do not re-interpolate (§9.5).
+# D62: fourteen rows, no default.
 freshness_threshold_seconds:
   1m: 5
   3m: 8
@@ -49,8 +48,19 @@ oi_lag_threshold_seconds:
   1mo: 14400
 q_thr_by_tf:
   1m: 0.6
+  3m: 0.58
+  5m: 0.56
+  15m: 0.54
+  30m: 0.52
   1h: 0.5
+  2h: 0.48
+  4h: 0.46
+  6h: 0.45
+  8h: 0.44
+  12h: 0.42
   1d: 0.4
+  1w: 0.40
+  1mo: 0.40
 q_raw_weights_by_tf:
   1m: {Q_schema: 0.20, Q_time: 0.20, Q_seq: 0.15, Q_ohlc: 0.20, Q_volume: 0.10, Q_oi: 0.10, Q_source: 0.05}
   3m: {Q_schema: 0.19, Q_time: 0.19, Q_seq: 0.15, Q_ohlc: 0.21, Q_volume: 0.11, Q_oi: 0.10, Q_source: 0.05}

@@ -15,7 +15,7 @@ from apex.config import load_params
 from apex.decision.pipeline import (
     ARBITRATION_REASON_FIELDS,
     INELIGIBLE_FAMILIES,
-    MIN_RR,
+    min_rr,
     NO_TRADE,
     PORTFOLIO_PROPOSAL_FIELDS,
     StrategyProposal,
@@ -53,14 +53,13 @@ class TestUnitsAndCosts:
         # units must be consistent: G/L == RR
         assert u["G"] / u["L"] == pytest.approx(u["RR"])
 
-    def test_RR_is_floored_at_half(self):
+    def test_RR_below_min_is_a_refusal_not_a_floor(self):
+        # D59 و۳: the governed boundary is still eligible; a worse ratio is
+        # refused. Flooring used to make a 0.1R target look like min_rr.
         u = units_of_r(entry=100.0, stop=98.0, target=99.0)   # 1/2 = 0.5
-        assert u["RR"] == MIN_RR == 0.5
-        u2 = units_of_r(entry=100.0, stop=98.0, target=99.0)   # 1/2 = 0.5
-        assert u2["RR"] == 0.5
-        u3 = units_of_r(entry=100.0, stop=99.5, target=100.1)  # 0.1 → floored
-        assert u3["RR"] == 0.5
-        assert u3["target_distance"] == pytest.approx(0.1)
+        assert u["RR"] == min_rr() == 0.5
+        with pytest.raises(DecisionError, match="RR_BELOW_MIN"):
+            units_of_r(entry=100.0, stop=99.5, target=100.1)
 
     def test_zero_risk_unit_fails_closed(self):
         with pytest.raises(DecisionError, match="RISK_UNIT_QX"):

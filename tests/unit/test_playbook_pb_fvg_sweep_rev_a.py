@@ -61,7 +61,9 @@ class TestAE1Template:
         assert tuple(rec.record) == AE1_TEMPLATE_FIELDS
         assert rec.record["ID"] == PLAYBOOK_ID == "PB_FVG_SWEEP_REV_A"
         assert rec.record["parent-setup-ID"] == PARENT_FAMILY_ID
-        assert rec.regime_window == ("TREND", "TREND_EXPANSION")
+        assert rec.regime_window == (
+            "TRANSITION", "EXPANSION", "TREND_EXPANSION", "TREND_CONTRACTION",
+            "TREND", "COMPRESSION", "CHOP", "RANGE")
 
     def test_missing_field_fails_closed(self):
         bad = {k: v for k, v in instantiate_playbook().record.items()

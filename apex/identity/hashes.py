@@ -1,10 +1,11 @@
 """APEX_GEN5 hash helpers (AI.3 deterministic identity; §9.5-5).
 
 - ``content_id = SHA256(canonical_json(payload))`` — dedup/cache key.
-- ``replay_key = SHA256(engine_version || contract_version || symbol ||
-  timeframe || as_of_timestamp || input_hash || parameter_package_id ||
-  code_revision || canonical_payload)`` — idempotency/retry gate; stable
-  across identical inputs and code (AI.3).
+- ``replay_key = SHA256(canonical_json(ordered nine-field mapping))`` —
+  idempotency/retry gate; stable across identical inputs and code (AI.3).
+  D50 (2026-09-24, audit ب۶): the plain ``||`` concatenation was ambiguous
+  under field shifts. The nine named fields are hashed as one canonical
+  object, not concatenated.
 All digests are full 64-hex-character SHA-256 (never truncated, G11).
 """
 
@@ -39,17 +40,19 @@ def replay_key(
     code_revision: str,
     canonical_payload: str,
 ) -> str:
-    """Deterministic replay key (AI.3). Fields concatenated in the frozen
-    order with ``||`` semantics (plain concatenation, as specified)."""
-    joined = "".join([
-        engine_version,
-        contract_version,
-        symbol,
-        timeframe,
-        as_of_timestamp,
-        input_hash,
-        parameter_package_id,
-        code_revision,
-        canonical_payload,
-    ])
-    return sha256_hex(joined)
+    """Deterministic replay key (AI.3 / D50).
+
+    The nine named fields are one canonical object. Plain concatenation was
+    ambiguous under a field shift (``AB``+``C`` equals ``A``+``BC``).
+    """
+    return sha256_hex(canonical_json({
+        "engine_version": engine_version,
+        "contract_version": contract_version,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "as_of_timestamp": as_of_timestamp,
+        "input_hash": input_hash,
+        "parameter_package_id": parameter_package_id,
+        "code_revision": code_revision,
+        "canonical_payload": canonical_payload,
+    }))

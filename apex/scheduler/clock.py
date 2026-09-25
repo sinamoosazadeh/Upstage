@@ -121,10 +121,12 @@ class FixtureClock(Clock):
         return self.advance((target - self._ms) / 1000.0)
 
     def advance_to_next_close(self, timeframe: str) -> str:
-        """Advance to the next boundary of ``timeframe`` (a TF close)."""
-        step = tf_seconds(timeframe) * 1000
-        next_close = ((self._ms // step) + 1) * step
-        return self.advance((next_close - self._ms) / 1000.0)
+        """Advance to the next venue boundary of ``timeframe`` (a TF close).
+
+        D53: ``1w`` / ``1mo`` use the calendar rule, not the epoch floor.
+        """
+        nxt = next_close(timeframe, now_ms=self._ms)
+        return self.advance((nxt - self._ms) / 1000.0)
 
     @property
     def elapsed_seconds(self) -> float:
@@ -167,15 +169,88 @@ def _ms_to_iso(ms: int) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
 
+# Fixed bar lengths in milliseconds. ``1w`` / ``1mo`` are NOT in this map:
+# their closes are Monday 00:00 UTC and the 1st 00:00 UTC (D53). The frozen
+# ``TF_DURATION_SECONDS["1mo"]`` = 2_592_000 is age/expiry arithmetic only
+# and is never a close boundary.
+_CLOSE_FIXED_MS: Dict[str, int] = {
+    "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000,
+    "30m": 1_800_000, "1h": 3_600_000, "2h": 7_200_000,
+    "4h": 14_400_000, "6h": 21_600_000, "8h": 28_800_000,
+    "12h": 43_200_000, "1d": 86_400_000,
+}
+_WEEK_MS = 7 * 86_400_000
+# 1970-01-05 was Monday; the epoch itself was Thursday.
+_WEEK_ANCHOR_MS = 4 * 86_400_000
+
+
+def latest_close_boundary(now_ms: int, timeframe: str) -> int:
+    """Most recent venue boundary (UTC, Monday weeks, calendar months).
+
+    Moved unchanged in behaviour from ``apex.ops.bootstrap_service`` (D53).
+    ``1mo`` is the first instant of the current UTC month, never a 30-day
+    step. ``1w`` is the most recent Monday 00:00 UTC.
+    """
+    tf = str(timeframe)
+    if tf == "1mo":
+        now = _dt.datetime.fromtimestamp(int(now_ms) / 1000, _dt.timezone.utc)
+        return int(now.replace(day=1, hour=0, minute=0, second=0,
+                               microsecond=0).timestamp() * 1000)
+    if tf == "1w":
+        return _WEEK_ANCHOR_MS + (
+            (int(now_ms) - _WEEK_ANCHOR_MS) // _WEEK_MS) * _WEEK_MS
+    try:
+        duration = _CLOSE_FIXED_MS[tf]
+    except KeyError:
+        raise SchedulerError(get_error_code("E-VAL-022").code, tf) from None
+    return (int(now_ms) // duration) * duration
+
+
+def _next_month_ms(boundary_ms: int) -> int:
+    moment = _dt.datetime.fromtimestamp(boundary_ms / 1000, _dt.timezone.utc)
+    if moment.month == 12:
+        nxt = _dt.datetime(moment.year + 1, 1, 1, tzinfo=_dt.timezone.utc)
+    else:
+        nxt = _dt.datetime(moment.year, moment.month + 1, 1,
+                           tzinfo=_dt.timezone.utc)
+    return int(nxt.timestamp() * 1000)
+
+
 def tf_close_times(timeframe: str, *, start_ms: int, end_ms: int) -> List[int]:
-    """Every close boundary of ``timeframe`` in ``[start_ms, end_ms)``."""
-    step = tf_seconds(timeframe) * 1000
+    """Every close boundary of ``timeframe`` in ``[start_ms, end_ms)``.
+
+    D53: ``1w`` enumerates Mondays 00:00 UTC; ``1mo`` enumerates the 1st
+    00:00 UTC. Other timeframes stay epoch-aligned.
+    """
+    tf = str(timeframe)
+    if tf == "1w":
+        first = latest_close_boundary(start_ms, tf)
+        if first < start_ms:
+            first += _WEEK_MS
+        return list(range(first, end_ms, _WEEK_MS))
+    if tf == "1mo":
+        cursor = latest_close_boundary(start_ms, tf)
+        if cursor < start_ms:
+            cursor = _next_month_ms(cursor)
+        out: List[int] = []
+        while cursor < end_ms:
+            out.append(cursor)
+            cursor = _next_month_ms(cursor)
+        return out
+    step = tf_seconds(tf) * 1000
     first = ((start_ms + step - 1) // step) * step
     return list(range(first, end_ms, step))
 
 
 def next_close(timeframe: str, *, now_ms: int) -> int:
-    step = tf_seconds(timeframe) * 1000
+    """The next venue close strictly after ``now_ms`` (D53 calendar rule)."""
+    tf = str(timeframe)
+    if tf == "1w":
+        latest = latest_close_boundary(now_ms, tf)
+        return latest + _WEEK_MS
+    if tf == "1mo":
+        return _next_month_ms(latest_close_boundary(now_ms, tf))
+    step = tf_seconds(tf) * 1000
     return ((now_ms // step) + 1) * step
 
 
@@ -429,7 +504,9 @@ class Scheduler:
         t = self.clock.now_ms() if now_ms is None else int(now_ms)
         due: List[Tuple[BundleCell, int]] = []
         for cell in self.cells:
-            close = (t // (cell.tf_seconds * 1000)) * (cell.tf_seconds * 1000)
+            # D53: venue boundaries (Monday weeks, calendar months), not the
+            # epoch floor. ``1mo``'s 30-day duration is never a boundary.
+            close = latest_close_boundary(t, cell.timeframe)
             if close <= t:
                 due.append((cell, close))
         due.sort(key=lambda item: (item[1], item[0].symbol, item[0].timeframe))
@@ -581,6 +658,6 @@ __all__ = [
     "PRIORITY_ORDER", "SCHEDULER_SEMAPHORE", "Scheduler", "SchedulerError",
     "StageResult", "SystemClock", "UNIVERSE_CELLS", "drift_verdict",
     "htf_last_closed_guard", "measure_drift", "monotone_check",
-    "monotone_leverage", "next_close", "tf_close_times", "tf_seconds",
-    "universe_cells",
+    "latest_close_boundary", "monotone_leverage", "next_close",
+    "tf_close_times", "tf_seconds", "universe_cells",
 ]
