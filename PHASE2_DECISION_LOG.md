@@ -1151,3 +1151,83 @@ D48 external historical OHLCV from public archives (Binance, Bybit) authorized R
 ### Error #23 — D36 PASS band 0.05-0.25 for share_H>=theta uncalibrated guess, study showed theta for 20% TRANSITION ~1.5 outside then-governed range
 
 D36 defined PASS band 0.05-0.25 for share_H_ge_theta as uncalibrated guess; fit-study showed theta for 20% TRANSITION ~1.5 outside then-governed range 0.3-0.9. Resolution: D47 makes share_H_ge_theta informational only, D49 widens theta_H range 0.3-0.9 to 0.3-ln9, D47 verdict uses accuracy and pmax shares. Recorded per C9.
+
+### OWNER DECISIONS D49 values + D50–D61 (2026-09-24, CP-14.6, binding)
+
+D49 values — set from the PASS artifact percentiles (report `data/e11_train_report_20260924T181954Z.json`, not committed). `params/e11_params_v4.yaml`: `theta_H: 1.105878` (H p80), `quality_H_Q2: 1.229880` (H p90), `quality_H_Q5: 0.564415` (H p30). All three are inside `[0.3, ln 9]`; `Q5 < theta_H < Q2`. No other E11 parameter, formula, label rule or class count changes. ISSUE-CP14-066 is relabelled VALUES SET and stays OPEN only for the 2026-12-22 OOS re-check. Campaign record (owner phone, not a sandbox PASS): TRAINED 7694 samples, 20 cells, N=720, verdict=PASS, train_accuracy=0.742007, share_pmax_ge_0_50=0.818430, min_class_share_pmax_ge_0_50=0.669675, previous theta_H 0.65, theta_rec_H=1.105878, theta_rec_Q2=1.229880, theta_rec_Q5=0.564415, fit_protocol iterations 100000 / learning_rate 0.2 / l2 0.0 / class_weights false.
+
+D50 — deterministic identity. Float `-0.0` canonicalises as `0`. `replay_key` is SHA-256 of one canonical nine-field object, not a `||` concatenation (a field shift must not collide). Fabric member identity inside the hash is `content_id`; `evidence_id` (UUIDv7) is a tie-break only and does not enter the hash. `fabric_id` is `fab_` plus the first 32 hex characters of the fabric hash. Intent identity is `i-` plus 24 hex characters of the content hash of `{symbol, timeframe, close_ms, direction, proposal_id}`, never the tail of `proposal_id`. A repeated client order id is rejected by name `DUPLICATE_CLIENT_ORDER_ID` and is never resent; the recorded venue outcome is preserved. The per-cell close lock is the durable table `cell_decision_cursor` (migration `M101_cp146_cell_decision_cursor`); a new `PaperLoop` on the same store does not decide the same close again. An older close does not rewind the lock.
+
+D51 — per-cycle trade budget. `max_trades_per_cycle` resets at the start of every cycle. The reservation is synchronous (atomic under the scheduler semaphore of 4) and is taken only when a valid trade plan exists, immediately before admission. A planless cell does not consume a slot. A submission that does not leave the process releases the slot. `self.trades` is history and is never the gate.
+
+D52 A then B. A1: quality measurements for a fetched page are computed from that page (`source_health`, `gap_count`, `expected_count`, `completeness_pct`); the raw-only runtime does not invent them. A2: each PAPER cycle refreshes public funding when the last fact is older than 15 minutes and venue facts when older than 60 minutes; a transport failure is a named refusal inside the cycle dict and skips later symbols in that cycle rather than hanging the rest of the universe. A3: after the ladder migration (including the D59 L2 rename), if `apex_risk_ladder_state` is empty, one revision is written: `state=NoRisk`, `emergency_state=NORMAL`, `reason=BOOT_INITIAL_REVISION`. B: `publish-quality-backfill` is refused unless `APEX_ENV=PAPER` (`BACKFILL_PAPER_ONLY`). It writes historical quality facts labelled `measurement_source=HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS` and `provenance=BACKFILL`. `source_health=1.0` is the only non-measured value and is named as such. A row whose `created_at` is earlier than its bar close is listed in `skipped_receipt_before_close` and is never faked. LIVE must not call the backfill and must not consume BACKFILL facts (`QUALITY_PROVENANCE_BACKFILL_NOT_LIVE`).
+
+D53 — venue-aligned scheduler. `1w` boundaries are Monday 00:00 UTC. `1mo` boundaries are the 1st 00:00 UTC. The frozen `TF_DURATION_SECONDS["1mo"]` = 2_592_000 remains age/expiry arithmetic only and is never a close boundary. `latest_close_boundary` lives in `apex/scheduler/clock.py`; `apex.ops.bootstrap_service.latest_close_boundary` re-exports it. A 400-day enumeration must match the calendar (Mondays and month-starts) and must differ from the epoch floor.
+
+D54 — OPEN. Recorded. Not implemented. No code path, parameter or YAML row was added for D54.
+
+D55 — recorded. Not implemented this stage.
+
+D56 — recorded. Not implemented this stage.
+
+D57 — recorded. Not implemented this stage.
+
+D58 — the calibrated walk-forward package and `composite_estimate` wiring. Recorded. Not implemented. `composite_estimate` stays NOT_WIRED (ISSUE-CP14-070). `build_forecast` does not call it. A non-None package that fails the calibrated-package check does not fall back to `p=0.5`.
+
+D59 — decision hygiene, all items that this stage was able to apply without a further frozen-file invention. (1) `params/decision_v1.yaml` is the strict governed scalar file: `direction_conflict_threshold=0.15`, `min_rr=0.5`, `context_confidence_gain=8.0`, `q_forecast_threshold=0.5`; an unknown key is `CONFIGURATION_INVALID`; no code default. (2) `Q_param` / `Q_forecast` use the bounded form `1 - (clip(cal_err) + clip(2·brier) + clip(log_loss / ln 4)) / 3`. Gate 13 computes that from recorded metrics and never reads a self-declared `q_param`. Missing metrics are `GATE13_METRICS_MISSING`. (3) Context confidence is `sigmoid(gain·(z-0.5))` with the governed gain, so the band grid is reachable. (4) `q_thr_for(tf)` reads `q_thr_by_tf` with no default. The frozen YAML documents only the §2.1 rows `1m`/`1h`/`1d`. `require_q_thr_complete()` is the all-14 check and is not called from every `gate2` (ISSUE-CP14-069). (5) A correlated pair halves its own lower-quality member; a single scalar rho does not blanket an uncorrelated component. (6) Family score normalises over the family weight mass (0.70), not the twelve-weight sum. `family_engines` in `params/setup_weights_v1.yaml` is the governed list (required evidence 0.54; optional orderblock 0.10 + momentum 0.06). Missing or empty is `CONFIGURATION_INVALID`. `s_i` and `q_i` are mandatory; the 1.0/0.9 defaults are deleted. (7) A missing risk cap is `RISK_INPUT_MISSING`, not an infinite cap. (8) Emergency L2 is `L2_DISABLE_NEW`. Migration `M102_cp146_l2_disable_new` rebuilds the CHECK and copies any `L2_LIMIT_RISK` row. (9) `RR < min_rr` is `DECISION_NO_TRADE:RR_BELOW_MIN`; the ratio is never floored. (10) `setup_valid` is the emitted-and-gates-passed-and-score-at-least-`Q_min` verdict, not the literal `True`. (11) The regime window is the playbook's own window. AE.5 lists none; the interim is `instantiate_playbook`'s default `("TREND", "TREND_EXPANSION")` (ISSUE-CP14-068). A current-regime fallback is not used. (12) Bootstrap forecast iff no package and the environment is not LIVE. (13) Logistic bootstrap is `p_raw = 1/(1+exp(-(β0+Σ β_j·x_j)))` with `β = zeros(12)` bit-identical to 0.5 when `β0 = 0`.
+
+D60 — documentation already done. The frozen blueprint hash `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e` is recorded in `docs/APEX_GEN5_frozen_216bcc.md` and `README.md`, with the content anchors and the `numpy==1.26.0` note. The earlier log title that called this "runtime artifact hygiene" was wrong. No new documentation procedure is opened by this line.
+
+D61 — one sentence in APEX_GEN5 §14.1: arbitration with one passing playbook is a pass-through and has no ranking effect. No code change.
+
+### CP-14.6 verification record
+
+These rules were previously mis-filed as D60 and D61. They are the verification record of the stage, not those decisions. `status` and `serve` print a named artifact state (`E11_ARTIFACT` or the loader refusal). `params/e11_classifier_v1.yaml`, `data/` and train caches stay gitignored and are never committed. No LIVE permission is granted by a printed artifact name. The training path (`TRAINING_QUERY`, `training_protocol_hash(('1h','4h'), Core-10, 720)`, `E11_TRAIN_CACHE_FORMAT`) stays byte-identical to HANDOFF_CP14.5. Frozen paths stay untouched except the mandated edits. The suite is run twice with equal green counts and zero new skips or xfails. One PR. Do not merge.
+
+### ADR-CP14-028 — D50 deterministic identity
+
+`canonical_json` maps float `-0.0` to `0` before `json.dumps`. `replay_key` hashes the nine named fields as one canonical object. Fabric assemble sorts members by `(content_id, evidence_id)` and hashes `content_id` only. `make_fabric_id` is `fab_` + 32 hex chars. `intent_id_for` is content-addressed. `cell_decision_cursor` is an additive migration (same mechanism as the ladder table; no frozen DDL edit). A repeated adapter key returns the recorded outcome with `error_code=DUPLICATE_CLIENT_ORDER_ID` and `resubmitted=False`.
+
+### ADR-CP14-029 — D51 per-cycle budget
+
+`PaperRuntime._budget_taken` resets in `run_cycle`. `_take_budget` runs only in the execution stage after a valid plan exists. `_release_budget` runs when the submission did not leave the process. A `None` plan is `NO_PLAN_FOR_CELL` and does not reserve.
+
+### ADR-CP14-030 — D52 runtime publishers and PAPER backfill
+
+`publish_quality_observation` requires explicit flags, measurements and a measurement source. `page_quality_measurements` is computed from the fetched page. `_refresh_publishers` is PAPER-only and fail-soft inside the cycle dict. The boot ladder revision is written only on an empty table, only after `apply_ladder_state_migration`. `publish_quality_backfill` refuses non-PAPER, labels bootstrap defaults, and lists early receipts. `backfill_facts_in_window` counts remaining BACKFILL facts so a later measured publish can replace the label in the window view without rewriting raw rows.
+
+### ADR-CP14-031 — D53 venue-aligned scheduler
+
+`latest_close_boundary`, `tf_close_times` and `next_close` use Monday weeks and calendar months. Fixed timeframes stay epoch-aligned. The bootstrap service re-exports the scheduler function so catch-up and the decision age share one boundary.
+
+### ADR-CP14-032 — D49 values and D59 hygiene
+
+D49 YAML values are the PASS-artifact percentiles named above. D59 adds `params/decision_v1.yaml` (not one of the six original frozen YAMLs) and the bounded quality form, the family-mass denominator, the mandatory component inputs, the L2 rename migration, and the RR / setup_valid / regime-window rules. `family_engines` is the mandated edit to `params/setup_weights_v1.yaml`. Eleven `q_thr_by_tf` rows and a playbook `regime_window` list were not invented into frozen YAML.
+
+### ISSUE-CP14-066 — VALUES SET (2026-09-24); OPEN for the 2026-12-22 OOS re-check only
+
+The CP-14.4/CP-14.5 record above (values stay 0.65/0.8/0.4) is historical. CP-14.6 sets `theta_H=1.105878`, `quality_H_Q2=1.229880`, `quality_H_Q5=0.564415` from the PASS artifact percentiles. No engine formula changed. The issue stays OPEN solely so the 2026-12-22 out-of-sample re-check is not forgotten. Severity: MAJOR | status: OPEN (re-check only).
+
+### ISSUE-CP14-068 — CLOSED by D63 (2026-09-25)
+
+A was the interim default `("TREND", "TREND_EXPANSION")`. B, chosen by the owner, adds `regime_window` to `params/setup_weights_v1.yaml`: every E11 class except CRISIS. Blueprint line 15552 says SHOCK. SHOCK is not in the nine-class E11 registry, so D63 defines that exclusion as CRISIS. A current-regime fallback is not used. Severity: MAJOR | status: CLOSED.
+
+### ISSUE-CP14-069 — CLOSED by D62 (2026-09-25)
+
+The owner authorized the eleven missing `q_thr_by_tf` rows. They are the `q_min_by_tf` values for those timeframes. `1m`/`1h`/`1d` are unchanged. `gate_thresholds()` calls `require_q_thr_complete()` once. There is no default. Severity: MAJOR | status: CLOSED.
+
+### ISSUE-CP14-070 — OPEN (`composite_estimate` NOT_WIRED)
+
+D58 / the calibrated-package path is not this stage. `composite_estimate` remains the formula and `build_forecast` does not call it. Severity: MAJOR | status: OPEN.
+
+### ISSUE-CP14-072 — CLOSED by CP-14.6-FIX (2026-09-25)
+
+`Config.e11_params` was a method, not a property. `E11.get_params` swallowed that method object in `except`, so until the property landed, YAML did not govern the runtime. CP-14.4 and CP-14.5 claims that YAML governed `theta_H` were true only after the property existed; before that, behavior matched the chapter defaults because the values matched, not because YAML won. The current code is a property. `tests/unit/test_e11_regime.py` still asserts `yaml_assertions == 3` for the shipped D49 overrides. `test_temp_yaml_theta_h_reaches_get_params` changes `theta_H` in a temp YAML and reads it back from `get_params`. No `apex/engines` edit. Severity: MAJOR | status: CLOSED.
+
+### ADR-CP14-033 — CP-14.6-FIX
+
+This fix package, on the same branch and the same PR. D62 writes the fourteen `q_thr_by_tf` rows and no default. D63 writes `regime_window` and defines the blueprint token SHOCK as CRISIS, because SHOCK is not in the nine-class E11 registry. The bootstrap package is named `BOOTSTRAP_UNCALIBRATED` and does not invent zero metrics. Publisher transport-down is only a timeout, an aiohttp client error, or an OSError; a timeout is `PUBLISHER_TIMEOUT`. Quality-publish failures are recorded and do not escape a committed ingest. The L2 rename and the M102 row commit in one script. D60 and D61 text is restored to the owner's decisions; the artifact and verification rules sit under the CP-14.6 verification record.
+
+### ISSUE-CP14-071 — CLOSED by D52 (2026-09-24)
+
+Before this stage, PAPER serve had no runtime publisher for page quality, funding refresh, venue-fact refresh, the initial ladder revision, or a PAPER-only historical quality backfill, so a raw-only store could not pass the quality plane. Resolution: D52 A then B, as recorded above. Evidence: `tests/unit/test_cp146.py` (`test_d52_raw_only_then_paper_backfill`, `test_d52_backfill_lists_a_receipt_before_close_and_does_not_fake_it`). Severity: MAJOR | status: CLOSED.

@@ -100,18 +100,24 @@ RISK_LADDER_STATES: Tuple[str, ...] = ("NoRisk", "LowRisk", "MediumRisk",
 RISK_LADDER_MULTIPLIER: Dict[str, float] = {
     "NoRisk": 1.0, "LowRisk": 1.0, "MediumRisk": 0.75, "HighRisk": 0.50,
     "CriticalRisk": 0.0}
-# budget-state bands (consumed risk budget, upper bound as a fraction)
-RISK_LADDER_BANDS: Tuple[Tuple[str, float, float], ...] = (
-    ("NoRisk", 0.00, 0.25), ("LowRisk", 0.00, 0.25),
-    ("MediumRisk", 0.25, 0.50), ("HighRisk", 0.50, 0.75),
-    ("CriticalRisk", 0.75, 1.00))
+# budget-state bands matching ladder_state_for exactly (D59 د۵).
+# (name, low, high, low_inclusive, high_inclusive). NoRisk is the 0.00 point.
+# LowRisk is the open interval (0.00, 0.25). Upper edges belong to the next band.
+RISK_LADDER_BANDS: Tuple[Tuple[str, float, float, bool, bool], ...] = (
+    ("NoRisk", 0.00, 0.00, True, True),
+    ("LowRisk", 0.00, 0.25, False, False),
+    ("MediumRisk", 0.25, 0.50, True, False),
+    ("HighRisk", 0.50, 0.75, True, False),
+    ("CriticalRisk", 0.75, 1.00, True, True),
+)
 
-EMERGENCY_LADDER: Tuple[str, ...] = ("NORMAL", "L1_PAUSE", "L2_LIMIT_RISK",
+EMERGENCY_LADDER: Tuple[str, ...] = ("NORMAL", "L1_PAUSE", "L2_DISABLE_NEW",
                                     "L3_CANCEL_ALL", "L4_CLOSE_ALL",
                                     "L5_SAFE_MODE")
-# RSK-ERR-506, verbatim: the only permitted non-escalation move
+# RSK-ERR-506, verbatim: the only permitted non-escalation move.
+# D59 د۵: the spec name L2_DISABLE_NEW wins over the old L2_LIMIT_RISK label.
 RATCHET_BLOCKED: Tuple[Tuple[str, str], ...] = (
-    ("L2_LIMIT_RISK", "L1_PAUSE"), ("L3_CANCEL_ALL", "L2_LIMIT_RISK"),
+    ("L2_DISABLE_NEW", "L1_PAUSE"), ("L3_CANCEL_ALL", "L2_DISABLE_NEW"),
     ("L4_CLOSE_ALL", "L3_CANCEL_ALL"), ("L5_SAFE_MODE", "L4_CLOSE_ALL"))
 RATCHET_ALLOWED_DOWNGRADE: Tuple[Tuple[str, str], ...] = (
     ("L1_PAUSE", "NORMAL"),)
@@ -123,6 +129,7 @@ TRADE_PLAN_FIELDS: Tuple[str, ...] = ("decision", "sized_quantity",
 # ADR-P2-004: the ladder-state table (append-only revisions; single writer via
 # the ledger queue; ratchet-only).
 LADDER_STATE_MIGRATION = "M100_cp6_risk_ladder_state"
+LADDER_STATE_RENAME_MIGRATION = "M102_cp146_l2_disable_new"
 LADDER_STATE_DDL = """
 CREATE TABLE IF NOT EXISTS apex_risk_ladder_state (
     revision_id TEXT PRIMARY KEY CHECK(typeof(revision_id)='text'),
@@ -130,7 +137,7 @@ CREATE TABLE IF NOT EXISTS apex_risk_ladder_state (
     state TEXT NOT NULL CHECK(state IN ('NoRisk','LowRisk','MediumRisk',
                                         'HighRisk','CriticalRisk')),
     emergency_state TEXT NOT NULL CHECK(emergency_state IN ('NORMAL',
-        'L1_PAUSE','L2_LIMIT_RISK','L3_CANCEL_ALL','L4_CLOSE_ALL',
+        'L1_PAUSE','L2_DISABLE_NEW','L3_CANCEL_ALL','L4_CLOSE_ALL',
         'L5_SAFE_MODE')),
     consumed_budget REAL NOT NULL CHECK(consumed_budget >= 0.0),
     multiplier REAL NOT NULL CHECK(multiplier >= 0.0 AND multiplier <= 1.0),
@@ -184,6 +191,28 @@ def _q_raw_of(risk_input: Mapping[str, Any]) -> Optional[float]:
     return risk_input.get("q_raw")
 
 
+def _mandatory(risk_input: Mapping[str, Any], key: str) -> Any:
+    """D59 د۱: a missing cap is not an infinite cap. The veto fails closed."""
+    if key not in risk_input or risk_input.get(key) is None:
+        raise RiskError("RISK_INPUT_MISSING", key)
+    return risk_input[key]
+
+
+def band_for_fraction(budget_used_fraction: float) -> str:
+    """The band the table claims. Exactly one band matches a fraction in [0, 1]."""
+    if not (0.0 <= budget_used_fraction <= 1.0) or budget_used_fraction != budget_used_fraction:
+        raise RiskError("BUDGET_FRACTION_QX", str(budget_used_fraction))
+    matches = []
+    for name, lo, hi, lo_inc, hi_inc in RISK_LADDER_BANDS:
+        low_ok = budget_used_fraction >= lo if lo_inc else budget_used_fraction > lo
+        high_ok = budget_used_fraction <= hi if hi_inc else budget_used_fraction < hi
+        if low_ok and high_ok:
+            matches.append(name)
+    if len(matches) != 1:
+        raise RiskError("LADDER_BAND_AMBIGUOUS", str(matches))
+    return matches[0]
+
+
 def evaluate_vetoes(risk_input: Mapping[str, Any]) -> Dict[str, Any]:
     """Evaluate the full registry, in numbered order, and return every fired
     veto. Ordering matters: this is called *before* any sizing."""
@@ -207,24 +236,24 @@ def evaluate_vetoes(risk_input: Mapping[str, Any]) -> Dict[str, Any]:
           risk_input.get("availability_time"))
     check(3, float(risk_input.get("portfolio_exposure", 0.0))
           + float(risk_input.get("proposed_notional", 0.0))
-          > float(risk_input.get("capital_hard_cap", math.inf)),
+          > float(_mandatory(risk_input, "capital_hard_cap")),
           float(risk_input.get("portfolio_exposure", 0.0))
           + float(risk_input.get("proposed_notional", 0.0)))
     check(4, bool(risk_input.get("circuit_breaker_engaged")),
           risk_input.get("emergency_state"))
     check(5, float(risk_input.get("per_symbol_exposure", 0.0))
-          > float(risk_input.get("symbol_cap", math.inf))
+          > float(_mandatory(risk_input, "symbol_cap"))
           or float(risk_input.get("portfolio_exposure", 0.0))
-          > float(risk_input.get("portfolio_cap", math.inf)),
+          > float(_mandatory(risk_input, "portfolio_cap")),
           {"per_symbol": risk_input.get("per_symbol_exposure"),
            "portfolio": risk_input.get("portfolio_exposure")})
     check(6, str(risk_input.get("conflict_state")) == "HARD_CONFLICT",
           risk_input.get("conflict_state"))
     check(7, float(risk_input.get("staleness_seconds", 0.0))
-          > float(risk_input.get("freshness_sla_seconds", math.inf)),
+          > float(_mandatory(risk_input, "freshness_sla_seconds")),
           risk_input.get("staleness_seconds"))
     check(8, float(risk_input.get("oi_lag_seconds", 0.0))
-          > float(risk_input.get("oi_lag_threshold_seconds", math.inf)),
+          > float(_mandatory(risk_input, "oi_lag_threshold_seconds")),
           {"oi_lag": risk_input.get("oi_lag_seconds"),
            "threshold": risk_input.get("oi_lag_threshold_seconds")})
     check(9, bool(risk_input.get("is_risk_increase"))
@@ -241,7 +270,9 @@ def evaluate_vetoes(risk_input: Mapping[str, Any]) -> Dict[str, Any]:
           > int(risk_input.get("consecutive_loss_halt",
                               r["consecutive_loss_halt"])),
           risk_input.get("consecutive_losses"))
-    expiry = risk_input.get("time_to_expiry_days", math.inf)
+    if "time_to_expiry_days" not in risk_input:
+        raise RiskError("RISK_INPUT_MISSING", "time_to_expiry_days")
+    expiry = risk_input.get("time_to_expiry_days")
     if risk_input.get("environment") == "PAPER" and isinstance(expiry, Mapping):
         # D32 source audit item 8: verified perpetual applicability, not an
         # infinity/large-day substitute for unavailable dated-contract data.
@@ -421,7 +452,8 @@ def adjudicate(risk_input: Mapping[str, Any]) -> Dict[str, Any]:
         # Gate 13's owner is the Setup layer; the kernel refuses to size on a
         # degraded package rather than re-defining that gate.
         from apex.setup.gates import gate13_parameter_package
-        g13 = gate13_parameter_package(risk_input["package"])
+        g13 = gate13_parameter_package(
+            risk_input["package"], environment=risk_input.get("environment"))
         if not g13.passed:
             return {"decision": "REJECT", "sized_quantity": 0.0,
                     "selected_parameter_package": None,
@@ -664,8 +696,96 @@ async def apply_ladder_state_migration(db: Any) -> Dict[str, Any]:
              now.strftime("%Y-%m-%dT%H:%M:%S.")
              + f"{now.microsecond // 1000:03d}Z"))
     await db.commit()
+    renamed = await apply_l2_disable_new_migration(db)
     return {"migration": LADDER_STATE_MIGRATION, "applied": not already,
-            "table": "apex_risk_ladder_state", "immutability": "triggers"}
+            "table": "apex_risk_ladder_state", "immutability": "triggers",
+            "l2_rename": renamed}
+
+
+def _ladder_check_sql(db_sql: str) -> str:
+    return str(db_sql or "")
+
+
+async def apply_l2_disable_new_migration(db: Any) -> Dict[str, Any]:
+    """D59 د۵ / F9: rebuild the CHECK so L2 is ``L2_DISABLE_NEW``.
+
+    SQLite cannot alter a CHECK. Existing ``L2_LIMIT_RISK`` rows are copied
+    as ``L2_DISABLE_NEW``. DROP, RENAME, the append-only triggers, and the
+    M102 ``schema_migrations`` insert run in one ``executescript`` transaction
+    so they cannot commit separately. A table already on the new constraint
+    with M102 recorded is ``noop=True``.
+    """
+    import datetime as _dt
+    import sqlite3
+    cur = await db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='apex_risk_ladder_state'")
+    row = await cur.fetchone()
+    sql = "" if row is None else str(row[0] if not isinstance(row, Mapping) else row["sql"])
+    already_new = "L2_DISABLE_NEW" in sql and "L2_LIMIT_RISK" not in sql
+    try:
+        seen = await (await db.execute(
+            "SELECT 1 FROM schema_migrations WHERE migration_name=?",
+            (LADDER_STATE_RENAME_MIGRATION,))).fetchone()
+    except sqlite3.OperationalError as exc:
+        if "no such table" not in str(exc):
+            raise
+        seen = None
+    if (already_new or row is None) and seen:
+        return {"migration": LADDER_STATE_RENAME_MIGRATION,
+                "rebuilt": False, "noop": True}
+    now = _dt.datetime.now(_dt.timezone.utc)
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
+    if not all(ch.isalnum() or ch in "-:T.Z" for ch in stamp):
+        raise ValueError("CONFIGURATION_INVALID: migration timestamp")
+    parts = ["BEGIN;"]
+    if not already_new and row is not None:
+        parts.append("""
+        CREATE TABLE IF NOT EXISTS apex_risk_ladder_state_d59 (
+            revision_id TEXT PRIMARY KEY CHECK(typeof(revision_id)='text'),
+            applied_at TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN ('NoRisk','LowRisk','MediumRisk',
+                                                'HighRisk','CriticalRisk')),
+            emergency_state TEXT NOT NULL CHECK(emergency_state IN ('NORMAL',
+                'L1_PAUSE','L2_DISABLE_NEW','L3_CANCEL_ALL','L4_CLOSE_ALL',
+                'L5_SAFE_MODE')),
+            consumed_budget REAL NOT NULL CHECK(consumed_budget >= 0.0),
+            multiplier REAL NOT NULL CHECK(multiplier >= 0.0 AND multiplier <= 1.0),
+            reason TEXT NOT NULL,
+            snapshot_id TEXT NOT NULL,
+            parent_revision_id TEXT,
+            CHECK(typeof(applied_at)='text' AND length(applied_at)>0)
+        );
+        INSERT INTO apex_risk_ladder_state_d59 (
+            revision_id, applied_at, state, emergency_state, consumed_budget,
+            multiplier, reason, snapshot_id, parent_revision_id)
+        SELECT revision_id, applied_at, state,
+               CASE emergency_state WHEN 'L2_LIMIT_RISK' THEN 'L2_DISABLE_NEW'
+                    ELSE emergency_state END,
+               consumed_budget, multiplier, reason, snapshot_id, parent_revision_id
+        FROM apex_risk_ladder_state;
+        DROP TRIGGER IF EXISTS apex_risk_ladder_state_no_update;
+        DROP TRIGGER IF EXISTS apex_risk_ladder_state_no_delete;
+        DROP TABLE apex_risk_ladder_state;
+        ALTER TABLE apex_risk_ladder_state_d59 RENAME TO apex_risk_ladder_state;
+        CREATE TRIGGER IF NOT EXISTS apex_risk_ladder_state_no_update
+        BEFORE UPDATE ON apex_risk_ladder_state
+        BEGIN SELECT RAISE(ABORT, 'LADDER_STATE_APPEND_ONLY'); END;
+        CREATE TRIGGER IF NOT EXISTS apex_risk_ladder_state_no_delete
+        BEFORE DELETE ON apex_risk_ladder_state
+        BEGIN SELECT RAISE(ABORT, 'LADDER_STATE_APPEND_ONLY'); END;
+        """)
+    parts.append(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (migration_name TEXT "
+        "PRIMARY KEY, applied_at TEXT NOT NULL);")
+    if not seen:
+        parts.append(
+            "INSERT INTO schema_migrations (migration_name, applied_at) VALUES ('"
+            + LADDER_STATE_RENAME_MIGRATION + "', '" + stamp + "');")
+    parts.append("COMMIT;")
+    await db.executescript("\n".join(parts))
+    return {"migration": LADDER_STATE_RENAME_MIGRATION,
+            "rebuilt": not already_new and row is not None,
+            "noop": already_new or row is None}
 
 
 async def append_ladder_revision(db: Any, rev: LadderStateRevision) -> None:
@@ -687,7 +807,8 @@ __all__ = ["CONTRACT_VERSION", "DEFAULT_CONTRACT_ROLLOVER_DAYS",
            "RISK_LADDER_BANDS", "RISK_LADDER_MULTIPLIER", "RISK_LADDER_STATES",
            "RiskError", "TRADE_PLAN_FIELDS", "VETO_COUNT", "VETO_NAMES",
            "VETO_REGISTRY", "adjudicate", "aggregate_loss_state",
-           "append_ladder_revision", "apply_ladder_state_migration",
+           "append_ladder_revision", "apply_l2_disable_new_migration",
+           "apply_ladder_state_migration", "band_for_fraction",
            "circuit_breaker_reset", "evaluate_vetoes", "effective_leverage",
            "frozen_risk_params", "ladder_multiplier", "ladder_revision",
            "ladder_state_for", "leverage_cap", "margin_health_state",

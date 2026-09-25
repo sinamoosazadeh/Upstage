@@ -62,21 +62,16 @@ PLAYBOOK_ID = "PB_FVG_SWEEP_REV_A"
 ENTRY_LOGIC_REF = "EL_SWEEP_RECLAIM_FVG"
 REQUIRED_EVIDENCE: Tuple[str, ...] = ("E01", "E02", "E05", "E09", "E11", "E12")
 OPTIONAL_EVIDENCE: Tuple[str, ...] = ("E06", "E10")
-FORBIDDEN_REGIMES: Tuple[str, ...] = ("SHOCK",)
+# Blueprint line 15552 says SHOCK. SHOCK is not in the nine-class E11 registry.
+# D63 defines the forbidden regime as CRISIS.
+FORBIDDEN_REGIMES: Tuple[str, ...] = ("CRISIS",)
 HORIZON_BARS = 16
 SWEEP_LOOKBACK = 20
 FVG_LOOKBACK_BARS = 12
 S_STRUCT_MIN_KEY = "family_s_struct_min"
 
-# The six required evidences map to these six scored components (Ch.10 §10.2
-# AD.8 → §10.1 weight names). Defaults exist so a caller cannot accidentally
-# score an unset component as 1.0; supplying s_i/q_i overrides them.
-REQUIRED_SCORE_COMPONENTS_DEFAULT: Dict[str, float] = {
-    c: 1.0 for c in ("structure", "liquidity", "fvg", "trend", "regime",
-                     "temporal")}
-REQUIRED_QUALITY_DEFAULT: Dict[str, float] = {
-    c: 0.9 for c in ("structure", "liquidity", "fvg", "trend", "regime",
-                     "temporal")}
+# D59 ح۳: s_i and q_i are mandatory. The 1.0/0.9 defaults are deleted.
+# A missing family component raises FamilyError("COMPONENT_INPUT_MISSING").
 
 # Ch.10 §10.1 relative-MTF ordering (the 14 frozen TFs).
 TF_ORDER: Tuple[str, ...] = TIMEFRAMES_14
@@ -91,6 +86,54 @@ class FamilyError(ValueError):
         super().__init__(f"{reason}{('::' + detail) if detail else ''}")
         self.reason = reason
         self.detail = detail
+
+
+def family_engines() -> Tuple[str, ...]:
+    """D59 ج۷ governed list. Missing or empty ⇒ CONFIGURATION_INVALID."""
+    raw = load_params()["setup_weights"].get("family_engines")
+    if not isinstance(raw, (list, tuple)) or not raw:
+        raise FamilyError("CONFIGURATION_INVALID", "family_engines")
+    engines = tuple(str(item) for item in raw)
+    from apex.fabric.context import context_weights
+    unknown = [name for name in engines if name not in context_weights()]
+    if unknown:
+        raise FamilyError("CONFIGURATION_INVALID", ",".join(unknown))
+    return engines
+
+
+def family_mass() -> float:
+    from apex.fabric.context import context_weights
+    weights = context_weights()
+    return float(sum(weights[name] for name in family_engines()))
+
+
+def family_score_inputs(s_i: Optional[Mapping[str, float]],
+                        q_i: Optional[Mapping[str, float]]) -> Dict[str, Any]:
+    """Mandatory s_i/q_i for every family engine (D59 ح۳). No 1.0/0.9 default."""
+    engines = family_engines()
+    if not isinstance(s_i, Mapping) or not isinstance(q_i, Mapping):
+        raise FamilyError("COMPONENT_INPUT_MISSING", "s_i" if not isinstance(s_i, Mapping) else "q_i")
+    from apex.fabric.context import ENGINE_COMPONENT
+    required = {ENGINE_COMPONENT[engine] for engine in REQUIRED_EVIDENCE}
+    out_s: Dict[str, float] = {}
+    out_q: Dict[str, float] = {}
+    for name in engines:
+        if name not in s_i or name not in q_i:
+            # A required engine must be present. An omitted optional engine is
+            # proven absence (D33): score 0, never the deleted 1.0/0.9 default.
+            if name in required:
+                raise FamilyError("COMPONENT_INPUT_MISSING", name)
+            out_s[name] = 0.0
+            out_q[name] = 0.0
+            continue
+        out_s[name] = float(s_i[name])
+        out_q[name] = float(q_i[name])
+    return {"s_i": out_s, "q_i": out_q, "mass": family_mass(), "engines": engines}
+
+
+def _fabric_penalties(fabric: EvidenceFabric, rho: Optional[float]) -> Dict[str, float]:
+    from apex.fabric.conflict import penalties
+    return penalties(fabric.conflict_state, redundancy_rho=rho)
 
 
 def family_params() -> Dict[str, Any]:
@@ -237,8 +280,8 @@ def structure_gate(bos: Optional[Mapping[str, Any]], *, s_min: Optional[float] =
 
 
 def regime_gate(regime_state: Optional[str]) -> Dict[str, Any]:
-    """``forbidden_regimes: [SHOCK]`` — a forbidden regime blocks the setup
-    (it is not a permission decision; the veto list owns those)."""
+    """Forbidden regime blocks the setup. D63 names CRISIS, not the blueprint
+    token SHOCK, which is not in the nine-class E11 registry."""
     if regime_state is None:
         return {"ok": False, "reason": "REGIME_UNAVAILABLE"}
     if str(regime_state).upper() in FORBIDDEN_REGIMES:
@@ -390,7 +433,7 @@ def evaluate_cell(*, symbol: str, timeframe: str, as_of: int,
     # so Gate 11 always has something to verify against.
     snap_payload = {
         "as_of": as_of, "symbol": symbol, "timeframe": timeframe,
-        "evidence": [m.evidence_id for m in fabric.members],
+        "evidence": [m.content_id for m in fabric.members],
         "data_trust": fabric.data_trust, "conflict_state": fabric.conflict_state,
         "redundancy_state": dict(fabric.redundancy_state),
     }
@@ -401,7 +444,7 @@ def evaluate_cell(*, symbol: str, timeframe: str, as_of: int,
     fabric_body = {
         "as_of": fabric.as_of, "symbol": fabric.symbol,
         "timeframe": fabric.timeframe,
-        "evidence": [m.evidence_id for m in fabric.members],
+        "evidence": [m.content_id for m in fabric.members],
         "data_trust": fabric.data_trust,
         "conflict_state": fabric.conflict_state,
         "redundancy_state": dict(fabric.redundancy_state),
@@ -465,8 +508,9 @@ def evaluate_cell(*, symbol: str, timeframe: str, as_of: int,
     # redundancy: Pearson ρ on the s_i series (Ch.10 §10.1) — measured, never
     # assumed. Without supplied series the measurement is skipped and no
     # penalty is invented.
+    family = family_score_inputs(s_i, q_i)
     rho = None
-    victim = None
+    pairs = []
     if component_series:
         from apex.fabric.context import redundancy_rho as _rho_fn
         names = sorted(component_series)
@@ -474,15 +518,24 @@ def evaluate_cell(*, symbol: str, timeframe: str, as_of: int,
         for i in range(len(names)):
             for j in range(i + 1, len(names)):
                 r = _rho_fn(component_series[names[i]], component_series[names[j]])
+                pairs.append((names[i], names[j], r["rho"]))
                 if r["rho"] is not None and abs(r["rho"]) > abs(best):
-                    best, pair = r["rho"], (names[i], names[j])
+                    best = r["rho"]
         if abs(best) > 0.0:
             rho = best
     score = setup_score(fabric,
-                        s_i=dict(s_i or REQUIRED_SCORE_COMPONENTS_DEFAULT),
-                        q_i=dict(q_i or REQUIRED_QUALITY_DEFAULT),
+                        s_i=family["s_i"],
+                        q_i=family["q_i"],
                         required_conflict=required_conflict,
-                        redundancy_rho=rho)
+                        redundancy_rho=rho,
+                        redundancy_pairs=pairs)
+    # D59 ج۷: normalise over the family weight mass (0.70), not the twelve-weight sum.
+    mass = family["mass"]
+    if mass > 0 and score["reason"] == "OK":
+        score = dict(score)
+        score["raw"] = score["raw"] / mass
+        score["final"] = score["final"] / mass
+        score["family_mass"] = mass
     steps["conflict"] = {"required_conflict": required_conflict,
                          "multiplier": score["conflict_multiplier"],
                          "reason": ("REQUIRED_DIRECTION_CONFLICT"
@@ -495,12 +548,8 @@ def evaluate_cell(*, symbol: str, timeframe: str, as_of: int,
         "final_score": score["final"],
         "window_qualities": list(window_qualities or
                                  [(1.0, 0.0)] * len(bars)),
-        "conflict_penalty": float(load_params()["setup_weights"]
-                                  ["conflict_penalty"]) if required_conflict
-        else 0.0,
-        "redundancy_penalty": (float(load_params()["setup_weights"]
-                                     ["redundancy_penalty"])
-                               if score["redundancy"]["victim"] else 0.0),
+        "conflict_penalty": _fabric_penalties(fabric, rho)["conflict_penalty"],
+        "redundancy_penalty": _fabric_penalties(fabric, rho)["redundancy_penalty"],
         "mtf_state": mtf_state,
         "has_coarser_bars": not relative_mtf(timeframe)["vacuous"],
         "h_norm": float(forecast.get("h_norm", 0.0)) if forecast else 0.0,

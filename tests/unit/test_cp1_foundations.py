@@ -225,7 +225,10 @@ class TestParamsFrozenValues:
             "1m": 10, "3m": 15, "5m": 20, "15m": 30, "30m": 45, "1h": 60,
             "2h": 90, "4h": 120, "6h": 180, "8h": 240, "12h": 300,
             "1d": 300, "1w": 3600, "1mo": 14400}
-        assert q["q_thr_by_tf"] == {"1m": 0.6, "1h": 0.5, "1d": 0.4}
+        assert q["q_thr_by_tf"] == {
+            "1m": 0.6, "3m": 0.58, "5m": 0.56, "15m": 0.54, "30m": 0.52,
+            "1h": 0.5, "2h": 0.48, "4h": 0.46, "6h": 0.45, "8h": 0.44,
+            "12h": 0.42, "1d": 0.4, "1w": 0.40, "1mo": 0.40}
         assert q["q_feature_weights"] == {"w_formula": 0.5, "w_lookback": 0.3,
                                           "w_epsilon": 0.2}
         assert q["q_evidence_weights"]["w_conf_by_tf"] == {"1m": 0.3,
@@ -285,6 +288,8 @@ class TestParamsFrozenValues:
     def test_e11_params_literals(self):
         from apex.config import load_params
         e = load_params()["e11_params"]
-        assert e == {"K": 9, "theta_H": 0.65, "quality_H_Q2": 0.8, "quality_H_Q5": 0.4,
+        # D49: thresholds are the PASS-artifact percentiles, not the chapter defaults.
+        assert e == {"K": 9, "theta_H": 1.105878, "quality_H_Q2": 1.229880,
+                     "quality_H_Q5": 0.564415,
                      "lambda_ewma": 0.94, "hysteresis_candles": 3, "dirichlet_alpha": 0.1,
                      "transition_delay_candles": 48, "W_180d_H1": 4320}

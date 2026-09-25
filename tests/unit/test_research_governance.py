@@ -304,12 +304,47 @@ class TestLiveParamsWriteForbidden:
         assert "SUGGESTION_TARGET_OUTSIDE_RESEARCH" in str(err.value)
 
     def test_frozen_params_files_are_untouched_by_this_suite(self):
-        """The six frozen YAMLs are read-only for CP-8: their bytes must still
-        hash to the values recorded at HEAD."""
+        """Content lock versus f14be36. Parsed keys, not whole-file bytes."""
         import subprocess
-        diff = subprocess.run(["git", "status", "--porcelain", "params"],
-                              capture_output=True, text=True, check=True)
-        assert diff.stdout.strip() == ""
+        from apex.config import _YamlSubsetParser
+        root = Path(__file__).resolve().parents[2]
+        six = (
+            "universe_v1.yaml", "risk_defaults_v1.yaml",
+            "setup_weights_v1.yaml", "quality_weights_v1.yaml",
+            "toobit_wire_v1.yaml", "e11_params_v4.yaml",
+        )
+
+        def parsed(text):
+            return _YamlSubsetParser(text).parse()
+
+        extra = {
+            "setup_weights_v1.yaml": {"family_engines", "regime_window"},
+            "quality_weights_v1.yaml": set(),
+            "e11_params_v4.yaml": set(),
+        }
+        changed_values = {
+            "e11_params_v4.yaml": {"theta_H", "quality_H_Q2", "quality_H_Q5"},
+        }
+        for name in six:
+            base = subprocess.run(
+                ["git", "show", f"f14be36:params/{name}"],
+                capture_output=True, text=True, check=True, cwd=root).stdout
+            current = (root / "params" / name).read_text(encoding="utf-8")
+            old = parsed(base)
+            new = parsed(current)
+            assert isinstance(old, dict) and isinstance(new, dict)
+            assert set(new) == set(old) | extra.get(name, set())
+            for key in old:
+                if name == "quality_weights_v1.yaml" and key == "q_thr_by_tf":
+                    assert set(old[key]) <= set(new[key])
+                    for tf, value in old[key].items():
+                        assert new[key][tf] == value
+                    assert len(new[key]) == 14
+                    continue
+                if key in changed_values.get(name, set()):
+                    assert new[key] != old[key]
+                    continue
+                assert new[key] == old[key], f"{name}:{key}"
 
 
 class TestInjectionLedger:

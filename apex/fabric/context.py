@@ -325,7 +325,11 @@ def context_confidence(inp: CombinerInputs, *, timeframe: str,
          + wn["one_minus_regime_uncertainty"] * (1.0 - inp.regime_uncertainty)
          + wn["one_minus_divergence_magnitude"] * (1.0 - inp.divergence_magnitude)
          + wn["temporal_window_validity"] * inp.temporal_window_validity)
-    conf = 1.0 / (1.0 + math.exp(-z))
+    # D59 ج۴: sigmoid(z) with z in [0, 1] is confined to about [0.526, 0.731],
+    # so the band grid was unreachable. Gain is governed (decision_v1.yaml).
+    from apex.decision.pipeline import load_decision_v1
+    gain = float(load_decision_v1()["context_confidence_gain"])
+    conf = 1.0 / (1.0 + math.exp(-gain * (z - 0.5)))
     return {
         "context_confidence": conf,
         "band": band_of(conf),
@@ -528,15 +532,47 @@ def redundancy_rho(s_a: Sequence[float], s_b: Sequence[float], *,
     return {"rho": rho, "points": k, "skipped": False, "reason": "OK"}
 
 
+def _pair_victim(a: str, b: str, qualities: Mapping[str, float]) -> str:
+    qa, qb = float(qualities.get(a, 0.0)), float(qualities.get(b, 0.0))
+    if qa < qb:
+        return a
+    if qb < qa:
+        return b
+    # quality tie: the lower engine id is the victim (higher id is kept)
+    return a if COMPONENT_ENGINE[a] <= COMPONENT_ENGINE[b] else b
+
+
 def apply_redundancy(terms: Mapping[str, float], qualities: Mapping[str, float],
                      rho: Optional[float], *,
-                     halve_factor: float = REDUNDANCY_HALVE_FACTOR) -> Dict[str, Any]:
+                     halve_factor: float = REDUNDANCY_HALVE_FACTOR,
+                     pairs: Optional[Sequence[Tuple[str, str, Optional[float]]]] = None
+                     ) -> Dict[str, Any]:
     """``|ρ| > 0.85`` ⇒ drop the lower-Q engine; tie ⇒ the higher engine id
     (Ch.10 §10.1). The drop is executed as the **0.50× weight reduction** of
     the victim's contribution ("Redundancy threshold 0.85 halves the weight of
     correlated components", Ch.7 §14 as applied by the Setup combiner) and is
     always recorded — never silent.
     """
+    # D59 ج۶: each correlated pair halves its own lower-quality member.
+    # A single scalar rho is the legacy one-pair call. A pairs list never
+    # blankets an uncorrelated component.
+    if pairs is not None:
+        out = dict(terms)
+        victims: List[str] = []
+        thr = redundancy_rho_threshold()
+        for a, b, pair_rho in pairs:
+            if pair_rho is None or abs(float(pair_rho)) <= thr:
+                continue
+            if a not in out or b not in out:
+                continue
+            victim = _pair_victim(a, b, qualities)
+            out[victim] = out[victim] * halve_factor
+            victims.append(victim)
+        if not victims:
+            return {"terms": out, "victim": None, "victims": [],
+                    "halve_factor": 1.0, "reason": "NO_REDUNDANCY"}
+        return {"terms": out, "victim": victims[0], "victims": victims,
+                "halve_factor": halve_factor, "reason": "REDUNDANCY_HALVED"}
     if rho is None or abs(rho) <= redundancy_rho_threshold():
         return {"terms": dict(terms), "victim": None, "halve_factor": 1.0,
                 "reason": "NO_REDUNDANCY"}
@@ -561,6 +597,7 @@ def setup_score(fabric: EvidenceFabric, *, s_i: Mapping[str, float],
                 required_conflict: bool = False,
                 optional_conflict_penalty: float = 0.0,
                 redundancy_rho: Optional[float] = None,
+                redundancy_pairs: Optional[Sequence[Tuple[str, str, Optional[float]]]] = None,
                 component_terms: Optional[Mapping[str, float]] = None,
                 ) -> Dict[str, Any]:
     """The one scored composition: raw → redundancy halve → conflict ×0.6 →
@@ -594,7 +631,7 @@ def setup_score(fabric: EvidenceFabric, *, s_i: Mapping[str, float],
     conf_mult = conflict_multiplier() if required_conflict else 1.0
     red = apply_redundancy(raw_res["terms"],
                            {k: q_i.get(k, 0.0) for k in raw_res["terms"]},
-                           redundancy_rho)
+                           redundancy_rho, pairs=redundancy_pairs)
     red_mult = 1.0 - redundancy_penalty_value() if red["victim"] else 1.0
     final = sum(red["terms"].values()) * conf_mult * red_mult \
         - float(optional_conflict_penalty or 0.0)

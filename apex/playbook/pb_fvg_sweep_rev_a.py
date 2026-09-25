@@ -265,10 +265,25 @@ class PlaybookRecord:
         return dict(self.record)
 
 
+def governed_regime_window(raw: Optional[Sequence[str]] = None) -> Tuple[str, ...]:
+    """D63 option A. Missing, empty, or unknown versus the E11 registry is
+    CONFIGURATION_INVALID. There is no code default.
+    """
+    if raw is None:
+        raw = load_params()["setup_weights"].get("regime_window")
+    if not isinstance(raw, (list, tuple)) or len(raw) == 0:
+        raise ValueError("CONFIGURATION_INVALID: regime_window")
+    from apex.engines.e11_regime.engine import REGIMES
+    unknown = [str(item) for item in raw if str(item) not in REGIMES]
+    if unknown:
+        raise ValueError(
+            "CONFIGURATION_INVALID: regime_window " + ",".join(unknown))
+    return tuple(str(item) for item in raw)
+
+
 def instantiate_playbook(*, name: str = "FVG sweep reclaim — variant A",
                          lifecycle: str = "VALIDATING",
-                         regime_window: Sequence[str] = ("TREND",
-                                                        "TREND_EXPANSION"),
+                         regime_window: Optional[Sequence[str]] = None,
                          research_battery_binding: Sequence[str] = ("SL-13",),
                          **overrides: Any) -> PlaybookRecord:
     """The frozen instantiated playbook (AE.5) as an AE.1 record."""
@@ -325,7 +340,8 @@ def instantiate_playbook(*, name: str = "FVG sweep reclaim — variant A",
         "lifecycle": lifecycle,
         "research-battery-binding": list(research_battery_binding),
     }
-    return PlaybookRecord(record=record, regime_window=tuple(regime_window))
+    return PlaybookRecord(record=record,
+                          regime_window=governed_regime_window(regime_window))
 
 
 def register_playbook(name: str) -> None:

@@ -220,18 +220,9 @@ def close_time_ms(open_ms: int, timeframe: str) -> int:
 
 
 def latest_close_boundary(now_ms: int, timeframe: str) -> int:
-    """Most recent venue boundary (UTC, Monday weeks, calendar months)."""
-    import datetime as dt
-    if timeframe == "1mo":
-        now = dt.datetime.fromtimestamp(now_ms / 1000, dt.timezone.utc)
-        return int(now.replace(day=1, hour=0, minute=0, second=0,
-                               microsecond=0).timestamp() * 1000)
-    if timeframe == "1w":
-        # 1970-01-05 was Monday; epoch itself was Thursday.
-        anchor = 4 * 86400_000
-        return anchor + ((now_ms - anchor) // (7 * 86400_000)) * (7 * 86400_000)
-    duration = close_time_ms(0, timeframe)
-    return (now_ms // duration) * duration
+    """Most recent venue boundary. Behaviour lives in the scheduler (D53)."""
+    from apex.scheduler.clock import latest_close_boundary as _boundary
+    return _boundary(now_ms, timeframe)
 
 
 class _RateLimitSurfaced(Exception):
@@ -1470,7 +1461,9 @@ class BootstrapService:
         it is retried next cycle. No repair is performed here.
         """
         result: Dict[str, Any] = {"cells_checked": 0, "cells_updated": 0,
-                                  "bars_ingested": 0, "failures": []}
+                                  "bars_ingested": 0, "failures": [],
+                                  "quality_publish": {"written": 0, "skipped": 0,
+                                                      "failures": []}}
         for timeframe in dict.fromkeys(tf for _, tf in self.cells):
             boundary = latest_close_boundary(now_ms, timeframe)
             if boundary <= self._catch_up_boundary.get(timeframe, -1):
@@ -1500,7 +1493,48 @@ class BootstrapService:
                         if not rows:
                             await self._flush_cell_complete_prints()
                             break
+                        new_hashes = set()
+                        if getattr(self.config, "apex_env", "") == "PAPER":
+                            for obs in rows:
+                                if getattr(obs, "status", None) not in ("CLOSED", "CORRECTED"):
+                                    continue
+                                prior = await (await self._store.db.execute(
+                                    "SELECT 1 FROM raw_observation WHERE content_hash=?",
+                                    (obs.content_hash(),))).fetchone()
+                                if prior is None:
+                                    new_hashes.add(obs.content_hash())
                         await self._ingest(rows, symbol, tf)
+                        if new_hashes:
+                            import time as _time
+                            from apex.ops.engine_context import publish_catch_up_quality
+                            receipt = page.get("receipt_time_ms")
+                            if receipt is None:
+                                receipt = int(_time.time() * 1000)
+                            http_status = page.get("http_status")
+                            if http_status is None and page.get("code") in (None, 0):
+                                http_status = 200
+                            try:
+                                published = await publish_catch_up_quality(
+                                    self._store, rows, receipt_time_ms=int(receipt),
+                                    http_status=http_status, only_hashes=new_hashes)
+                            except Exception as exc:
+                                # Ingest already committed. The exception is
+                                # recorded and does not escape, and it is not
+                                # swallowed.
+                                import sqlite3
+                                from apex.ops.plan_bridge import BridgeError
+                                if isinstance(exc, (BridgeError, sqlite3.Error, ValueError)):
+                                    reason = getattr(exc, "reason", None) or type(exc).__name__
+                                else:
+                                    reason = type(exc).__name__
+                                result["quality_publish"]["failures"].append({
+                                    "symbol": symbol, "timeframe": tf,
+                                    "reason": str(reason)})
+                            else:
+                                qp = result["quality_publish"]
+                                qp["written"] += int(published.get("written") or 0)
+                                qp["skipped"] += int(published.get("skipped") or 0)
+                                qp["failures"].extend(list(published.get("failures") or []))
                         following = int(page["next_cursor_ms"])
                         if following <= cursor:
                             raise BootstrapServiceError("CURSOR_NOT_ADVANCING")

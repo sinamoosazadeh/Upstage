@@ -26,9 +26,15 @@ def _load_runner():
 def runner():
     module = _load_runner()
     import os
+    saved = {name: os.environ.get(name) for name in module.HARNESS_ENV}
     for name, value in module.HARNESS_ENV.items():
         os.environ.setdefault(name, value)
-    return module
+    yield module
+    for name, previous in saved.items():
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
 
 
 @pytest.fixture(scope="module")

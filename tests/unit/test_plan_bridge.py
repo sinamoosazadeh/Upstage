@@ -43,11 +43,32 @@ def _complete_context(*, events: Any) -> Dict[str, Any]:
         "temporal_quality": "Q2", "volatility_quality": "Q2",
         "s_i": {key: 1.0 for key in components},
         "q_i": {key: 0.9 for key in components},
-        "package": {"package_version": 1, "parameter_package_id": "pkg-1"},
+        "package": {"package_version": 1, "parameter_package_id": "pkg-1",
+                    "calibration": "BOOTSTRAP_UNCALIBRATED"},
         "p_min_tf": 0.5, "c_min": 0.5, "freshness_ok": True,
         "risk_state": "LowRisk", "family_status": "ACTIVE",
         "arbitration": {}, "risk": {},
     }
+
+
+def test_missing_required_component_is_recorded_not_fail_closed():
+    from apex.ops.plan_bridge import PaperPlanBridge
+    from apex.setup.family_sf_fvg_sweep_rev import FamilyError
+
+    async def scenario():
+        bridge = PaperPlanBridge(
+            store=object(), environment="PAPER",
+            context_source=lambda *_: _complete_context(events=[]))
+
+        async def fail(*args, **kwargs):
+            raise FamilyError("COMPONENT_INPUT_MISSING", "structure")
+
+        bridge._build = fail
+        assert await bridge("BTCUSDT", "1h", AS_OF) is None
+        assert bridge.refusals["BTCUSDT:1h"] == {
+            "reason": "COMPONENT_INPUT_MISSING", "detail": "structure"}
+
+    asyncio.run(scenario())
 
 
 def test_non_paper_environment_is_a_named_refusal():

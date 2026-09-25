@@ -667,7 +667,8 @@ class TestParams:
     def test_yaml_reasserted_against_chapter_defaults(self):
         p = get_params()
         assert p.as_dict()["K"] == 9
-        assert p.entropy_threshold == 0.65
+        # D49: shipped YAML H p80, not the chapter default 0.65.
+        assert p.entropy_threshold == pytest.approx(1.105878)
         assert p.ewma_lambda == 0.94
         assert p.transition_confirm_bars == 3
         assert p.dirichlet_alpha == 0.1
@@ -675,7 +676,23 @@ class TestParams:
         assert p.rolling_window_days == 180
         # §9.5-canonical YAML agrees with the chapter §6 table ⇒ no
         # override assertions are recorded (re-assertion passed).
-        assert p.yaml_assertions == []
+        # D49 values disagree with the chapter defaults on purpose; the three
+        # overrides are recorded and every other YAML key still agrees.
+        assert len(p.yaml_assertions) == 3
+        joined = " ".join(p.yaml_assertions)
+        assert "theta_H" in joined and "quality_H_Q2" in joined
+        assert "quality_H_Q5" in joined
+
+    def test_temp_yaml_theta_h_reaches_get_params(self, tmp_path, monkeypatch):
+        import apex.config as config
+        source = config.PARAMS_DIR / "e11_params_v4.yaml"
+        text = source.read_text(encoding="utf-8").replace(
+            "theta_H: 1.105878", "theta_H: 1.2", 1)
+        assert "theta_H: 1.2" in text
+        (tmp_path / "e11_params_v4.yaml").write_text(text, encoding="utf-8")
+        monkeypatch.setattr(config, "PARAMS_DIR", tmp_path)
+        got = get_params()
+        assert got.entropy_threshold == pytest.approx(1.2)
 
     def test_runtime_override_wins(self):
         p = get_params({"entropy_threshold": 0.7}, use_yaml=False)

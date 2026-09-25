@@ -81,7 +81,8 @@ def base_kwargs(timeframe="1h", **over):
               fvg_zones=[{"index": 24, "filled": False}],
               bos={"s_struct": 0.6, "direction": 1}, regime_state="TREND",
               q_forecast=0.6, forecast={"quality": "Q3", "h_norm": 0.4},
-              package={"package_version": 1, "parameter_package_id": "pkg-1"},
+              package={"package_version": 1, "parameter_package_id": "pkg-1",
+                       "calibration": "BOOTSTRAP_UNCALIBRATED"},
               lineage=tuple(f"obs-{i}" for i in range(len(ENGINE_SET))),
               s_i={c: 1.0 for c in SCORED},
               q_i={c: 0.9 for c in SCORED})
@@ -94,6 +95,24 @@ def run(**over):
     return evaluate_cell(**base_kwargs(timeframe, **over))
 
 
+def test_optional_omission_keeps_the_070_denominator():
+    from apex.fabric.context import ENGINE_COMPONENT, context_weights
+    from apex.setup.family_sf_fvg_sweep_rev import FamilyError, family_score_inputs
+    names = [ENGINE_COMPONENT[engine] for engine in REQUIRED_EVIDENCE]
+    s_i = {name: 1.0 for name in names}
+    q_i = {name: 1.0 for name in names}
+    family = family_score_inputs(s_i, q_i)
+    assert family["mass"] == pytest.approx(0.70)
+    assert family["s_i"]["orderblock"] == 0.0
+    assert family["s_i"]["momentum"] == 0.0
+    weights = context_weights()
+    six = sum(weights[name] for name in names)
+    ev = run(fabric=fabric_for(engines=REQUIRED_EVIDENCE), s_i=s_i, q_i=q_i)
+    assert ev.final_score == pytest.approx(six / 0.70)
+    with pytest.raises(FamilyError, match="COMPONENT_INPUT_MISSING"):
+        family_score_inputs({n: 1.0 for n in names if n != "structure"}, q_i)
+
+
 class TestFamilyContract:
     def test_identity_and_membership_literals(self):
         p = family_params()
@@ -103,7 +122,7 @@ class TestFamilyContract:
         assert p["required_evidence"] == ("E01", "E02", "E05", "E09", "E11",
                                         "E12")
         assert p["optional_evidence"] == ("E06", "E10")
-        assert p["forbidden_regimes"] == FORBIDDEN_REGIMES == ("SHOCK",)
+        assert p["forbidden_regimes"] == FORBIDDEN_REGIMES == ("CRISIS",)
         assert p["horizon_bars"] == HORIZON_BARS == 16
         assert p["Q_min_setup"] == q_min_setup() == 0.55
         assert p["s_struct_min"] == 0.55
@@ -247,11 +266,11 @@ class TestEntryLogicSteps:
             "S_STRUCT_UNAVAILABLE"
 
     def test_regime_gate_blocks_only_the_forbidden_state(self):
-        assert regime_gate("SHOCK")["ok"] is False
-        assert regime_gate("shock")["ok"] is False      # case-normalized
+        assert regime_gate("CRISIS")["ok"] is False
+        assert regime_gate("crisis")["ok"] is False      # case-normalized
         assert regime_gate("TREND")["ok"] is True
         assert regime_gate(None)["reason"] == "REGIME_UNAVAILABLE"
-        ev = run(regime_state="SHOCK")
+        ev = run(regime_state="CRISIS")
         assert ev.status == NOT_EMITTED and ev.reason == "FORBIDDEN_REGIME"
 
     def test_step6_entry_is_limit_ioc_at_the_close(self):
@@ -272,12 +291,13 @@ class TestEvidenceAndScoring:
 
     def test_optional_evidence_absence_still_emits(self):
         ev = run(fabric=fabric_for(engines=REQUIRED_EVIDENCE))
-        # E06/E10 are optional; the required six alone score below Q_min and
-        # are therefore QUARANTINED by Gate 1 — a *real* verdict, not an
-        # invention.
-        assert ev.status == QUARANTINED
-        assert ev.gate_block["blocked_by"] == [1]
-        assert ev.final_score < q_min_setup()
+        # D59 ج۷: required-only perfect mass is 0.54/0.70 ≈ 0.77, which now
+        # clears Q_min_setup 0.55. Optional engines are not required to emit.
+        # Before normalisation the same flawless required set scored 0.54 and
+        # Gate 1 quarantined it.
+        assert ev.status == EMITTED
+        assert ev.final_score >= q_min_setup()
+        assert ev.final_score == pytest.approx(0.54 * 0.9 / 0.70)
 
     def test_required_conflict_applies_the_060_multiplier(self):
         plain = run()
@@ -445,8 +465,9 @@ class TestGateIntegration:
                    snapshot_id="0" * 64, payload={"x": 1},
                    lineage=["obs-1"], q_forecast=0.6,
                    package={"package_version": 1,
-                            "parameter_package_id": "p"},
-                   timeframe="1h")
+                            "parameter_package_id": "p",
+                            "calibration": "BOOTSTRAP_UNCALIBRATED"},
+                   timeframe="1h", environment="PAPER")
         ctx["snapshot_id"] = sha256_hex(canonical_json(ctx["payload"]))
         assert run_all(ctx)["blocked_by"] == [5]
 

@@ -226,14 +226,44 @@ def q_param(rolling_calibration_error: float, brier: float,
     return value, value < 0.5
 
 
+def _clip01(value: float) -> float:
+    v = float(value)
+    if v != v:
+        raise ValueError("QUALITY_NONFINITE")
+    return max(0.0, min(1.0, v))
+
+
+def bounded_model_quality(rolling_calibration_error: float, brier: float,
+                          log_loss: float) -> float:
+    """D59 ج۲ bounded form.
+
+    ``1 − (clip(cal_err) + clip(2·brier) + clip(log_loss / ln 4)) / 3``,
+    each clip to ``[0, 1]``. The frozen additive form subtracts raw
+    ``log_loss`` (≈ 0.69 for any p ≈ 0.5), so a well-calibrated model
+    scored ≈ 0.45 and would BLOCK the day a real package arrives.
+    """
+    score = 1.0 - (
+        _clip01(rolling_calibration_error)
+        + _clip01(2.0 * float(brier))
+        + _clip01(float(log_loss) / math.log(4.0))
+    ) / 3.0
+    return max(0.0, min(1.0, score))
+
+
+def q_forecast_threshold() -> float:
+    from apex.decision.pipeline import load_decision_v1
+    return float(load_decision_v1()["q_forecast_threshold"])
+
+
 def q_forecast(rolling_calibration_error: float, brier: float,
                log_loss: float) -> Tuple[float, bool]:
-    """Q_forecast = 1 − rolling_calibration_error − Brier − log_loss
-    (same formula family as Q_param, applied to the forecasting model).
-    Q_forecast < 0.5 → Forecast BLOCK (§2.1 failure modes)."""
-    value = 1.0 - rolling_calibration_error - brier - log_loss
-    value = max(0.0, min(1.0, value))
-    return value, value < 0.5
+    """Bounded Q_forecast (D59 ج۲). Threshold is ``decision_v1.yaml`` (0.5).
+
+    Bootstrap ``Q_forecast = 0.5`` is unchanged and is not produced here.
+    ``Q_forecast < threshold`` → Forecast BLOCK (strict less-than).
+    """
+    value = bounded_model_quality(rolling_calibration_error, brier, log_loss)
+    return value, value < q_forecast_threshold()
 
 
 def q_fresh(age_bars: float, lam: Optional[float] = None) -> float:

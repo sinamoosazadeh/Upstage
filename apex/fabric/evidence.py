@@ -22,6 +22,10 @@ Normative rules implemented here
 * Expiry age = 5 × TF duration (L4681 "expired (5×TF)"); TF durations are the
   frozen §2.3 minute-multiples of ``apex.quality.pit.TF_DURATION_SECONDS``
   (ISSUE-CP1-007), never a locally re-invented table.
+* D53: ``TF_DURATION_SECONDS["1mo"]`` (2_592_000, the 30-day approximation) is
+  age/expiry arithmetic only. Close boundaries for ``1w`` (Monday 00:00 UTC)
+  and ``1mo`` (the 1st 00:00 UTC) come from ``apex.scheduler.clock``. This
+  module never uses the 30-day constant as a boundary.
 * Solvency (Ch.8 §8.0): low data quality removes the affected evidence —
   it is never replaced by zero or a guess (SL-14: "QX is never replaced by
   zero or guess").
@@ -40,7 +44,6 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from apex.identity.canonical_json import canonical_json
 from apex.identity.hashes import sha256_hex
-from apex.identity.uuid_v7 import uuid_v7
 from apex.quality.pit import TF_DURATION_SECONDS
 
 CONTRACT_VERSION = "4.0.0"
@@ -254,6 +257,28 @@ class FabricEvidenceRef:
     def is_active(self) -> bool:
         return self.state == FABRIC_ADMIT_STATE
 
+    @property
+    def content_id(self) -> str:
+        """D50 member identity inside the canonical fabric body.
+
+        ``evidence_id`` is a UUIDv7 emitted by the frozen engines, so it must
+        not enter the hash. Identical inputs therefore hash identically.
+        """
+        return sha256_hex(canonical_json({
+            "engine_id": self.engine_id,
+            "symbol": self.symbol,
+            "timeframe": self.timeframe,
+            "state": self.state,
+            "direction": self.direction,
+            "quality": self.quality,
+            "resolution_class": self.resolution_class,
+            "age_bars": self.age_bars,
+            "as_of": self.as_of,
+            "snapshot_id": self.snapshot_id,
+            "lineage": list(self.lineage),
+            "parent_ids": list(self.parent_ids),
+        }))
+
     def to_dict(self) -> Dict[str, Any]:
         d = dataclasses.asdict(self)
         d["engine_group"] = engine_group_of(self.engine_id)
@@ -261,10 +286,17 @@ class FabricEvidenceRef:
         return d
 
 
-def make_fabric_id() -> str:
-    """``fab_<uuid>`` — operational identity only (P8: UUIDv7 never enters
-    canonical payloads)."""
-    return "fab_" + uuid_v7()
+def make_fabric_id(fabric_hash: str) -> str:
+    """``fab_`` + the first 32 hex chars of the fabric hash (D50).
+
+    The UUIDv7 variant is removed: two assembles of identical inputs must
+    share ``fabric_id``. The hash itself is not a UUID and does not enter
+    the canonical body (the id is derived from the hash, not hashed).
+    """
+    digest = str(fabric_hash)
+    if len(digest) < 32 or any(c not in "0123456789abcdef" for c in digest[:32]):
+        raise ValueError("FABRIC_ID_QX: fabric_id is derived from the hash")
+    return "fab_" + digest[:32]
 
 
 def make_hash(payload: Any) -> str:
@@ -344,18 +376,21 @@ class EvidenceFabric:
                 excluded.append((ref.evidence_id, "EXPIRED_5TF"))
                 continue
             members.append(ref)
-        members.sort(key=lambda r: r.evidence_id)
+        # D50: content identity, then evidence_id only as a stable tie-break.
+        # ``excluded`` keeps evidence_id for reporting; it is not in the hash.
+        members.sort(key=lambda r: (r.content_id, r.evidence_id))
         body: Dict[str, Any] = {
             "as_of": as_of,
             "symbol": symbol,
             "timeframe": timeframe,
-            "evidence": [r.evidence_id for r in members],
+            "evidence": [r.content_id for r in members],
             "data_trust": data_trust,
             "conflict_state": conflict_state,
             "redundancy_state": dict(sorted((redundancy_state or {}).items())),
         }
+        digest = make_hash(body)
         return cls(
-            fabric_id=make_fabric_id(),
+            fabric_id=make_fabric_id(digest),
             as_of=as_of,
             symbol=symbol,
             timeframe=timeframe,
@@ -363,7 +398,7 @@ class EvidenceFabric:
             data_trust=data_trust,
             conflict_state=conflict_state,
             redundancy_state=dict(sorted((redundancy_state or {}).items())),
-            hash=make_hash(body),
+            hash=digest,
             excluded=tuple(excluded),
         )
 
@@ -375,7 +410,7 @@ class EvidenceFabric:
             "as_of": self.as_of,
             "symbol": self.symbol,
             "timeframe": self.timeframe,
-            "evidence": [r.evidence_id for r in self.members],
+            "evidence": [r.content_id for r in self.members],
             "data_trust": self.data_trust,
             "conflict_state": self.conflict_state,
             "redundancy_state": dict(self.redundancy_state),

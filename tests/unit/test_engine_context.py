@@ -147,7 +147,46 @@ def _row(open_ms):
     return [open_ms, "100", "102", "99", "101", "10", 0]
 
 
-def test_catch_up_frontier_boundary_and_failure_retry(tmp_path):
+def test_catch_up_quality_publish_failure_is_named(tmp_path, monkeypatch):
+    from apex.data_catalog.store.sqlite_store import SQLiteStore
+    from apex.ops import bootstrap_service as BS
+    from apex.ops.plan_bridge import BridgeError
+
+    async def boom(*args, **kwargs):
+        raise BridgeError("QUALITY_PUBLISH_REFUSED", "BTCUSDT")
+
+    monkeypatch.setattr(
+        "apex.ops.engine_context.publish_catch_up_quality", boom)
+
+    async def scenario():
+        start = 1767225600000
+        rows = {("BTCUSDT", "1h"): [_row(start)]}
+        client = _StoredKlineResponder(rows)
+        bridge = BS.AsyncBridge().start()
+        store = await SQLiteStore(str(tmp_path / "market.sqlite3")).open()
+        source = BS.ToobitKlineSource(client=client, bridge=bridge)
+        service = BS.BootstrapService(
+            store=store, source=source,
+            checkpoint_path=str(tmp_path / "progress.sqlite3"),
+            cells=list(rows))
+        service.config = type("Cfg", (), {"apex_env": "PAPER"})()
+        await service.open()
+        try:
+            report = await service.catch_up(start + 3600_000)
+            assert report["bars_ingested"] == 1
+            assert report["quality_publish"]["failures"] == [{
+                "symbol": "BTCUSDT", "timeframe": "1h",
+                "reason": "QUALITY_PUBLISH_REFUSED"}]
+        finally:
+            await service.close()
+            await store.close()
+            bridge.close()
+
+    asyncio.run(scenario())
+
+
+def test_catch_up_frontier_boundary_and_failure_retry(tmp_path, monkeypatch):
+    monkeypatch.delenv("APEX_ENV", raising=False)
     from apex.data_catalog.store.sqlite_store import SQLiteStore
     from apex.ops import bootstrap_service as BS
 
@@ -164,10 +203,13 @@ def test_catch_up_frontier_boundary_and_failure_retry(tmp_path):
         await service.open()
         try:
             first = await service.catch_up(start + 3600_000)
+            empty_publish = {"written": 0, "skipped": 0, "failures": []}
             assert first == {"cells_checked": 2, "cells_updated": 2,
-                             "bars_ingested": 2, "failures": []}
+                             "bars_ingested": 2, "failures": [],
+                             "quality_publish": empty_publish}
             assert await service.catch_up(start + 3600_001) == {
-                "cells_checked": 0, "cells_updated": 0, "bars_ingested": 0, "failures": []}
+                "cells_checked": 0, "cells_updated": 0, "bars_ingested": 0,
+                "failures": [], "quality_publish": empty_publish}
             client.responder.fail_next(-1120)
             failed = await service.catch_up(start + 7200_000)
             assert failed["cells_checked"] == 2
@@ -904,7 +946,10 @@ def test_d29_paper_proxy_requested_examples_and_real_veto(reserved, level):
     result = EC.paper_reservation_proxy(capital=10000, positions=positions, orders=[], environment="PAPER")
     assert result["margin_health_fraction"] == (Decimal(10000) - reserved) / 10000
     assert result["margin_status"]["level"] == level
-    veto = kernel.evaluate_vetoes({**result, "timeframe": "1h", "q_raw": 1.0})
+    caps = {"capital_hard_cap": 1e12, "symbol_cap": 1e12, "portfolio_cap": 1e12,
+            "freshness_sla_seconds": 1e12, "oi_lag_threshold_seconds": 1e12,
+            "time_to_expiry_days": {"applicable": False, "contract_type": "PERPETUAL"}}
+    veto = kernel.evaluate_vetoes({**result, "timeframe": "1h", "q_raw": 1.0, **caps})
     assert (14 in veto["fired_numbers"]) == (reserved > 6000)
     if level == "LIQUIDATION_APPROACH":
         assert result["margin_status"]["action"] == "EMERGENCY_L3_CANCEL_ALL"
@@ -917,9 +962,14 @@ def test_d29_strict_boundaries_do_not_change_live(fraction, paper, live):
     assert kernel.margin_health_state(fraction)["level"] == live
     if fraction == .4:
         base = {"timeframe": "1h", "q_raw": 1., "margin_health_fraction": fraction,
-                "margin_model": "PAPER_RESERVATION_PROXY_D29"}
-        assert 14 not in kernel.evaluate_vetoes({**base, "environment": "PAPER"})["fired_numbers"]
-        assert 14 in kernel.evaluate_vetoes({**base, "environment": "LIVE"})["fired_numbers"]
+                "margin_model": "PAPER_RESERVATION_PROXY_D29",
+                "capital_hard_cap": 1e12, "symbol_cap": 1e12, "portfolio_cap": 1e12,
+                "freshness_sla_seconds": 1e12, "oi_lag_threshold_seconds": 1e12}
+        paper = {**base, "environment": "PAPER",
+                 "time_to_expiry_days": {"applicable": False, "contract_type": "PERPETUAL"}}
+        live = {**base, "environment": "LIVE", "time_to_expiry_days": 40.0}
+        assert 14 not in kernel.evaluate_vetoes(paper)["fired_numbers"]
+        assert 14 in kernel.evaluate_vetoes(live)["fired_numbers"]
 
 
 @pytest.mark.parametrize("capital", [0, -1, None, "NaN", "Infinity"])
@@ -3088,9 +3138,10 @@ def test_cp144_training_validation_d47_verdict_and_governed_theta():
     warn = EC.training_validation(X_warn, labels_warn, W_zero, [0.0] * 9, theta=theta)
     assert warn["verdict"] == "WARN"
     assert warn["verdict_rule"] == "D47"
-    # Theta from governed params, not constant, but currently equal
+    # Theta from governed params, not the unchanged E11.THETA_H constant.
     assert warn["theta_H"] == pytest.approx(theta)
-    assert warn["theta_H"] == pytest.approx(float(EC.E11.THETA_H))
+    assert warn["theta_H"] == pytest.approx(1.105878)
+    assert float(EC.E11.THETA_H) == pytest.approx(0.65)
 
 
 def test_cp144_fit_study_fold_back_exactness_random():
@@ -3168,12 +3219,12 @@ def test_cp144_catalog_events_uses_governed_theta_and_quality_params():
     """D49: catalog_events uses float(p.entropy_threshold) and YAML quality_H_Q2/Q5."""
     import math
     from apex.engines.e11_regime.engine import EngineParams, catalog_events
-    # Default params from YAML v4: theta 0.65, quality_H_Q2 0.8, quality_H_Q5 0.4
+    # D49: YAML v4 is the PASS-artifact percentile triple, not 0.65/0.8/0.4.
     params = EC.E11.get_params()
-    assert params.entropy_threshold == pytest.approx(0.65)
+    assert params.entropy_threshold == pytest.approx(1.105878)
     assert hasattr(params, "quality_H_Q2") and hasattr(params, "quality_H_Q5")
-    assert params.quality_H_Q2 == pytest.approx(0.8)
-    assert params.quality_H_Q5 == pytest.approx(0.4)
+    assert params.quality_H_Q2 == pytest.approx(1.229880)
+    assert params.quality_H_Q5 == pytest.approx(0.564415)
     # Theta range widened to [0.3, ln9]
     assert 0.3 <= params.entropy_threshold <= math.log(9)
     # EngineParams rejects out-of-range theta (overrides dict API)
@@ -3195,7 +3246,7 @@ def test_cp144_catalog_events_uses_governed_theta_and_quality_params():
     low_theta_params = EngineParams({"entropy_threshold": 0.3, "quality_H_Q2": 0.8, "quality_H_Q5": 0.4})
     ev_low_low_theta = catalog_events(state_low, params=low_theta_params)
     assert any(e["code"] == "EV_RGM_004" for e in ev_low_low_theta)
-    # Default params (0.65): 0.5 <0.65 no event, 2.0 >=0.65 event
+    # Default YAML theta (D49 1.105878): 0.5 < theta no event, 2.0 >= theta event
     ev_low_default = catalog_events(state_low)
     ev_high_default = catalog_events(state_high)
     assert all(e["code"] != "EV_RGM_004" for e in ev_low_default)

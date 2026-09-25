@@ -207,31 +207,8 @@ class Harness:
 @pytest.fixture()
 def harness(tmp_path):
     async def build(**runtime_kwargs) -> Harness:
-        store = ss.SQLiteStore(str(tmp_path / "apex.sqlite3"))
-        await store.open()
-        ledger = LS.LedgerWriter(store, clock=LedgerClock())
-        await ledger.initialize()
-        await ledger.start()
-        clock = C.FixtureClock(START)
-        adapter = FakeAdapter()
-        bus = EventBus()
-        bus.start()                      # background dispatcher (a Task)
-        notifications: List[str] = []
-
-        async def notifier(text: str) -> Dict[str, Any]:
-            notifications.append(text)
-            return {"sent": True}
-
-        await seed_setup(store, "setup-0001")
-        runtime_kwargs.setdefault("cells", [C.BundleCell(SYMBOL, TF)])
-        runtime_kwargs["notifier"] = notifier
-        runtime = PL.PaperRuntime(
-            config=Config(), store=store, ledger=ledger, bus=bus,
-            adapter=adapter, clock=clock, environment="PAPER",
-            **runtime_kwargs)
-        await runtime.boot(drift_seconds=0.0)
-        return Harness(store, ledger, bus, clock, adapter, runtime,
-                       notifications)
+        from tests.integration.paper_harness import build_harness
+        return await build_harness(tmp_path, **runtime_kwargs)
 
     yield build
 
@@ -354,7 +331,8 @@ async def bridge_context(store: Any, symbol: str, timeframe: str,
         "temporal_quality": "Q2", "volatility_quality": "Q2",
         "s_i": {key: 1.0 for key in components},
         "q_i": {key: 0.9 for key in components},
-        "package": {"package_version": 1, "parameter_package_id": "pkg-1"},
+        "package": {"package_version": 1, "parameter_package_id": "pkg-1",
+                    "calibration": "BOOTSTRAP_UNCALIBRATED"},
         "p_min_tf": 0.5, "c_min": 0.5, "freshness_ok": True,
         "risk_state": "LowRisk", "family_status": "ACTIVE",
         "arbitration": {
@@ -674,12 +652,15 @@ def test_trade_budget_stops_the_cycle(harness):
                 oi_lag_seconds=0.0, delay_seconds=1.0, completeness_pct=100.0,
                 source_health=1.0), "AVAILABLE")
             cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+            # D51: a planless cell does not consume the budget, so the second
+            # cell is NO_PLAN_FOR_CELL rather than TRADE_BUDGET_REACHED.
             assert cycle["cells_due"] == 2
-            assert cycle["cells_complete"] == 1          # budget honoured
-            assert cycle["halt_reasons"] == {"TRADE_BUDGET_REACHED": 1}
+            assert cycle["cells_complete"] == 1
+            assert cycle["halt_reasons"] == {"NO_PLAN_FOR_CELL": 1}
+            assert "TRADE_BUDGET_REACHED" not in cycle["halt_reasons"]
             details = [st.detail for r in h.runtime.scheduler.runs
                        for st in r.stages if st.status == "FAIL"]
-            assert any("TRADE_BUDGET_REACHED" in d for d in details)
+            assert any("NO_PLAN_FOR_CELL" in d for d in details)
         finally:
             await shutdown(h)
 
@@ -802,7 +783,7 @@ def test_governed_bridge_drives_fixture_paper_lifecycle(harness):
             h.runtime.plan_provider = bridge
             first = await h.runtime.run_cycle(now_ms=START_MS + 24 * HOUR)
 
-            assert first["cells_complete"] == 1
+            assert first["cells_complete"] == 1, (first.get("halt_reasons"), getattr(bridge, "refusals", None))
             assert first["cells_halted"] == 0
             assert not bridge.refusals
             plan = bridge.plans[f"{SYMBOL}:{TF}"]

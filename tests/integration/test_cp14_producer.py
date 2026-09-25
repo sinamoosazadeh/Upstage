@@ -207,7 +207,9 @@ def test_g1_real_bridge_consumes_context_without_fabricated_plan(real_context):
         result=await bridge('BTCUSDT','1d',ASOF)
         assert result is None
         assert bridge.refusals['BTCUSDT:1d']['reason']=='SETUP_NOT_EMITTED'
-        assert 'GATE5_MTF_CONFLICTING' in bridge.refusals['BTCUSDT:1d']['detail']
+        # D63: this cell's regime is CRISIS, which the family refuses before
+        # the thirteen gates. The bridge records that named reason.
+        assert bridge.refusals['BTCUSDT:1d']['detail']=='FORBIDDEN_REGIME'
     asyncio.run(reopened(real_context,check))
 
 def test_g1_missing_classifier_and_scope_are_named_refusals(real_context,tmp_path):

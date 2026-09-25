@@ -29,7 +29,18 @@ def harness():
 
 @pytest.fixture(scope="module")
 def report(harness):
-    return harness.run_harness(decisions=10, orders=5, minutes=0.0)
+    import os
+    saved = {name: os.environ.get(name) for name in harness.HARNESS_ENV}
+    try:
+        yield harness.run_harness(decisions=10, orders=5, minutes=0.0)
+    finally:
+        # run_harness setdefault's APEX_ENV=PAPER. Restore so the rest of the
+        # suite does not inherit that process environment.
+        for name, previous in saved.items():
+            if previous is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = previous
 
 
 class TestBounds:
