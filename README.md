@@ -1,8 +1,13 @@
 # APEX_GEN5
 
-Frozen-blueprint trading system implemented from `APEX_GEN5.md` (sha256
-`216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`).
+Frozen-blueprint trading system implemented from `APEX_GEN5.md`.
+
+- Frozen blueprint sha256: `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e` (the pre-implementation freeze; recorded in `docs/APEX_GEN5_frozen_216bcc.md`).
+- Working-tree `APEX_GEN5.md` sha256 at CP-14.6: `34e72c4ea3088e053cb33bf008511a9f5a0404734f28a7630359ff9c2bbd1a84`.
+
 Phase-2 chain control files: `PHASE2_*` (see `PHASE2_MASTER_PLAN.md`).
+
+Runtime pin: `numpy==1.26.0` (`requirements.lock`). `RUNTIME_ARTIFACTS`: `params/e11_classifier_v1.yaml`, `data/` and train caches are gitignored and never committed. `status` and `serve` print `E11_ARTIFACT` or the loader refusal. A printed artifact name is not LIVE permission.
 
 ## Install
 

@@ -274,7 +274,8 @@ def run_chain(refs):
         fvg_zones=[{"index": 24, "filled": False}],
         bos={"s_struct": 0.6, "direction": 1}, regime_state="TREND",
         q_forecast=rec.q_forecast, forecast={"quality": "Q3", "h_norm": 0.4},
-        package={"package_version": 1, "parameter_package_id": "pkg-1"},
+        package={"package_version": 1, "parameter_package_id": "pkg-1",
+                 "rolling_calibration_error": 0.0, "brier": 0.0, "log_loss": 0.0},
         s_i={c: 1.0 for c in SCORED}, q_i={c: 0.9 for c in SCORED},
         context_confidence=ctx["context_confidence"], environment="PAPER")
     out["evaluation"] = evaluation
@@ -341,7 +342,9 @@ def run_chain(refs):
         "time_to_expiry_days": 40.0, "margin_health_fraction": 0.9,
         "stop_distance": abs(evaluation.entry - stops["stop"]),
         "min_quantity": 0.001, "risk_state": "LowRisk",
-        "package": {"package_version": 1, "parameter_package_id": "pkg-1"},
+        "package": {"package_version": 1, "parameter_package_id": "pkg-1",
+                    "rolling_calibration_error": 0.0, "brier": 0.0,
+                    "log_loss": 0.0},
     }
     out["plan"] = adjudicate(base)
     out["veto_verdict"] = evaluate_vetoes(base)

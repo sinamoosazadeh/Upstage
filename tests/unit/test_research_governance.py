@@ -304,12 +304,23 @@ class TestLiveParamsWriteForbidden:
         assert "SUGGESTION_TARGET_OUTSIDE_RESEARCH" in str(err.value)
 
     def test_frozen_params_files_are_untouched_by_this_suite(self):
-        """The six frozen YAMLs are read-only for CP-8: their bytes must still
-        hash to the values recorded at HEAD."""
+        """The six frozen YAMLs stay read-only except the two CP-14.6 mandated
+        edits (D49 values, family_engines) and the new decision_v1.yaml."""
         import subprocess
         diff = subprocess.run(["git", "status", "--porcelain", "params"],
                               capture_output=True, text=True, check=True)
-        assert diff.stdout.strip() == ""
+        changed = set()
+        for line in diff.stdout.splitlines():
+            path = line[3:].strip()
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1].strip()
+            changed.add(path)
+        allowed = {
+            "params/e11_params_v4.yaml",
+            "params/setup_weights_v1.yaml",
+            "params/decision_v1.yaml",
+        }
+        assert changed <= allowed
 
 
 class TestInjectionLedger:

@@ -89,12 +89,14 @@ class TestBoundaryOneUnit:
 
     def test_gate2_window_quality_min_veto(self):
         # one quarantined candle in the window blocks the whole window
-        ok = gate2_window_quality([(0.60, 0.0), (0.55, 1.0)])
-        bad = gate2_window_quality([(0.60, 0.0), (0.49, 1.0)])
+        # D59: the 1h governed threshold is 0.5 (same number as the old default).
+        # The call must name the timeframe; there is no gate2_q_thr_default.
+        ok = gate2_window_quality([(0.60, 0.0), (0.55, 1.0)], q_thr=0.5)
+        bad = gate2_window_quality([(0.60, 0.0), (0.49, 1.0)], q_thr=0.5)
         assert ok.passed is True and ok.measured > 0.5
         assert bad.passed is False
         assert bad.reason == "GATE2_INVALID_MIN_Q_THR"
-        assert gate2_window_quality([]).reason == "GATE2_INVALID_EMPTY"
+        assert gate2_window_quality([], q_thr=0.5).reason == "GATE2_INVALID_EMPTY"
 
     def test_gate3_conflict_penalty(self):
         assert gate3_conflict_penalty(0.5 + UNIT).passed is False
@@ -168,18 +170,22 @@ class TestBoundaryOneUnit:
         assert gate12_q_forecast(float("nan")).passed is False
 
     def test_gate13_parameter_package(self):
-        good = {"package_version": 7, "parameter_package_id": "pkg-7"}
+        # D59 د۳: metrics are mandatory. A self-declared q_param is ignored.
+        good = {"package_version": 7, "parameter_package_id": "pkg-7",
+                "rolling_calibration_error": 0.0, "brier": 0.0, "log_loss": 0.0}
         assert gate13_parameter_package(good).passed is True
         assert gate13_parameter_package(None).passed is False
         assert gate13_parameter_package({}).passed is False
         assert gate13_parameter_package({"package_version": 1}).reason == \
             "GATE13_PACKAGE_UNVERSIONED"
-        degraded = dict(good, rolling_calibration_error=0.1, brier=0.3,
-                        log_loss=0.6)
+        degraded = dict(good, rolling_calibration_error=1.0, brier=1.0,
+                        log_loss=2.0)
         assert gate13_parameter_package(degraded).reason == \
             "GATE13_PACKAGE_DEGRADED"
-        assert gate13_parameter_package(dict(good, q_param=0.4)).reason == \
-            "GATE13_PACKAGE_DEGRADED"
+        declared = {"package_version": 7, "parameter_package_id": "pkg-7",
+                    "q_param": 0.4}
+        assert gate13_parameter_package(declared).reason == \
+            "GATE13_METRICS_MISSING"
 
 
 class TestGate11IntegrityOnly:
@@ -248,8 +254,9 @@ class TestRunAll:
             "temporal_quality": "Q3", "volatility_quality": "Q2",
             "forecast": {"quality": "Q3"},
             "snapshot_id": "0" * 64, "payload": None, "lineage": ["obs-1"],
-            "q_forecast": 0.6, "package": {"package_version": 1,
-                                           "parameter_package_id": "p1"},
+            "q_forecast": 0.6, "package": {
+                "package_version": 1, "parameter_package_id": "p1",
+                "rolling_calibration_error": 0.0, "brier": 0.0, "log_loss": 0.0},
             "timeframe": "1h", "environment": "PAPER",
         }
         base.update(over)

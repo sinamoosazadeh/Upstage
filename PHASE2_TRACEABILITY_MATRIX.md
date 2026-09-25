@@ -637,3 +637,29 @@ Both suite counts (2026-09-22, full suite twice from a clean committed tree, no 
 ```
 
 Previous CP-14.4 was 3020 passed; +3 CP-14.5 tests = 3023. Repository verification: PASS. Phone acceptance stays owner-run; no LIVE permission and no phone PASS is claimed.
+
+### CP-14.6 - closeout traceability (2026-09-24)
+
+| Gate | Implementation and executable evidence | Status |
+|---|---|---|
+| D49 values | `params/e11_params_v4.yaml` `theta_H=1.105878`, `quality_H_Q2=1.229880`, `quality_H_Q5=0.564415` | Implemented; `tests/unit/test_cp146.py` |
+| D50 identity | canonical `-0.0`, object `replay_key`, `fab_` id, content intent id, durable cell cursor, duplicate client-order refusal | Implemented; `tests/unit/test_cp146.py` |
+| D51 budget | per-cycle reset; reserve only with a valid plan; release if the submission stays in-process | Implemented; `test_d51_six_cycles_each_admit_one_trade` |
+| D52 publishers + backfill | page measurements, PAPER refresh, boot revision, PAPER-only labelled backfill, early receipt listed not faked | Implemented; ISSUE-CP14-071 CLOSED |
+| D53 scheduler | Monday `1w`, calendar `1mo`; frozen 30-day duration is age only | Implemented; `tests/unit/test_cp146.py` |
+| D59 hygiene | `decision_v1.yaml`, bounded Q, family mass 0.70, `L2_DISABLE_NEW`, RR and setup_valid rules, bootstrap only when no package and not LIVE | Implemented; fixture packages carry the three Gate 13 metrics |
+| D54–D58 | recorded in `PHASE2_DECISION_LOG.md`; no code path | Not implemented; D54 OPEN; ISSUE-CP14-070 OPEN |
+| D60/D61 | artifact print is a name or a refusal; training path and frozen paths verified | Recorded; no LIVE permission |
+| ISSUE-CP14-066 | VALUES SET; OPEN for the 2026-12-22 OOS re-check only | OPEN (re-check) |
+| ISSUE-CP14-068 | regime window not in AE.5; interim is the playbook default | OPEN |
+| ISSUE-CP14-069 | `q_thr_by_tf` documents 1m/1h/1d only; all-14 check not wired into every gate2 | OPEN |
+| HARD CONSTRAINT | `git diff f14be36 --stat -- apex/data_catalog apex/research/bootstrap.py apex/research/backtest.py apex/engines PROMPT.md requirements.lock` empty; training hash `d9024bb68fb485e3e0f40059becd3325eac3f228b1b1d6a49482bc52a5773582` | Verified |
+
+Both suite counts (2026-09-24, `python -m pytest -q -p no:cacheprovider`, no deselection):
+
+```text
+3040 passed, 14 warnings in 1281.60s (0:21:21)
+3040 passed, 14 warnings in 1271.57s (0:21:11)
+```
+
+Previous CP-14.5 was 3023 passed. This stage collects 3040. Equal green counts. No skipped or xfailed line. Repository verification: PASS. Phone acceptance stays owner-run; no LIVE permission and no phone PASS is claimed.

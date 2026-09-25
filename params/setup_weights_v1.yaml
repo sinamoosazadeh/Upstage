@@ -39,3 +39,15 @@ gate_score_unit: 0.01
 gate_quality_min_class: 2
 gate_forecast_q_min: 0.5
 family_s_struct_min: 0.55
+# D59 ج۷: engines structurally able to contribute to SF_FVG_SWEEP_REV.
+# Required evidence maps to structure+liquidity+fvg+trend+regime+temporal (0.54).
+# Optional evidence adds orderblock+momentum. Family mass = 0.70, the Q_setup denominator.
+family_engines:
+  - structure
+  - liquidity
+  - fvg
+  - trend
+  - regime
+  - temporal
+  - orderblock
+  - momentum

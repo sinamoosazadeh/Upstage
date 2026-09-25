@@ -168,7 +168,10 @@ class TestCombiner:
         res = context_confidence(inp, timeframe=TF, q_raw=1.0)
         z = 0.35 + 0.20 + 0.15 + 0.15 + 0.10 + 0.05
         assert math.isclose(res["z"], z)
-        assert math.isclose(res["context_confidence"], 1 / (1 + math.exp(-z)))
+        from apex.decision.pipeline import load_decision_v1
+        gain = load_decision_v1()["context_confidence_gain"]
+        assert math.isclose(res["context_confidence"],
+                            1 / (1 + math.exp(-gain * (z - 0.5))))
 
     def test_bounds_never_exceed_half_to_one(self):
         hi = context_confidence(ci(), timeframe=TF, q_raw=1.0)
@@ -178,7 +181,10 @@ class TestCombiner:
                                    divergence_magnitude=1.0,
                                    temporal_window_validity=0.0),
                                timeframe=TF, q_raw=1.0)
-        assert 0.5 < lo["context_confidence"] < hi["context_confidence"] < 1.0
+        # D59 ج۴: the low end is no longer trapped above 0.5, so the band grid
+        # is reachable. Order is preserved.
+        assert 0.0 < lo["context_confidence"] < hi["context_confidence"] < 1.0
+        assert lo["context_confidence"] < 0.5 < hi["context_confidence"]
 
     def test_mtf_agreement_table_verbatim(self):
         assert MTF_STATE_SCORES == {

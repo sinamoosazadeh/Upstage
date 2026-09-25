@@ -11899,6 +11899,8 @@ the full Section 3.2 tree, including entropy, with the trained W/b.
 
 **Session-CP-14.3 (2026-09-21; D46 study surface; ADR-CP14-025):** the post-fit validation report additionally carries `train_accuracy`, `train_log_loss`, `share_h_norm_gt_0_85` (the Gate 7 fail share `H/ln 9 > 0.85`), `H_percentiles` {p10, p25, p50, p75, p90} and `entropy_by_pmax_bucket` (H medians over p_max in [0,.3) [.3,.5) [.5,.7) [.7,1]), and the research-only `train-e11 --fit-study` surface evaluates the fixed, named fit-protocol grid P0..P9 over the D35 per-cell cache (cache hits only; `FIT_STUDY_REQUIRES_CACHE` otherwise) by printing one `FIT_STUDY` stderr line per variant and writing gitignored `data/e11_fit_study_<UTC stamp>.json` — no artifact is written, `params/` is untouched and no protocol changes: P0 is exactly the current optimizer, and no other variant becomes the protocol without a further owner decision.
 
+**Session-CP-14.6 (2026-09-24; D49 values set):** `params/e11_params_v4.yaml` now carries the PASS-artifact percentiles `theta_H=1.105878` (H p80), `quality_H_Q2=1.229880` (H p90), `quality_H_Q5=0.564415` (H p30) from `data/e11_train_report_20260924T181954Z.json`. All three sit inside `[0.3, ln 9]` with `Q5 < theta_H < Q2`. No other E11 parameter, formula, label rule or class count changes. ISSUE-CP14-066 is relabelled VALUES SET and stays OPEN only for the 2026-12-22 OOS re-check. `TRAINING_QUERY`, `training_protocol_hash(('1h','4h'), Core-10, 720)` and `E11_TRAIN_CACHE_FORMAT` stay the CP-14.5 bytes.
+
 **Session-CP-14.4 (2026-09-22; D47 governed fit protocol and verdict, D49 entropy-threshold mechanism, D48 record, fit-study fix and extension):** D47 moves the optimizer protocol to governed `params/e11_training_v1.yaml` (keys `iterations=100000, learning_rate=0.2, l2=0.0, class_weights=false` = P2 per `data/e11_fit_study_20260922T011436Z.json` accuracy 0.749 share pmax>=0.5 0.845), artifact `params/e11_classifier_v1.yaml` gains `fit_protocol` mapping, `artifact_sha256 = sha256(canonical_json({W,b,seed,fit_protocol}))`, artifact without `fit_protocol` = `CONFIGURATION_INVALID`, verdict D47 PASS iff `train_accuracy>=0.70 AND share_pmax_ge_0_50>=0.75 AND min over eight FIT_REQUIRED_CLASSES of per_class share_pmax_ge_0_50 >=0.40` else WARN, `share_H_ge_theta` informational only, WARN never blocks; training_metrics adds `min_class_share_pmax_ge_0_50`, `verdict_rule`, `H_percentiles` p20/p30/p70/p80, `theta_recommendation` = H p80; D49 makes `theta_H, quality_H_Q2, quality_H_Q5` governed YAML values in `params/e11_params_v4.yaml` (theta range widened 0.3-0.9 to 0.3-ln9 = 0.3-ln9, values stay 0.65/0.8/0.4 in this CP, mechanism only, no decision path may use `E11.THETA_H` constant, `catalog_events(state,params=None)` uses `float(p.entropy_threshold)`); D48 records that external historical OHLCV from public archives (Binance, Bybit) is authorized RESEARCH/BACKTEST only via `MarketObservation.source` never TOOBIT, OI=MISSING, PAPER/LIVE Toobit-only, splice test mandatory when implemented, record only no importer code, ISSUE-CP14-067 OPEN; C7 fit-study fix: fold-back `W_raw=W/scale row-wise, b_raw=b-W_raw@mean` (not `W/scale then b-W@(mean/scale)`), proves random X probs equal 1e-9, adds P10 {100000,0.2,0.0,True} P11 {300000,0.2,0.0,False} P12 {300000,0.2,0.0,True}, every variant records `theta_for_10/20/30 pct (H p90/80/70)` and `min_class_share`, `FIT_STUDY` stderr prints `variant iters weights acc log_loss share_pmax min_class_share_pmax theta_for_20pct seconds`, `FIT_STUDY_THETA` for every variant plus legacy P0 line; `TRAIN_VALIDATION` stderr adds `verdict_rule train_accuracy min_class_share_pmax theta_H`, `TRAINED` JSON includes `fit_protocol`.
 
 PIT-safe softmax:
@@ -16070,6 +16072,8 @@ Forecast answers only: probability that target is touched before stop within the
 **Session-CP-14 (2026-09-18; D34 / ISSUE-043):** PAPER-only `cp14_paper_bootstrap_uncertainty-v1` records its E11 snapshot_id and uses U_cal=0.5, U_ood=0.5 and U_dis=1-p_max from that snapshot, U=clip(0.5*U_cal+0.3*U_ood+0.2*U_dis,0,1), C=1-U, with other named fields typed UNAVAILABLE and unconsumed, no zero defaults, and no use of this model in LIVE.
 
 **Session-CP-14.3 (2026-09-21; D46):** while no calibrated walk-forward forecast package exists (this section's own bootstrap: `package None ⇒ p_hat = p_raw = 0.5`), the PAPER eligibility minimum is the governed `paper_bootstrap.bootstrap_p_min = 0.50` for every timeframe — the value that makes the constant-0.5 prior PAPER-eligible as this section already declares — while the D25 SL-12 `p_min_tf` table is unchanged and stays authoritative for LIVE and for PAPER as soon as a calibrated package is present, `C_min = 0.50` is unchanged, and LIVE never reads `bootstrap_p_min`.
+
+**Session-CP-14.6 (2026-09-24; D59):** bootstrap remains `package is None` and environment is not LIVE. LIVE with no package is `FORECAST_BOOTSTRAP_NOT_LIVE_ELIGIBLE` and never falls back to `p=0.5`. A non-None package that fails the calibrated-package check is `FORECAST_PACKAGE_INVALID`, also with no bootstrap fallback. `composite_estimate` stays NOT_WIRED (ISSUE-CP14-070 / D58, not this stage). Gate 13 computes `Q_param` from recorded `rolling_calibration_error`, `brier` and `log_loss` (bounded form) and never reads a self-declared `q_param`. The PAPER bootstrap package records zeros for those three metrics until a calibrated package exists; they are not part of the YAML digest.
 
 **Session-CP-14.4 (2026-09-22; D48):** external historical OHLCV from public archives (Binance, Bybit) is authorized RESEARCH/BACKTEST only via `MarketObservation.source` never TOOBIT, OI=MISSING, PAPER/LIVE Toobit-only, Toobit ingest untouched, splice test mandatory when implemented, record only no importer code, ISSUE-CP14-067 OPEN. No production data path changes in this CP; this is a governance record for future research splicing.
 
@@ -20401,6 +20405,7 @@ params/e11_params_v4.yaml
 params/e11_training_v1.yaml  # D47 governed fit protocol, added CP-14.4
 params/paper_account_v1.yaml
 params/decision_runtime_v1.yaml  # D25 policy + D28 PAPER-only paper_bootstrap (ADR-CP14-005)
+params/decision_v1.yaml  # D59 governed scalars (min_rr, direction_conflict_threshold, context_confidence_gain, q_forecast_threshold)
 params/e11_classifier_v1.yaml  # phone-generated, gitignored; never committed
 data/e11_train_cache/  # CP-14.1 per-cell resume cache, gitignored; never committed
 tests/unit/
@@ -20423,6 +20428,17 @@ mismatch; no risk_defaults value is duplicated.
 engine-context, classifier artifact, and PAPER account wiring; the small
 `tests/fixtures/e11_classifier_v1.yaml` is loader-test data, never a runtime
 training fallback. Its battery is `tests/unit/test_engine_context.py`.
+
+**Session-CP-14.6 (2026-09-24):** the PAPER loop's close lock is the durable
+`cell_decision_cursor` (migration `M101_cp146_cell_decision_cursor`); intent
+identity is `i-` plus a content hash, never a `proposal_id` tail. `1w` closes
+are Monday 00:00 UTC and `1mo` closes are the 1st 00:00 UTC; the frozen
+30-day `1mo` duration is age arithmetic only. `serve` refreshes public funding
+(15 min) and venue facts (60 min) and writes one `BOOT_INITIAL_REVISION`
+(`NoRisk` / `NORMAL`) only when the ladder table is empty. `publish-quality-backfill`
+is PAPER-only and labels facts `HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS` /
+`provenance=BACKFILL`; a receipt before bar close is listed and not faked.
+LIVE does not read those facts.
 
 Every package directory has `__init__.py`.
 
@@ -20952,6 +20968,13 @@ Engine v4.0.0 formula bodies were not rewritten.
 | CP-14.2 D36 eight-class E11 fit + mandatory validation report (2026-09-21) | E11 Section 3.3; ISSUE-CP14-061 (resolved), ISSUE-CP14-062/063 (OPEN); ADR-CP14-023; eight rule-tree classes required, derived TRANSITION may be empty, K 9 / W (9,8) / b (9,) unchanged, artifact schema and cache hashes unchanged, runtime E11 unchanged |
 | CP-14.3 D46 PAPER bootstrap P minimum + extended E11 validation and research-only fit study (2026-09-21) | Ch.13 Section 13.1 and Ch.14 eligibility reconciled by the D46 rule (PAPER `bootstrap_p_min` 0.50 for every timeframe while no calibrated forecast package exists; D25 SL-12 `p_min_tf` authoritative otherwise and for LIVE, which never reads `bootstrap_p_min`; `C_min` 0.50 unchanged; provenance `p_min_source`); E11 Section 3.3 validation fields + `train-e11 --fit-study` (P0..P9, cache-only, no artifact, no params/ write, no protocol change); ADR-CP14-024 / ADR-CP14-025; ISSUE-CP14-063 (CLOSED by D46), ISSUE-CP14-064 (OPEN) |
 | CP-14.4 D47 governed E11 fit protocol and verdict, D49 entropy-threshold mechanism, D48 record, fit-study fix and extension (2026-09-22) | E11 Section 3.3 YAML schema fit_protocol + artifact_sha256 covering fit_protocol, params/e11_training_v1.yaml governed (P2 per data/e11_fit_study_20260922T011436Z.json), training_metrics D47 verdict_rule D47 acc>=0.70 share_pmax>=0.75 min_class>=0.40, training_validation theta from E11.get_params().entropy_threshold, D49 theta_H range 0.3-ln9, quality_H_Q2/Q5 YAML-governed, catalog_events(state,params=None) uses float(p.entropy_threshold), no decision path uses E11.THETA_H, Ch.13 D48 external OHLCV RESEARCH/BACKTEST only, fit-study fix fold-back W_raw=W/scale b_raw=b-W_raw@mean, P10-P12 added, every variant theta_for_10/20/30 + min_class_share, FIT_STUDY stderr + FIT_STUDY_THETA per variant; ADR-CP14-026/027; ISSUE-CP14-064 CLOSED D47, ISSUE-CP14-065 CLOSED fold-back, ISSUE-CP14-066 OPEN, ISSUE-CP14-067 OPEN; error #23 |
+
+**Honestly still open (protocol only):** those six measurement items; running `apex/` code; ECONOMIC_GATE checkbox.
+
+**GC-D1..D16** remain: FSM=SL-6; SQLite; Q_oi 0.5; E04 1e-12; Core-10; dual leverage min(); 14 veto names only; Gate 11 lineage; LIVE env ≠ capital; NFR three meanings; Williams k=2; budget 0.005 / k_attn 0.25; E11 class vs forecast; depth fail no partial; engine body > AI.11; adaptive ATR deferred.
+
+End of merged document.
+D59 bounded quality, family mass 0.70, `decision_v1.yaml`, `L2_DISABLE_NEW` ADR-CP14-032; D54 OPEN and D54–D58 not implemented; ISSUE-CP14-068/069/070 OPEN |
 
 **Honestly still open (protocol only):** those six measurement items; running `apex/` code; ECONOMIC_GATE checkbox.
 

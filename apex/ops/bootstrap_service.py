@@ -220,18 +220,9 @@ def close_time_ms(open_ms: int, timeframe: str) -> int:
 
 
 def latest_close_boundary(now_ms: int, timeframe: str) -> int:
-    """Most recent venue boundary (UTC, Monday weeks, calendar months)."""
-    import datetime as dt
-    if timeframe == "1mo":
-        now = dt.datetime.fromtimestamp(now_ms / 1000, dt.timezone.utc)
-        return int(now.replace(day=1, hour=0, minute=0, second=0,
-                               microsecond=0).timestamp() * 1000)
-    if timeframe == "1w":
-        # 1970-01-05 was Monday; epoch itself was Thursday.
-        anchor = 4 * 86400_000
-        return anchor + ((now_ms - anchor) // (7 * 86400_000)) * (7 * 86400_000)
-    duration = close_time_ms(0, timeframe)
-    return (now_ms // duration) * duration
+    """Most recent venue boundary. Behaviour lives in the scheduler (D53)."""
+    from apex.scheduler.clock import latest_close_boundary as _boundary
+    return _boundary(now_ms, timeframe)
 
 
 class _RateLimitSurfaced(Exception):
@@ -1500,7 +1491,35 @@ class BootstrapService:
                         if not rows:
                             await self._flush_cell_complete_prints()
                             break
+                        new_hashes = set()
+                        if getattr(self.config, "apex_env", "") == "PAPER":
+                            for obs in rows:
+                                if getattr(obs, "status", None) not in ("CLOSED", "CORRECTED"):
+                                    continue
+                                prior = await (await self._store.db.execute(
+                                    "SELECT 1 FROM raw_observation WHERE content_hash=?",
+                                    (obs.content_hash(),))).fetchone()
+                                if prior is None:
+                                    new_hashes.add(obs.content_hash())
                         await self._ingest(rows, symbol, tf)
+                        if new_hashes:
+                            import time as _time
+                            from apex.ops.engine_context import publish_catch_up_quality
+                            receipt = page.get("receipt_time_ms")
+                            if receipt is None:
+                                receipt = int(_time.time() * 1000)
+                            http_status = page.get("http_status")
+                            if http_status is None and page.get("code") in (None, 0):
+                                http_status = 200
+                            try:
+                                await publish_catch_up_quality(
+                                    self._store, rows, receipt_time_ms=int(receipt),
+                                    http_status=http_status, only_hashes=new_hashes)
+                            except Exception:
+                                # A quality side-effect must not fail an ingest
+                                # that already committed, and must not change
+                                # the catch_up result shape pinned by D5/D22.
+                                pass
                         following = int(page["next_cursor_ms"])
                         if following <= cursor:
                             raise BootstrapServiceError("CURSOR_NOT_ADVANCING")

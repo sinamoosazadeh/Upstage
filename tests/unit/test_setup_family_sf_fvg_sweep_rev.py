@@ -81,7 +81,9 @@ def base_kwargs(timeframe="1h", **over):
               fvg_zones=[{"index": 24, "filled": False}],
               bos={"s_struct": 0.6, "direction": 1}, regime_state="TREND",
               q_forecast=0.6, forecast={"quality": "Q3", "h_norm": 0.4},
-              package={"package_version": 1, "parameter_package_id": "pkg-1"},
+              package={"package_version": 1, "parameter_package_id": "pkg-1",
+                       "rolling_calibration_error": 0.0, "brier": 0.0,
+                       "log_loss": 0.0},
               lineage=tuple(f"obs-{i}" for i in range(len(ENGINE_SET))),
               s_i={c: 1.0 for c in SCORED},
               q_i={c: 0.9 for c in SCORED})
@@ -272,12 +274,13 @@ class TestEvidenceAndScoring:
 
     def test_optional_evidence_absence_still_emits(self):
         ev = run(fabric=fabric_for(engines=REQUIRED_EVIDENCE))
-        # E06/E10 are optional; the required six alone score below Q_min and
-        # are therefore QUARANTINED by Gate 1 — a *real* verdict, not an
-        # invention.
-        assert ev.status == QUARANTINED
-        assert ev.gate_block["blocked_by"] == [1]
-        assert ev.final_score < q_min_setup()
+        # D59 ج۷: required-only perfect mass is 0.54/0.70 ≈ 0.77, which now
+        # clears Q_min_setup 0.55. Optional engines are not required to emit.
+        # Before normalisation the same flawless required set scored 0.54 and
+        # Gate 1 quarantined it.
+        assert ev.status == EMITTED
+        assert ev.final_score >= q_min_setup()
+        assert ev.final_score == pytest.approx(0.54 * 0.9 / 0.70)
 
     def test_required_conflict_applies_the_060_multiplier(self):
         plain = run()
@@ -445,7 +448,9 @@ class TestGateIntegration:
                    snapshot_id="0" * 64, payload={"x": 1},
                    lineage=["obs-1"], q_forecast=0.6,
                    package={"package_version": 1,
-                            "parameter_package_id": "p"},
+                            "parameter_package_id": "p",
+                            "rolling_calibration_error": 0.0,
+                            "brier": 0.0, "log_loss": 0.0},
                    timeframe="1h")
         ctx["snapshot_id"] = sha256_hex(canonical_json(ctx["payload"]))
         assert run_all(ctx)["blocked_by"] == [5]

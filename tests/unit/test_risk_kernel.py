@@ -449,7 +449,7 @@ class TestMarginAndTail:
 
 class TestRatchet:
     def test_ladder_states_are_the_frozen_six(self):
-        assert EMERGENCY_LADDER == ("NORMAL", "L1_PAUSE", "L2_LIMIT_RISK",
+        assert EMERGENCY_LADDER == ("NORMAL", "L1_PAUSE", "L2_DISABLE_NEW",
                                    "L3_CANCEL_ALL", "L4_CLOSE_ALL",
                                    "L5_SAFE_MODE")
         assert RATCHET_ALLOWED_DOWNGRADE == (("L1_PAUSE", "NORMAL"),)
@@ -462,8 +462,8 @@ class TestRatchet:
         assert "blocked" in got["note"]
 
     @pytest.mark.parametrize("src,dst", [
-        ("NORMAL", "L1_PAUSE"), ("L1_PAUSE", "L2_LIMIT_RISK"),
-        ("L2_LIMIT_RISK", "L3_CANCEL_ALL"), ("L3_CANCEL_ALL", "L4_CLOSE_ALL"),
+        ("NORMAL", "L1_PAUSE"), ("L1_PAUSE", "L2_DISABLE_NEW"),
+        ("L2_DISABLE_NEW", "L3_CANCEL_ALL"), ("L3_CANCEL_ALL", "L4_CLOSE_ALL"),
         ("L4_CLOSE_ALL", "L5_SAFE_MODE"), ("NORMAL", "L5_SAFE_MODE"),
     ])
     def test_every_escalation_is_allowed(self, src, dst):
@@ -477,7 +477,7 @@ class TestRatchet:
                             owner_confirmed=True)["kind"] == "OWNER_RESUME"
 
     def test_deeper_emergency_states_have_no_resume_path(self):
-        for deeper in ("L2_LIMIT_RISK", "L3_CANCEL_ALL", "L4_CLOSE_ALL",
+        for deeper in ("L2_DISABLE_NEW", "L3_CANCEL_ALL", "L4_CLOSE_ALL",
                       "L5_SAFE_MODE"):
             with pytest.raises(RiskError, match="RSK-ERR-506"):
                 ladder_revision(revision_id="r1", applied_at="t", state="NoRisk",
@@ -571,7 +571,7 @@ class TestLadderStatePersistence:
                 table = await cur2.fetchone()
                 rev = ladder_revision(
                     revision_id="rev-async", applied_at="t", state="HighRisk",
-                    emergency_state="L2_LIMIT_RISK", consumed_budget=0.6,
+                    emergency_state="L2_DISABLE_NEW", consumed_budget=0.6,
                     reason="escalation", snapshot_id="e" * 64,
                     previous_state="L1_PAUSE")
                 await append_ladder_revision(db, rev)

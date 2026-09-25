@@ -995,10 +995,16 @@ def paper_package_binding(*, environment: str, params_dir: str | Path | None = N
         digest = hashlib.sha256(canonical_json(documents).encode("utf-8")).hexdigest()
     except (OSError, ValueError, TypeError, KeyError) as exc:
         raise BridgeError("CONFIGURATION_INVALID", "governed PAPER package unreadable") from exc
+    # D59 د۳: gate 13 reads recorded metrics and never a self-declared q_param.
+    # These three keys are not part of the YAML digest (parameter_sha256).
+    # Bootstrap has no calibration history, so the recorded values are the
+    # same zeros the PAPER fixtures carry (bounded Q_param = 1). A calibrated
+    # package replaces them; that path is D58 and is not this stage.
     return {"parameter_package_id": "cp14_paper_bootstrap-v1.0.0-" + digest[:12],
             "package_version": "v1.0.0", "parameter_sha256": digest,
             "parameter_files": sorted(documents), "environment": "PAPER",
-            "paper_bootstrap": policy}
+            "paper_bootstrap": policy,
+            "rolling_calibration_error": 0.0, "brier": 0.0, "log_loss": 0.0}
 
 
 def paper_bootstrap_inputs(*, environment: str, family_record: Mapping | None,
@@ -1995,6 +2001,12 @@ class EngineContextProducer:
             fact = await read_context_fact(self.store, "QUALITY_"+identity, symbol, timeframe, as_of)
             if fact is None:
                 raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", identity)
+            provenance = str(fact.get("provenance") or "")
+            source_name = str(fact.get("measurement_source") or "")
+            backfill = (provenance == "BACKFILL"
+                        or source_name == "HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS")
+            if backfill and self.environment != "PAPER":
+                raise BridgeError("QUALITY_PROVENANCE_BACKFILL_NOT_LIVE", identity)
             try:
                 if (fact["observation_id"] != identity or fact["content_hash"] != obs.content_hash()
                         or not fact["measurement_source"] or type(fact["receipt_time_ms"]) is not int
@@ -3521,9 +3533,238 @@ async def read_context_fact(store: Any, kind: str, symbol: str, timeframe: str,
         raise BridgeError("CONTEXT_FACT_INVALID", kind) from exc
 
 
+def quality_flags_for_observation(observation: Any, prev_sequence: int | None = None) -> Any:
+    """Map validate_market_observation's outcome onto QualityFlags (D52)."""
+    from apex.data_catalog.contracts import ValidationError, validate_market_observation
+    from apex.quality.vector import QualityFlags
+    try:
+        validate_market_observation(observation, prev_sequence)
+        return QualityFlags()
+    except ValidationError as exc:
+        text = str(exc).lower()
+        if "sequence" in text:
+            return QualityFlags(sequence_hash_valid=False)
+        if "duplicate" in text:
+            return QualityFlags(duplicate_hash_exists=True)
+        return QualityFlags(schema_valid=False)
+
+
+def page_quality_measurements(rows: Sequence, timeframe: str, *,
+                              http_status: int | None,
+                              offered: int | None = None,
+                              accepted: int | None = None) -> dict:
+    """Measurements computed from the fetched page itself (D52 A1)."""
+    from apex.ops.bootstrap_service import close_time_ms, _iso_to_ms
+    present = [row for row in rows if getattr(row, "status", None) in ("CLOSED", "CORRECTED")]
+    if not present:
+        return {"source_health": 0.0, "gap_count": 0, "expected_count": 1,
+                "completeness_pct": 0.0}
+    opens = sorted(_iso_to_ms(row.timestamp) for row in present)
+    step = close_time_ms(opens[0], timeframe) - opens[0]
+    if step <= 0:
+        expected = len(present)
+    else:
+        expected = int((opens[-1] - opens[0]) // step) + 1
+    expected = max(expected, len(present))
+    gap = expected - len(present)
+    completeness = 100.0 * (expected - gap) / expected if expected else 0.0
+    offered_n = len(present) if offered is None else int(offered)
+    accepted_n = len(present) if accepted is None else int(accepted)
+    fraction = (accepted_n / offered_n) if offered_n else 0.0
+    health = 1.0 if http_status == 200 and accepted_n == offered_n and offered_n > 0 else fraction
+    return {"source_health": float(health), "gap_count": int(gap),
+            "expected_count": int(expected), "completeness_pct": float(completeness)}
+
+
+def _created_at_ms(stamp: str) -> int:
+    return _iso_to_ms(stamp)
+
+
+async def publish_quality_backfill(store: Any, *, environment: str,
+                                   symbol: str | None = None,
+                                   timeframe: str | None = None) -> dict:
+    """D52 B: PAPER-only historical quality facts. LIVE must not call this.
+
+    ``source_health = 1.0`` is the only non-measured value, so the fact is
+    labelled ``HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS`` and ``provenance=BACKFILL``.
+    A row whose ``created_at`` is earlier than its bar close is listed and
+    never faked.
+    """
+    import time as _time
+    if environment != "PAPER":
+        raise BridgeError("BACKFILL_PAPER_ONLY", environment)
+    started = _time.monotonic()
+    query = ("SELECT event_id, as_of, symbol, timeframe, open, high, low, close, "
+             "volume, oi, oi_timestamp, oi_state, status, content_hash, source, "
+             "availability_time, created_at FROM raw_observation "
+             "WHERE status IN ('CLOSED','CORRECTED')")
+    args: list = []
+    if symbol:
+        query += " AND symbol=?"
+        args.append(symbol)
+    if timeframe:
+        query += " AND timeframe=?"
+        args.append(timeframe)
+    query += " ORDER BY symbol, timeframe, as_of"
+    rows = await (await store.db.execute(query, tuple(args))).fetchall()
+    from decimal import Decimal
+    from apex.data_catalog.contracts import MarketObservation
+    from apex.ops.bootstrap_service import close_time_ms
+    cells: dict = {}
+    skipped_receipt = []
+    written = already = skipped = 0
+    for row in rows:
+        (event_id, as_of, sym, tf, o, h, l, c, volume, oi, oi_ts, oi_state,
+         status, content_hash, source, availability, created_at) = row
+        key = f"{sym}:{tf}"
+        cell = cells.setdefault(key, {"written": 0, "already_present": 0,
+                                      "skipped": 0, "skipped_receipt_before_close": []})
+        try:
+            receipt_ms = _created_at_ms(str(created_at))
+            close_ms = close_time_ms(_iso_to_ms(str(as_of)), tf)
+        except (ValueError, TypeError, OverflowError, OSError):
+            cell["skipped"] += 1
+            skipped += 1
+            continue
+        if receipt_ms < close_ms:
+            item = {"symbol": sym, "timeframe": tf, "open_time": as_of,
+                    "created_at": created_at}
+            cell["skipped_receipt_before_close"].append(item)
+            skipped_receipt.append(item)
+            cell["skipped"] += 1
+            skipped += 1
+            continue
+        identity = await (await store.db.execute(
+            "SELECT observation_id FROM market_observation WHERE symbol=? AND timeframe=? "
+            "AND open_time=? AND candle_status IN ('CLOSED','CORRECTED')",
+            (sym, tf, as_of))).fetchall()
+        if len(identity) != 1:
+            cell["skipped"] += 1
+            skipped += 1
+            continue
+        obs_id = identity[0][0]
+        existing = await read_context_fact(
+            store, "QUALITY_" + obs_id, sym, tf, _ms_to_iso(receipt_ms))
+        if existing is not None:
+            cell["already_present"] += 1
+            already += 1
+            continue
+        window = await (await store.db.execute(
+            "SELECT as_of FROM raw_observation WHERE symbol=? AND timeframe=? "
+            "AND status IN ('CLOSED','CORRECTED') AND as_of<=? ORDER BY as_of DESC LIMIT 300",
+            (sym, tf, as_of))).fetchall()
+        opens = sorted(_iso_to_ms(item[0]) for item in window)
+        target = _iso_to_ms(str(as_of))
+        if target not in opens:
+            opens.append(target)
+            opens.sort()
+        step = close_time_ms(opens[0], tf) - opens[0] if opens else 0
+        expected = (int((opens[-1] - opens[0]) // step) + 1) if step > 0 else len(opens)
+        expected = max(expected, 1)
+        gap = max(0, expected - len(set(opens)))
+        completeness = 100.0 * (expected - gap) / expected
+        oi_value = None
+        if oi not in (None, "MISSING", "INVALID"):
+            try:
+                oi_value = Decimal(str(oi))
+            except Exception:
+                oi_value = None
+        obs = MarketObservation(
+            symbol=sym, timeframe=tf, open=Decimal(str(o)), high=Decimal(str(h)),
+            low=Decimal(str(l)), close=Decimal(str(c)), volume=Decimal(str(volume)),
+            oi=oi_value, timestamp=str(as_of), sequence=0,
+            status="CLOSED" if status == "CLOSED" else status,
+            source=source or "TOOBIT", availability_time=availability or created_at,
+            oi_timestamp=oi_ts)
+        try:
+            await publish_quality_observation(
+                store, obs, flags=quality_flags_for_observation(obs),
+                measurements={"source_health": 1.0, "gap_count": int(gap),
+                              "expected_count": int(expected),
+                              "completeness_pct": float(completeness)},
+                receipt_time_ms=int(receipt_ms), measured_at=_ms_to_iso(receipt_ms),
+                measurement_source="HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS",
+                provenance="BACKFILL")
+            cell["written"] += 1
+            written += 1
+        except BridgeError:
+            cell["skipped"] += 1
+            skipped += 1
+    return {"environment": environment, "written": written,
+            "already_present": already, "skipped": skipped,
+            "skipped_receipt_before_close": skipped_receipt,
+            "cells": cells, "elapsed_seconds": round(_time.monotonic() - started, 3)}
+
+
+async def backfill_facts_in_window(store: Any, symbol: str, timeframe: str,
+                                   as_of: str, bars: int = 300) -> int:
+    """How many quality facts in the cell window are still BACKFILL provenance."""
+    window_rows = await (await store.db.execute(
+        "SELECT observation_id FROM market_observation WHERE symbol=? AND timeframe=? "
+        "AND open_time<=? AND candle_status IN ('CLOSED','CORRECTED') "
+        "ORDER BY open_time DESC LIMIT ?",
+        (symbol, timeframe, as_of, int(bars)))).fetchall()
+    count = 0
+    for (obs_id,) in window_rows:
+        fact = await read_context_fact(store, "QUALITY_" + obs_id, symbol, timeframe, as_of)
+        if fact and (fact.get("provenance") == "BACKFILL"
+                     or fact.get("measurement_source") == "HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS"):
+            count += 1
+    return count
+
+
+async def publish_catch_up_quality(store: Any, rows: Sequence, *,
+                                   receipt_time_ms: int, http_status: int | None,
+                                   measurement_source: str = "TOOBIT_REST_CATCH_UP",
+                                   provenance: str | None = None,
+                                   only_hashes: set | None = None) -> dict:
+    """Publish one fact per NEW closed row. Duplicate content hashes publish nothing."""
+    written = 0
+    skipped = 0
+    failures = []
+    measured_at = _ms_to_iso(int(receipt_time_ms))
+    for obs in rows:
+        if getattr(obs, "status", None) not in ("CLOSED", "CORRECTED"):
+            continue
+        if only_hashes is not None and obs.content_hash() not in only_hashes:
+            skipped += 1
+            continue
+        found = await (await store.db.execute(
+            "SELECT 1 FROM raw_observation WHERE content_hash=?",
+            (obs.content_hash(),))).fetchone()
+        # Caller invokes this AFTER insert. A row whose quality fact already
+        # exists is a duplicate page and publishes nothing.
+        identity_rows = await (await store.db.execute(
+            "SELECT observation_id FROM market_observation WHERE symbol=? AND timeframe=? "
+            "AND open_time=? AND candle_status IN ('CLOSED','CORRECTED')",
+            (obs.symbol, obs.timeframe, obs.timestamp))).fetchall()
+        if len(identity_rows) != 1:
+            skipped += 1
+            continue
+        existing = await read_context_fact(
+            store, "QUALITY_" + identity_rows[0][0], obs.symbol, obs.timeframe, measured_at)
+        if existing is not None:
+            skipped += 1
+            continue
+        measurements = page_quality_measurements(
+            rows, obs.timeframe, http_status=http_status)
+        try:
+            await publish_quality_observation(
+                store, obs, flags=quality_flags_for_observation(obs),
+                measurements=measurements, receipt_time_ms=int(receipt_time_ms),
+                measured_at=measured_at, measurement_source=measurement_source,
+                provenance=provenance)
+            written += 1
+        except BridgeError as exc:
+            failures.append({"symbol": obs.symbol, "timeframe": obs.timeframe,
+                             "reason": exc.reason})
+    return {"written": written, "skipped": skipped, "failures": failures}
+
+
 async def publish_quality_observation(store: Any, observation: Any, *, flags: Any,
                                       measurements: Mapping, receipt_time_ms: int, measured_at: str,
-                                      measurement_source: str) -> str:
+                                      measurement_source: str,
+                                      provenance: str | None = None) -> str:
     """Quality-plane public seam: explicit observations/flags, native scoring.
 
     This is not called to backfill unknown historical metadata. A source must
@@ -3559,6 +3800,8 @@ async def publish_quality_observation(store: Any, observation: Any, *, flags: An
         payload["q_raw"] = q
     else:
         payload["refusal"] = state
+    if provenance:
+        payload["provenance"] = provenance
     return await append_context_fact(store, "QUALITY_"+rows[0][0], obs.symbol, obs.timeframe, measured_at, payload)
 
 

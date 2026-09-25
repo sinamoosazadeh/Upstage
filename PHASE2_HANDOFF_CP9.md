@@ -917,3 +917,47 @@ Same two post-merge commands as CP-14.4 (`.venv/bin/python scripts/run_apex.py t
 ### PUSH RECORD
 
 All work stays on `arena/01a0c97c-upstage`; two commits, pushed to this branch only, without rebase, squash, force-push or any history rewrite: `a29e7ef5d7707efe1c61c149f41a5dbd49fbfbc3` (implementation C1-C5 + tests, pushed first) and the closeout commit that carries this section plus the `PHASE2_TRACEABILITY_MATRIX.md` record (its sha is listed in the PR, since a commit cannot name itself). PR: `https://github.com/sinamoosazadeh/Upstage/pull/23` (title `[CP-14.5] CP-14.4 corrections: D49 theta_recommendation triple, mandatory fit protocol, catalog_events params, owner checks and release-gate evidence`). No claim of phone PASS, no LIVE permission.
+
+## HANDOFF_CP14.6 — CLOSEOUT (2026-09-24)
+
+Branch `arena/01a0d4bf-upstage`, base `f14be36` (`origin/main` at the start of this stage). D49 values set. D50, D51, D52 A then B, D53 and D59 implemented. D54–D58 recorded and not implemented. D60 and D61 are the artifact and verification rules of this stage, not new operational procedures.
+
+### VALUES AND BINDINGS
+
+- `params/e11_params_v4.yaml`: `theta_H: 1.105878` (H p80), `quality_H_Q2: 1.229880` (H p90), `quality_H_Q5: 0.564415` (H p30). Inside `[0.3, ln 9]`; `Q5 < theta_H < Q2`. No other E11 parameter, formula, label rule or class count changes. ISSUE-CP14-066 is VALUES SET and stays OPEN only for the 2026-12-22 OOS re-check.
+- `params/decision_v1.yaml` (new, not one of the six original frozen files): `direction_conflict_threshold=0.15`, `min_rr=0.5`, `context_confidence_gain=8.0`, `q_forecast_threshold=0.5`. Unknown key is `CONFIGURATION_INVALID`.
+- `params/setup_weights_v1.yaml` gains `family_engines` only. Family mass is 0.70. `q_thr_by_tf` is not edited.
+- Training path self-pin: `training_protocol_hash(('1h','4h'), Core-10, 720)` = `d9024bb68fb485e3e0f40059becd3325eac3f228b1b1d6a49482bc52a5773582`; `E11_TRAIN_CACHE_FORMAT` = `e11-train-cache-v1`. Byte-identical to the CP-14.5 path (empty `apex/engines` diff against `f14be36`).
+
+### WHAT LANDED
+
+- D50: `-0.0` canonicalises as `0` (one E10 golden hash recomputed, GF03_MACD). `replay_key` hashes one nine-field object. Fabric hash uses `content_id`; `evidence_id` is tie-break only. `fabric_id` is `fab_` + 32 hex. Intent id is `i-` + 24 hex of the content hash, never a `proposal_id` tail. Repeated client order id is `DUPLICATE_CLIENT_ORDER_ID` and is not resent. Close lock is durable `cell_decision_cursor` (migration `M101_cp146_cell_decision_cursor`).
+- D51: `max_trades_per_cycle` resets every cycle, is reserved only when a valid plan exists, and is released if the submission does not leave the process. A planless cell does not consume a slot.
+- D52 A: page quality is computed from the fetched page; PAPER cycles refresh funding (15 min) and venue facts (60 min) and record a named refusal instead of hanging; an empty ladder table gets one `BOOT_INITIAL_REVISION` (`NoRisk` / `NORMAL`) after the L2 migration. D52 B: `publish-quality-backfill` is PAPER-only, labels `HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS` / `provenance=BACKFILL`, lists a receipt earlier than bar close, and never fakes it. LIVE does not consume BACKFILL facts.
+- D53: `1w` is Monday 00:00 UTC and `1mo` is the 1st 00:00 UTC. The frozen 30-day `1mo` duration stays age arithmetic. `bootstrap_service.latest_close_boundary` re-exports the scheduler.
+- D59: bounded `Q_param` from recorded metrics (no self-declared `q_param`); context confidence uses the governed gain; per-timeframe `q_thr_for` with no default; correlated-pair penalty is per pair; family score divides by family mass; missing risk cap is `RISK_INPUT_MISSING`; L2 is `L2_DISABLE_NEW` (migration `M102_cp146_l2_disable_new`); `RR < min_rr` is `DECISION_NO_TRADE:RR_BELOW_MIN`; `setup_valid` is the emitted verdict; regime window is the playbook default, not the current regime. Bootstrap forecast iff no package and the environment is not LIVE. A non-None invalid package does not fall back to `p=0.5`.
+- D54 OPEN. D55, D56, D57, D58 not implemented. `composite_estimate` stays NOT_WIRED (ISSUE-CP14-070).
+- D60: `status` and `serve` print `E11_ARTIFACT` or the loader refusal. The classifier YAML, `data/` and train caches stay gitignored.
+- Proven absence of an optional engine stays an omitted key (D33). The family scorer scores that omission as 0, never the deleted 1.0/0.9 default, and still refuses a missing required-evidence component.
+
+### NOT INVENTED
+
+- Eleven `q_thr_by_tf` rows (ISSUE-CP14-069). The frozen YAML documents `1m`/`1h`/`1d`. `require_q_thr_complete()` exists and is not called from every `gate2`.
+- A playbook `regime_window` list (ISSUE-CP14-068). Interim is `instantiate_playbook`'s default `("TREND", "TREND_EXPANSION")`.
+- Any D54–D58 procedure, parameter or YAML row.
+
+### RECORD
+
+- Full suite 1: `3040 passed, 14 warnings in 1281.60s (0:21:21)`
+- Full suite 2: `3040 passed, 14 warnings in 1271.57s (0:21:11)`
+- Both commands exactly `python -m pytest -q -p no:cacheprovider`, no deselection, including G2. Previous CP-14.5 was 3023 passed. This stage collects 3040. Equal green counts. No skipped or xfailed line in either summary. Warning count stays 14.
+- Frozen diff against `f14be36` for `apex/data_catalog`, `apex/research/bootstrap.py`, `apex/research/backtest.py`, `apex/engines`, `PROMPT.md`, `requirements.lock`: empty. The six original `params/*.yaml` change only where mandated: `params/e11_params_v4.yaml` (D49 values) and `params/setup_weights_v1.yaml` (`family_engines`). `params/decision_v1.yaml` is new and is not one of those six. `q_thr_by_tf` is unchanged.
+- `APEX_GEN5.md` sha256 after this stage's sentences: `34e72c4ea3088e053cb33bf008511a9f5a0404734f28a7630359ff9c2bbd1a84`. The frozen blueprint hash remains `216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e`.
+
+### PHONE ACCEPTANCE — owner run, not sandbox PASS
+
+The PASS artifact that supplied the three percentiles is `data/e11_train_report_20260924T181954Z.json` on the owner phone. Its artifact sha256 is not in this sandbox and is not invented here. No LIVE permission.
+
+### PUSH RECORD
+
+All work stays on `arena/01a0d4bf-upstage`. No rebase, squash, force-push, branch delete or merge. The PR title is `[CP-14.6] deterministic identity, per-cycle budget, runtime publishers + PAPER backfill, venue-aligned scheduler, D49 thresholds, D59 hygiene`.

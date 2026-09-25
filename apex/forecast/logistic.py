@@ -219,11 +219,13 @@ class ForecastRecord:
 # ---------------------------------------------------------------------------
 
 def logistic_bootstrap_p(x: Mapping[str, float], *, beta0: float = 0.0,
-                         beta: float = 0.0) -> float:
-    """``p_raw = 1/(1+exp(−(β0+β·x)))`` with β=0, β0=0 ⇒ 0.5.
+                         beta: Optional[Sequence[float]] = None) -> float:
+    """``p_raw = 1/(1+exp(−(β0+Σ β_j·x_j)))`` (D59 هـ۲).
 
-    The vector must be the complete frozen 12-feature vector: a missing
-    feature is an UNAVAILABLE input, never a zero (SL-14).
+    ``β`` is a 12-vector in the frozen ``X_FEATURES`` order. Bootstrap uses
+    ``β = zeros(12)``, which is bit-identical to 0.5 when ``β0 = 0``. A
+    length mismatch is ``FORECAST_FEATURES_INVALID``. A missing feature is
+    still an UNAVAILABLE input, never a zero (SL-14).
     """
     missing = [k for k in X_FEATURES if k not in x]
     if missing:
@@ -233,11 +235,15 @@ def logistic_bootstrap_p(x: Mapping[str, float], *, beta0: float = 0.0,
     if extra:
         raise ForecastError("FORECAST_FEATURE_VECTOR_QX", "unknown " +
                             ",".join(extra))
+    weights = [0.0] * X_FEATURE_COUNT if beta is None else [float(v) for v in beta]
+    if len(weights) != X_FEATURE_COUNT:
+        raise ForecastError("FORECAST_FEATURES_INVALID",
+                            f"beta length {len(weights)} != {X_FEATURE_COUNT}")
     for k in X_FEATURES:
         v = float(x[k])
         if v != v or v in (float("inf"), float("-inf")):
             raise ForecastError("FORECAST_FEATURE_NONFINITE_QX", k)
-    z = beta0 + beta * sum(float(x[k]) for k in X_FEATURES)
+    z = float(beta0) + sum(weights[i] * float(x[k]) for i, k in enumerate(X_FEATURES))
     return 1.0 / (1.0 + math.exp(-z))
 
 
@@ -276,7 +282,13 @@ def composite_estimate(components: Mapping[str, Mapping[str, Any]], *,
                        weights: Optional[Mapping[str, float]] = None,
                        min_obs: int = MIN_OBS_DEFAULT,
                        environment: str = "PAPER") -> Dict[str, Any]:
-    """The calibrated, PIT-safe composite estimator.
+    """NOT_WIRED (D59 هـ۴).
+
+    The owner-approved wording is that ``composite_estimate`` stays unwired
+    in this stage. Wiring belongs to the calibrated-package path (D58/CP-15).
+    This function remains the formula; ``build_forecast`` does not call it.
+
+    The calibrated, PIT-safe composite estimator.
 
     ``components`` keys are ``f``/``b``/``r``/``e``, each a mapping with
     ``p``, ``n_obs`` (and optionally ``confidence``/``uncertainty``).
@@ -389,13 +401,23 @@ def build_forecast(event: ForecastEvent, *, x: Mapping[str, float],
     degraded.
     """
     p_raw = logistic_bootstrap_p(x)
-    bootstrap = package is None
-    if p_hat is None:
-        p_hat = float(package["p_hat"]) if (package and "p_hat" in package) \
-            else p_raw
-    if str(environment).upper() == "LIVE" and bootstrap:
+    # D59 هـ۱: bootstrap iff no package AND the environment is not LIVE.
+    # A non-None package that fails the calibrated-package check never falls
+    # back to p = 0.5.
+    env = str(environment).upper()
+    if package is not None:
+        try:
+            require_calibrated_package(package)
+        except Exception as exc:
+            raise ForecastError("FORECAST_PACKAGE_INVALID", type(exc).__name__) from exc
+        if not isinstance(package, Mapping) or "p_hat" not in package:
+            raise ForecastError("FORECAST_PACKAGE_INVALID", "p_hat")
+    bootstrap = package is None and env != "LIVE"
+    if package is None and env == "LIVE":
         raise ForecastError("FORECAST_BOOTSTRAP_NOT_LIVE_ELIGIBLE",
                             "LIVE requires a calibrated package")
+    if p_hat is None:
+        p_hat = float(package["p_hat"]) if package is not None else p_raw
     supplied = dict(uncertainty or {})
     model = supplied.pop("model_version", None)
     snapshot = supplied.pop("e11_snapshot_id", None)

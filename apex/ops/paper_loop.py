@@ -50,6 +50,8 @@ from apex.config import Config
 from apex.data_catalog.contracts import CORE10_SYMBOLS, TIMEFRAMES_14
 from apex.execution import fsm as F
 from apex.execution.toobit_map import side_for
+from apex.identity.canonical_json import canonical_json
+from apex.identity.hashes import sha256_hex
 from apex.ledger import store as LS
 from apex.scheduler import clock as C
 
@@ -71,6 +73,19 @@ FILL_POLL_DELAY = 0.0          # tests inject a delay; 0 keeps cycles fast
 #: tuple previously named two columns the frozen table does not carry, and
 #: every plan lookup died with `no such column: leverage`).
 TRADE_PLAN_FIELDS: Tuple[str, ...] = LS.TRADE_PLAN_COLUMNS
+
+#: D50 durable per-cell-per-close lock. Same additive migration mechanism as
+#: ``apex_risk_ladder_state`` (schema_migrations row, append-only, never a
+#: frozen data_catalog DDL edit).
+CELL_CURSOR_MIGRATION = "M101_cp146_cell_decision_cursor"
+CELL_CURSOR_DDL = """
+CREATE TABLE IF NOT EXISTS cell_decision_cursor (
+    cell_id TEXT PRIMARY KEY,
+    close_ms INTEGER NOT NULL,
+    decided_at TEXT NOT NULL,
+    proposal_id TEXT
+);
+"""
 
 
 class PaperLoopError(RuntimeError):
@@ -185,6 +200,74 @@ def normalize_plan(source: Mapping[str, Any]) -> F.TradePlan:
         owner_leverage_cap=_f(source.get("owner_leverage_cap")))
 
 
+def intent_id_for(plan: F.TradePlan, close_ms: int) -> str:
+    """D50 intent identity: content hash, never the tail of ``proposal_id``.
+
+    The ``-exit`` suffix is applied by the caller and is not part of this id.
+    """
+    digest = sha256_hex(canonical_json({
+        "symbol": str(plan.symbol),
+        "timeframe": str(plan.timeframe),
+        "close_ms": int(close_ms),
+        "direction": str(plan.direction),
+        "proposal_id": str(plan.proposal_id),
+    }))
+    return "i-" + digest[:24]
+
+
+async def apply_cell_cursor_migration(db: Any) -> Dict[str, Any]:
+    """Create ``cell_decision_cursor`` through the additive migration row."""
+    import datetime as _dt
+    await db.executescript(CELL_CURSOR_DDL)
+    await db.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (migration_name TEXT "
+        "PRIMARY KEY, applied_at TEXT NOT NULL)")
+    cur = await db.execute(
+        "SELECT 1 FROM schema_migrations WHERE migration_name=?",
+        (CELL_CURSOR_MIGRATION,))
+    already = await cur.fetchone()
+    if not already:
+        now = _dt.datetime.now(_dt.timezone.utc)
+        await db.execute(
+            "INSERT INTO schema_migrations (migration_name, applied_at) "
+            "VALUES (?, ?)",
+            (CELL_CURSOR_MIGRATION,
+             now.strftime("%Y-%m-%dT%H:%M:%S.")
+             + f"{now.microsecond // 1000:03d}Z"))
+    await db.commit()
+    return {"migration": CELL_CURSOR_MIGRATION, "applied": not already,
+            "table": "cell_decision_cursor"}
+
+
+async def load_cell_cursor(db: Any) -> Dict[str, int]:
+    await apply_cell_cursor_migration(db)
+    cur = await db.execute(
+        "SELECT cell_id, close_ms FROM cell_decision_cursor")
+    rows = await cur.fetchall()
+    out: Dict[str, int] = {}
+    for row in rows:
+        if isinstance(row, Mapping):
+            out[str(row["cell_id"])] = int(row["close_ms"])
+        else:
+            out[str(row[0])] = int(row[1])
+    return out
+
+
+async def upsert_cell_cursor(db: Any, cell_id: str, close_ms: int, *,
+                             decided_at: str,
+                             proposal_id: Optional[str]) -> None:
+    await apply_cell_cursor_migration(db)
+    await db.execute(
+        "INSERT INTO cell_decision_cursor "
+        "(cell_id, close_ms, decided_at, proposal_id) VALUES (?,?,?,?) "
+        "ON CONFLICT(cell_id) DO UPDATE SET "
+        "close_ms=excluded.close_ms, decided_at=excluded.decided_at, "
+        "proposal_id=excluded.proposal_id "
+        "WHERE excluded.close_ms >= cell_decision_cursor.close_ms",
+        (cell_id, int(close_ms), decided_at, proposal_id))
+    await db.commit()
+
+
 def _f(value: Any) -> Optional[float]:
     if value is None or value == "":
         return None
@@ -287,9 +370,11 @@ class PaperRuntime:
         self.cycles: List[Dict[str, Any]] = []
         self.working: Dict[str, F.ExecutionFSM] = {}
         self.trades: List[Dict[str, Any]] = []
-        self._budget_taken = 0        # per-cycle admission reservations
+        self._budget_taken = 0        # per-cycle admission reservations (D51)
         self.refusals: List[Dict[str, Any]] = []
         self._last_close: Dict[str, int] = {}
+        self._cursor_loaded = False
+        self._cycle_proposals: Dict[str, Optional[str]] = {}
         self._stopped = False
 
     # -- lifecycle -----------------------------------------------------------
@@ -301,7 +386,36 @@ class PaperRuntime:
             environment=self.environment, drift_seconds=drift_seconds,
             **kwargs)
         self.boot_verdict = await machine.run()
+        await self._load_cursor()
+        await self._ensure_initial_ladder()
         return self.boot_verdict
+
+    async def _ensure_initial_ladder(self) -> Dict[str, Any]:
+        """D52 A3: one NORMAL/NoRisk revision, only when the table is empty.
+
+        Written only after the ladder migration, including the D59 L2 rename.
+        """
+        from apex.risk.kernel import (
+            apply_ladder_state_migration, append_ladder_revision, ladder_revision,
+        )
+        report = await apply_ladder_state_migration(self.store.db)
+        cur = await self.store.db.execute(
+            "SELECT COUNT(*) FROM apex_risk_ladder_state")
+        row = await cur.fetchone()
+        count = int(row[0]) if row else 0
+        if count:
+            return {"ladder_initialised": False, "existing": count, "migration": report}
+        rev = ladder_revision(
+            revision_id="rev-boot-initial",
+            applied_at=self.clock.utc_now(),
+            state="NoRisk",
+            emergency_state="NORMAL",
+            consumed_budget=0.0,
+            reason="BOOT_INITIAL_REVISION",
+            snapshot_id="boot-initial",
+            parent_revision_id=None)
+        await append_ladder_revision(self.store.db, rev)
+        return {"ladder_initialised": True, "migration": report}
 
     @property
     def trading_enabled(self) -> bool:
@@ -380,18 +494,22 @@ class PaperRuntime:
                           "(the plan seam is the frozen SL-5 → SL-6 interface)"}
 
     def _take_budget(self) -> bool:
-        """Reserve one slot of this cycle's trade budget.
+        """Reserve one slot of this cycle's trade budget (D51).
 
-        Cells are scheduled CONCURRENTLY (the scheduler's semaphore is 4), so
-        counting only the trades already appended would let two cells admit at
-        once. The budget is therefore reserved at admission — fail-closed,
-        never over-trading; a plan refused later in the chain does not refund
-        the reservation.
+        Cells are scheduled CONCURRENTLY (the scheduler's semaphore is 4).
+        The check and the increment are synchronous, so the reservation is
+        atomic under that concurrency. ``self.trades`` is history only and
+        is never a gate. A refusal does not call this method.
         """
         if self._budget_taken >= self.max_trades_per_cycle:
             return False
         self._budget_taken += 1
         return True
+
+    def _release_budget(self) -> None:
+        """A submission that did not leave the process does not keep a slot."""
+        if self._budget_taken > 0:
+            self._budget_taken -= 1
 
     async def _stage_setup(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         if payload["cell_id"] in self._catch_up_failed:
@@ -400,15 +518,13 @@ class PaperRuntime:
         if payload["cell_id"] in self._context_preparation_failed:
             failed = self._context_preparation_failed[payload["cell_id"]]
             raise CellRefusal(failed["reason"], failed["detail"])
-        # The cycle trade budget is checked BEFORE the plan is asked for: once
-        # it is exhausted the cell halts by name instead of materializing work
-        # that can never be sent (the execution stage keeps the same guard).
-        if not self._take_budget():
-            raise CellRefusal("TRADE_BUDGET_REACHED",
-                              f"max_trades_per_cycle="
-                              f"{self.max_trades_per_cycle}")
+        # D51: a planless cell must not consume the cycle budget. The slot is
+        # reserved only once a valid trade plan exists, immediately before
+        # execution admission.
         plan = await self._resolve_plan(payload)
         self._state(payload)["plan"] = plan
+        self._cycle_proposals[str(payload["cell_id"])] = (
+            str(plan.get("proposal_id")) if plan.get("proposal_id") else None)
         return {"detail": f"plan={plan.get('proposal_id')} "
                           f"setup={plan.get('setup_id')} "
                           f"decision={plan.get('decision')}"}
@@ -477,15 +593,22 @@ class PaperRuntime:
             raise CellRefusal("BOOT_NOT_READY",
                               f"boot_state={self.boot_verdict.get('boot_state')} "
                               f"new_trades_allowed=False")
-        if len(self.trades) >= self.max_trades_per_cycle:
-            raise CellRefusal("TRADE_BUDGET_REACHED",
-                              f"max_trades_per_cycle={self.max_trades_per_cycle}")
+        if str(plan.decision) not in ("ALLOW", "REDUCE"):
+            raise CellRefusal("DECISION_NO_TRADE", str(plan.decision))
         price = await last_closed_price(self.store, plan.symbol, plan.timeframe,
                                         payload["as_of"])
         if price is None:
             raise CellRefusal("NO_PRICE_FOR_CELL", "no closed bar to price against")
-        record = await self.execute_plan(plan, price=price,
-                                         timestamp_utc=payload["as_of"])
+        # D51: reserve only when a valid trade plan exists, immediately before
+        # admission. The increment is synchronous (atomic under semaphore 4).
+        if not self._take_budget():
+            raise CellRefusal("TRADE_BUDGET_REACHED",
+                              f"max_trades_per_cycle={self.max_trades_per_cycle}")
+        record = await self.execute_plan(
+            plan, price=price, timestamp_utc=payload["as_of"],
+            close_ms=int(payload["close_ms"]))
+        if not record.get("submitted"):
+            self._release_budget()
         state["trade"] = record
         return {"detail": f"intent={record['intent_id']} state={record['state']} "
                           f"fill={record.get('fill')} protected="
@@ -536,11 +659,15 @@ class PaperRuntime:
 
     # -- one plan, end to end ------------------------------------------------
     async def execute_plan(self, plan: F.TradePlan, *, price: Any,
-                           timestamp_utc: Optional[str] = None
+                           timestamp_utc: Optional[str] = None,
+                           close_ms: Optional[int] = None
                            ) -> Dict[str, Any]:
         """submit → observe → record fill → protect → manage (one plan)."""
+        if close_ms is None:
+            raise CellRefusal("INTENT_CLOSE_MISSING",
+                              "intent_id requires the cell close_ms (D50)")
         machine = F.ExecutionFSM(
-            intent_id=f"i-{str(plan.proposal_id)[-12:]}", ledger=self.ledger,
+            intent_id=intent_id_for(plan, int(close_ms)), ledger=self.ledger,
             adapter=self.adapter, bus=self.bus, clock=self.clock.monotonic,
             utc_now=self.clock.utc_now, environment=self.environment)
         submitted = await machine.submit(plan, price=price,
@@ -712,13 +839,95 @@ class PaperRuntime:
         return actions
 
     # -- one cycle -----------------------------------------------------------
+    async def _refresh_publishers(self, due: Sequence) -> Dict[str, Any]:
+        """D52 A2: refresh public funding (15 min) and venue facts (60 min).
+
+        Failures are refusals inside the cycle dict. They are not raised.
+        """
+        report = {"quality_facts_written": 0, "funding_refreshed": 0,
+                  "venue_refreshed": 0, "ladder_initialised": False,
+                  "failures": [], "backfill_facts_in_window": {}}
+        if self.environment != "PAPER":
+            return report
+        symbols = sorted({cell.symbol for cell, _close in due})
+        now_ms = self.clock.now_ms()
+        from apex.ops.engine_context import (
+            backfill_facts_in_window, persist_public_funding_schedule,
+            persist_public_venue_facts,
+        )
+        from apex.ops.bootstrap_service import _iso_to_ms
+        transport_down = False
+        for symbol in symbols:
+            if transport_down:
+                report["failures"].append({
+                    "symbol": symbol, "publisher": "public",
+                    "reason": "PUBLISHER_TRANSPORT_UNAVAILABLE"})
+                continue
+            try:
+                latest = await self.store.db.execute(
+                    "SELECT as_of FROM snapshot_pit WHERE source_state="
+                    "'CP14_PUBLIC_FUNDING_SCHEDULE' AND symbol_scope=? "
+                    "ORDER BY as_of DESC LIMIT 1", (symbol,))
+                row = await latest.fetchone()
+                stale = True
+                if row and row[0]:
+                    stale = now_ms - _iso_to_ms(row[0]) > 15 * 60 * 1000
+                if stale:
+                    await persist_public_funding_schedule(self.store, symbol)
+                    report["funding_refreshed"] += 1
+            except Exception as exc:
+                report["failures"].append({
+                    "symbol": symbol, "publisher": "funding",
+                    "reason": getattr(exc, "reason", type(exc).__name__)})
+                self.refusals.append({"cell": symbol, "reason": getattr(
+                    exc, "reason", "FUNDING_UNAVAILABLE")})
+                transport_down = True
+            try:
+                latest = await self.store.db.execute(
+                    "SELECT as_of FROM snapshot_pit WHERE source_state="
+                    "'PUBLIC_VENUE_FACTS' AND symbol_scope=? "
+                    "ORDER BY as_of DESC LIMIT 1", (symbol,))
+                row = await latest.fetchone()
+                stale = True
+                if row and row[0]:
+                    stale = now_ms - _iso_to_ms(row[0]) > 60 * 60 * 1000
+                if stale:
+                    await persist_public_venue_facts(
+                        self.store, symbol, environment=self.environment)
+                    report["venue_refreshed"] += 1
+            except Exception as exc:
+                report["failures"].append({
+                    "symbol": symbol, "publisher": "venue",
+                    "reason": getattr(exc, "reason", type(exc).__name__)})
+                self.refusals.append({"cell": symbol, "reason": getattr(
+                    exc, "reason", "VENUE_FACTS_UNAVAILABLE")})
+                transport_down = True
+        for cell, close in due:
+            try:
+                report["backfill_facts_in_window"][cell.cell_id] = (
+                    await backfill_facts_in_window(
+                        self.store, cell.symbol, cell.timeframe,
+                        _ms_to_iso(close)))
+            except Exception:
+                report["backfill_facts_in_window"][cell.cell_id] = None
+        return report
+
+    async def _load_cursor(self) -> None:
+        """D50: the durable close lock survives a new PaperLoop on the same store."""
+        self._last_close = await load_cell_cursor(self.store.db)
+        self._cursor_loaded = True
+
     async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
         moment = self.clock.now_ms() if now_ms is None else int(now_ms)
         as_of = _ms_to_iso(moment)
         self._budget_taken = 0
+        self._cycle_proposals = {}
+        if not self._cursor_loaded:
+            await self._load_cursor()
         cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
                                  "signal_source": self.signal_source,
-                                 "trading_enabled": self.trading_enabled}
+                                 "trading_enabled": self.trading_enabled,
+                                 "budget_limit": self.max_trades_per_cycle}
         cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
                              {"cells_checked": 0, "cells_updated": 0,
                               "bars_ingested": 0, "failures": []})
@@ -732,8 +941,15 @@ class PaperRuntime:
         # The scheduler's law is "on each TF close run the stages for THAT
         # cell": a cell runs once per close, and a cell whose close has not
         # advanced since the previous cycle is not run again.
-        due = [item for item in self.scheduler.due_cells(now_ms=moment)
-               if item[1] > self._last_close.get(item[0].cell_id, -1)]
+        already = []
+        due = []
+        for item in self.scheduler.due_cells(now_ms=moment):
+            recorded = self._last_close.get(item[0].cell_id)
+            if recorded is not None and int(item[1]) <= int(recorded):
+                already.append(item)
+                continue
+            due.append(item)
+        cycle["cells_skipped_already_decided"] = len(already)
         if self.max_cells_per_cycle is not None:
             due = due[:self.max_cells_per_cycle]
         # G1: all expensive source preparation completes before run_cell
@@ -745,6 +961,7 @@ class PaperRuntime:
         self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
                                 for cell,close in due} if self.environment == "PAPER" else {})
         cycle["decision_as_of"] = dict(self._decision_as_of)
+        cycle["publishers"] = await self._refresh_publishers(due)
         prepare = getattr(self.plan_provider, "prepare", None)
         if callable(prepare):
             for cell, close in due:
@@ -788,8 +1005,13 @@ class PaperRuntime:
             if (run.cell_id in self._catch_up_failed
                     or run.cell_id in self._context_preparation_failed):
                 continue
-            self._last_close[run.cell_id] = max(
-                self._last_close.get(run.cell_id, -1), int(run.close_ms))
+            close_ms = max(self._last_close.get(run.cell_id, -1), int(run.close_ms))
+            # D50: the close lock is durable. A new PaperLoop on this store
+            # must not decide the same close again.
+            await upsert_cell_cursor(
+                self.store.db, run.cell_id, close_ms, decided_at=as_of,
+                proposal_id=self._cycle_proposals.get(run.cell_id))
+            self._last_close[run.cell_id] = close_ms
         cycle["trades"] = [r for r in runs if r.status == "COMPLETE"]
         cycle["managed"] = await self.manage_positions(as_of=as_of)
         cycle["open_intents"] = sorted(self.working)
@@ -921,5 +1143,7 @@ __all__ = [
     "CONTRACT_VERSION", "CellRefusal", "FILL_POLL_ATTEMPTS", "PaperLoopError",
     "PaperRuntime", "PlanQueue", "SIGNAL_SOURCE_DECISION_BRIDGE",
     "SIGNAL_SOURCE_ENGINE_BRIDGE", "TRADE_PLAN_FIELDS", "WINDOW_BARS",
-    "fill_from_result", "last_closed_price", "normalize_plan",
+    "CELL_CURSOR_MIGRATION", "apply_cell_cursor_migration",
+    "fill_from_result", "intent_id_for", "last_closed_price",
+    "load_cell_cursor", "normalize_plan", "upsert_cell_cursor",
 ]

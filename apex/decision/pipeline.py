@@ -53,7 +53,10 @@ ARBITRATION_REASON_FIELDS: Tuple[str, ...] = (
 NO_TRADE = "NO_TRADE"
 TRADE = "TRADE"
 INELIGIBLE_FAMILIES: Tuple[str, ...] = ("DEGRADING", "DEMOTED")
-MIN_RR = 0.5                      # §14.1: RR = max(0.5, target/stop)
+DECISION_V1_KEYS: Tuple[str, ...] = (
+    "direction_conflict_threshold", "min_rr", "context_confidence_gain",
+    "q_forecast_threshold",
+)
 
 
 class DecisionError(ValueError):
@@ -67,13 +70,49 @@ def _risk_cfg() -> Dict[str, Any]:
     return load_params()["risk_defaults"]
 
 
+def load_decision_v1() -> Dict[str, float]:
+    """D59 strict parser. An unknown key is CONFIGURATION_INVALID."""
+    raw = load_params()["decision_v1"]
+    unknown = sorted(set(raw) - set(DECISION_V1_KEYS))
+    missing = [k for k in DECISION_V1_KEYS if k not in raw]
+    if unknown or missing:
+        raise DecisionError(
+            "CONFIGURATION_INVALID",
+            "decision_v1.yaml unknown=" + ",".join(unknown)
+            + " missing=" + ",".join(missing))
+    out: Dict[str, float] = {}
+    for key in DECISION_V1_KEYS:
+        try:
+            value = float(raw[key])
+        except (TypeError, ValueError) as exc:
+            raise DecisionError("CONFIGURATION_INVALID", key) from exc
+        if not math.isfinite(value):
+            raise DecisionError("CONFIGURATION_INVALID", key)
+        out[key] = value
+    if not (0.0 <= out["direction_conflict_threshold"] <= 1.0):
+        raise DecisionError("CONFIGURATION_INVALID", "direction_conflict_threshold")
+    if out["min_rr"] <= 0:
+        raise DecisionError("CONFIGURATION_INVALID", "min_rr")
+    if out["context_confidence_gain"] <= 0:
+        raise DecisionError("CONFIGURATION_INVALID", "context_confidence_gain")
+    if not (0.0 <= out["q_forecast_threshold"] <= 1.0):
+        raise DecisionError("CONFIGURATION_INVALID", "q_forecast_threshold")
+    return out
+
+
+def min_rr() -> float:
+    return float(load_decision_v1()["min_rr"])
+
+
 def governed_limits() -> Dict[str, Any]:
     r = _risk_cfg()
     return {"max_candidates": int(r["max_candidates"]),
             "correlation_cap": float(r["correlation_cap"]),
             "data_trust_floor": data_trust_floor(),
             "cost_R_floor": float(r["cost_R_floor"]),
-            "direction_conflict_threshold": 0.15}
+            "direction_conflict_threshold": float(
+                load_decision_v1()["direction_conflict_threshold"]),
+            "min_rr": min_rr()}
 
 
 def slippage_model(*, order_size: float, adv: Optional[float],
@@ -96,14 +135,20 @@ def slippage_model(*, order_size: float, adv: Optional[float],
 
 
 def units_of_r(*, entry: float, stop: float, target: float) -> Dict[str, float]:
-    """``R = |entry − stop|`` and ``RR = target_distance / stop_distance``
-    (frozen; ``RR`` floored at 0.5)."""
+    """``R = |entry − stop|`` and ``RR = target_distance / stop_distance``.
+
+    D59 (و۳): ``RR < min_rr`` is a refusal ``DECISION_NO_TRADE:RR_BELOW_MIN``.
+    The ratio is never floored — flooring made a bad trade look acceptable.
+    """
     stop_distance = abs(float(entry) - float(stop))
     if stop_distance <= 0:
         raise DecisionError("RISK_UNIT_QX",
                             "entry == stop: R must be > 0 (never divide by it)")
     target_distance = abs(float(target) - float(entry))
-    rr = max(MIN_RR, target_distance / stop_distance)
+    rr = target_distance / stop_distance
+    floor = min_rr()
+    if rr < floor:
+        raise DecisionError("DECISION_NO_TRADE", "RR_BELOW_MIN")
     return {"R": stop_distance, "RR": rr, "G": rr * stop_distance,
             "L": stop_distance, "stop_distance": stop_distance,
             "target_distance": target_distance}
@@ -114,8 +159,8 @@ def economic_utility(*, p: float, rr: float, cost_unit: float,
     """``EU_unit = P·RR − (1−P)·1 − C_unit − R_penalty`` (multiples of R)."""
     if not (0.0 <= p <= 1.0):
         raise DecisionError("P_QX", str(p))
-    if rr < MIN_RR:
-        raise DecisionError("RR_QX", str(rr))
+    if rr < min_rr():
+        raise DecisionError("DECISION_NO_TRADE", "RR_BELOW_MIN")
     if math.isinf(r_penalty):
         return -math.inf
     return p * rr - (1.0 - p) * 1.0 - float(cost_unit) - float(r_penalty)
@@ -449,7 +494,7 @@ def build_proposal(*, setup_id: str, direction: str, entry_logic_ref: str,
 
 
 __all__ = ["ARBITRATION_REASON_FIELDS", "CONTRACT_VERSION",
-           "INELIGIBLE_FAMILIES", "MIN_RR", "NO_TRADE",
+           "DECISION_V1_KEYS", "INELIGIBLE_FAMILIES", "NO_TRADE",
            "PORTFOLIO_PROPOSAL_FIELDS", "StrategyProposal", "TRADE",
            "DecisionError", "arbitrate", "build_proposal",
            "composite_rank_score", "economic_utility", "eligibility",

@@ -591,6 +591,14 @@ async def _status(cfg: Config, *, as_json: bool) -> int:
         _say(f"  state={status['state']} eta="
              f"{status['eta'].get('eta_seconds')} "
              f"({status['eta'].get('basis', 'measured')})")
+        artifact_path = EC.PARAMS_DIR / "e11_classifier_v1.yaml"
+        try:
+            EC.load_classifier(artifact_path)
+            artifact_name = "E11_ARTIFACT"
+        except EC.BridgeError as exc:
+            artifact_name = exc.reason
+        _say(f"  artifact={artifact_name}")
+        status["artifact"] = artifact_name
         if as_json:
             _say(json.dumps(status, default=str, indent=2, sort_keys=True))
         return EXIT_READY if status["cells_remaining"] == 0 else EXIT_DEGRADED
@@ -760,9 +768,15 @@ async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
         drift = await C.measure_drift(
             _venue_server_time if adapter is not None else _no_venue_time, clock)
         boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+        try:
+            EC.load_classifier()
+            artifact_name = "E11_ARTIFACT"
+        except EC.BridgeError as exc:
+            artifact_name = exc.reason
         _say(f"  boot_state={boot['boot_state']} "
              f"new_trades_allowed={boot['new_trades_allowed']} "
-             f"drift={drift['state']} ({drift.get('reason') or 'measured'})")
+             f"drift={drift['state']} ({drift.get('reason') or 'measured'}) "
+             f"artifact={artifact_name}")
         if driver.plan_provider is None:
             _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
                  "refusal NO_PLAN_PROVIDER")
@@ -1032,9 +1046,32 @@ async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None
 
 
 
+async def _publish_quality_backfill(cfg: Config, *, as_json: bool,
+                                    symbol: Optional[str] = None,
+                                    timeframe: Optional[str] = None) -> int:
+    """D52 B. Refused unless APEX_ENV=PAPER."""
+    if cfg.apex_env != "PAPER":
+        payload = {"status": "REFUSED", "reason": "BACKFILL_PAPER_ONLY",
+                   "environment": cfg.apex_env}
+        _say(f"REFUSED: BACKFILL_PAPER_ONLY (APEX_ENV={cfg.apex_env})")
+        if as_json:
+            _say(json.dumps(payload, sort_keys=True))
+        return EXIT_DEGRADED
+    store = ss.SQLiteStore(cfg.sqlite_path)
+    await store.open()
+    try:
+        report = await EC.publish_quality_backfill(
+            store, environment="PAPER", symbol=symbol, timeframe=timeframe)
+    finally:
+        await store.close()
+    _say(json.dumps(report, default=str, sort_keys=True))
+    return EXIT_READY
+
+
 COMMANDS = {"boot": _boot, "grid": _grid, "demo": _demo, "alerts": _alerts,
             "bootstrap": _bootstrap, "status": _status, "serve": _serve,
-            "repair-partial": _repair_partial, "train-e11": _train_e11}
+            "repair-partial": _repair_partial, "train-e11": _train_e11,
+            "publish-quality-backfill": _publish_quality_backfill}
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -1044,7 +1081,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("command", nargs="?", default="boot",
                         choices=sorted(COMMANDS),
                         help="boot (default) | grid | demo | alerts | "
-                             "bootstrap | status | serve | repair-partial")
+                             "bootstrap | status | serve | repair-partial | "
+                             "publish-quality-backfill")
     parser.add_argument("--json", action="store_true",
                         help="also print the machine-readable verdict")
     parser.add_argument("--env-file", default=None,
@@ -1086,6 +1124,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--fit-study", action="store_true",
                         help="train-e11: RESEARCH-ONLY fit-protocol study over the D35 "
                              "cache (no artifact, no params/, never recomputes features)")
+    parser.add_argument("--symbol", default=None,
+                        help="publish-quality-backfill: optional single symbol")
+    parser.add_argument("--timeframe", default=None,
+                        help="publish-quality-backfill: optional single timeframe")
     args = parser.parse_args(argv)
     cfg = Config(args.env_file)          # APEX_DOTENV_PATH/.env fill, no shadow
     try:
@@ -1106,6 +1148,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             return asyncio.run(_serve(cfg, as_json=args.json,
                                       cycles=args.cycles,
                                       interval=args.interval))
+        if args.command == "publish-quality-backfill":
+            return asyncio.run(_publish_quality_backfill(
+                cfg, as_json=args.json, symbol=args.symbol,
+                timeframe=args.timeframe))
         if args.command == "repair-partial":
             return asyncio.run(_repair_partial(
                 cfg, as_json=args.json, evidence=args.evidence,

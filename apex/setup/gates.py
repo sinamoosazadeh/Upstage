@@ -44,6 +44,7 @@ Every gate returns ``GateResult``; nothing here quarantines, permits or sizes
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -88,12 +89,42 @@ def q_forecast_min() -> float:
     return float(_cfg()["gate_forecast_q_min"])
 
 
+def q_thr_for(timeframe: str) -> float:
+    """D59 ج۵: the governed per-TF threshold. No default.
+
+    A timeframe absent from ``q_thr_by_tf`` is ``CONFIGURATION_INVALID``.
+    ``require_q_thr_complete`` is the all-14 check. The frozen YAML currently
+    documents only the §2.1 rows (1m/1h/1d); ISSUE-CP14-069 asks the owner
+    before those eleven missing rows are invented into a frozen file.
+    """
+    raw = load_params()["quality_weights"].get("q_thr_by_tf")
+    if not isinstance(raw, Mapping) or timeframe not in raw:
+        raise ValueError(f"CONFIGURATION_INVALID: q_thr_by_tf[{timeframe}]")
+    try:
+        value = float(raw[timeframe])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"CONFIGURATION_INVALID: q_thr_by_tf[{timeframe}]") from exc
+    if not math.isfinite(value) or not (0.0 <= value <= 1.0):
+        raise ValueError(f"CONFIGURATION_INVALID: q_thr_by_tf[{timeframe}]")
+    return value
+
+
+def require_q_thr_complete() -> Dict[str, float]:
+    """All 14 timeframes must be present else CONFIGURATION_INVALID (D59 ج۵)."""
+    from apex.data_catalog.contracts import TIMEFRAMES_14
+    raw = load_params()["quality_weights"].get("q_thr_by_tf") or {}
+    missing = [tf for tf in TIMEFRAMES_14 if tf not in raw]
+    if missing:
+        raise ValueError(
+            "CONFIGURATION_INVALID: q_thr_by_tf missing " + ",".join(missing))
+    return {tf: q_thr_for(tf) for tf in TIMEFRAMES_14}
+
+
 def gate_thresholds() -> Dict[str, float]:
     """The governed threshold set of the score gates (single source)."""
     c = _cfg()
     return {
         "gate1_q_min_setup": float(c["Q_min_setup"]),
-        "gate2_q_thr_default": 0.5,               # §2.1 algorithm default
         "gate3_conflict_penalty_max": 0.5,
         "gate4_redundancy_penalty_max": 0.3,
         "gate7_entropy_max": float(c["gate7_entropy_threshold"]),
@@ -151,10 +182,24 @@ def gate1_final_score(final_score: float) -> GateResult:
 
 
 def gate2_window_quality(qualities: Sequence[Tuple[float, float]], *,
+                         timeframe: Optional[str] = None,
                          q_thr: Optional[float] = None) -> GateResult:
-    """``Q_window min < threshold`` ⇒ block. Delegates to the frozen §2.1
-    ``calc_window_quality`` (minimum-veto + exponential-decay average)."""
-    q_thr = gate_thresholds()["gate2_q_thr_default"] if q_thr is None else q_thr
+    """``Q_window min < Q_thr(tf)`` ⇒ block (D59 ج۵).
+
+    The threshold is ``q_thr_by_tf[timeframe]``. An explicit ``q_thr`` is
+    accepted only for the ±1-unit matrix when the caller already resolved
+    the governed value; a missing timeframe with no explicit value is
+    ``CONFIGURATION_INVALID``. ``gate2_q_thr_default`` is removed.
+    """
+    if q_thr is None:
+        if not timeframe:
+            return _res(2, False, "CONFIGURATION_INVALID", "q_thr_by_tf",
+                        "", "CONFIGURATION_INVALID")
+        try:
+            q_thr = q_thr_for(str(timeframe))
+        except (ValueError, KeyError) as exc:
+            return _res(2, False, "CONFIGURATION_INVALID", str(exc),
+                        "", "CONFIGURATION_INVALID")
     value, state, _cls = calc_window_quality(qualities, q_thr=q_thr)
     passed = state == "VALID"
     return _res(2, passed, value if value is not None else state, q_thr,
@@ -324,21 +369,27 @@ def gate13_parameter_package(package: Optional[Mapping[str, Any]]) -> GateResult
         return _res(13, False, sorted(package), "package_version + "
                     "parameter_package_id", "", "GATE13_PACKAGE_UNVERSIONED")
     needed = ("rolling_calibration_error", "brier", "log_loss")
-    if all(k in package for k in needed):
-        value, degraded = q_param(float(package["rolling_calibration_error"]),
-                                 float(package["brier"]),
-                                 float(package["log_loss"]))
-        if degraded:
-            return _res(13, False, value, "Q_param ≥ 0.5", "",
-                        "GATE13_PACKAGE_DEGRADED")
-        return _res(13, True, package.get("parameter_package_id"), "valid",
-                    "PACKAGE_VALID", "")
-    if package.get("q_param") is not None:
-        if float(package["q_param"]) < 0.5:
-            return _res(13, False, package["q_param"], "Q_param ≥ 0.5", "",
-                        "GATE13_PACKAGE_DEGRADED")
+    # D59 د۳: Q_param is computed from recorded metrics (bounded form, ج۲).
+    # A self-declared q_param field is never read. Missing metrics block by name.
+    if any(k not in package for k in needed):
+        missing = [k for k in needed if k not in package]
+        return _res(13, False, "CONFIGURATION_INVALID",
+                    "missing " + ",".join(missing), "",
+                    "GATE13_METRICS_MISSING")
+    from apex.quality.vector import bounded_model_quality, q_forecast_threshold
+    try:
+        value = bounded_model_quality(
+            float(package["rolling_calibration_error"]),
+            float(package["brier"]), float(package["log_loss"]))
+    except (TypeError, ValueError):
+        return _res(13, False, "CONFIGURATION_INVALID", "metrics", "",
+                    "GATE13_METRICS_MISSING")
+    thr = q_forecast_threshold()
+    if value < thr:
+        return _res(13, False, value, f"Q_param ≥ {thr}", "",
+                    "GATE13_PACKAGE_DEGRADED")
     return _res(13, True, package.get("parameter_package_id"), "valid",
-                 "PACKAGE_VALID", "")
+                "PACKAGE_VALID", "")
 
 
 GATES: Dict[int, Callable[..., GateResult]] = {
@@ -375,7 +426,8 @@ def run_all(context: Mapping[str, Any]) -> Dict[str, Any]:
     """
     results: List[GateResult] = [
         gate1_final_score(context["final_score"]),
-        gate2_window_quality(context["window_qualities"]),
+        gate2_window_quality(context["window_qualities"],
+                             timeframe=context.get("timeframe")),
         gate3_conflict_penalty(context["conflict_penalty"]),
         gate4_redundancy_penalty(context["redundancy_penalty"]),
         gate5_mtf_conflicting(context["mtf_state"]),

@@ -168,7 +168,7 @@
    },
    "pit": true,
    "note": "doc_inconsistency: \u00a78.1's 27-close ramp cannot seed Signal=EMA9(MACD) (MACD line exists only from close 26); extended to 40 closes, expected values re-derived from the \u03b1=2/(n+1) recursion with SMA seeds (\u00a73.3). Doc expected (1.2/0.9) not reproducible.",
-   "hash": "sha256:856a4b40c8aceced52ce30ef9b16fe32df1465269cf36ec12afbf44ae34d7344"
+   "hash": "sha256:9a80c07997dd67ae937226a754ca250cf59a4bf66e972fd01d668343048da72d"
   },
   {
    "id": "GF04_MomentumZ_Impulse_Bull",

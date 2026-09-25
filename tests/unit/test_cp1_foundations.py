@@ -285,6 +285,8 @@ class TestParamsFrozenValues:
     def test_e11_params_literals(self):
         from apex.config import load_params
         e = load_params()["e11_params"]
-        assert e == {"K": 9, "theta_H": 0.65, "quality_H_Q2": 0.8, "quality_H_Q5": 0.4,
+        # D49: thresholds are the PASS-artifact percentiles, not the chapter defaults.
+        assert e == {"K": 9, "theta_H": 1.105878, "quality_H_Q2": 1.229880,
+                     "quality_H_Q5": 0.564415,
                      "lambda_ewma": 0.94, "hysteresis_candles": 3, "dirichlet_alpha": 0.1,
                      "transition_delay_candles": 48, "W_180d_H1": 4320}

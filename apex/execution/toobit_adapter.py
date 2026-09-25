@@ -810,9 +810,13 @@ class ToobitAdapter:
             reconcile_required=original.reconcile_required,
             resubmitted=False, cached=True,
             interval_disabled=original.interval_disabled, attempts=(record,),
-            error_code=None,
-            rule="Ch.16 L16796–16798 a repeated key returns the previously "
-                 "recorded response and never resubmits (T_ADAPTER_DUPLICATE)")
+            # D50: the repeated key is rejected by name and never resent.
+            # The recorded venue outcome is preserved so a retry is not a
+            # second fill; the named code is what a caller matches on.
+            error_code="DUPLICATE_CLIENT_ORDER_ID",
+            rule="Ch.16 L16796–16798 DUPLICATE_CLIENT_ORDER_ID — a repeated "
+                 "key returns the recorded response and never resubmits "
+                 "(T_ADAPTER_DUPLICATE)")
 
     def _refused(self, operation: str, client_order_id: str, reason: str,
                  detail: str) -> AdapterResult:

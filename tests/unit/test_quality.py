@@ -155,8 +155,11 @@ class TestVector21:
         assert abs(value - 0.6) < 1e-9 and degraded is False
         value, degraded = q_param(0.3, 0.3, 0.2)
         assert degraded is True
+        # D59 ج۲: the additive form 1-0.2-0.2-0.2 = 0.4 blocked. The bounded
+        # form no longer subtracts raw log_loss, so this well-behaved triple
+        # stays above the 0.5 threshold.
         value, blocked = q_forecast(0.2, 0.2, 0.2)
-        assert abs(value - 0.4) < 1e-9 and blocked is True
+        assert value > 0.5 and blocked is False
         assert abs(q_fresh(0) - 1.0) < 1e-9
 
     def test_weights_from_params_only(self):

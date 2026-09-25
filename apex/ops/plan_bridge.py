@@ -54,6 +54,7 @@ from apex.data_catalog.contracts import (
     parse_utc_ms,
 )
 from apex.decision.pipeline import (
+    DecisionError,
     arbitrate,
     build_proposal,
     eligibility,
@@ -75,7 +76,7 @@ from apex.fabric.evidence import (
     expiry_age_bars,
     lifecycle_of,
 )
-from apex.forecast.logistic import ForecastEvent, build_forecast
+from apex.forecast.logistic import ForecastError, ForecastEvent, build_forecast
 from apex.identity.canonical_json import canonical_json
 from apex.identity.hashes import sha256_hex
 from apex.execution.fsm import build_trade_plan
@@ -89,6 +90,7 @@ from apex.setup.family_sf_fvg_sweep_rev import (
     EMITTED,
     ENTRY_LOGIC_REF,
     FAMILY_ID,
+    FamilyError,
     HORIZON_BARS,
     PLAYBOOK_ID,
     REQUIRED_EVIDENCE,
@@ -558,6 +560,9 @@ class PaperPlanBridge:
         except BridgeError as exc:
             self.refusals[key] = {"reason": exc.reason, "detail": exc.detail}
             return None
+        except FamilyError as exc:
+            self.refusals[key] = {"reason": exc.reason, "detail": exc.detail}
+            return None
         except Exception as exc:
             # A provider exception must not become a guessed plan.  Keep a
             # stable machine reason while retaining the type/detail for audit.
@@ -765,18 +770,23 @@ class PaperPlanBridge:
                 "stop_condition", f"{ENTRY_LOGIC_REF}:SWEEP_LOW_INVALIDATION")),
             horizon=HORIZON_BARS, entry_ref=ENTRY_LOGIC_REF,
             symbol=symbol, timeframe=timeframe, timestamp=as_of_ms)
-        forecast = build_forecast(
-            forecast_event, x=x,
-            p_hat=context.get("p_hat"),
-            uncertainty=forecast_uncertainty,
-            q_forecast=context.get("q_forecast"),
-            rr=_finite_float(_required(context, "forecast_rr"), "forecast_rr"),
-            cost_r=_finite_float(_required(context, "forecast_cost_r"), "forecast_cost_r"),
-            risk_state=str(_required(context, "risk_state")),
-            spread_available=bool(context.get("spread_available", True)),
-            package=context.get("forecast_package"), environment=self.environment,
-            age_bars=_finite_float(context.get("forecast_age_bars", 0.0),
-                                   "forecast_age_bars"))
+        try:
+            forecast = build_forecast(
+                forecast_event, x=x,
+                p_hat=context.get("p_hat"),
+                uncertainty=forecast_uncertainty,
+                q_forecast=context.get("q_forecast"),
+                rr=_finite_float(_required(context, "forecast_rr"), "forecast_rr"),
+                cost_r=_finite_float(_required(context, "forecast_cost_r"), "forecast_cost_r"),
+                risk_state=str(_required(context, "risk_state")),
+                spread_available=bool(context.get("spread_available", True)),
+                package=context.get("forecast_package"), environment=self.environment,
+                age_bars=_finite_float(context.get("forecast_age_bars", 0.0),
+                                       "forecast_age_bars"))
+        except ForecastError as exc:
+            if exc.reason == "FORECAST_PACKAGE_INVALID":
+                raise BridgeError("FORECAST_PACKAGE_INVALID", exc.detail) from exc
+            raise
 
         # Pattern/setup family and the thirteen gates.  Inputs such as ATR,
         # E01 BOS and E05 zones are consumed from the engine context; the
@@ -822,9 +832,13 @@ class PaperPlanBridge:
         fvg_high = recent_zone.get("high", recent_zone.get("hi"))
         if (direction > 0 and fvg_low is None) or (direction < 0 and fvg_high is None):
             raise BridgeError("FVG_PRICE_CONTEXT_UNAVAILABLE", "low/high")
-        playbook = instantiate_playbook(
-            lifecycle="VALIDATING",
-            regime_window=tuple(context.get("regime_window", (regime_label,))))
+        # D59 و۵: the window is the playbook's own window, never the current
+        # regime stuffed in as a fallback (that made the filter vacuous).
+        # APEX_GEN5 AE.5 does not list a regime_window; the already-shipped
+        # instantiate_playbook default is used and ISSUE-CP14-068 records the
+        # A/B rather than inventing a YAML list. A regime outside that window
+        # is DECISION_NO_TRADE:REGIME_WINDOW.
+        playbook = instantiate_playbook(lifecycle="VALIDATING")
         stops = build_stops(
             direction=direction, entry=float(evaluation.entry),
             atr=_finite_float(_required(context, "atr"), "atr"),
@@ -836,8 +850,13 @@ class PaperPlanBridge:
         # also projected here; the decision layer does not replace gates.
         gate_results = evaluation.gate_block["results"]
         gate10_ok = bool(gate_results[10]["passed"])
+        # D59 و۴: the setup verdict, not the literal True.
+        q_min = float(evaluation.q_min_setup)
+        setup_valid = (evaluation.status == "EMITTED"
+                       and bool(evaluation.gate_block.get("all_pass"))
+                       and float(evaluation.final_score) >= q_min)
         elig = eligibility({
-            "setup_valid": True, "forecast_quality_ok": gate10_ok,
+            "setup_valid": setup_valid, "forecast_quality_ok": gate10_ok,
             "conflict_state": fabric.conflict_state, "q_raw": q_raw,
             "timeframe": timeframe, "freshness_ok": bool(_required(context, "freshness_ok")),
             "data_trust": data_trust, "p": forecast.p_hat,
@@ -857,7 +876,12 @@ class PaperPlanBridge:
             "is_risk_increase": bool(_required(context, "is_risk_increase")),
             "uncertainty_is_rising": bool(_required(context, "uncertainty_is_rising")),
         }
-        candidates = generate_candidates([setup_for_decision])
+        try:
+            candidates = generate_candidates([setup_for_decision])
+        except DecisionError as exc:
+            if exc.reason == "DECISION_NO_TRADE":
+                raise BridgeError("DECISION_NO_TRADE", exc.detail or "RR_BELOW_MIN") from exc
+            raise
         ranked = rank(candidates)
         selected = select(candidates, environment=self.environment)
         intended = "LONG" if direction > 0 else "SHORT"
@@ -888,6 +912,9 @@ class PaperPlanBridge:
                         regime=regime_label,
                         family_statuses={FAMILY_ID: family_status})
         if arb["proposal"] is None or arb["reason"].get("decision") != "TRADE":
+            excluded = (arb.get("reason") or {}).get("excluded") or {}
+            if excluded.get("regime_window"):
+                raise BridgeError("DECISION_NO_TRADE", "REGIME_WINDOW")
             raise BridgeError("DECISION_NO_TRADE", str(arb["reason"]))
         proposal = build_proposal(
             setup_id=setup_id, direction=intended,
