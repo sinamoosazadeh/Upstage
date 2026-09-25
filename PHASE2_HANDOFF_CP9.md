@@ -998,3 +998,14 @@ UNTICKED CHECKBOXES — every unticked box in `APEX_GEN5.md`:
 ### PUSH RECORD
 
 All work stays on `arena/01a0d4bf-upstage`. No rebase, squash, force-push, branch delete or merge. The PR title is `[CP-14.6] deterministic identity, per-cycle budget, runtime publishers + PAPER backfill, venue-aligned scheduler, D49 thresholds, D59 hygiene`. PR `#24 — https://github.com/sinamoosazadeh/Upstage/pull/24`. Implementation head at PR open: `a5d08688c758d0b08f62d83bddd3493b70a13c45` (`mergeable=MERGEABLE`). This closeout commit records that URL and cannot name itself.
+
+### TRANSPORT RECORD (2026-09-25)
+
+شاخهٔ `arena/01a0d4bf-upstage` به‌علت انقضای توکن هرگز اصلاح CP-14.6-FIX را دریافت نکرد و روی `7dcd022` ماند؛ کار کامل (CP-14.6 + FIX) به‌صورت پچ (sha256 `819d9ff5c19266e730eeb6ba288e29d810cd2993691975029ec1ad951fc7f052`، `249174` بایت) از شاخهٔ موقت `owner-evidence-cp146` گرفته و روی `f14be362ef8858a803e4d6d9e82a9ef5c857049a` (نوک فعلی main، `f14be36`) اعمال شد؛ sha256 فایل `APEX_GEN5.md` پس از اعمال `493568887acb7164c985a0310809140ef3a6b3651e15d05782708b7f73e98569`.
+
+- شاخهٔ مقصد (این جلسه): `arena/01a0d98b-upstage`
+- sha commit مرحلهٔ A (اعمال پچ): `5197306d539010c0bd460744e1f155c9bfbe3cf9`
+- اجرای pytest اول: `3051 passed, 14 warnings in 1766.19s (0:29:26)`
+- اجرای pytest دوم: `3051 passed, 14 warnings in 1789.06s (0:29:49)`
+
+PR #25 جایگزین PR #24 است و #24 بدون ادغام بسته می‌شود (شاخه حذف نمی‌شود). هیچ rebase/squash/force-push/merge انجام نشده و به شاخهٔ `arena/01a0d4bf-upstage` دست زده نشده است.
