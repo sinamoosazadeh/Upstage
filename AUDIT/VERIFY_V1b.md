@@ -86,3 +86,19 @@ A now, with collision rejection and explicit legacy dual-read; B at the next own
 
 ### Acceptance and regression tests
 Use native `intent_id_for` through plan→FSM→fill→projection before/after restart; assert exact one-to-one joins, pending/fill values, orphan and ambiguous refusal, legacy read compatibility, and no 12-tail inference for new records. Run temporary SQLite migration/replay tests and separately inspect a read-only device copy before any operational claim.
+
+# New findings not in the audit
+
+No new finding was established in the completed scope. The requested candidate X-V1b-001 was refuted by `E-003.py`: business rejection `-1022` yields `ok=false`, `protected=false`, and `RECOVERY_REQUIRED`. The independently confirmed missing emergency action remains E-003 itself rather than a distinct finding.
+
+# Rows not verified or incomplete
+
+E-001, E-002, E-004, E-005, E-006, E-007, E-008, E-009, E-010, E-011, E-012, E-013, E-014, E-015, E-017, E-018, E-019, E-020, E-021, and E-022 were not verified. No coverage claim is made for them. E-003 and E-016 are complete.
+
+# Final counts
+
+- CONFIRMED: 2
+- PARTIAL: 0
+- REJECTED: 0
+- DEVICE-EVIDENCE-NEEDED: 0
+- Not verified: 20
