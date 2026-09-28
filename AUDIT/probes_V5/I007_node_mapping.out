@@ -1,0 +1,29 @@
+Exact node-id correction map for unique nonexistent matrix selectors
+MISSING tests/unit/test_cp1_foundations.py::test_all_cp1_files_exist_non_empty
+  COLLECTED tests/unit/test_cp1_foundations.py::TestNormativeTree::test_all_cp1_files_exist_non_empty: True
+MISSING tests/unit/test_cp1_foundations.py::test_gitignore_adr_p2_013
+  COLLECTED tests/unit/test_cp1_foundations.py::TestPackaging::test_gitignore_adr_p2_013: True
+MISSING tests/unit/test_cp1_foundations.py::test_run_all_tests_script
+  COLLECTED tests/unit/test_cp1_foundations.py::TestPackaging::test_run_all_tests_script: True
+MISSING tests/unit/test_catalog.py::test_tdr_001_feature_replay_byte_identical
+  COLLECTED tests/unit/test_catalog.py::TestReplayAndMonotonic::test_tdr_001_feature_replay_byte_identical: True
+MISSING tests/unit/test_identity.py::test_governed_as_of_max_and_fail_closed
+  COLLECTED tests/unit/test_identity.py::TestSnapshot::test_governed_as_of_max_and_fail_closed: True
+MISSING tests/unit/test_cp1_foundations.py::test_quality_weights_copy_exact_21
+  COLLECTED tests/unit/test_cp1_foundations.py::TestParamsFrozenValues::test_quality_weights_copy_exact_21: True
+MISSING tests/unit/test_cp1_foundations.py::test_universe_v1_literals
+  COLLECTED tests/unit/test_cp1_foundations.py::TestParamsFrozenValues::test_universe_v1_literals: True
+MISSING tests/unit/test_cp1_foundations.py::test_risk_defaults_literals
+  COLLECTED tests/unit/test_cp1_foundations.py::TestParamsFrozenValues::test_risk_defaults_literals: True
+MISSING tests/unit/test_cp1_foundations.py::test_setup_weights_literals
+  COLLECTED tests/unit/test_cp1_foundations.py::TestParamsFrozenValues::test_setup_weights_literals: True
+MISSING tests/unit/test_cp1_foundations.py::test_toobit_wire_literals
+  COLLECTED tests/unit/test_cp1_foundations.py::TestParamsFrozenValues::test_toobit_wire_literals: True
+MISSING tests/unit/test_cp1_foundations.py::test_e11_params_literals
+  COLLECTED tests/unit/test_cp1_foundations.py::TestParamsFrozenValues::test_e11_params_literals: True
+MISSING tests/unit/test_ops_bootstrap_service.py::test_complete_run_mirrors_canonical_done_and_cursor
+  COLLECTED tests/unit/test_ops_bootstrap_service.py::TestService::test_complete_run_mirrors_canonical_done_and_cursor: True
+MISSING tests/unit/test_research_proxies.py::TestIncrementalAndWaveOut (class is absent)
+  RELATED COLLECTED tests/unit/test_research_proxies.py::TestWilsonAndAA7::test_numba_is_not_used: True
+  RELATED COLLECTED tests/unit/test_research_proxies.py::TestWilsonAndAA7::test_incremental_only_flag: True
+unique malformed selectors=13; bare-method selectors=12; absent-class selector=1

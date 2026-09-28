@@ -1,0 +1,28 @@
+collected node IDs=3051; collected test files=66
+fully-qualified matrix reference components=142
+reference groups are split on '+' and '/' (matrix shorthand), punctuation stripped
+missing test files:
+missing node components:
+  PHASE2_TRACEABILITY_MATRIX.md:10: tests/unit/test_cp1_foundations.py::test_all_cp1_files_exist_non_empty [from tests/unit/test_cp1_foundations.py::test_all_cp1_files_exist_non_empty]
+  PHASE2_TRACEABILITY_MATRIX.md:11: tests/unit/test_cp1_foundations.py::test_gitignore_adr_p2_013 [from tests/unit/test_cp1_foundations.py::test_gitignore_adr_p2_013]
+  PHASE2_TRACEABILITY_MATRIX.md:39: tests/unit/test_cp1_foundations.py::test_run_all_tests_script [from tests/unit/test_cp1_foundations.py::test_run_all_tests_script]
+  PHASE2_TRACEABILITY_MATRIX.md:48: tests/unit/test_catalog.py::test_tdr_001_feature_replay_byte_identical [from tests/unit/test_catalog.py::test_tdr_001_feature_replay_byte_identical;]
+  PHASE2_TRACEABILITY_MATRIX.md:66: tests/unit/test_cp1_foundations.py::test_gitignore_adr_p2_013 [from tests/unit/test_cp1_foundations.py::test_gitignore_adr_p2_013]
+  PHASE2_TRACEABILITY_MATRIX.md:75: tests/unit/test_identity.py::test_governed_as_of_max_and_fail_closed [from tests/unit/test_identity.py::test_governed_as_of_max_and_fail_closed]
+  PHASE2_TRACEABILITY_MATRIX.md:89: tests/unit/test_cp1_foundations.py::test_quality_weights_copy_exact_21 [from tests/unit/test_cp1_foundations.py::test_quality_weights_copy_exact_21]
+  PHASE2_TRACEABILITY_MATRIX.md:94: tests/unit/test_cp1_foundations.py::test_universe_v1_literals [from tests/unit/test_cp1_foundations.py::test_universe_v1_literals]
+  PHASE2_TRACEABILITY_MATRIX.md:95: tests/unit/test_cp1_foundations.py::test_risk_defaults_literals [from tests/unit/test_cp1_foundations.py::test_risk_defaults_literals]
+  PHASE2_TRACEABILITY_MATRIX.md:96: tests/unit/test_cp1_foundations.py::test_setup_weights_literals [from tests/unit/test_cp1_foundations.py::test_setup_weights_literals]
+  PHASE2_TRACEABILITY_MATRIX.md:97: tests/unit/test_cp1_foundations.py::test_quality_weights_copy_exact_21 [from tests/unit/test_cp1_foundations.py::test_quality_weights_copy_exact_21]
+  PHASE2_TRACEABILITY_MATRIX.md:98: tests/unit/test_cp1_foundations.py::test_toobit_wire_literals [from tests/unit/test_cp1_foundations.py::test_toobit_wire_literals]
+  PHASE2_TRACEABILITY_MATRIX.md:99: tests/unit/test_cp1_foundations.py::test_e11_params_literals [from tests/unit/test_cp1_foundations.py::test_e11_params_literals]
+  PHASE2_TRACEABILITY_MATRIX.md:340: tests/unit/test_research_proxies.py::TestIncrementalAndWaveOut [from tests/unit/test_research_proxies.py::TestIncrementalAndWaveOut]
+  PHASE2_TRACEABILITY_MATRIX.md:457: tests/unit/test_ops_bootstrap_service.py::test_complete_run_mirrors_canonical_done_and_cursor [from tests/unit/test_ops_bootstrap_service.py::test_complete_run_mirrors_canonical_done_and_cursor]
+missing node component count=15
+collection summary lines:
+tests/unit/test_toobit_public.py::TestRateLimitAndErrorHandling::test_non_zero_error_code_never_yields_empty_rows
+tests/unit/test_toobit_public.py::TestRateLimitAndErrorHandling::test_positive_error_code_never_yields_empty_rows
+tests/unit/test_toobit_public.py::TestRateLimitAndErrorHandling::test_unexpected_shape_fails_closed
+tests/unit/test_toobit_public.py::TestRateLimitAndErrorHandling::test_unwrap_toobit_response_all_shapes
+
+3051 tests collected in 0.81s

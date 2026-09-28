@@ -1,0 +1,1157 @@
+I-007 matrix-node audit, production composition, and baseline excerpts
+Baseline source commit: 85b2c155d7b054a468379ddfd802eb239d0801f9
+Excerpts sourced by git show <baseline>:<path>; all source line references are baseline lines.
+
+===== PHASE2_TRACEABILITY_MATRIX.md:8-18 (baseline) =====
+     8	|---|---|---|---|
+     9	| pyproject.toml · requirements.lock | CP-1 | test_cp1_foundations::test_packaging + test_sbom_pins_exact (nine pins; pytest dev-extra only; no python-dotenv) |  PASS(2026-09-12, tests/unit/test_cp1_foundations.py) |
+    10	| README.md (run procedure) | CP-1 skeleton → CP-7 final → CP-8 verified | test_cp8_closeout::test_readme_run_blocks |  PASS(2026-09-12, tests/unit/test_cp1_foundations.py::test_all_cp1_files_exist_non_empty) — skeleton; **run blocks FINALIZED by CP-7 (2026-09-14)**: `scripts/run_apex.py` boot/grid/demo/alerts + the nine env names + exit codes, each command executed this session (demo exit 0, boot exit 2 DEGRADED without credentials, alerts exit 2 without a bot token); CP-8 re-verifies from a clean clone: **PASS(2026-09-14)** — fresh clone of `arena/01a09fcd-upstage` (41deb78) + `python3 -m venv` + `pip install -r requirements.lock`: `scripts/run_all_tests.sh -q` ⇒ 2553 passed; `grid` exit 0 (140 cells, T_MONOTONE ceilings, HTF LAST_CLOSED_ONLY, semaphore 4); `demo` (PAPER + DEMO keys) exit 0 (READY, 11-record ledger chain intact, 0 signature violations); `boot` without credentials exit 2 DEGRADED; `alerts` without a token exit 2 with `E-TELE-001`; CP-8 harnesses from the clone: conformance 19/19 exit 0, NFR MEASURED_IN_BOUNDS |
+    11	| .gitignore (ADR-P2-013) | CP-1 | test_import_graph + git status hygiene |  PASS(2026-09-12, tests/unit/test_cp1_foundations.py::test_gitignore_adr_p2_013) |
+    12	| apex/__init__.py · apex/errors.py | CP-1 | test_cp1::test_error_registry_ch7_complete (every Ch.7 row) |  PASS(2026-09-12, tests/unit/test_errors.py::test_error_registry_ch7_complete + test_cp1_foundations import-chain) |
+    13	| apex/bus.py | CP-1 | test_cp1::test_bus_p0_sync_and_bounds |  PASS(2026-09-12, tests/unit/test_bus.py — P0 sync/never-dropped; P1 lane; drop-oldest+QUEUE_OVERFLOW_DROP; raw queue 1000) |
+    14	| apex/config.py | CP-1 | test_cp1::test_env_names_exact_no_shadow + test_no_dotenv_bypass |  PASS(2026-09-12, tests/unit/test_config.py — env names exact, no-shadow, no-dotenv) |
+    15	| apex/identity/{canonical_json,uuid_v7,snapshot,hashes}.py | CP-1 | T-PIT-001..004 + T-ID-001/002 + test_uuid7_single_implementation_grep |  PASS(2026-09-12, tests/unit/test_identity.py — T-PIT-001..004, T-ID-001/002, uuid7 single-implementation grep) |
+    16	| apex/data_catalog/contracts.py · catalog.py | CP-1 | T-DC-001/002 + registration API test |  PASS(2026-09-12, tests/unit/test_catalog.py::TestTDC + registration API) |
+    17	| apex/data_catalog/store/sqlite_store.py | CP-1 | T-RS-001..003, T-CL-001..003 + DDL verbatim-equivalence rows vs Ch.4 L14383–14544 / Ch.5 L14545–14642 |  PASS(2026-09-12, tests/integration/test_store_integration.py — T-RS-001..003, T-CL-001..003, DDL verbatim-equivalence) |
+    18	| apex/data_catalog/ingest/toobit_public.py | CP-1 | T-DC-003/004, T-OM-001..003 |  PASS(2026-09-12, tests/unit/test_catalog.py T-DC-003/004 + T-OM-001..003; tests/unit/test_toobit_public.py) |
+
+===== PHASE2_TRACEABILITY_MATRIX.md:336-342 (baseline) =====
+   336	
+   337	| Requirement | Blueprint ref | Component | Test evidence | Status |
+   338	|---|---|---|---|---|
+   339	| R-CP8\|1 | Ch.20 AA.2–AA.4 (38 = 25/10/3) | apex/research/proxies.py — concept registry + the six AA.5 formal rejections | tests/unit/test_research_proxies.py (35): registry size 38, layers 25/10/3, six rejections, `assert_rejected_absent` (12 probes over the whole root, 0 hits), `NUMBA_USED=False` | PASS(2026-09-14) |
+   340	| R-CP8\|2 | Ch.20 AA.1/AA.7 | apex/research/proxies.py — incremental O(1) law, Numba Wave-Out, symmetry decree | tests/unit/test_research_proxies.py::TestIncrementalAndWaveOut (no numba import in the module source; INCREMENTAL_ONLY=True) | PASS(2026-09-14) |
+   341	| R-CP8\|3 | Ch.17 §17.1 (4 classes · 3 tiers · EC register · θ′ = Π_[L,U](θ+Δ)) | apex/research/governance.py | tests/unit/test_research_governance.py (50): 34-row governed-default table, classes/tiers per blueprint, projection operator with owner-tightened bounds, EC register APPROVED-only, SoBol S1/ST < 0.05 = removal candidate only | PASS(2026-09-14) |
+   342	| R-CP8\|4 | Ch.18 W.5 RED LINE · §9.5-9 Wave-Out | apex/research/governance.py + optimizer.py — live-params write refusal | tests/unit/test_research_governance.py::TestLiveParamsWriteForbidden (4 paths incl. `..` traversal) + test_research_optimizer.py::TestSuggestionOutput (suggestions land only under apex/research/params_suggestions/) | PASS(2026-09-14) |
+
+===== APEX_GEN5.md:17704-17738 (baseline) =====
+ 17704	#### AA.6 Symmetry Decree: Symbol Tiering Abolished
+ 17705	
+ 17706	The foundation file's conditions 1 and 4 originally prescribed executing heavy computations (HMM, DCC-GARCH, Kalman, EVT, bootstrap) only on three coins (Bitcoin, Ethereum, Solana) at hourly frequency, while Decision 1 (concurrent decision) mandated ten symbols active in all cycles without exception. These two requirements appeared to conflict: per-symbol tiering would violate the symmetry demand; no tiering would exceed the budget.
+ 17707	
+ 17708	**Resolution via engineering (using foundation file's own cost estimates):** The foundation file estimates computational cost as ~300ms/hour for three coins, implying ~1 second/hour for ten coins — negligible against a 3600-second hour. Therefore:
+ 17709	
+ 17710	**Decree:** Symbol-based tiering is **abolished**. Frequency tiering (hourly heavy computations vs. intra-hour lighter computations) is **retained**. All ten symbols execute all computations at all specified frequencies:
+ 17711	- **Hourly:** HMM regime detection, DCC-GARCH dynamic correlation, Kalman state, EVT tail-risk fitting, 1000-path Monte-Carlo CVaR for all 10 symbols.
+ 17712	- **Nightly (03:00–05:00 unified window with Optimizer and First-Run Bootstrap):** 10k-path bootstrap, long-horizon correlation fitting, any multi-scenario synthetic-data generation.
+ 17713	
+ 17714	Result: Complete symmetry across ten symbols (aligns with Decision 1), budget honoring (aligns with foundation file), no false economy. This exemplifies the principle: when two requirements appear to conflict, raise the decision level until both are satisfied.
+ 17715	
+ 17716	#### AA.7 Performance and Deployment Rules (Normative)
+ 17717	
+ 17718	The five execution conditions stipulated in the foundation file are adopted as normative deployment rules:
+ 17719	
+ 17720	1. **Incremental computation:** All state updates must be incremental O(1): `x_new = f(x_old, y_new)` rather than `x = recompute()`. Inherently compatible with the frozen document's streaming-compute principle and O(1) feature-layer design.
+ 17721	
+ 17722	2. **Acceleration and numeric precision:** Implement all heavy computations (HMM, DCC-GARCH, Kalman, EVT, bootstrap) using Numba JIT compilation and Float32 (half-precision RAM, 2–4× speed boost). Reference implementation: Numba `@jit(nopython=True, float32)` for inner loops.
+ 17723	
+ 17724	3. **Nightly heavy-job scheduling:** All jobs with fitting time > 100ms per symbol are scheduled in the unified nightly window 03:00–05:00 (shared with Optimizer and First-Run Bootstrap optimizers). No concurrent execution of heavy background jobs and live trading.
+ 17725	
+ 17726	4. **Symbol selection:** Frozen at ten symbols per Decision 1. Rebalancing of symbol set follows Decision 1 criteria only (revised 10×14 closed-candle history retrieval on any rebalancing event).
+ 17727	
+ 17728	5. **Bandwidth-aware polling:** Closed-candle polling for 10 symbols × 14 timeframes ≈ 50–100 KB/s on 5G (foundation file estimate). Bandwidth-compatible with live trading (historical data retrieved in low-load windows only, except during initial data-catch-up phase).
+ 17729	
+ 17730	**Budget Honesty (critical for Deployment chapter):** The frozen feature-layer budget is CPU < 20% and RAM < 400 MB (lines 16473, 16492–16493, 16700). Adding thirty-eight (38) concepts requires **re-running the load/capacity test** (Deployment chapter) with the complete concept set active. Pre-addition budget estimates are not sufficient; measured results on the deployment target hardware (after integration) must be obtained, then ceilings are re-registered with 30% headroom. Cost estimate based on foundation file is "< 1.5 GB RAM, < 40% CPU for 38 concepts" on a standalone machine, but interaction with the existing feature layer, I/O scheduling, and real Toobit feed latencies are context-specific.
+ 17731	
+ 17732	**Procedure:** After Liquidity Proxy Models code integration, execute the load test (Deployment chapter, load-test subsystem) with all 38 concepts enabled. Record p95 CPU, p95 RAM, latency distribution. If any metric exceeds 80% of allocated ceiling, adjust job frequency (resample heavy jobs to 2-hour or 4-hour, per governance) or symbol frequency. No concepts are removed or simplified; only scheduling is adjusted. Post-measured budget re-registration is mandatory before live deployment; this is not a discretionary gate.
+ 17733	
+ 17734	---
+ 17735	
+ 17736	
+ 17737	## 21. Telegram Control and Signaling
+ 17738	
+
+===== APEX_GEN5.md:20344-20352 (baseline) =====
+ 20344	
+ 20345	
+ 20346	7. **No-Guess / No-TODO / No-skeleton:** Wave-In paths must not contain TODO/FIXME/pass/NotImplementedError. Unspecified → FAIL_CLOSED / UNAVAILABLE / WaveOutError. Inventing a 15th veto, SHADOW, extra setup family, extra playbook, or unlisted Toobit path is a failed deliverable. FROZEN_BOOTSTRAP numbers are not retuned in code.
+ 20347	8. **Universality:** every engine, gate, family, playbook, and scheduler cell is Core-10 × 14 TF (140). Numeric caps that exist for every cell (Y.2 leverage by TF group, BE_factor by TF group, Q weights by TF) are parameters, not feature allocation.
+ 20348	9. **Wave-Out (raise WaveOutError, do not implement):** E11 next-regime forecast; adaptive ATR E04↔E11; dynamic Williams k; live OFI/VPIN; market_profile (always UNAVAILABLE); E08 encyclopedia ch. 2–4; extra families/playbooks; optimizer writing live yaml; GF_SC_03..12; flashClose/reverse/withdraw/transfer; hedge mode; CROSS margin; SHADOW; physical PostgreSQL; networked event bus; Numba (not in SBOM).
+ 20349	10. **Repo tree** is AJ.3.1 names under repo root (`apex/` package, `params/*.yaml`, `tests/`).
+ 20350	**Normative repository tree (create every file; do not rename):**
+ 20351	
+ 20352	```
+
+===== APEX_GEN5.md:20675-20684 (baseline) =====
+ 20675	| 7 | settled — hourly routine backup, backup-on-every-FSM-transition preserved, quarterly drill preserved, decryption-key custody written into the Security Contract, daily encrypted copy to the owner's Telegram Saved Messages | Global Contracts §2.6; Deployment safeguards |
+ 20676	| 8 | settled — ECONOMIC_GATE_BEFORE_LIVE, leverage guardrail, and the crypto execution/time lexicon (spread/slippage retained; quantity terminology canonicalized; market-hours terminology removed); the real legacy-Forex scrub executed: requoting → fill stress (SL-13 battery), harmonic demotion, KB family exclusions, standard-quantity de-vocabularyizing | the Economic Gate; Pattern Intelligence; Chapter 5 SL-13; Appendix AB |
+ 20677	| 9 | redesigned for the system's low-trade-count reality — family-pool promotion: Wilson lower bound, ≥30 pooled-trade absolute floor, Bayesian shrinkage for small cells, SPRT live monitoring, replaces the naive 100-trades-per-cell rule | the Promotion Protocol |
+ 20678	| 10 | settled, unchanged — section self-sufficiency with the owner/steward/clone rule and conformance tests | per-engine chapters |
+ 20679	| 11 | settled — the owner's foundation file (44-concept L1/L2/L3 taxonomy) adopted as the normative reference of the proxy layer; full 38-item mapping; 6 rejections ratified; symmetry decree (no per-symbol tiering) | Liquidity Proxy Models |
+ 20680	| 12 | fully reviewed — the 20-part knowledge base adopted as the basis of Layer-2 detailed design under seven adoption conditions; Phase A merged with this freeze; Phases B/C roadmapped; naming decree (GEN5 identity kept) | Appendix AB |
+ 20681	| 13 | gate map updated; this re-freeze record and the final integration checklist complete the freeze | this section; Chapter 8 |
+ 20682	
+ 20683	**The five owner answers (Round-2 temporal_window, recorded as decisions):**
+ 20684	
+
+===== tests/unit/test_cp1_foundations.py:76-128 (baseline) =====
+    76	class TestPackaging:
+    77	    def test_sbom_pins_exact(self):
+    78	        lock = (REPO / "requirements.lock").read_text()
+    79	        pins = [line.strip() for line in lock.splitlines()
+    80	                if line.strip() and not line.startswith("#")]
+    81	        assert pins == SBOM_PINS, "requirements.lock must be EXACTLY the nine pins"
+    82	
+    83	    def test_pyproject_runtime_deps_are_the_nine_pins(self):
+    84	        text = (REPO / "pyproject.toml").read_text()
+    85	        for pin in SBOM_PINS:
+    86	            assert pin in text, f"missing runtime pin {pin}"
+    87	
+    88	    def test_pytest_dev_only_never_in_lock(self):
+    89	        lock = (REPO / "requirements.lock").read_text()
+    90	        pins = [line.strip() for line in lock.splitlines()
+    91	                if line.strip() and not line.startswith("#")]
+    92	        assert all("pytest" not in pin for pin in pins), \
+    93	            "pytest must never enter requirements.lock"
+    94	        text = (REPO / "pyproject.toml").read_text()
+    95	        assert "tests" in text and "pytest>=7,<9" in text
+    96	
+    97	    def test_no_python_dotenv(self):
+    98	        for path in (REPO / "requirements.lock", REPO / "pyproject.toml"):
+    99	            assert "dotenv" not in path.read_text()
+   100	
+   101	    def test_gitignore_adr_p2_013(self):
+   102	        gi = (REPO / ".gitignore").read_text()
+   103	        for entry in ("data/", "*.sqlite3*", ".env", "__pycache__/",
+   104	                      ".pytest_cache/", "dist/", "build/"):
+   105	            assert entry in gi
+   106	
+   107	    def test_run_all_tests_script(self):
+   108	        script = REPO / "scripts/run_all_tests.sh"
+   109	        assert script.exists() and script.stat().st_mode & 0o111
+   110	
+   111	    def test_run_all_tests_runs_full_suite(self):
+   112	        out = subprocess.run(
+   113	            [sys.executable, "-m", "pytest", "--collect-only", "-q",
+   114	             "tests/unit", "tests/integration"],
+   115	            cwd=REPO, capture_output=True, text=True)
+   116	        assert out.returncode == 0, out.stderr
+   117	
+   118	
+   119	class TestNormativeTree:
+   120	    def test_all_cp1_files_exist_non_empty(self):
+   121	        for rel in CP1_TREE:
+   122	            path = REPO / rel
+   123	            assert path.exists(), f"missing tree file {rel}"
+   124	            assert path.stat().st_size > 0, f"empty tree file {rel}"
+   125	
+   126	    def test_import_chain(self):
+   127	        for mod in CP1_MODULES:
+   128	            importlib.import_module(mod)
+
+===== tests/unit/test_cp1_foundations.py:152-298 (baseline) =====
+   152	class TestParamsFrozenValues:
+   153	    """Compare YAML literals against the blueprint's frozen strings
+   154	    (§9.5/Ch.10/§2.1/Ch.16) — literal-by-literal, code never hardcodes."""
+   155	
+   156	    def test_universe_v1_literals(self):
+   157	        from apex.config import load_params
+   158	        u = load_params()["universe"]
+   159	        assert u["symbols"] == ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT",
+   160	                                "XRPUSDT", "ADAUSDT", "DOGEUSDT", "AVAXUSDT",
+   161	                                "LINKUSDT", "LTCUSDT"]
+   162	        assert u["timeframes"] == ["1m", "3m", "5m", "15m", "30m", "1h",
+   163	                                   "2h", "4h", "6h", "8h", "12h", "1d",
+   164	                                   "1w", "1mo"]
+   165	        assert u["setup_timeframes"] == u["timeframes"]
+   166	        assert u["nightly_window_utc"] == {"start": "03:00", "end": "05:00"}
+   167	        assert u["tick_size"]["BTCUSDT"] == 0.1
+   168	        assert u["quantity_step"]["XRPUSDT"] == 1
+   169	        assert u["min_notional"]["ETHUSDT"] == 5
+   170	        assert u["exchange_max_leverage"]["BTCUSDT"] == 125
+   171	
+   172	    def test_risk_defaults_literals(self):
+   173	        from apex.config import load_params
+   174	        r = load_params()["risk_defaults"]
+   175	        assert r["budget_per_trade"] == 0.005
+   176	        assert r["k_attn"] == 0.25
+   177	        assert r["daily_loss_cap"] == 0.03
+   178	        assert r["weekly_loss_cap"] == 0.06
+   179	        assert r["consecutive_loss_halt"] == 4
+   180	        assert r["margin_mode"] == "ISOLATED"
+   181	        assert r["position_mode"] == "ONE_WAY"
+   182	        assert r["cost_R_floor"] == 0.05
+   183	        assert r["R_penalty_medium"] == 0.10
+   184	        assert r["R_penalty_high"] == 0.25
+   185	        assert r["max_candidates"] == 3
+   186	        assert r["correlation_cap"] == 0.70
+   187	        y2 = r["system_leverage_cap_by_tf"]
+   188	        assert y2["1m"] == 2 and y2["5m"] == 2 and y2["15m"] == 3
+   189	        assert y2["30m"] == 3 and y2["1h"] == 4 and y2["4h"] == 4
+   190	        assert y2["6h"] == 5 and y2["1mo"] == 5
+   191	
+   192	    def test_setup_weights_literals(self):
+   193	        from apex.config import load_params
+   194	        s = load_params()["setup_weights"]
+   195	        assert s["family_id"] == "SF_FVG_SWEEP_REV"
+   196	        assert s["playbook_id"] == "PB_FVG_SWEEP_REV_A"
+   197	        assert s["Q_min_setup"] == 0.55
+   198	        assert s["gate7_entropy_threshold"] == 0.85
+   199	        assert s["conflict_penalty"] == 0.4
+   200	        assert s["redundancy_penalty"] == 0.3
+   201	        assert s["redundancy_rho_threshold"] == 0.85
+   202	        assert s["redundancy_window_n"] == 48
+   203	        w = s["weights"]
+   204	        assert w == {"w_structure": 0.16, "w_liquidity": 0.12,
+   205	                     "w_volume": 0.10, "w_volatility": 0.08,
+   206	                     "w_fvg": 0.12, "w_orderblock": 0.10,
+   207	                     "w_rtm": 0.06, "w_wyckoff": 0.06,
+   208	                     "w_trend": 0.08, "w_momentum": 0.06,
+   209	                     "w_regime": 0.04, "w_temporal": 0.02}
+   210	        assert abs(sum(w.values()) - 1.0) < 1e-9
+   211	
+   212	    def test_quality_weights_copy_exact_21(self):
+   213	        from apex.config import load_params
+   214	        q = load_params()["quality_weights"]
+   215	        # Q_min complete bootstrap table (§2.1)
+   216	        assert q["q_min_by_tf"] == {
+   217	            "1m": 0.60, "3m": 0.58, "5m": 0.56, "15m": 0.54, "30m": 0.52,
+   218	            "1h": 0.50, "2h": 0.48, "4h": 0.46, "6h": 0.45, "8h": 0.44,
+   219	            "12h": 0.42, "1d": 0.40, "1w": 0.40, "1mo": 0.40}
+   220	        assert q["freshness_threshold_seconds"] == {
+   221	            "1m": 5, "3m": 8, "5m": 10, "15m": 20, "30m": 25, "1h": 30,
+   222	            "2h": 60, "4h": 120, "6h": 180, "8h": 240, "12h": 300,
+   223	            "1d": 300, "1w": 3600, "1mo": 14400}
+   224	        assert q["oi_lag_threshold_seconds"] == {
+   225	            "1m": 10, "3m": 15, "5m": 20, "15m": 30, "30m": 45, "1h": 60,
+   226	            "2h": 90, "4h": 120, "6h": 180, "8h": 240, "12h": 300,
+   227	            "1d": 300, "1w": 3600, "1mo": 14400}
+   228	        assert q["q_thr_by_tf"] == {
+   229	            "1m": 0.6, "3m": 0.58, "5m": 0.56, "15m": 0.54, "30m": 0.52,
+   230	            "1h": 0.5, "2h": 0.48, "4h": 0.46, "6h": 0.45, "8h": 0.44,
+   231	            "12h": 0.42, "1d": 0.4, "1w": 0.40, "1mo": 0.40}
+   232	        assert q["q_feature_weights"] == {"w_formula": 0.5, "w_lookback": 0.3,
+   233	                                          "w_epsilon": 0.2}
+   234	        assert q["q_evidence_weights"]["w_conf_by_tf"] == {"1m": 0.3,
+   235	                                                           "1h": 0.25,
+   236	                                                           "1d": 0.2}
+   237	        assert q["q_evidence_weights"]["w_strength"] == 0.3
+   238	        assert q["q_evidence_weights"]["w_freshness_by_tf"] == {"1m": 0.2,
+   239	                                                                "1h": 0.25}
+   240	        assert q["q_evidence_weights"]["w_regime"] == 0.2
+   241	        assert q["q_window_lambda"] == 0.1
+   242	        assert q["q_evidence_lambda"] == 0.1
+   243	        # complete Q_raw weights table: sums to 1 per TF, spot-check rows
+   244	        rows = q["q_raw_weights_by_tf"]
+   245	        assert set(rows) == set(q["q_min_by_tf"])
+   246	        for tf, wrow in rows.items():
+   247	            assert abs(sum(wrow.values()) - 1.0) < 1e-9
+   248	        assert rows["1m"] == {"Q_schema": 0.20, "Q_time": 0.20,
+   249	                              "Q_seq": 0.15, "Q_ohlc": 0.20,
+   250	                              "Q_volume": 0.10, "Q_oi": 0.10,
+   251	                              "Q_source": 0.05}
+   252	        assert rows["1d"] == {"Q_schema": 0.10, "Q_time": 0.10,
+   253	                              "Q_seq": 0.10, "Q_ohlc": 0.30,
+   254	                              "Q_volume": 0.15, "Q_oi": 0.15,
+   255	                              "Q_source": 0.10}
+   256	
+   257	    def test_toobit_wire_literals(self):
+   258	        from apex.config import load_params
+   259	        w = load_params()["toobit_wire"]
+   260	        assert w["base_url"] == "https://api.toobit.com"
+   261	        assert w["header_api_key"] == "X-BB-APIKEY"
+   262	        assert w["recv_window_ms"] == 5000
+   263	        assert w["auth_scheme"] == "HMAC-SHA256"
+   264	        assert w["symbol_map"]["BTCUSDT"] == "BTC-SWAP-USDT"
+   265	        assert w["symbol_map"]["LTCUSDT"] == "LTC-SWAP-USDT"
+   266	        assert w["interval_map"] == {"1mo": "1M"}
+   267	        assert w["interval_unsupported_code"] == -1120
+   268	        assert w["interval_unsupported_handling"] == "DISABLE_TF_FOR_SYMBOL_ONLY"
+   269	        assert w["klines_limit"] == 1000
+   270	        assert w["open_interest_failure_handling"] == "OI_MISSING"
+   271	        assert w["funding_rate_alert_threshold"] == 0.001
+   272	        assert w["funding_rate_alert_only"] is True
+   273	        assert w["side_map"] == {"LONG_entry": "BUY_OPEN",
+   274	                                 "SHORT_entry": "SELL_OPEN",
+   275	                                 "LONG_flatten": "SELL_CLOSE",
+   276	                                 "SHORT_flatten": "BUY_CLOSE"}
+   277	        assert w["business_codes_ok"] == [0, 200]
+   278	        assert w["unknown_outcome_codes"] == [-1006, -1007, -1146, -1147]
+   279	        assert w["abort_code"] == -1022
+   280	        assert w["backoff_code"] == -1003
+   281	        assert w["retry_attempts"] == 3
+   282	        assert w["retry_backoff_seconds"] == [1, 2, 4]
+   283	        assert w["rollover_min_days"] == 7
+   284	        assert "withdraw" in w["forbidden_operations"]
+   285	        assert w["forbidden_order_type"] == "MARKET"
+   286	        assert w["margin_type_value"] == "ISOLATED"
+   287	
+   288	    def test_e11_params_literals(self):
+   289	        from apex.config import load_params
+   290	        e = load_params()["e11_params"]
+   291	        # D49: thresholds are the PASS-artifact percentiles, not the chapter defaults.
+   292	        assert e == {"K": 9, "theta_H": 1.105878, "quality_H_Q2": 1.229880,
+   293	                     "quality_H_Q5": 0.564415,
+   294	                     "lambda_ewma": 0.94, "hysteresis_candles": 3, "dirichlet_alpha": 0.1,
+   295	                     "transition_delay_candles": 48, "W_180d_H1": 4320}
+
+===== tests/unit/test_catalog.py:308-332 (baseline) =====
+   308	class TestReplayAndMonotonic:
+   309	    def test_tdr_001_feature_replay_byte_identical(self):
+   310	        """T-DR-001 (feature tier): identical inputs → byte-identical
+   311	        feature values (re-run produces identical results)."""
+   312	        window = make_window(30, close=[100.0 + i for i in range(30)])
+   313	        catalog = Catalog()
+   314	        provider = FakeProvider()
+   315	        for o in window:
+   316	            provider.add("BTCUSDT", "15m", o)
+   317	        catalog.set_provider(provider)
+   318	        as_of = window[-1].timestamp
+   319	        r1 = run(catalog.get("body_ratio", "BTCUSDT", "15m", as_of))
+   320	        r2 = run(catalog.get("body_ratio", "BTCUSDT", "15m", as_of))
+   321	        assert str(r1.value) == str(r2.value)
+   322	        r3 = run(catalog.get("volume_ratio", "BTCUSDT", "15m", as_of))
+   323	        r4 = run(catalog.get("volume_ratio", "BTCUSDT", "15m", as_of))
+   324	        assert str(r3.value) == str(r4.value)
+   325	
+   326	    def test_tmon_001_quality_never_improves_with_fewer_inputs(self):
+   327	        """T-MON-001: feature quality at bar 50 ≥ bar 10 (more inputs
+   328	        never degrade availability)."""
+   329	        catalog = Catalog()
+   330	        provider = FakeProvider()
+   331	        for i in range(60):
+   332	            provider.add("BTCUSDT", "15m", make_obs(
+
+===== tests/unit/test_identity.py:196-207 (baseline) =====
+   196	    def test_governed_as_of_max_and_fail_closed(self):
+   197	        """as_of = max(availability_time_ms); missing artifact or missing
+   198	        availability_time → fail-closed ValueError (G11)."""
+   199	        arts = [{"availability_time_ms": 1000}, {"availability_time_ms": 3000}]
+   200	        assert governed_as_of_ms(arts) == 3000
+   201	        with pytest.raises(ValueError) as e1:
+   202	            governed_as_of_ms([])
+   203	        assert "MISSING_REQUIRED_ARTIFACTS_QX" in str(e1.value)
+   204	        with pytest.raises(ValueError) as e2:
+   205	            governed_as_of_ms([{"availability_time_ms": None}])
+   206	        assert "MISSING_AVAILABILITY_TIME_QX" in str(e2.value)
+   207	
+
+===== tests/unit/test_research_proxies.py:268-289 (baseline) =====
+   268	class TestWilsonAndAA7:
+   269	    def test_wilson_matches_the_z8_scenario_a(self):
+   270	        """Z.8 Scenario A quoted 49 % for n=42, p̂=0.58."""
+   271	        value = px.wilson_lower_bound(27, 42)
+   272	        assert value == pytest.approx(0.49, abs=0.01)
+   273	
+   274	    def test_wilson_domain_guards(self):
+   275	        with pytest.raises(ValueError):
+   276	            px.wilson_lower_bound(1, 0)
+   277	        with pytest.raises(ValueError):
+   278	            px.wilson_lower_bound(5, 4)
+   279	
+   280	    def test_numba_is_not_used(self):
+   281	        """AA.7-2 asks for Numba; §9.5-9 forbids it (Wave-Out) — the module
+   282	        records the conflict and never imports it ([ISSUE-CP8-002])."""
+   283	        assert px.NUMBA_USED is False
+   284	        source = (px.REPO_ROOT / "apex" / "research" / "proxies.py").read_text()
+   285	        assert "import numba" not in source
+   286	
+   287	    def test_incremental_only_flag(self):
+   288	        assert px.INCREMENTAL_ONLY is True
+
+===== tests/unit/test_ops_bootstrap_service.py:709-748 (baseline) =====
+   709	                await service.close()
+   710	                bridge.close()
+   711	
+   712	        run(scenario())
+   713	
+   714	    # Canonical mirror — ISSUE-CP9-002 + W.6: research checkpoint is mirrored to Ch.5 bootstrap_progress
+   715	    def test_complete_run_mirrors_canonical_done_and_cursor(self, tmp_path):
+   716	        """Complete run → canonical row phase='P1' status='DONE' bars_written≥3 and ISO cursor matches research."""
+   717	        async def scenario():
+   718	            venue = TailAlignedVenue(retention=3, limit_cap=1000)
+   719	            source, bridge = source_for(venue)
+   720	            service = BS.BootstrapService(
+   721	                config=Config(), cells=[("BTCUSDT", "1h")], source=source,
+   722	                db_path=str(tmp_path / "apex.sqlite3"),
+   723	                checkpoint_path=str(tmp_path / "apex.sqlite3"))
+   724	            await service.open()
+   725	            try:
+   726	                result = await service.run(
+   727	                    end_ms=venue.now_ms + HOUR, announce=False)
+   728	                assert result["status"] == "COMPLETE"
+   729	                cur = await service._checkpoints.db.execute(
+   730	                    "SELECT cursor_ms FROM research_bootstrap_progress WHERE cell_id='BTCUSDT:1h'")
+   731	                rrow = await cur.fetchone()
+   732	                assert rrow is not None
+   733	                research_cursor = int(rrow[0])
+   734	                cur2 = await service._store.db.execute(
+   735	                    "SELECT phase, status, bars_written, cursor_open_time FROM bootstrap_progress "
+   736	                    "WHERE symbol='BTCUSDT' AND timeframe='1h' AND phase='P1'")
+   737	                prow = await cur2.fetchone()
+   738	                assert prow is not None, "canonical bootstrap_progress row missing"
+   739	                assert prow[0] == "P1"
+   740	                assert prow[1] == "DONE"
+   741	                assert int(prow[2]) >= 3
+   742	                assert BS._iso_to_ms(prow[3]) == research_cursor
+   743	            finally:
+   744	                await service.close()
+   745	                bridge.close()
+   746	
+   747	        run(scenario())
+   748	
+
+===== apex/research/proxies.py:1-50 (baseline) =====
+     1	"""Ch.20 — Liquidity Proxy Models: the 38-concept registry (AA.2–AA.4), the six
+     2	formal rejections (AA.5) and the formula-bearing Q3 proxies.
+     3	
+     4	Blueprint law
+     5	-------------
+     6	AA.1  the 38 constituent concepts = 25 pure L1 (A01–A25) + 10 L2-proxy
+     7	      (B01–B10) + 3 L3-proxy (D01–D03); the six formal rejections C01–C06 are
+     8	      ratified as infeasible without genuine L2/L3 feeds.
+     9	AA.2  every L1 concept carries a *disposition*: ``existing-in-frozen``,
+    10	      ``registered-new`` or ``research-registered``.
+    11	AA.5  the rejections stay rejected: missing data is QX, never estimated
+    12	      (no ``L2Snapshot.v1`` consumer may exist while no genuine L2 feed does).
+    13	AA.6  the symmetry decree abolishes symbol tiering: every one of the 10
+    14	      symbols executes every registered computation at its frequency.
+    15	AA.7  every heavy computation stays incremental; **Numba is a Wave-Out item**
+    16	      (§9.5-9 / P6) and Float32 is therefore NOT used — the numerical contract
+    17	      of Ch.2 §2.2 (Decimal at the store boundary, double precision inside the
+    18	      formulas) governs (see ``[ISSUE-CP8-002]``).
+    19	
+    20	Discipline
+    21	----------
+    22	* Every formula here is Q3-labeled: a best-effort observable proxy, never a
+    23	  claim of true L2/L3 data.
+    24	* A concept whose formula the blueprint does NOT specify is registered with
+    25	  ``status="REGISTERED_OPEN"`` and **no active value** (EC-register discipline,
+    26	  Ch.17 §17.1): the dependent path stays conservative instead of a guessed
+    27	  implementation being invented (G6 fail-closed).
+    28	* Nothing here writes runtime state or parameters.
+    29	
+    30	CONTRACT_VERSION 4.0.0.
+    31	"""
+    32	
+    33	from __future__ import annotations
+    34	
+    35	import math
+    36	from dataclasses import dataclass, field
+    37	from pathlib import Path
+    38	from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+    39	
+    40	CONTRACT_VERSION = "4.0.0"
+    41	
+    42	Q3 = "Q3"                      # best-effort observable proxy (§2.1 Q-class)
+    43	DELTA_LABEL = "proxy, not true delta"   # AA.4/D01 mandatory label
+    44	
+    45	#: AA.7-1 incremental-computation law (normative deployment rule).
+    46	INCREMENTAL_ONLY = True
+    47	#: AA.7-2: Numba is not in the SBOM and is a Wave-Out item — never imported.
+    48	NUMBA_USED = False
+    49	
+    50	REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+===== apex/research/proxies.py:507-542 (baseline) =====
+   507	def kyle_lambda(*, returns: Sequence[float], signed_volume: Sequence[float],
+   508	                window: int = 100) -> Dict[str, Any]:
+   509	    """B06 — ``λ = cov(r, v_signed)/var(v_signed)`` on a rolling window."""
+   510	    r = [float(x) for x in returns]
+   511	    v = [float(x) for x in signed_volume]
+   512	    if len(r) != len(v):
+   513	        raise ValueError("KYLE_INPUT_LENGTH_QX")
+   514	    n = min(len(r), int(window))
+   515	    if n < 3:
+   516	        raise ValueError("INSUFFICIENT_HISTORY_B06")
+   517	    r, v = r[-n:], v[-n:]
+   518	    mr = sum(r) / n
+   519	    mv = sum(v) / n
+   520	    cov = sum((r[i] - mr) * (v[i] - mv) for i in range(n)) / (n - 1)
+   521	    var = sum((v[i] - mv) ** 2 for i in range(n)) / (n - 1)
+   522	    if var <= 0.0:
+   523	        raise ValueError("ZERO_SIGNED_VOLUME_VARIANCE_B06")
+   524	    return {"kyle_lambda": cov / var, "window": n, "q_label": Q3}
+   525	
+   526	
+   527	def amihud_illiquidity(*, returns: Sequence[float],
+   528	                       volumes: Sequence[float]) -> Dict[str, Any]:
+   529	    """B07 — ``amihud_illiquidity_proxy = |return| / volume`` (mean over the
+   530	    window; a zero-volume bar is skipped, never fabricated)."""
+   531	    r = [float(x) for x in returns]
+   532	    v = [float(x) for x in volumes]
+   533	    if len(r) != len(v):
+   534	        raise ValueError("AMIHUD_INPUT_LENGTH_QX")
+   535	    ratios = [abs(r[i]) / v[i] for i in range(len(r)) if v[i] > 0.0]
+   536	    if not ratios:
+   537	        raise ValueError("NO_LIQUID_BAR_B07")
+   538	    return {"amihud_illiquidity_proxy": sum(ratios) / len(ratios),
+   539	            "n": len(ratios), "skipped_zero_volume": len(r) - len(ratios),
+   540	            "q_label": Q3}
+   541	
+   542	
+
+===== apex/ops/engine_context.py:1759-1858 (baseline) =====
+  1759	class EngineContextProducer:
+  1760	    """Public store-to-bridge seam, with no fixture or network dependency."""
+  1761	    def __init__(self, store: Any, *, ledger: Any = None,
+  1762	                 classifier_path: str | Path | None = None, environment: str | None = None,
+  1763	                 now: Callable[[], float] = time.time) -> None:
+  1764	        self.store, self.ledger = store, ledger
+  1765	        self.classifier_path, self.now = classifier_path, now
+  1766	        self.environment = Config().apex_env if environment is None else environment
+  1767	        self.diagnostics: dict[str, Any] = {}
+  1768	        self._frames: dict[tuple, dict] = {}
+  1769	        self._raw_lineage: dict[tuple, dict] = {}
+  1770	        self._content_hashes: dict[tuple, str] = {}
+  1771	        self._ready: dict[tuple, dict] = {}
+  1772	        self._failed: dict[tuple, BridgeError] = {}
+  1773	        self._timelines: dict[tuple, dict] = {}
+  1774	
+  1775	    async def _input_fingerprint(self, symbol: str, timeframe: str, as_of: str) -> str:
+  1776	        """Cache inputs, never its own output; additions invalidate a success."""
+  1777	        from apex.ops.bootstrap_service import latest_close_boundary
+  1778	        artifact = load_classifier(self.classifier_path)
+  1779	        tables = {}
+  1780	        for name, sql, args in (
+  1781	            ("raw", "SELECT m.observation_id,m.raw_payload_hash,r.availability_time,r.oi_timestamp,r.oi_state "
+  1782	             "FROM market_observation m JOIN raw_observation r ON m.observation_id='obs-'||r.event_id "
+  1783	             "WHERE m.symbol=? AND r.availability_time<=? ORDER BY m.timeframe,m.open_time,m.observation_id",(symbol,as_of)),
+  1784	            ("facts", "SELECT snapshot_id FROM snapshot_pit WHERE as_of<=? AND "
+  1785	             "source_state NOT IN ('CP14_BRIDGE_CONTEXT','CP14_UNCERTAINTY','CP14_COMPONENTS','CP14_SL14_ADMISSION') ORDER BY snapshot_id",(as_of,)),
+  1786	            ("prior", "SELECT snapshot_id FROM snapshot_pit WHERE source_state IN ('CP14_UNCERTAINTY','CP14_COMPONENTS') "
+  1787	             "AND symbol_scope=? AND timeframe_scope=? AND as_of<? ORDER BY snapshot_id",
+  1788	             (symbol,timeframe,_ms_to_iso(latest_close_boundary(_iso_to_ms(as_of),timeframe)))),
+  1789	            ("ledger", "SELECT ledger_id,payload_hash FROM ledger WHERE timestamp<=? ORDER BY rowid",(as_of,))):
+  1790	            tables[name] = [list(row) for row in await (await self.store.db.execute(sql,args)).fetchall()]
+  1791	        exists = await (await self.store.db.execute("SELECT name FROM sqlite_master WHERE name='apex_risk_ladder_state'")).fetchone()
+  1792	        if exists:
+  1793	            tables["ladder"] = [list(r) for r in await (await self.store.db.execute(
+  1794	                "SELECT * FROM apex_risk_ladder_state WHERE applied_at<=? ORDER BY rowid",(as_of,))).fetchall()]
+  1795	        return hashlib.sha256(canonical_json({"inputs":tables,"classifier":artifact["artifact_sha256"],
+  1796	            "package":paper_package_binding(environment=self.environment),"symbol":symbol,"timeframe":timeframe,"as_of":as_of}).encode()).hexdigest()
+  1797	
+  1798	    async def prepare(self, symbol: str, timeframe: str, as_of: str) -> None:
+  1799	        """Outside-budget source preparation; a failed refresh clears success."""
+  1800	        key = (symbol,timeframe,as_of)
+  1801	        self._ready.pop(key,None)
+  1802	        self._failed.pop(key,None)
+  1803	        try:
+  1804	            if self.environment != "PAPER":
+  1805	                raise BridgeError("PAPER_ONLY_EXECUTION",self.environment)
+  1806	            from apex.data_catalog.contracts import TIMEFRAMES_14
+  1807	            if symbol not in CORE10_SYMBOLS or timeframe not in TIMEFRAMES_14:
+  1808	                raise BridgeError("CELL_OUT_OF_UNIVERSE",f"{symbol}:{timeframe}")
+  1809	            parse_utc_ms(as_of)
+  1810	            fingerprint = await self._input_fingerprint(symbol,timeframe,as_of)
+  1811	            saved = await read_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,exact=True)
+  1812	            if saved and saved["input_fingerprint"] == fingerprint:
+  1813	                context = saved["context"]
+  1814	                context["events"] = await read_complete_evidence(self.store,context["events"])
+  1815	            else:
+  1816	                context = await self._compose_bridge_context(symbol,timeframe,as_of)
+  1817	                await append_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,
+  1818	                    {"input_fingerprint":fingerprint,"context":{**context,"events":[e.evidence_id for e in context["events"]]}})
+  1819	            validate_produced_context(context)
+  1820	            self._ready[key] = context
+  1821	        except BridgeError as exc:
+  1822	            self._failed[key] = exc
+  1823	            raise
+  1824	        except (ValueError,KeyError,TypeError,ArithmeticError) as exc:
+  1825	            refusal = BridgeError("ENGINE_CONTEXT_INVALID",f"{type(exc).__name__}: {exc}")
+  1826	            self._failed[key] = refusal
+  1827	            raise refusal from exc
+  1828	
+  1829	    async def get_bridge_context(self, symbol: str, timeframe: str, as_of: str) -> dict:
+  1830	        """Exactly 38 context fields / 23 risk fields; no fixture fallback.
+  1831	
+  1832	        PAPER serve binds prepare separately so this accessor is a cheap copy
+  1833	        inside the scheduler budget. A standalone caller may prepare lazily.
+  1834	        """
+  1835	        import copy
+  1836	        key = (symbol,timeframe,as_of)
+  1837	        if key in self._failed:
+  1838	            raise self._failed[key]
+  1839	        if key not in self._ready:
+  1840	            await self.prepare(symbol,timeframe,as_of)
+  1841	        return copy.deepcopy(self._ready[key])
+  1842	
+  1843	    async def _compose_bridge_context(self, symbol: str, timeframe: str, as_of: str) -> dict:
+  1844	        from dataclasses import asdict
+  1845	        from apex.ops.plan_bridge import _fabric_ref, _normalise_bars
+  1846	        from apex.fabric.evidence import EvidenceFabric, expiry_age_bars
+  1847	        from apex.fabric.conflict import resolve, disagreement_of, quality_asymmetry_of, stale_fraction_of, penalties
+  1848	        from apex.fabric.context import COMPONENT_ENGINE, redundancy_rho
+  1849	        from apex.pattern.detect import detect_all, CATALOGUE, entity_for
+  1850	        from apex.setup.family_sf_fvg_sweep_rev import sweep_and_reclaim, ENTRY_LOGIC_REF, PLAYBOOK_ID, HORIZON_BARS
+  1851	        from apex.playbook.pb_fvg_sweep_rev_a import build_stops
+  1852	        from apex.forecast.logistic import ForecastEvent, build_forecast
+  1853	        from apex.research.governance import GOVERNED_DEFAULTS
+  1854	        import json
+  1855	        end = _iso_to_ms(as_of)
+  1856	        bundle = await self.prepare_engine_bundle(symbol,timeframe,as_of)
+  1857	        q, mtf = bundle["measured_quality"], bundle["measured_mtf"]
+  1858	        governance = await self.decision_inputs(symbol,timeframe,as_of)
+
+===== apex/ops/engine_context.py:2283-2361 (baseline) =====
+  2283	    async def prepare_engine_bundle(self, symbol: str, timeframe: str, as_of: str,
+  2284	                                    *, rtm_context: Mapping[str, Any] | None = None) -> dict:
+  2285	        """Compute and persist a complete native bundle before plan admission.
+  2286	
+  2287	        Final bridge/risk projection is separate; this method never presents
+  2288	        an engine-only bundle as all REQUIRED_CONTEXT_KEYS/REQUIRED_RISK_KEYS.
+  2289	        """
+  2290	        from dataclasses import replace
+  2291	        artifact = load_classifier(self.classifier_path)
+  2292	        measured = mtf = None
+  2293	        if rtm_context is None:
+  2294	            measured = await self.quality_window(symbol, timeframe, as_of)
+  2295	            mtf = await self.mtf_inputs(symbol, timeframe, as_of)
+  2296	            rtm_context = {"derive_avg_quality": True, "mtf_align": mtf["mtf_align"]}
+  2297	        rows = await (await self.store.db.execute(
+  2298	            "SELECT COUNT(*) FROM market_observation WHERE symbol=? AND timeframe=? "
+  2299	            "AND candle_status IN ('CLOSED','CORRECTED') AND open_time<=?",
+  2300	            (symbol, timeframe, as_of))).fetchone()
+  2301	        window = await self.window(symbol, timeframe, as_of, int(rows[0]))
+  2302	        if not window:
+  2303	            raise BridgeError("NO_MARKET_DATA", f"{symbol}:{timeframe}")
+  2304	        last = None
+  2305	        async for item in self.feature_timeline(symbol, timeframe, window, incremental=True):
+  2306	            last = item
+  2307	        if last is None or "vector" not in last:
+  2308	            raise BridgeError("E11_CONTEXT_UNAVAILABLE", str((last or {}).get("reason", "empty timeline")))
+  2309	        if measured is not None:
+  2310	            expected = [(o.timestamp, o.content_hash()) for o in last["frame"]["raw_window"]]
+  2311	            actual = [(o.timestamp, o.content_hash()) for o in measured["window"]]
+  2312	            if actual != expected:
+  2313	                raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", "engine/quality window mismatch")
+  2314	            last["frame"]["raw_window"] = measured["window"]
+  2315	            history_candles = [E12.observation_to_candle(o) for o in closed_engine_window(window[:-1],timeframe)]
+  2316	            last["temporal_profile"] = E12.compute_temporal_profile(
+  2317	                E12.returns_by_tod_from_candles(history_candles),as_of=int(history_candles[-1]["ts"]))
+  2318	        bundle = complete_engine_bundle(last, symbol, timeframe, artifact, rtm_context=rtm_context)
+  2319	        bundle["volatility_history"] = [e.state for e in last["volatility_stream"]["evidence"]]
+  2320	        if measured is not None:
+  2321	            bundle["measured_quality"] = measured
+  2322	            bundle["measured_mtf"] = {k: v for k, v in mtf.items() if k != "frames"}
+  2323	        lineage = tuple(self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())]["observation_id"]
+  2324	                        for obs in bundle["raw_window"])
+  2325	        available = max([_iso_to_ms(bundle["window"][-1].timestamp)] + [_iso_to_ms(obs.availability_time) for obs in bundle["raw_window"]])
+  2326	        events = [replace(event, lineage=tuple(dict.fromkeys((*event.lineage, *lineage))),
+  2327	                          availability_time=_ms_to_iso(max(_iso_to_ms(event.availability_time), available)))
+  2328	                  for event in bundle["events"]]
+  2329	        bundle["events"] = await persist_complete_evidence(self.store, events)
+  2330	        bundle["raw_observation_ids"] = lineage
+  2331	        bundle["classifier_artifact_sha256"] = artifact["artifact_sha256"]
+  2332	        self.diagnostics[f"{symbol}:{timeframe}"] = {"status": "ENGINE_BUNDLE_PREPARED",
+  2333	            "engine_order": list(bundle["engine_order"]), "evidence_count": len(events),
+  2334	            "as_of": last["as_of"], "classifier_artifact_sha256": artifact["artifact_sha256"]}
+  2335	        return bundle
+  2336	
+  2337	    async def decision_inputs(self, symbol: str, timeframe: str, as_of: str) -> dict:
+  2338	        """D28 stored governance/venue inputs; not a fabricated complete context."""
+  2339	        if self.environment != "PAPER":
+  2340	            raise BridgeError("LIVE_GOVERNANCE_UNAVAILABLE", "PAPER bootstrap is not a LIVE source")
+  2341	        from apex.setup.family_sf_fvg_sweep_rev import FAMILY_ID
+  2342	        record = await read_family_record(self.store, FAMILY_ID, as_of)
+  2343	        governance = paper_bootstrap_inputs(environment=self.environment, family_record=record)
+  2344	        venue = await read_public_venue_facts(self.store, symbol, as_of)
+  2345	        return {**governance, "environment": "PAPER", "commission_rate": venue["commission_rate"],
+  2346	                "funding_rate": venue["funding_rate"], "venue_provenance": venue,
+  2347	                "contract_specs": {symbol: {k: venue[k] for k in (
+  2348	                    "contract_multiplier", "contract_type", "expiry_time")}}}
+  2349	
+  2350	    def _raw_content_hash(self, observation: Any) -> str:
+  2351	        """Memo only the frozen content_hash payload, with exact typed values.
+  2352	
+  2353	        repr preserves Decimal precision (numeric equality alone would alias
+  2354	        100.0 and 100.00). Every miss calls the native method on the actual
+  2355	        observation; this never constructs or modifies a raw record.
+  2356	        """
+  2357	        key = (type(observation), tuple((type(value),repr(value)) for value in
+  2358	            (observation.symbol,observation.timeframe,observation.timestamp,
+  2359	             observation.open,observation.close,observation.volume)))
+  2360	        if key not in self._content_hashes:
+  2361	            digest = observation.content_hash()
+
+===== scripts/run_apex.py:711-765 (baseline) =====
+   711	    runtime = await Runtime(cfg).start()
+   712	    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
+   713	    await service.open()
+   714	    gateway = None
+   715	    try:
+   716	        ledger, bus = runtime.ledger, runtime.bus
+   717	        clock = C.SystemClock()
+   718	        adapter = runtime.adapter()
+   719	        notifier = await _notifier_for(cfg)
+   720	        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+   721	                                       owner_chat_id=cfg.telegram_owner_chat_id
+   722	                                       or None)
+   723	                     if cfg.telegram_bot_token else None)
+   724	        control = CP.ControlPlane(
+   725	            signaling=signaling, config=cfg, clock=clock.monotonic,
+   726	            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+   727	            paper_balance=(await EC.paper_balance(ledger)
+   728	                           if cfg.apex_env == "PAPER" else "0"))
+   729	        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+   730	        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+   731	                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+   732	                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+   733	            control.register(name, _noop_handler(name))
+   734	        if cfg.telegram_bot_token:
+   735	            gateway = GW.TelegramGateway(
+   736	                control=control, source=GW.AiogramUpdateSource(config=cfg),
+   737	                notifier=_telegram_reply(signaling),
+   738	                bootstrap=service, clock=clock.monotonic,
+   739	                utc_now=clock.utc_now, poll_timeout=5.0)
+   740	        watchdog = WD.Watchdog(telegram_plane=signaling,
+   741	                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+   742	                               now=time.time)
+   743	        # CP-9 bridge: the provider is registered at the composition root, so
+   744	        # every PAPER cell now asks the governed store/context → pattern/setup
+   745	        # → gates → forecast → risk/decision chain for a real plan.  Missing
+   746	        # persisted engine context remains a named fail-closed refusal; the
+   747	        # provider never falls back to a hand-built plan.
+   748	        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+   749	                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+   750	        plan_bridge = PB.PaperPlanBridge(
+   751	            store=runtime.store, environment=cfg.apex_env,
+   752	            context_source=producer.get_bridge_context if producer is not None else None,
+   753	            context_preparer=producer.prepare if producer is not None else None)
+   754	        async def catch_up(now_ms: int) -> Dict[str, Any]:
+   755	            result = await service.catch_up(now_ms)
+   756	            if cfg.apex_env == "PAPER":
+   757	                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+   758	            return result
+   759	
+   760	        driver = PL.PaperRuntime(
+   761	            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+   762	            adapter=adapter, signaling=signaling, control=control,
+   763	            gateway=gateway, watchdog=watchdog, clock=clock,
+   764	            environment=cfg.apex_env, notifier=notifier,
+   765	            plan_provider=plan_bridge, catch_up=catch_up)
+
+===== apex/ops/paper_loop.py:479-535 (baseline) =====
+   479	    async def _stage_ingest(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   480	        window = await self.store.get_window(payload["symbol"], payload["timeframe"],
+   481	                                             payload["as_of"], WINDOW_BARS)
+   482	        if not window:
+   483	            raise CellRefusal("NO_MARKET_DATA",
+   484	                              f"{payload['cell_id']} has no bars at or before "
+   485	                              f"{payload['as_of']} — run `bootstrap` first")
+   486	        self._state(payload)["window"] = list(window)
+   487	        return {"detail": f"window={len(window)} bars "
+   488	                          f"last_closed={window[-1].timestamp}"}
+   489	
+   490	    async def _stage_quality(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   491	        window = self._state(payload).get("window") or []
+   492	        open_bars = [o for o in window if getattr(o, "status", "CLOSED") != "CLOSED"]
+   493	        if open_bars:
+   494	            raise CellRefusal("DATA_QUALITY_QX",
+   495	                              f"{len(open_bars)} non-CLOSED bars in the window")
+   496	        return {"detail": f"window accepted (CLOSED only) · "
+   497	                          f"last_availability="
+   498	                          f"{getattr(window[-1], 'availability_time', None)}"}
+   499	
+   500	    async def _stage_features(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   501	        """Declared skip: this increment consumes governed plans and does not
+   502	        produce engine evidence — and it never pretends otherwise."""
+   503	        if self.signal_source == SIGNAL_SOURCE_DECISION_BRIDGE:
+   504	            return {"detail": "DECLARED_SKIP signal_source=DECISION_BRIDGE "
+   505	                              "(the engine→evidence bridge is a separate "
+   506	                              "increment; plans enter through plan_provider)"}
+   507	        if self.signal_source == SIGNAL_SOURCE_ENGINE_BRIDGE:
+   508	            raise CellRefusal("ENGINE_BRIDGE_PENDING",
+   509	                              "signal_source=ENGINE_BRIDGE requested but the "
+   510	                              "engine→setup bridge is not wired in this "
+   511	                              "increment")
+   512	        count = await self._evidence_count(payload["symbol"], payload["timeframe"])
+   513	        if count == 0:
+   514	            raise CellRefusal("NO_EVIDENCE_FOR_CELL",
+   515	                              f"{payload['cell_id']} has no admitted evidence")
+   516	        return {"detail": f"evidence_rows={count}"}
+   517	
+   518	    async def _stage_engines(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   519	        if self.signal_source == SIGNAL_SOURCE_ENGINE_BRIDGE:
+   520	            raise CellRefusal("ENGINE_BRIDGE_PENDING",
+   521	                              "signal_source=ENGINE_BRIDGE requested but the "
+   522	                              "engine→setup bridge is not wired in this "
+   523	                              "increment")
+   524	        return {"detail": "DECLARED_SKIP signal_source=DECISION_BRIDGE "
+   525	                          "(the plan seam is the frozen SL-5 → SL-6 interface)"}
+   526	
+   527	    def _take_budget(self) -> bool:
+   528	        """Reserve one slot of this cycle's trade budget (D51).
+   529	
+   530	        Cells are scheduled CONCURRENTLY (the scheduler's semaphore is 4).
+   531	        The check and the increment are synchronous, so the reservation is
+   532	        atomic under that concurrency. ``self.trades`` is history only and
+   533	        is never a gate. A refusal does not call this method.
+   534	        """
+   535	        if self._budget_taken >= self.max_trades_per_cycle:
+
+===== apex/ops/paper_loop.py:614-675 (baseline) =====
+   614	    async def _stage_decision(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   615	        plan = normalize_plan(self._state(payload).get("plan") or {})
+   616	        self._state(payload)["plan_obj"] = plan
+   617	        return {"detail": f"trade_plan={plan.proposal_id} qty={plan.sized_quantity} "
+   618	                          f"stop={plan.stop_price} target={plan.target_price}"}
+   619	
+   620	    async def _stage_execution(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   621	        state = self._state(payload)
+   622	        plan: F.TradePlan = state["plan_obj"]
+   623	        if not self.trading_enabled:
+   624	            raise CellRefusal("BOOT_NOT_READY",
+   625	                              f"boot_state={self.boot_verdict.get('boot_state')} "
+   626	                              f"new_trades_allowed=False")
+   627	        if str(plan.decision) not in ("ALLOW", "REDUCE"):
+   628	            raise CellRefusal("DECISION_NO_TRADE", str(plan.decision))
+   629	        price = await last_closed_price(self.store, plan.symbol, plan.timeframe,
+   630	                                        payload["as_of"])
+   631	        if price is None:
+   632	            raise CellRefusal("NO_PRICE_FOR_CELL", "no closed bar to price against")
+   633	        # D51: reserve only when a valid trade plan exists, immediately before
+   634	        # admission. The increment is synchronous (atomic under semaphore 4).
+   635	        if not self._take_budget():
+   636	            raise CellRefusal("TRADE_BUDGET_REACHED",
+   637	                              f"max_trades_per_cycle={self.max_trades_per_cycle}")
+   638	        record = await self.execute_plan(
+   639	            plan, price=price, timestamp_utc=payload["as_of"],
+   640	            close_ms=int(payload["close_ms"]))
+   641	        if not record.get("submitted"):
+   642	            self._release_budget()
+   643	        state["trade"] = record
+   644	        return {"detail": f"intent={record['intent_id']} state={record['state']} "
+   645	                          f"fill={record.get('fill')} protected="
+   646	                          f"{record.get('protected')}"}
+   647	
+   648	    async def _resolve_plan(self, payload: Mapping[str, Any]
+   649	                            ) -> Mapping[str, Any]:
+   650	        """Ask the decision bridge for this cell's plan (the frozen SL-5 → SL-6
+   651	        seam). No provider ⇒ a NAMED refusal, never a fabricated plan."""
+   652	        if self.plan_provider is None:
+   653	            raise CellRefusal(
+   654	                "NO_PLAN_PROVIDER",
+   655	                "no plan provider is wired: the engine → fabric → setup → "
+   656	                "forecast → risk → plan bridge is a separate increment "
+   657	                "(PHASE2_HANDOFF_WIRING §REMAINING WORK)")
+   658	        provided = self.plan_provider(payload["symbol"], payload["timeframe"],
+   659	                                      payload["as_of"])
+   660	        plan = await provided if hasattr(provided, "__await__") else provided
+   661	        if plan is None:
+   662	            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+   663	            if self.environment == "PAPER" and refusal:
+   664	                raise CellRefusal(refusal["reason"],refusal.get("detail",""))
+   665	            raise CellRefusal("NO_PLAN_FOR_CELL",
+   666	                              f"{payload['cell_id']} has no governed plan at "
+   667	                              f"{payload['as_of']}")
+   668	        if not isinstance(plan, Mapping):
+   669	            raise CellRefusal("PLAN_TYPE_QX", type(plan).__name__)
+   670	        return dict(plan)
+   671	
+   672	    async def _setup_exists(self, setup_id: str) -> bool:
+   673	        if not setup_id:
+   674	            return False
+   675	        cursor = await self.store.db.execute(
+
+===== apex/ops/paper_loop.py:955-1025 (baseline) =====
+   955	
+   956	    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+   957	        moment = self.clock.now_ms() if now_ms is None else int(now_ms)
+   958	        as_of = _ms_to_iso(moment)
+   959	        self._budget_taken = 0
+   960	        self._cycle_proposals = {}
+   961	        if not self._cursor_loaded:
+   962	            await self._load_cursor()
+   963	        cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
+   964	                                 "signal_source": self.signal_source,
+   965	                                 "trading_enabled": self.trading_enabled,
+   966	                                 "budget_limit": self.max_trades_per_cycle}
+   967	        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+   968	                             {"cells_checked": 0, "cells_updated": 0,
+   969	                              "bars_ingested": 0, "failures": []})
+   970	        self._catch_up_failed = {row["cell"]: row
+   971	                                 for row in cycle["catch_up"]["failures"]}
+   972	        if self.watchdog is not None:
+   973	            cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
+   974	        cycle["storage"] = await self._storage_guard()
+   975	        if self.gateway is not None:
+   976	            cycle["telegram"] = await self.gateway.run_once()
+   977	        # The scheduler's law is "on each TF close run the stages for THAT
+   978	        # cell": a cell runs once per close, and a cell whose close has not
+   979	        # advanced since the previous cycle is not run again.
+   980	        already = []
+   981	        due = []
+   982	        for item in self.scheduler.due_cells(now_ms=moment):
+   983	            recorded = self._last_close.get(item[0].cell_id)
+   984	            if recorded is not None and int(item[1]) <= int(recorded):
+   985	                already.append(item)
+   986	                continue
+   987	            due.append(item)
+   988	        cycle["cells_skipped_already_decided"] = len(already)
+   989	        if self.max_cells_per_cycle is not None:
+   990	            due = due[:self.max_cells_per_cycle]
+   991	        # G1: all expensive source preparation completes before run_cell
+   992	        # starts its latency clock. D22 failures never enter preparation;
+   993	        # a failed source must not fall back to its previous cached success.
+   994	        self._context_preparation_failed = {}
+   995	        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+   996	        receipt_ms = max(moment,self.clock.now_ms())
+   997	        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+   998	                                for cell,close in due} if self.environment == "PAPER" else {})
+   999	        cycle["decision_as_of"] = dict(self._decision_as_of)
+  1000	        cycle["publishers"] = await self._refresh_publishers(due)
+  1001	        published = (cycle.get("catch_up") or {}).get("quality_publish") or {}
+  1002	        cycle["publishers"]["quality_facts_written"] = int(
+  1003	            cycle["publishers"].get("quality_facts_written") or 0) + int(
+  1004	                published.get("written") or 0)
+  1005	        cycle["publishers"]["failures"] = list(
+  1006	            cycle["publishers"].get("failures") or [])
+  1007	        cycle["publishers"]["failures"].extend(list(published.get("failures") or []))
+  1008	        prepare = getattr(self.plan_provider, "prepare", None)
+  1009	        if callable(prepare):
+  1010	            for cell, close in due:
+  1011	                if cell.cell_id in self._catch_up_failed:
+  1012	                    continue
+  1013	                preparation["cells_checked"] += 1
+  1014	                try:
+  1015	                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+  1016	                    preparation["cells_prepared"] += 1
+  1017	                except Exception as exc:
+  1018	                    failed = {"cell": cell.cell_id,
+  1019	                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+  1020	                              "detail": getattr(exc, "detail", type(exc).__name__)}
+  1021	                    self._context_preparation_failed[cell.cell_id] = failed
+  1022	                    preparation["failures"].append(failed)
+  1023	        cycle["context_preparation"] = preparation
+  1024	        tasks = [asyncio.create_task(self.scheduler.run_cell(
+  1025	                    cell, close_ms=close, context={"cell_state": {}}))
+\n=== production composition notes ===
+run_apex serve composes BootstrapService, EngineContextProducer (PAPER), PaperPlanBridge, and PaperRuntime. PaperRuntime catch-up then prepares the plan provider before running cells; `_stage_engines` is a declared skip in this increment. None of the CP-1/CP-8 traceability unit tests instantiate this root.
+Recursive grep `I007_consumers.out`: apex/research/governance.py, checkpoints.py, optimizer.py import only proxies.REPO_ROOT; no proxy formula, INCREMENTAL_ONLY flag, or NUMBA_USED flag is consumed by scripts/run_apex.py or apex/ops/paper_loop.py. Direct functional flags are only asserted in test_research_proxies.py.
+The test nodes lacking a class prefix are not exact pytest node IDs; the collected method does exist under its class. TestIncrementalAndWaveOut is not a class in test_research_proxies.py; the relevant no-Numba and incremental-flag methods are in TestWilsonAndAA7. The module contains no test asserting AA.6 symbol symmetry.
+No SQLite query plan applies to this locator/traceability claim; no SQL performance claim is made.
+
+===== COMPLETE scripts/run_apex.py::_serve (baseline 695-815) =====
+   695	async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
+   696	                 interval: float = 60.0, report_every: int = 1) -> int:
+   697	    if cfg.apex_env == "LIVE" and not cfg.economic_gate_signed:
+   698	        code = "LIVE_CAPITAL_LOCKED"
+   699	        _say(f"REFUSED: {code} — APEX_ENV=LIVE is not a capital switch; LIVE "
+   700	             "capital stays locked until APEX_ECONOMIC_GATE_SIGNED=1 (Y.1 "
+   701	             "L17093) and the owner's written approval. Run PAPER first.")
+   702	        return EXIT_DEGRADED
+   703	    if not cfg.allow_signed:
+   704	        _say("REFUSED: SIGNED_NOT_ALLOWED — PAPER orders require "
+   705	             "APEX_ALLOW_SIGNED=1 (Y.1 L17093). Re-run exactly:")
+   706	        _say("  APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 TOOBIT_API_KEY=... "
+   707	             "TOOBIT_API_SECRET=... TELEGRAM_BOT_TOKEN=... "
+   708	             "TELEGRAM_OWNER_CHAT_ID=... python scripts/run_apex.py serve")
+   709	        return EXIT_DEGRADED
+   710	
+   711	    runtime = await Runtime(cfg).start()
+   712	    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
+   713	    await service.open()
+   714	    gateway = None
+   715	    try:
+   716	        ledger, bus = runtime.ledger, runtime.bus
+   717	        clock = C.SystemClock()
+   718	        adapter = runtime.adapter()
+   719	        notifier = await _notifier_for(cfg)
+   720	        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+   721	                                       owner_chat_id=cfg.telegram_owner_chat_id
+   722	                                       or None)
+   723	                     if cfg.telegram_bot_token else None)
+   724	        control = CP.ControlPlane(
+   725	            signaling=signaling, config=cfg, clock=clock.monotonic,
+   726	            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+   727	            paper_balance=(await EC.paper_balance(ledger)
+   728	                           if cfg.apex_env == "PAPER" else "0"))
+   729	        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+   730	        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+   731	                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+   732	                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+   733	            control.register(name, _noop_handler(name))
+   734	        if cfg.telegram_bot_token:
+   735	            gateway = GW.TelegramGateway(
+   736	                control=control, source=GW.AiogramUpdateSource(config=cfg),
+   737	                notifier=_telegram_reply(signaling),
+   738	                bootstrap=service, clock=clock.monotonic,
+   739	                utc_now=clock.utc_now, poll_timeout=5.0)
+   740	        watchdog = WD.Watchdog(telegram_plane=signaling,
+   741	                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+   742	                               now=time.time)
+   743	        # CP-9 bridge: the provider is registered at the composition root, so
+   744	        # every PAPER cell now asks the governed store/context → pattern/setup
+   745	        # → gates → forecast → risk/decision chain for a real plan.  Missing
+   746	        # persisted engine context remains a named fail-closed refusal; the
+   747	        # provider never falls back to a hand-built plan.
+   748	        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+   749	                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+   750	        plan_bridge = PB.PaperPlanBridge(
+   751	            store=runtime.store, environment=cfg.apex_env,
+   752	            context_source=producer.get_bridge_context if producer is not None else None,
+   753	            context_preparer=producer.prepare if producer is not None else None)
+   754	        async def catch_up(now_ms: int) -> Dict[str, Any]:
+   755	            result = await service.catch_up(now_ms)
+   756	            if cfg.apex_env == "PAPER":
+   757	                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+   758	            return result
+   759	
+   760	        driver = PL.PaperRuntime(
+   761	            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+   762	            adapter=adapter, signaling=signaling, control=control,
+   763	            gateway=gateway, watchdog=watchdog, clock=clock,
+   764	            environment=cfg.apex_env, notifier=notifier,
+   765	            plan_provider=plan_bridge, catch_up=catch_up)
+   766	        _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
+   767	             "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
+   768	        drift = await C.measure_drift(
+   769	            _venue_server_time if adapter is not None else _no_venue_time, clock)
+   770	        boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+   771	        try:
+   772	            EC.load_classifier()
+   773	            artifact_name = "E11_ARTIFACT"
+   774	        except EC.BridgeError as exc:
+   775	            artifact_name = exc.reason
+   776	        _say(f"  boot_state={boot['boot_state']} "
+   777	             f"new_trades_allowed={boot['new_trades_allowed']} "
+   778	             f"drift={drift['state']} ({drift.get('reason') or 'measured'}) "
+   779	             f"artifact={artifact_name}")
+   780	        if driver.plan_provider is None:
+   781	            _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
+   782	                 "refusal NO_PLAN_PROVIDER")
+   783	        else:
+   784	            _say("  plan seam: WIRED — governed PAPER store bridge "
+   785	                 "(missing context refuses by name; no synthetic plan)")
+   786	        _say(f"  signal_source={driver.signal_source} · cells=140 · "
+   787	             f"max_trades_per_cycle={driver.max_trades_per_cycle} · "
+   788	             f"telegram={'WIRED' if gateway is not None else 'DISABLED (no token)'}")
+   789	        _say("  (Ctrl-C stops the loop; the ledger chain and the durable "
+   790	             "cursors stay consistent)")
+   791	        outcome = await driver.run(cycles=cycles, interval=interval)
+   792	        for cycle in driver.cycles[-3:]:
+   793	            _say(f"  cycle {cycle['cycle']}: cells={cycle['cells_due']} "
+   794	                 f"complete={cycle['cells_complete']} "
+   795	                 f"halted={cycle['cells_halted']} blocked={cycle['cells_blocked']} "
+   796	                 f"trades={len(cycle['trades'])} open={len(cycle['open_intents'])}")
+   797	            if cycle.get("halt_reasons"):
+   798	                _say(f"    named refusals: "
+   799	                     f"{json.dumps(cycle['halt_reasons'], sort_keys=True)}")
+   800	        _say(f"  cycles={outcome['cycles']} trades={outcome['trades']} "
+   801	             f"open={outcome['open_intents']} refusals={outcome['refusals']} "
+   802	             f"ledger_chain_intact={outcome['ledger_chain_intact']}")
+   803	        if as_json:
+   804	            _say(json.dumps({"boot": boot, "outcome": outcome,
+   805	                             "cycles": driver.cycles}, default=str, indent=2,
+   806	                            sort_keys=True))
+   807	        return EXIT_READY if boot["boot_state"] == "READY" else EXIT_DEGRADED
+   808	    finally:
+   809	        if gateway is not None:
+   810	            await gateway.aclose()
+   811	        await service.close()
+   812	        await runtime.stop()
+   813	
+   814	
+   815	def _bootstrap_handler(service: "BS.BootstrapService"):
+
+===== COMPLETE PaperRuntime.run_cycle (baseline 956-1064) =====
+   956	    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+   957	        moment = self.clock.now_ms() if now_ms is None else int(now_ms)
+   958	        as_of = _ms_to_iso(moment)
+   959	        self._budget_taken = 0
+   960	        self._cycle_proposals = {}
+   961	        if not self._cursor_loaded:
+   962	            await self._load_cursor()
+   963	        cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
+   964	                                 "signal_source": self.signal_source,
+   965	                                 "trading_enabled": self.trading_enabled,
+   966	                                 "budget_limit": self.max_trades_per_cycle}
+   967	        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+   968	                             {"cells_checked": 0, "cells_updated": 0,
+   969	                              "bars_ingested": 0, "failures": []})
+   970	        self._catch_up_failed = {row["cell"]: row
+   971	                                 for row in cycle["catch_up"]["failures"]}
+   972	        if self.watchdog is not None:
+   973	            cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
+   974	        cycle["storage"] = await self._storage_guard()
+   975	        if self.gateway is not None:
+   976	            cycle["telegram"] = await self.gateway.run_once()
+   977	        # The scheduler's law is "on each TF close run the stages for THAT
+   978	        # cell": a cell runs once per close, and a cell whose close has not
+   979	        # advanced since the previous cycle is not run again.
+   980	        already = []
+   981	        due = []
+   982	        for item in self.scheduler.due_cells(now_ms=moment):
+   983	            recorded = self._last_close.get(item[0].cell_id)
+   984	            if recorded is not None and int(item[1]) <= int(recorded):
+   985	                already.append(item)
+   986	                continue
+   987	            due.append(item)
+   988	        cycle["cells_skipped_already_decided"] = len(already)
+   989	        if self.max_cells_per_cycle is not None:
+   990	            due = due[:self.max_cells_per_cycle]
+   991	        # G1: all expensive source preparation completes before run_cell
+   992	        # starts its latency clock. D22 failures never enter preparation;
+   993	        # a failed source must not fall back to its previous cached success.
+   994	        self._context_preparation_failed = {}
+   995	        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+   996	        receipt_ms = max(moment,self.clock.now_ms())
+   997	        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+   998	                                for cell,close in due} if self.environment == "PAPER" else {})
+   999	        cycle["decision_as_of"] = dict(self._decision_as_of)
+  1000	        cycle["publishers"] = await self._refresh_publishers(due)
+  1001	        published = (cycle.get("catch_up") or {}).get("quality_publish") or {}
+  1002	        cycle["publishers"]["quality_facts_written"] = int(
+  1003	            cycle["publishers"].get("quality_facts_written") or 0) + int(
+  1004	                published.get("written") or 0)
+  1005	        cycle["publishers"]["failures"] = list(
+  1006	            cycle["publishers"].get("failures") or [])
+  1007	        cycle["publishers"]["failures"].extend(list(published.get("failures") or []))
+  1008	        prepare = getattr(self.plan_provider, "prepare", None)
+  1009	        if callable(prepare):
+  1010	            for cell, close in due:
+  1011	                if cell.cell_id in self._catch_up_failed:
+  1012	                    continue
+  1013	                preparation["cells_checked"] += 1
+  1014	                try:
+  1015	                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+  1016	                    preparation["cells_prepared"] += 1
+  1017	                except Exception as exc:
+  1018	                    failed = {"cell": cell.cell_id,
+  1019	                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+  1020	                              "detail": getattr(exc, "detail", type(exc).__name__)}
+  1021	                    self._context_preparation_failed[cell.cell_id] = failed
+  1022	                    preparation["failures"].append(failed)
+  1023	        cycle["context_preparation"] = preparation
+  1024	        tasks = [asyncio.create_task(self.scheduler.run_cell(
+  1025	                    cell, close_ms=close, context={"cell_state": {}}))
+  1026	                 for cell, close in due]
+  1027	        runs = list(await asyncio.gather(*tasks)) if tasks else []
+  1028	        import dataclasses
+  1029	        cycle["cell_runs"] = [dataclasses.asdict(run) for run in runs]
+  1030	        cycle["cells_due"] = len(due)
+  1031	        cycle["cells_complete"] = sum(1 for r in runs if r.status == "COMPLETE")
+  1032	        cycle["cells_halted"] = sum(1 for r in runs if r.status == "HALTED")
+  1033	        cycle["cells_blocked"] = sum(1 for r in runs if r.status == "BLOCKED")
+  1034	        halt_reasons: Dict[str, int] = {}
+  1035	        halt_stages: Dict[str, int] = {}
+  1036	        for run in runs:
+  1037	            if run.status != "HALTED":
+  1038	                continue
+  1039	            failed = [st for st in run.stages if st.status == "FAIL"]
+  1040	            stage = failed[-1].stage if failed else str(run.reason or "").split(
+  1041	                ":", 1)[-1]
+  1042	            code = _refusal_code(failed[-1]) if failed else str(run.reason)
+  1043	            halt_reasons[code] = halt_reasons.get(code, 0) + 1
+  1044	            halt_stages[stage] = halt_stages.get(stage, 0) + 1
+  1045	        cycle["halt_reasons"] = halt_reasons
+  1046	        cycle["halt_stages"] = halt_stages
+  1047	        for run in runs:
+  1048	            if (run.cell_id in self._catch_up_failed
+  1049	                    or run.cell_id in self._context_preparation_failed):
+  1050	                continue
+  1051	            close_ms = max(self._last_close.get(run.cell_id, -1), int(run.close_ms))
+  1052	            # D50: the close lock is durable. A new PaperLoop on this store
+  1053	            # must not decide the same close again.
+  1054	            await upsert_cell_cursor(
+  1055	                self.store.db, run.cell_id, close_ms, decided_at=as_of,
+  1056	                proposal_id=self._cycle_proposals.get(run.cell_id))
+  1057	            self._last_close[run.cell_id] = close_ms
+  1058	        cycle["trades"] = [r for r in runs if r.status == "COMPLETE"]
+  1059	        cycle["managed"] = await self.manage_positions(as_of=as_of)
+  1060	        cycle["open_intents"] = sorted(self.working)
+  1061	        if self.notifier is not None:
+  1062	            await self._report(cycle)
+  1063	        self.cycles.append(_plain(cycle))
+  1064	        return cycle

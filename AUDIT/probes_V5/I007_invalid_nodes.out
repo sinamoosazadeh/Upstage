@@ -1,0 +1,41 @@
+ERROR: not found: /home/user/Upstage/tests/unit/test_cp1_foundations.py::test_all_cp1_files_exist_non_empty
+(no match in any of [<Module test_cp1_foundations.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_cp1_foundations.py::test_gitignore_adr_p2_013
+(no match in any of [<Module test_cp1_foundations.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_cp1_foundations.py::test_run_all_tests_script
+(no match in any of [<Module test_cp1_foundations.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_catalog.py::test_tdr_001_feature_replay_byte_identical
+(no match in any of [<Module test_catalog.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_identity.py::test_governed_as_of_max_and_fail_closed
+(no match in any of [<Module test_identity.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_cp1_foundations.py::test_quality_weights_copy_exact_21
+(no match in any of [<Module test_cp1_foundations.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_cp1_foundations.py::test_universe_v1_literals
+(no match in any of [<Module test_cp1_foundations.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_cp1_foundations.py::test_risk_defaults_literals
+(no match in any of [<Module test_cp1_foundations.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_cp1_foundations.py::test_setup_weights_literals
+(no match in any of [<Module test_cp1_foundations.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_cp1_foundations.py::test_toobit_wire_literals
+(no match in any of [<Module test_cp1_foundations.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_cp1_foundations.py::test_e11_params_literals
+(no match in any of [<Module test_cp1_foundations.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_research_proxies.py::TestIncrementalAndWaveOut
+(no match in any of [<Module test_research_proxies.py>])
+
+ERROR: not found: /home/user/Upstage/tests/unit/test_ops_bootstrap_service.py::test_complete_run_mirrors_canonical_done_and_cursor
+(no match in any of [<Module test_ops_bootstrap_service.py>])
+
+
+no tests collected in 0.06s

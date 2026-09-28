@@ -1,0 +1,21 @@
+apex/research/__init__.py:10:- :mod:`apex.research.proxies`    — Ch.20 liquidity proxy layer: the 38-concept
+apex/research/checkpoints.py:33:from apex.research.proxies import REPO_ROOT
+apex/research/governance.py:48:from apex.research.proxies import REPO_ROOT
+apex/research/optimizer.py:43:from apex.research.proxies import REPO_ROOT
+apex/research/proxies.py:46:INCREMENTAL_ONLY = True
+apex/research/proxies.py:48:NUMBA_USED = False
+apex/research/proxies.py:163:       "Q3", "apex.research.proxies", "taker_pressure", "IMPLEMENTED"),
+apex/research/proxies.py:166:       "Q1", "apex.research.proxies", "information_ratio", "IMPLEMENTED"),
+apex/research/proxies.py:185:       Q3, "apex.research.proxies", "corwin_schultz_spread", "IMPLEMENTED"),
+apex/research/proxies.py:190:       Q3, "apex.research.proxies", "abdi_ranaldo_spread", "IMPLEMENTED"),
+apex/research/proxies.py:193:       Q3, "apex.research.proxies", "roll_spread", "IMPLEMENTED"),
+apex/research/proxies.py:197:       Q3, "apex.research.proxies", "obi_proxy", "IMPLEMENTED"),
+apex/research/proxies.py:206:       Q3, "apex.research.proxies", "kyle_lambda", "IMPLEMENTED"),
+apex/research/proxies.py:210:       Q3, "apex.research.proxies", "amihud_illiquidity", "IMPLEMENTED"),
+apex/research/proxies.py:213:       Q3, "apex.research.proxies", "liquidity_regime_composite", "IMPLEMENTED"),
+apex/research/proxies.py:222:       Q3, "apex.research.proxies", "adaptive_slippage", "IMPLEMENTED"),
+apex/research/proxies.py:231:       Q3, "apex.research.proxies", "footprint_delta", "IMPLEMENTED"),
+apex/research/proxies.py:236:       Q3, "apex.research.proxies", "detect_liquidation_cascade",
+tests/unit/test_research_proxies.py:11:from apex.research import proxies as px
+tests/unit/test_research_proxies.py:283:        assert px.NUMBA_USED is False
+tests/unit/test_research_proxies.py:288:        assert px.INCREMENTAL_ONLY is True
