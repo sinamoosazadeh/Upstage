@@ -1,0 +1,14 @@
+Initial baseline command output:
+85b2c155d7b054a468379ddfd802eb239d0801f9
+85b2c15 Merge pull request #25 from sinamoosazadeh/arena/01a0d98b-upstage
+
+Input fetched from origin SHA 690e2d8899319a7c7a96456f92c3008878e59346
+AUDIT/APEX_GEN5_AUDIT.md SHA256: 501aa2835b6f5b3a29c88546f6ad3b204c2651327f6bc4610c052d26f47ee163
+Full C-002 row (report line 139):
+| C-002 | راه‌اندازی و حلقهٔ اجرا | S0 | کد + بازتولید با آداپتر واقعی؛ بدون شبکه | ۲؛ جدید | `scripts/run_apex.py:183–188,718`؛ `apex/execution/toobit_adapter.py:276–284,322–336,680–682` | آداپتر مسیر boot/serve بدون session و transport ساخته می‌شود. با credential مصنوعی، query واقعی همین کلاس نتیجهٔ `UNKNOWN / TRANSPORT_SESSION_MISSING` داد؛ adapter هیچ session داخلی ایجاد نمی‌کند. | factory محیط‌محور: PAPER به شبیه‌ساز پایدار مصوب، LIVE به session دارای چرخهٔ عمر مشخص وصل شود. صرفاً افزودن session شبکه‌ای به PAPER ممنوع؛ ابتدا D-001. | reconciliation مسیر فعلی نمی‌تواند موفق شود؛ PAPER عملیاتی از این composition root آماده نیست. | boot readiness و admission سفارش مسدود؛ موفقیت harness تزریقی این مسیر را تضمین نمی‌کند. | آزمون composition root بدون تزریق دستی آداپتر: PAPER بدون credential و بدون درخواست خصوصی به READY معتبر برسد؛ LIVE session را صحیح ببندد. |
+
+Dependency installation command (exit 0, empty stdout/stderr):
+PYTHONDONTWRITEBYTECODE=1 python3 -m pip install --break-system-packages -q -r requirements.lock pytest
+
+Probe command (exit 0):
+PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V1a/C-002.py
