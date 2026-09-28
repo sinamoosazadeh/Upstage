@@ -1,0 +1,43 @@
+{
+  "H002_hysteresis": {
+    "fresh": [
+      "CRISIS",
+      "CONFIRMED"
+    ],
+    "persistent": [
+      "RANGE",
+      "SUSPECTED"
+    ]
+  },
+  "H003_gap": {
+    "inference_expansion": 1.0,
+    "inference_state": "EXPANSION",
+    "inference_structure_quality": 0.24405159958496386,
+    "training_expansion": 0.6899744802719737,
+    "training_rule0": "EXPANSION",
+    "training_structure_quality": 0.3486451422642341
+  },
+  "H005_cache_identity": {
+    "cell_hash": "81a6a191d4a3165906eeab3b6d0686a14fa149916a19ac1dd8d456f7ade3022c",
+    "protocol_hash": "8f863feeaa79ad5dbed666b601af3f93424b51c3ea6eec0bbb78a9dbbbf2fb14",
+    "same_cache_entry_hits_after_engine_parameter_change": true,
+    "same_cell_input_hash_after_engine_parameter_change": true,
+    "same_protocol_hash_after_engine_parameter_change": true
+  },
+  "H006_H007_validator": {
+    "artifact_hash_unchanged": true,
+    "declared_training_end": "2020-01-01T00:00:00.000Z",
+    "label_delay_candles": 48,
+    "tampered_query_and_window_accepted": true,
+    "valid_baseline": true
+  },
+  "H011_cache_tamper": {
+    "accepted_label": "CRISIS",
+    "cache_hit": true
+  },
+  "H013_fit_study": {
+    "state": "research-only synthetic fit, not a real training artifact",
+    "theta_H": 0.65,
+    "variant_count": 1
+  }
+}

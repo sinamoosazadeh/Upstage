@@ -5,18 +5,18 @@
 | ID | Verdict | Auditor severity | Independent severity | Frozen? | Cross-ref (D/ISSUE) | Recommended option |
 |---|---|---:|---:|---|---|---|
 | H-001 | CONFIRMED | S1 | S1 | No | = ISSUE-076; delta: required per-cell G-PAPER-001 receipt/envelope details | A — implement the normative replay CLI as a non-network, read-only runner; CP-15 owns it. No frozen file change if composed outside backtest; acceptance hashes change only when replay outcome changes. |
-| H-002 | UNVERIFIED | S1 | — | Partial | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-003 | UNVERIFIED | S1 | — | Yes | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-004 | UNVERIFIED | S1 | — | Partial | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-005 | UNVERIFIED | S1 | — | Partial | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-006 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-007 | UNVERIFIED | S1 | — | Partial | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-002 | CONFIRMED | S1 | S1 | Partial | = D21; independent producer persistence gap; R-019 is separate | A — preserve prior confirmed E11 state across chronologically ordered calls/restarts, keyed by symbol/timeframe/artifact and PIT; separately test journal vs EvidenceEvent so R-019 is not conflated. Non-frozen producer/state adapter; no frozen engine edit. Re-run deterministic replay and restart/correction tests. |
+| H-003 | CONFIRMED | S1 | S1 | Yes | = D21 + E11 §3.8 shock-gap; training/inference projection parity delta | A — share the governed gap-adjusted projection before training X/rule0 and runtime EWMA/softmax, or obtain an explicit owner ruling for divergence. E11 engine is frozen: no edit without authorization; training-side alternative changes labels/features and invalidates cache, fitted W/b, and replay evidence. |
+| H-004 | UNVERIFIED | S1 | — | Partial | — | No recommendation until contract necessity for T/base-rate in PAPER is independently verified. |
+| H-005 | CONFIRMED | S1 | S1 | Partial | = D35 cache compatibility; D47 digest is artifact-only, not cache identity | A — add governed code/feature-policy identity to cache namespace/input manifest only with owner approval; preserve D35 resume behavior and prove old cache invalidation. Non-frozen changes; invalidates cache files and affected samples/artifacts, not raw data. |
+| H-006 | CONFIRMED | S2 | S2 | No | = D47 hash scope; provenance sidecar absent | A — retain D47 artifact_sha256 meaning, add independently authenticated provenance manifest binding sample count, query, cell scope and time window; reject mismatches. New schema/identity needs owner approval and invalidates downstream fit evidence, not the frozen E11 code. |
+| H-007 | CONFIRMED | S1 | S1 | Partial | = D21 PIT t−48 + D47 schema; historical version selection absent | A — publish model fit/deploy/label-maturity time and select only a version available at the requested as_of; replay must use walk-forward versions. Non-frozen loader/producer adapter; no D47 hash redefinition. Historical decisions and replay hashes require recomputation. |
 | H-008 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | H-009 | CONFIRMED | S1 | S2 | Yes | D6/P4 (Phase-2 entry gate) | A — validate structured replay receipt and critical failures before defaults_active; persist a receipt. Non-frozen bootstrap adapter/service alternative; existing tests expecting arbitrary callbacks to activate will need tightening. |
 | H-010 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-011 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-011 | CONFIRMED | S1 | S1 | Partial | = D35 cache resume; distinct from H-005 identity | A — validate/attest cached sample payload against recomputation or an owner-approved manifest before it can enter fit; malformed or tampered-but-well-shaped payload must miss/refuse. Preserve D35 resume only for verified payloads; recompute affected cells and invalidate affected model evidence. |
 | H-012 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-013 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-013 | CONFIRMED | S2 | S2 | No | = D49 governed threshold; research-only | A — remove silent legacy fallback; fail with named configuration status or mark report INVALID with fallback source explicitly identified. Research-only change; does not change runtime classifier or frozen files, but invalidates affected fit-study reports and human decisions based on them. |
 | H-014 | CONFIRMED | S1 | S2 | No | = D58; delta: minimal non-null package accepted as LIVE calibrated | A — require a governed, schema-validated, versioned calibration artifact and bind p_hat to it; retain D58 fail-closed until supplied. Adapter/schema outside frozen logistic code is possible; invalidates only calibration package identities and related forecast caches. |
 | H-015 | CONFIRMED | S1 | S1 | Yes | — | A — supply PIT order notional and ADV to a cost adapter; do not patch the frozen backtest module without owner ruling. B10 notional/slippage tests must be reconciled to avoid double count; cost changes invalidate backtest metrics, caches, WFO and promotion evidence. |
 | H-016 | CONFIRMED | S1 | S1 | Yes | — | A — compute portfolio/account equity returns from actual risk fraction and costs separately from R expectancy. Frozen `backtest.py` is directly implicated; outside-file adapter can only fix downstream WFO metrics if every caller uses it. Existing golden metrics and promotion thresholds need re-baselining; invalidate research artifacts. |
@@ -59,7 +59,7 @@
 | I-016 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-017 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 
-Baseline check: `git rev-parse HEAD` = `85b2c155d7b054a468379ddfd802eb239d0801f9`; `git log -1 --oneline` = `85b2c15 Merge pull request #25 from sinamoosazadeh/arena/01a0d98b-upstage`. All source line references are against that commit. Audit source: commit `015d19bd6ec1956b853fd566157a929f9f95f260`; index commit `690e2d8899319a7c7a96456f92c3008878e59346`.
+Audit source-line baseline is `85b2c155d7b054a468379ddfd802eb239d0801f9` (`85b2c15 Merge pull request #25 from sinamoosazadeh/arena/01a0d98b-upstage`); it remains present and all source line references in this report are against that baseline. At this continuation the audit branch HEAD before these edits was `12d917f0626b90e76ddc1863ebb3c6da59d3b540`; this is not the source-line baseline. No product/source/config/test file was modified. Audit source: commit `015d19bd6ec1956b853fd566157a929f9f95f260`; index commit `690e2d8899319a7c7a96456f92c3008878e59346`.
 
 Scope note: this is a read-only, evidence-bounded verification. Synthetic probes prove only the invoked code path, not device/database/model/exchange behavior. No `.env`, secret, `data/`, model artifact, network endpoint, or real trading operation was accessed. `requirements.lock` was installed only into the execution environment; no tracked dependency file changed.
 
@@ -69,24 +69,25 @@ Baseline source files were not changed. Selected actual-repository probes are in
 
 - `phase2_forecast.py` with real `BootstrapRunner`, real forecast functions and a disposable temp SQLite checkpoint; raw output `phase2_forecast.out`.
 - `backtest_research_claims.py` imports actual backtest/optimizer/promotion code and uses synthetic in-memory values; raw output `backtest_research_claims.out`.
+- `training_e11_claims.py` calls real E11 hysteresis/vector/inference, cache hash/read/write, classifier validation, and research fit-study functions using synthetic fixture/rows; raw output `training_e11_claims.out`. It creates no production cache or model artifact and makes no device/data claim.
 - Targeted tests: `pytest_research.out` (316 passed, 1 failed; existing governance test invokes unavailable git object `f14be36`); `pytest_context_integration.out` (22 passed, 13 warnings). These green tests are not a device/model/data acceptance result.
 - The engine-context/store-source relevant suite was run as `python3 -m pytest -q -p no:cacheprovider tests/unit/test_engine_context.py tests/integration/test_context_to_trade_paper.py tests/integration/test_cp14_producer.py`: 249 passed, 13 warnings, 1129.21 s (tool raw output was not persisted as a separate file). It is test evidence only.
 - No SQL-per-row/cell/bar query performance audit was completed in V5; no performance claims about actual device data are made.
 
 ## Row-by-row review
 | H-001 | CONFIRMED | S1 | S1 | No | = ISSUE-076; delta: required per-cell G-PAPER-001 receipt/envelope details | A — implement the normative replay CLI as a non-network, read-only runner; CP-15 owns it. No frozen file change if composed outside backtest; acceptance hashes change only when replay outcome changes. |
-| H-002 | UNVERIFIED | S1 | — | Partial | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-003 | UNVERIFIED | S1 | — | Yes | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-004 | UNVERIFIED | S1 | — | Partial | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-005 | UNVERIFIED | S1 | — | Partial | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-006 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-007 | UNVERIFIED | S1 | — | Partial | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-002 | CONFIRMED | S1 | S1 | Partial | = D21; independent producer persistence gap; R-019 is separate | A — preserve prior confirmed E11 state across chronologically ordered calls/restarts, keyed by symbol/timeframe/artifact and PIT; separately test journal vs EvidenceEvent so R-019 is not conflated. Non-frozen producer/state adapter; no frozen engine edit. Re-run deterministic replay and restart/correction tests. |
+| H-003 | CONFIRMED | S1 | S1 | Yes | = D21 + E11 §3.8 shock-gap; training/inference projection parity delta | A — share the governed gap-adjusted projection before training X/rule0 and runtime EWMA/softmax, or obtain an explicit owner ruling for divergence. E11 engine is frozen: no edit without authorization; training-side alternative changes labels/features and invalidates cache, fitted W/b, and replay evidence. |
+| H-004 | UNVERIFIED | S1 | — | Partial | — | No recommendation until contract necessity for T/base-rate in PAPER is independently verified. |
+| H-005 | CONFIRMED | S1 | S1 | Partial | = D35 cache compatibility; D47 digest is artifact-only, not cache identity | A — add governed code/feature-policy identity to cache namespace/input manifest only with owner approval; preserve D35 resume behavior and prove old cache invalidation. Non-frozen changes; invalidates cache files and affected samples/artifacts, not raw data. |
+| H-006 | CONFIRMED | S2 | S2 | No | = D47 hash scope; provenance sidecar absent | A — retain D47 artifact_sha256 meaning, add independently authenticated provenance manifest binding sample count, query, cell scope and time window; reject mismatches. New schema/identity needs owner approval and invalidates downstream fit evidence, not the frozen E11 code. |
+| H-007 | CONFIRMED | S1 | S1 | Partial | = D21 PIT t−48 + D47 schema; historical version selection absent | A — publish model fit/deploy/label-maturity time and select only a version available at the requested as_of; replay must use walk-forward versions. Non-frozen loader/producer adapter; no D47 hash redefinition. Historical decisions and replay hashes require recomputation. |
 | H-008 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | H-009 | CONFIRMED | S1 | S2 | Yes | D6/P4 (Phase-2 entry gate) | A — validate structured replay receipt and critical failures before defaults_active; persist a receipt. Non-frozen bootstrap adapter/service alternative; existing tests expecting arbitrary callbacks to activate will need tightening. |
 | H-010 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-011 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-011 | CONFIRMED | S1 | S1 | Partial | = D35 cache resume; distinct from H-005 identity | A — validate/attest cached sample payload against recomputation or an owner-approved manifest before it can enter fit; malformed or tampered-but-well-shaped payload must miss/refuse. Preserve D35 resume only for verified payloads; recompute affected cells and invalidate affected model evidence. |
 | H-012 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-013 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-013 | CONFIRMED | S2 | S2 | No | = D49 governed threshold; research-only | A — remove silent legacy fallback; fail with named configuration status or mark report INVALID with fallback source explicitly identified. Research-only change; does not change runtime classifier or frozen files, but invalidates affected fit-study reports and human decisions based on them. |
 | H-014 | CONFIRMED | S1 | S2 | No | = D58; delta: minimal non-null package accepted as LIVE calibrated | A — require a governed, schema-validated, versioned calibration artifact and bind p_hat to it; retain D58 fail-closed until supplied. Adapter/schema outside frozen logistic code is possible; invalidates only calibration package identities and related forecast caches. |
 | H-015 | CONFIRMED | S1 | S1 | Yes | — | A — supply PIT order notional and ADV to a cost adapter; do not patch the frozen backtest module without owner ruling. B10 notional/slippage tests must be reconciled to avoid double count; cost changes invalidate backtest metrics, caches, WFO and promotion evidence. |
 | H-016 | CONFIRMED | S1 | S1 | Yes | — | A — compute portfolio/account equity returns from actual risk fraction and costs separately from R expectancy. Frozen `backtest.py` is directly implicated; outside-file adapter can only fix downstream WFO metrics if every caller uses it. Existing golden metrics and promotion thresholds need re-baselining; invalidate research artifacts. |
@@ -182,80 +183,50 @@ Run row-specific regression tests against the contract and ensure the proposed f
 
 ## H-002
 
-### Auditor claim (short quote)
-A fresh one-candle E11 engine per close resets hysteresis/history state.
+### What I read (baseline line references; complete functions and callers)
+`apex/ops/engine_context.py:1623–1633` creates the one-candle context and a new `E11RegimeEngine()` per completed bundle; the preparation path calls that bundle from `prepare_engine_bundle` (`:2283–2335`). `apex/engines/e11_regime/engine.py:675–701` is the complete `hysteresis_manager`; `run_engine` uses engine-local `hist_raw_states`/`last_confirmed` at `:937–940`; events are emitted at `:1016–1036`; the complete `E11RegimeEngine.compute` path is `:1450–1610`. Its constructor initializes those state fields for the instance. `feature_timeline` (`engine_context.py:2380–2540`) maintains normalization/EWMA history but does not carry the E11 engine's raw-label confirmation state. `grep -rn` consumer/caller search was run over `apex/`, `scripts/`, and `tests/unit/test_engine_context.py`; `prepare_engine_bundle` is the PAPER composition path, while timeline state is a distinct data structure. No product file changed.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### Reproduction (probe and actual result)
+`PYTHONPATH=. python3 AUDIT/probes_V5/training_e11_claims.py`; raw output: `AUDIT/probes_V5/training_e11_claims.out`. The real helper returned persistent prior `RANGE` → (`RANGE`, `SUSPECTED`) for a new `CRISIS`, versus empty/fresh history → (`CRISIS`, `CONFIRMED`). This proves state-reset semantics, not a real market occurrence or downstream order.
 
-### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+### Verdict and independently assigned severity
+**CONFIRMED, S1.** The producer recreates the engine at each one-close call, so ordinary E11 hysteresis does not see earlier raw states. Contract §2/§5.2 expects three consecutive raw labels for a changed confirmed regime (the implementation's helper explicitly enforces this). A fresh first candle is deliberately CONFIRMED by the helper, which is the reset edge. This finding concerns runtime's missing persisted/replayed prior state; it does not subsume R-019's distinct false EvidenceEvent catalog behavior, and the existence of another state store is not proof it preserves these labels.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Root cause, direct impact, upstream/downstream
+The composition root supplies no prior E11 confirmation journal/state in `regime_context`; the new engine starts with empty history. Consequently a one-candle regime change can become the bundle state and influence forecast/fabric and bridge risk decisions. I found no proof that a real order executed or that every plan becomes unsafe; PAPER has further gates. R-019 (first/unchanged EV_RGM_003 catalog entries) remains independent.
 
-### Root cause
-Not determined; do not infer from the report title or code names.
+### Contract, decisions, and frozen status
+E11 §2/§5.2 three-candle hysteresis and D21's PIT training label horizon apply; neither is overridden by D30 (which only sets 20 default base cells). E11 engine is frozen; only a non-frozen producer/state adapter or separately authorized engine change can address this. Preserve correction/restart semantics and distinguish journal transitions from catalog events.
 
-### Direct impact
-Not determined.
-
-### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
-
-### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
-
-### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
-
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
-
-### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+### Fix options and side effects
+A: replay/persist prior E11 state in timestamp order keyed by symbol/timeframe/model version, with deterministic recovery after restart/correction. Side effects: new state lineage/storage and historical replay identity; no fabricated transition on warm start. B: explicitly fail closed for state-dependent PAPER use when prior state is unavailable; safer but reduces availability. Do not remove the three-bar confirmation rule. Tests must separately assert E11 journal and EvidenceEvent outputs.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
+Synthetic prior RANGE→single CRISIS, CRISIS×3, transient CRISIS→RANGE, gap and clock discontinuity, correction, restart, artifact version change; compare uninterrupted and replayed confirmed state/event sequence exactly. Verify no false event or duplicated journal transition and no change to frozen files.
 
 
 ## H-003
 
-### Auditor claim (short quote)
-Training feature/label construction omits the shock-gap projection used at inference.
+### What I read (baseline line references; complete functions and callers)
+`engine_context.py:836–857` is the full D21 `training_rule0`; `feature_timeline` projection/vector/update path is `:2380–2540` and computes `compute_state_vector` at `:2526–2531`; the runtime composition at `:1624–1632` builds its final one-candle context. In `apex/engines/e11_regime/engine.py`, the complete `compute_state_vector` is `:386–434`; runtime gap detection/override is `:907–913` and `_gap_detected` is `:1077–1089`; the remaining inference path then uses the adjusted vector for turbulence, logits and tree (`:914–940`). `grep -rn` was run for both training and E11 consumers in `apex/`, `scripts/`, and tests.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### Reproduction
+Same synthetic baseline fixture GF_09_GAP_EDGE from `tests/fixtures/e11_golden_fixtures.json` was sent to real `compute_state_vector`, `training_rule0` and `run_engine` via `AUDIT/probes_V5/training_e11_claims.py`. Raw output shows training expansion `0.6899744803`, structure quality `0.3486451423`; inference gap-adjusted values are `1.0` and `0.2440515996`. Fixture's training rule0 is EXPANSION here; result proves vectors differ, not that every row's class changes. No real-data occurrence asserted.
 
-### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+### Verdict and independently assigned severity
+**CONFIRMED, S1.** D21 says training uses §2 X_t and rule0 with the entropy branch removed; E11 §3.8 separately defines inference shock-gap adjustment. Current training projection has no equivalent adjustment, while runtime transforms expansion and structure quality before its E11 calculations. It is a feature-distribution mismatch on the gap path. The audit's stronger class-flip illustration is not generalized from this single fixture.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Root cause, direct impact, upstream/downstream
+The training timeline creates X/rule0 before runtime-only shock-gap projection. Training samples/cache and fitted W/b can therefore differ from runtime input for gaps; turbulence/EWMA also consumes the adjusted vector at runtime. This can impair calibration/decision quality during gap conditions. No device evidence, model quality result, or realized risk/order is established.
 
-### Root cause
-Not determined; do not infer from the report title or code names.
+### Contract and decisions; frozen status
+D21 (APEX_GEN5.md:11889–11894) governs training rule0/48-close delayed labels and PIT; E11 §3.8 (engine contract around the shock-gap edge) governs inference. The gap rule is in frozen `apex/engines/e11_regime/engine.py`; no product edit is authorized. No later owner decision reviewed overrides these clauses.
 
-### Direct impact
-Not determined.
-
-### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
-
-### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
-
-### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
-
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
-
-### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+### Fix options and side effects
+A: factor the governed projection into a shared, non-frozen feature adapter consumed by training and runtime only if this does not require modifying frozen E11; verify exact parity. B: obtain owner authorization to change frozen engine code. Either changes training features and possibly delayed labels; flush/recompute D35 cell cache, retrain from approved data, and invalidate model/replay/evaluation hashes. Do not casually edit the frozen six-file set.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
+Use same OHLCV/ATR/candle flags and clock in training and runtime; assert all 8 features, turbulence, tree input and label semantics match where contracts demand parity, including gap threshold just below/equal/above 2 ATR, no-gap, missing ATR and non-finite data. Verify new cache namespace and cold/warm parity.
 
 
 ## H-004
@@ -299,119 +270,74 @@ No acceptance criteria validated; requires full function/caller/callee, contract
 
 ## H-005
 
-### Auditor claim (short quote)
-Training cache identity omits upstream engine/code and effective feature/label policy versions.
+### What I read (baseline line references; complete functions and callers)
+`engine_context.py:3010–3033` fully defines `training_protocol_hash` and `cell_input_hash`; `read_cell_cache`/`write_cell_cache` are `:3036–3100`; training caller and hit path are `:3160–3248`. The fixed `TRAINING_QUERY` declaration is at `:1716–1725`. `grep -rn` for protocol/cell hashes and cache readers/writers/callers was performed in `apex/`, `scripts/`, tests. Relevant tests `test_d36_cache_hashes_equal_main_constants_reuse_phone_namespaces` (`tests/unit/test_engine_context.py:2500–2539`) and `test_cp144_cache_compatibility_byte_identical` (`:3184–3215`) were read; D35 cache-resume tests are referenced in the report. No SQL row query was part of this identity probe.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### Reproduction
+Probe `training_e11_claims.py` changes the in-memory E11 trend threshold while holding synthetic market/dependency rows constant, calls the real hash functions, writes/reads a disposable cache, and returns identical protocol/input hashes and a cache hit. Raw hashes and outcome are in `.out`. This is controlled monkeypatching only; no governed YAML/product file or repository cache was modified.
 
-### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+### Verdict and independently assigned severity
+**CONFIRMED, S1.** Code identity and effective E11 feature/label policy do not enter either hash. `training_protocol_hash` hashes fixed query text, selected scope and cap; `cell_input_hash` hashes market/dependency observations and cap. The probe demonstrates a changed in-memory E11 policy does not invalidate an otherwise matching cell cache. It does not claim that a production policy was changed or that existing on-disk cache is corrupted.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Root cause, direct impact, upstream/downstream
+Cache namespace lacks source/engine/policy version; cell identity is market-only. A future non-market feature/label change can therefore reuse old samples, then feed `train_classifier` and produce an artifact/replay whose sample generation policy differs from current runtime. D35 intentionally preserves byte-identical cache compatibility, so this requires owner-aware versioning, not silently changing frozen cache semantics.
 
-### Root cause
-Not determined; do not infer from the report title or code names.
+### Contract/decisions and frozen status
+D35 (APEX_GEN5.md:11896) governs cache reuse/input invalidation; D47 governs `artifact_sha256`, not a code identity for each cache cell. D30 default remains 20 E11 base cells and is not 140 data cells. No frozen engine/data-catalog change proposed; `engine_context.py` is non-frozen. CP-15/CP-16/C-008 overlap is not claimed: this is specifically training cache identity.
 
-### Direct impact
-Not determined.
+### Fix options and side effects
+A: approved policy-manifest digest in protocol/cache identity; old cache misses and affected cells recompute. B: explicitly accept a pinned training implementation version and reject cache on version mismatch. Preserve data/scope defaults and D35 resume; do not redefine D47 model checksum. Side effects: cache invalidation, longer training and newly fitted artifacts requiring downstream validation.
 
-### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
-
-### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
-
-### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
-
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
-
-### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
-
-### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
+### Acceptance
+With raw inputs fixed, mutate each governed feature/label implementation version and require cache miss; unchanged version/input must hit and reproduce samples bitwise. Verify dependency rows, correction/availability, cap and train CLI paths. No live-cache or device conclusion.
 
 
 ## H-006
 
-### Auditor claim (short quote)
-Artifact digest does not bind training provenance metadata and accepts arbitrary well-shaped query hashes.
+### What I read (baseline line references; complete functions and callers)
+`engine_context.py:515–518` defines D47 `classifier_hash`; `validate_classifier` is fully at `:527–591`; loader at `:594–601`; artifact construction at `:3250–3272`. The producer consumes the artifact in `:1628–1632`, and `prepare`/fingerprinting load it at `:1775–1796`. `grep -rn` across `apex/`, `scripts/`, tests for validator/hash/loader callers was performed. Binding contract APEX_GEN5.md:11852–11894 and D47 owner clause in PHASE2_DECISION_LOG.md:1155–1159 were read; D30 scope is unchanged.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### Reproduction
+`training_e11_claims.py` builds a disposable schema-valid artifact; changes its query hash and training window while leaving W/b/seed/fit_protocol and `artifact_sha256` unchanged; calls real `validate_classifier`. Baseline and tampered artifact both validate. The validator verifies query is lowercase 64-hex and checks window scope/order, not correspondence to digest or training evidence. Raw result in `.out`; no real artifact used.
 
-### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+### Verdict and independently assigned severity
+**CONFIRMED, S2.** D47 explicitly defines the artifact hash over `{W,b,seed,fit_protocol}`. Thus omitting provenance is not a violation of that hash's specified formula; independently, provenance fields remain schema-valid and unbound. The claim is confirmed as an assurance gap, not as a broken checksum implementation or proof of falsified provenance.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Root cause, impact and interactions
+`training_window`, `sample_count`, and `training_query_sha256` are outside the D47 checksum. A consumer that trusts these metadata fields can misstate what data/scope trained W/b. It affects provenance, audit and walk-forward validation; it does not itself change logits or prove a forged production model. H-007 covers temporal availability; H-010 covers cell participation and is not inferred here.
 
-### Root cause
-Not determined; do not infer from the report title or code names.
+### Contract, decisions, frozen status
+D47 hash formula and classifier schema (APEX_GEN5.md:11852–11894; PHASE2_DECISION_LOG.md:1155–1159); D30 limits default runtime fit to 20 cells. Keep the D47 formula unchanged unless owner revises it. Validator is non-frozen. No secret/device/model files read.
 
-### Direct impact
-Not determined.
+### Fix and side effects
+Add a separately versioned/authenticated provenance manifest binding exact query, effective scope, time range, counts and per-cell/input identities; validate it before research/promotion. This requires approved schema/lineage, and invalidates prior provenance claims/downstream fit evaluations; weights need not change solely to add metadata. Do not claim manifest authenticity until a trusted producer/signature exists.
 
-### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
-
-### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
-
-### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
-
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
-
-### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
-
-### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
+### Acceptance
+Change each provenance field independently and require manifest validation failure; regenerated manifest over identical evidence must be deterministic. Confirm D47 model digest stays defined exactly as owner specified and model loading remains fail-closed.
 
 
 ## H-007
 
-### Auditor claim (short quote)
-Historical producer queries may use a currently available classifier trained with future labels.
+### What I read (baseline line references; complete functions and callers)
+`validate_classifier` at `engine_context.py:527–591` validates only schema, 48-candle constant, ordering/scope and a 64-hex query hash; `load_classifier` is `:594–601`. `_input_fingerprint` loads the current artifact at `:1775–1796`; prepare/composition eventually consumes it at `:2283–2335`, with `complete_engine_bundle` loading once for the requested `as_of`. Artifact metadata is formed from sample stamps at `:3250–3272`. `grep -rn` over `apex/`, `scripts/`, tests for loader and prepare callers was performed. D21 and D47 contract/decisions read.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### Reproduction
+The combined real-validator probe changes `training_window.end` to 2020 while retaining `label_delay_candles=48` and other valid fields; `validate_classifier` accepts it. Source trace confirms the producer loads a current classifier without selecting by query time. The probe shows acceptance of inconsistent historical metadata, not that a real historical replay was executed.
 
-### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+### Verdict and independently assigned severity
+**CONFIRMED, S1 (conditional on historical use).** D21 requires each label's t+48 confirmation to be CLOSED and training PIT through window-end minus 48. Current loader/producer has no fit/deploy or last-label-available timestamp and no model version selection by requested `as_of`. Thus a historical request can consume a current model with future labels. No claim that current-time PAPER has this leakage or that historical API use has occurred.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Root cause and impact trace
+Artifact carries a training window of sample timestamps and a 48-bar delay but no publication/maturity timestamp. `prepare_engine_bundle(as_of)` loads the current path. Historical replay/backtest can therefore backcast knowledge unavailable at that time, biasing forecast/decision evidence and replay metrics. This is distinct from H-001 CLI absence and H-006 metadata integrity. Runtime order impact not established.
 
-### Root cause
-Not determined; do not infer from the report title or code names.
+### Contract/decisions and frozen status
+D21 (APEX_GEN5.md:11889–11894) owns delayed labels/PIT; D47 owns artifact shape/hash; neither authorizes latest model for historical time. `engine_context.py` is non-frozen; no frozen code change necessary, but model schema/provenance changes need owner decision. Preserve D30 default 20 cells.
 
-### Direct impact
-Not determined.
+### Fix and side effects
+Add fit completion, latest label-maturity and publish times to approved provenance; select only artifacts available by query `as_of`, fail closed when absent. Historical replay becomes walk-forward and old replay results/hashes need recomputation; live newest-artifact behavior may remain unchanged. Do not rewrite D47 hash.
 
-### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
-
-### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
-
-### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
-
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
-
-### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
-
-### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
+### Acceptance
+Build synthetic models with different publish/maturity times; query before fit/maturity must refuse or select earlier eligible artifact, after publish selects expected digest. Test boundary t+47/t+48 and timestamp timezone, restart/cache, and prove no future model in historical replay. Device evidence not needed to establish API behavior.
 
 
 ## H-008
@@ -533,41 +459,26 @@ No acceptance criteria validated; requires full function/caller/callee, contract
 
 ## H-011
 
-### Auditor claim (short quote)
-A structurally valid training cache payload can alter labels/vectors without changing input_hash.
+### What I read (baseline line references; complete functions and callers)
+`engine_context.py:3036–3084` is complete `read_cell_cache`; atomic `write_cell_cache` follows at `:3087–3100`; caller and training cache-hit path are `:3196–3209`, cache construction at `:3238–3248`. `grep -rn` for cache consumers and writers was performed in `apex/`, `scripts/`, tests. Read relevant cache tests: `test_cp144_cache_compatibility_byte_identical` (`tests/unit/test_engine_context.py:3184–3215`) and D36 cache hash test (`:2500–2539`); test file is large and this is not a claim of a full independent suite rerun.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### Reproduction
+Real `write_cell_cache`/`read_cell_cache` with a disposable temp file and correct unchanged input/protocol hashes; well-shaped sample label altered to `CRISIS` is returned as a hit. `training_e11_claims.py` / `.out`. Reader verifies format, cell, hashes, vector-key order, label membership, as_of string, finite 8-vector and excluded counts; it has no digest or rederivation check over `samples`.
 
-### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+### Verdict and independently assigned severity
+**CONFIRMED, S1.** A schema-valid changed sample can be accepted under the same raw-input digest. The result is a demonstrated trust-boundary weakness/cache tamper acceptance, not evidence that the repository's gitignored production cache was manipulated or that model weights were trained from a tampered file. D35 byte-compatible reuse explains why simple schema changes have side effects; H-005 separately addresses missing code/policy version identity.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Root cause and upstream/downstream
+`input_hash` attests consumed source observations, not the derived label/vector payload. The training caller trusts cache samples on a matching input hash, then aggregates them into X/labels and trains W/b. A changed but valid label/vector can therefore affect class counts and artifact. No raw data, `data/`, or actual cache was accessed.
 
-### Root cause
-Not determined; do not infer from the report title or code names.
+### Contract, decisions, frozen status
+D35 (APEX_GEN5.md:11896) requires resume and changed-input recomputation; D47 governs resulting artifact hash, not cache sample payload digest. `engine_context.py` is non-frozen; no product edit made. Maintain cache compatibility only under an owner-approved trust design.
 
-### Direct impact
-Not determined.
+### Fix and side effects
+Verify payload by canonical digest plus trusted per-cell producer/manifest, or recompute feature/label derivations from raw/dependency evidence before training; reject mismatches. A bare adjacent checksum is not authenticity if it can be edited with the payload. Side effects: schema/version and invalidation of existing cache; warm/cold parity and resume performance must be retested; affected fit evidence must be rebuilt.
 
-### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
-
-### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
-
-### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
-
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
-
-### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
-
-### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
+### Acceptance
+Change a valid label, timestamp or finite vector while preserving input hash and require refusal/recompute. Correct cache remains byte-identical on warm resume and equals cold derived samples. Verify all eight required classes and D36 TRANSITION semantics without claiming real-model acceptance.
 
 
 ## H-012
@@ -611,41 +522,26 @@ No acceptance criteria validated; requires full function/caller/callee, contract
 
 ## H-013
 
-### Auditor claim (short quote)
-Research fit-study falls back silently to historical theta 0.65 on parameter-load error.
+### What I read (baseline line references; complete functions and callers)
+Complete `run_fit_study` is `engine_context.py:2909–2940`; `fit_multinomial_study` is `:2840–2906`; `training_validation` default governance path is `:2805–2818`. `grep -rn` over `run_fit_study` callers found research/report paths; it is separate from `train_classifier` runtime artifact write. Read D49 / governing theta declaration and cited test reference; source line `APEX_GEN5.md:20976` appears in auditor row, with later D49 decisions taking precedence.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### Reproduction
+The actual `run_fit_study` is called on eight tiny synthetic rows with one explicitly bounded iteration and real `E11.get_params` monkeypatched to raise. Probe restores the original function in `finally`; no file/artifact is written. Output returns `theta_H=0.65`, one variant. This is a research-only synthetic fit, not a deployed or real model.
 
-### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+### Verdict and independently assigned severity
+**CONFIRMED, S2.** Any exception loading governed entropy threshold silently selects legacy `E11.THETA_H`; `training_validation` then receives it explicitly. Governed D49 YAML value is `1.105878`, not `0.65`. Finding is confined to research fit-study diagnostics/report and is not a PAPER decision-path bypass.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Root cause, impact and interactions
+Broad exception fallback hides missing/invalid governed settings. Entropy shares/variant comparisons in report can be materially different and inform human policy/model choices; actual runtime classifier training path uses `load_e11_training_protocol` and `train_classifier`, not this fallback. No model artifact, production decision or order is implicated by this probe.
 
-### Root cause
-Not determined; do not infer from the report title or code names.
+### Contract/decisions and frozen status
+D49's governed threshold supersedes historical prose/default; `run_fit_study` is non-frozen. No E11 engine/YAML change. Research report identity should surface governed threshold/source and invalidity; not an authorization to change D49.
 
-### Direct impact
-Not determined.
+### Fix and side effects
+Fail with named configuration error on missing/invalid threshold, or mark report INVALID and include explicit non-governed fallback source; never emit an ordinary fit-study result with silent 0.65. Existing research comparisons using fallback must be rerun and marked superseded; no runtime retraining automatically follows.
 
-### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
-
-### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
-
-### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
-
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
-
-### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
-
-### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
+### Acceptance
+Valid D49 config returns governed threshold/source; loader error or invalid value yields refusal/INVALID status and no ordinary study report. Run every research variant and tests under valid configuration; ensure no fallback leaks into runtime train-e11.
 
 
 ## H-014
@@ -2288,20 +2184,20 @@ Acceptance: on a fresh checkout without f14be36, the test can execute determinis
 
 ## Rows not verified or incomplete
 
-No coverage claim is made for the following 35 IDs. Each was extracted in full from the audit row, but the mandatory full-file/function/test read, consumer search, governing clause/decision precedence, reproduction and two-way effect trace was not completed; therefore each remains UNVERIFIED:
+No coverage claim is made for the following 28 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
 
-`H-002, H-003, H-004, H-005, H-006, H-007, H-008, H-010, H-011, H-012, H-013, H-024, H-026, H-030, H-031, H-033, H-035, H-036, I-001, I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
+`H-004, H-008, H-010, H-012, H-024, H-026, H-030, H-031, H-033, H-035, H-036, I-001, I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
 
-Rows with a non-UNVERIFIED status were independently evidenced only to the exact scope stated in their sections. Synthetic tests do not establish real data/device/model behavior. In particular, H-022 and H-034 have a partial caller/governance/integration review caveat in their individual sections; their verdicts are limited to the function-level behavior reproduced/read. Full V5 acceptance requires completing all unverified rows, mandatory caller/callee and test reads, and relevant SQLite plan checks where applicable.
+Rows with a non-UNVERIFIED status were independently evidenced only to the exact scope stated in their sections. Synthetic tests do not establish real data/device/model behavior. H-002/H-003/H-005/H-006/H-007/H-011/H-013 have new bounded real-function probe evidence in this continuation; untested integration/device assertions remain explicitly excluded. H-022 and H-034 retain their prior partial caller/governance/integration review caveat. Full V5 acceptance requires completing all remaining unverified rows, mandatory caller/callee and test reads, and relevant SQLite plan checks where applicable.
 
 ## Final counts
 
 | Verdict | Count |
 |---|---:|
-| CONFIRMED | 17 |
+| CONFIRMED | 24 |
 | PARTIAL | 2 |
 | REJECTED | 0 |
-| UNVERIFIED / incomplete | 35 |
+| UNVERIFIED / incomplete | 28 |
 | DEVICE-EVIDENCE-NEEDED | 0 (no real-device dependent claim was assigned this verdict; device evidence was not obtained) |
 
 New finding: `X-V5-001` (test reproducibility dependency on unavailable base commit).
