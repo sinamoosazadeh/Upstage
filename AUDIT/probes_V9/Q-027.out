@@ -1,0 +1,7 @@
+TREND_SCALE_REQUIRED: ('scale', 'direction', 'strength', 'quality', 'quality_label', 'seq_score', 'slope_z', 'pos', 'r2', 'adx', 'di_plus', 'di_minus', 'hurst', 'mk_z', 'evidence_count', 'as_of', 'snapshot_id', 'contract_version')
+  state in canonical set: False
+  continuity_break in canonical set: False
+  degraded_reason in canonical set: False
+VALID   sid: 59ebd48cbdbf0ca5b5e80e24ed41a8cc602137d8a9e596446056cebd6c11e048
+INVALID sid: 59ebd48cbdbf0ca5b5e80e24ed41a8cc602137d8a9e596446056cebd6c11e048
+Q-027 CONFIRMED: lifecycle/degradation fields excluded from the snapshot identity — indistinguishable snapshots

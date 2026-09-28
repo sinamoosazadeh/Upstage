@@ -1,0 +1,8 @@
+bars supplied: 51 | MACRO window param: 240
+MACRO state=VALID label=Q2 adx=100.00 degraded_reason=None
+evidence observation_window: {'scale': 'MACRO', 'tf': '1h', 'bars': 240} | validity: VALID
+engine_context 51-bar gates:
+ 2109:                if len(quality["window"]) < 51:
+2428:        if len(window) < 51:
+
+Q-019 CONFIRMED: MACRO/INTER computed on 51-bar window without any len>=W refusal; evidence reports bars=240

@@ -1,0 +1,4 @@
+same object returned: True
+out2 oi_state: MISSING (caller passed AVAILABLE)
+out2 SHORT seq_score: 1.0 (bearish swings ignored)
+Q-026 CONFIRMED: cache key {ts}_{close} ignores every other input; stale state served for changed swings/atr/oi_state/history

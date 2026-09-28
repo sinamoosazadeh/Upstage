@@ -1,0 +1,5 @@
+pos with atr=0.0: 9.5e+10
+direction=1 strength=1.000 z=2.375e+10 (seq=0, slope_z=0!)
+MICRO pos=2e+10 direction=1 strength=1.000
+SHORT pos=9.5e+10 direction=1 strength=1.000
+Q-022 CONFIRMED: no ATR floor/guard; default atr=0.0 turns pos into a ~1e12 dominating term

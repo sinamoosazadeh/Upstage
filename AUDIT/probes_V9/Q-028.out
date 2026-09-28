@@ -1,0 +1,28 @@
+compute() source:
+    def compute(self, symbol: str, timeframe: str, as_of: str,
+                context: Optional[Dict[str, Any]] = None
+                ) -> List[EvidenceEvent]:
+        context = context or {}
+        window_obs = self._resolve_window(symbol, timeframe, as_of, context)
+        if not window_obs:
+            return []
+        bars = [observation_to_bar(o, timeframe) for o in window_obs]
+        result = run_engine(
+            bars,
+            swings=context.get("swings"),
+            atr=float(context.get("atr", 0.0)),
+            mom_series=context.get("mom_series"),
+            tf_seconds=int(context.get("tf_seconds", 3600)),
+            bos_event=context.get("bos_event"),
+            choch_event=context.get("choch_event"),
+            oi_state=str(context.get("oi_state", "MISSING")),
+            params=context.get("e09_params"))
+        quality = self._window_quality(window_obs)
+        return [self._to_evidence(scale, data, symbol, timeframe, quality,
+                                  result)
+                for scale, data in result["scales"].items()]
+
+engine emitted internal events: ['EV_TRD_008', 'EV_TRD_005']
+compute() would publish 4 evidence (one per scale), states only
+producer uses E09 'events' key: True
+Q-028 CONFIRMED: EV_TRD_* never become EvidenceEvents; only per-scale TREND_* condition states are published

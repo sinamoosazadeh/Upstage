@@ -1,0 +1,9 @@
+current_idx=  -999 -> BEARISH_DIVERGENCE score=0.8
+current_idx=     0 -> BEARISH_DIVERGENCE score=0.8
+current_idx=     5 -> BEARISH_DIVERGENCE score=0.8
+current_idx= 10000 -> BEARISH_DIVERGENCE score=0.8
+adjacent peaks (distance 1) produced divergence: BEARISH_DIVERGENCE
+divergence_min_peak_distance references:
+   apex/engines/e09_trend/engine.py:139:    divergence_min_peak_distance: int = 5   # §7 Ch.3-10
+consuming lines (excluding declaration): []
+Q-024 CONFIRMED: current_idx dead, no peak-distance or recency constraint; min_peak_distance param declared but never read

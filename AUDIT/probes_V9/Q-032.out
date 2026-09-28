@@ -1,0 +1,4 @@
+bos=None            -> EV_TRD_001: []
+bos=DOWN (opposite) -> EV_TRD_001: [('MICRO', 1), ('SHORT', 1), ('INTER', 1), ('MACRO', 1)]
+bos={'foo':'bar'}   -> EV_TRD_001: [('MICRO', 1), ('SHORT', 1), ('INTER', 1), ('MACRO', 1)]
+Q-032 CONFIRMED: opposite-direction/garbage bos_event validates a bullish trend-start; only truthiness is checked

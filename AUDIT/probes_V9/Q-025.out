@@ -1,0 +1,4 @@
+EV_TRD_003: [{'code': 'EV_TRD_003', 'name': 'Trend_Exhausted', 'ts': 212400000, 'divergence': 'BEARISH_DIVERGENCE', 'score': 0.8, 'strength': 0.6176908527503632}]
+emitted score=0.800 | §3.7 exhaustion_score=0.3493 (strength=0.618 adx=8.64)
+exhaustion_score callers: []
+Q-025 CONFIRMED: constant 0.8 emitted; §3.7 formula dead code

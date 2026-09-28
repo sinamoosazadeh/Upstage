@@ -1,0 +1,13 @@
+producer E09 run_engine call site (raw slice):
+nd_context)
+    trend = _time_engine(engine_profile, "E09", E09.run_engine, bars, swings=swings,
+                          atr=vlt.atr14_wilder, tf_seconds=duration, bos_event=bos,
+                          oi_state=vol.oi_state)
+    # ISSUE-CP14-011 projections are resolved by owner D26-A/B.
+    # 
+producer E09 compute() context:
+trend_context = {**base, "swings": swings, "atr": vlt.atr14_wilder,
+                     "tf_seconds": duration, "bos_event": bos, "oi_state": vol.oi_state}
+divergence: {'is_exhaustion': False, 'type': None, 'score': 0.0, 'degraded': True, 'degraded_reason': 'MOMENTUM_UNAVAILABLE_DEGRADED_QX'}
+payload degraded=True reason=MOMENTUM_UNAVAILABLE_DEGRADED_QX
+Q-021 CONFIRMED: producer never wires E10 momentum into E09; divergence natively degraded, EV_TRD_003 unreachable in production

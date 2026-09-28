@@ -1,0 +1,5 @@
+warmup=False warmup_2n=True adx=100.00
+MICRO: state=CALCULATING degraded_reason=ADX_WARMUP_QX adx=100.00 evidence_count=1
+SHORT: state=VALID degraded_reason=ADX_WARMUP_QX adx=100.00 evidence_count=4
+evidence: condition_state=TREND_SHORT_VALID validity=VALID fate=LifecycleState.ACTIVE
+Q-020 CONFIRMED: ADX_WARMUP_QX co-exists with state=VALID and validity=VALID evidence; warmup never gates the state

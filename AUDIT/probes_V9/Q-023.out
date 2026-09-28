@@ -1,0 +1,6 @@
+legit only: score=-1.000 n=1
+with idx=10000 phantom: score=0.000 n=2
+confirmed_at guard raises: PIT_SWING_VIOLATION_QX: swing HH at idx 90 confirmed_at_idx=100 > 99
+FIX_01 fixture present: True | keys: ['atr', 'bars', 'expected', 'hash', 'id', 'note', 'swings']
+FIX_01 swings: [{"type": "HH", "price": 60300, "idx": 1, "confirmed_at_idx": 2}, {"type": "HL", "price": 60100, "idx": 2, "confirmed_at_idx": 3}, {"type": "HH", "price": 60600, "idx": 4, "confirmed_at_idx": 3}]
+Q-023 CONFIRMED: idx>current accepted whenever confirmed_at_idx passes; no idx<=current consistency check
