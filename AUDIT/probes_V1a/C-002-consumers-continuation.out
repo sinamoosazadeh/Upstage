@@ -1,0 +1,27 @@
+scripts/run_apex.py:134:        transport = aiohttp_transport(session)
+scripts/run_apex.py:200:    runtime = await Runtime(cfg).start()
+scripts/run_apex.py:213:        machine = F.StartupReconciliation(
+scripts/run_apex.py:293:    runtime = await Runtime(cfg, str(tmp / "apex.sqlite3")).start()
+scripts/run_apex.py:310:        boot = F.StartupReconciliation(ledger=ledger, adapter=adapter, bus=bus,
+scripts/run_apex.py:711:    runtime = await Runtime(cfg).start()
+scripts/run_apex.py:760:        driver = PL.PaperRuntime(
+apex/execution/fsm.py:964:class StartupReconciliation:
+apex/execution/fsm.py:1358:    "SUBMISSION_TIMEOUT_SECONDS", "StartupReconciliation",
+apex/execution/toobit_adapter.py:276:def aiohttp_transport(session: Any, *,
+apex/execution/toobit_adapter.py:283:            raise AdapterError("TRANSPORT_SESSION_MISSING",
+apex/execution/toobit_adapter.py:336:            self._transport = aiohttp_transport(session)
+apex/ops/paper_loop.py:414:        machine = F.StartupReconciliation(
+apex/ops/paper_loop.py:624:            raise CellRefusal("BOOT_NOT_READY",
+apex/research/governance.py:165:       owner="apex.execution.fsm.StartupReconciliation"),
+tests/integration/paper_harness.py:42:    runtime = PL.PaperRuntime(
+tests/integration/test_cp14_producer.py:252:        runtime=PaperRuntime(config=Config(),store=store,ledger=source.ledger,bus=bus,
+tests/integration/test_cp7_paper_loop.py:7:      → StartupReconciliation: STARTING → SELF_TEST → RECONCILING → READY
+tests/integration/test_cp7_paper_loop.py:276:        machine = F.StartupReconciliation(ledger=self.ledger,
+tests/integration/test_cp7_paper_loop.py:788:            machine = F.StartupReconciliation(
+tests/integration/test_ops_paper_loop.py:627:            assert cycle["halt_reasons"] == {"BOOT_NOT_READY": 1}
+tests/integration/test_ops_paper_loop.py:628:            assert "BOOT_NOT_READY" in h.runtime.scheduler.runs[-1].stages[-1].detail
+tests/unit/test_engine_context.py:269:        driver = PL.PaperRuntime(store=store, ledger=Ledger(), clock=clock,
+tests/unit/test_execution_fsm.py:187:    def boot(self, **kwargs) -> F.StartupReconciliation:
+tests/unit/test_execution_fsm.py:195:        return F.StartupReconciliation(**kwargs)
+tests/unit/test_toobit_adapter.py:505:        transport = A.aiohttp_transport(None)
+tests/unit/test_toobit_adapter.py:509:        assert exc.value.reason == "TRANSPORT_SESSION_MISSING"

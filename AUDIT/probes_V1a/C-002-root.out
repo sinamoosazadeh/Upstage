@@ -1,0 +1,249 @@
+CASE synthetic_credentials=False
+APEX_GEN5 — CP-7 boot (environment init → dependency load → reconcile-first → verdict)
+  environment surface: {"APEX_ALLOW_SIGNED": true, "APEX_ECONOMIC_GATE_SIGNED": false, "APEX_ENV": "PAPER", "APEX_SQLITE_PATH": ":memory:", "TELEGRAM_BOT_TOKEN": "UNSET", "TELEGRAM_OWNER_CHAT_ID": "UNSET", "TELEGRAM_WATCHDOG_CHAT_ID": "UNSET", "TOOBIT_API_KEY": "UNSET", "TOOBIT_API_SECRET": "UNSET"}
+  venue credentials absent (or APEX_ALLOW_SIGNED=0) → the boot cannot reconcile against the exchange and is DEGRADED by rule (fail-closed, never assumed equal).
+  clock drift: state=UNAVAILABLE drift_seconds=None reason=SERVER_TIME_UNAVAILABLE:RuntimeError
+  [       PASS] dependencies: nine SBOM pins import cleanly
+  [       PASS] schema_version: applied=8
+  [UNAVAILABLE] clock_sync: clock drift could not be measured against the exchange server time — never assumed synchronized (G6; AI.7 L18722–18725)
+  [       PASS] ladder_state: no ladder revision persisted yet — NORMAL (ratchet starts at the least restrictive level)
+  boot_state=DEGRADED new_trades_allowed=False drift_blocks_new_trades=True
+  migrations=('M101_cp7_trade_plan', 'M102_cp7_ledger_audit', 'M100_cp6_risk_ladder_state') ladder_state={'migration': 'M100_cp6_risk_ladder_state', 'applied': True, 'table': 'apex_risk_ladder_state', 'immutability': 'triggers', 'l2_rename': {'migration': 'M102_cp146_l2_disable_new', 'rebuilt': False, 'noop': True}}
+{
+  "boot_state": "DEGRADED",
+  "checks": [
+    {
+      "blocking": true,
+      "detail": "nine SBOM pins import cleanly",
+      "name": "dependencies",
+      "passed": true,
+      "status": "PASS"
+    },
+    {
+      "blocking": true,
+      "detail": "applied=8",
+      "name": "schema_version",
+      "passed": true,
+      "status": "PASS"
+    },
+    {
+      "blocking": true,
+      "detail": "clock drift could not be measured against the exchange server time \u2014 never assumed synchronized (G6; AI.7 L18722\u201318725)",
+      "name": "clock_sync",
+      "passed": false,
+      "status": "UNAVAILABLE"
+    },
+    {
+      "blocking": true,
+      "detail": "no ladder revision persisted yet \u2014 NORMAL (ratchet starts at the least restrictive level)",
+      "name": "ladder_state",
+      "passed": true,
+      "status": "PASS"
+    }
+  ],
+  "drift_blocks_new_trades": true,
+  "drift_seconds": null,
+  "environment": "PAPER",
+  "new_trades_allowed": false,
+  "open_intents": [],
+  "ready": false,
+  "reconciliation": {},
+  "rule": "Ch.23 L18242\u201318251 \u2014 no new trade before READY; ladder actions available in every state except STARTING"
+}
+APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)
+  boot_state=DEGRADED new_trades_allowed=False drift=UNAVAILABLE (SERVER_TIME_UNAVAILABLE:RuntimeError) artifact=AUDIT_MODEL_NOT_LOADED
+  plan seam: WIRED — governed PAPER store bridge (missing context refuses by name; no synthetic plan)
+  signal_source=DECISION_BRIDGE · cells=140 · max_trades_per_cycle=4 · telegram=DISABLED (no token)
+  (Ctrl-C stops the loop; the ledger chain and the durable cursors stay consistent)
+  cycles=0 trades=0 open=[] refusals=0 ledger_chain_intact=True
+{
+  "boot": {
+    "boot_state": "DEGRADED",
+    "checks": [
+      {
+        "blocking": true,
+        "detail": "nine SBOM pins import cleanly",
+        "name": "dependencies",
+        "passed": true,
+        "status": "PASS"
+      },
+      {
+        "blocking": true,
+        "detail": "applied=8",
+        "name": "schema_version",
+        "passed": true,
+        "status": "PASS"
+      },
+      {
+        "blocking": true,
+        "detail": "clock drift could not be measured against the exchange server time \u2014 never assumed synchronized (G6; AI.7 L18722\u201318725)",
+        "name": "clock_sync",
+        "passed": false,
+        "status": "UNAVAILABLE"
+      },
+      {
+        "blocking": true,
+        "detail": "no ladder revision persisted yet \u2014 NORMAL (ratchet starts at the least restrictive level)",
+        "name": "ladder_state",
+        "passed": true,
+        "status": "PASS"
+      }
+    ],
+    "drift_blocks_new_trades": true,
+    "drift_seconds": null,
+    "environment": "PAPER",
+    "new_trades_allowed": false,
+    "open_intents": [],
+    "ready": false,
+    "reconciliation": {},
+    "rule": "Ch.23 L18242\u201318251 \u2014 no new trade before READY; ladder actions available in every state except STARTING"
+  },
+  "cycles": [],
+  "outcome": {
+    "boot_state": "DEGRADED",
+    "contract_version": "4.0.0",
+    "cycles": 0,
+    "ledger_chain_intact": true,
+    "open_intents": [],
+    "refusals": 0,
+    "signal_source": "DECISION_BRIDGE",
+    "trades": 0
+  }
+}
+{"boot_exit": 2, "serve_exit": 2}
+CASE synthetic_credentials=True
+APEX_GEN5 — CP-7 boot (environment init → dependency load → reconcile-first → verdict)
+  environment surface: {"APEX_ALLOW_SIGNED": true, "APEX_ECONOMIC_GATE_SIGNED": false, "APEX_ENV": "PAPER", "APEX_SQLITE_PATH": ":memory:", "TELEGRAM_BOT_TOKEN": "UNSET", "TELEGRAM_OWNER_CHAT_ID": "UNSET", "TELEGRAM_WATCHDOG_CHAT_ID": "UNSET", "TOOBIT_API_KEY": "SET", "TOOBIT_API_SECRET": "SET"}
+  clock drift: state=SYNCED drift_seconds=0.0 reason=None
+  [       PASS] dependencies: nine SBOM pins import cleanly
+  [       PASS] schema_version: applied=8
+  [       PASS] clock_sync: drift 0.0s within tolerance 5.0s
+  [       PASS] ladder_state: no ladder revision persisted yet — NORMAL (ratchet starts at the least restrictive level)
+  [       FAIL] broker_reconciliation: query_open_positions returned UNKNOWN (TRANSPORT_SESSION_MISSING) — reconcile-before-action
+  boot_state=RECOVERY_REQUIRED new_trades_allowed=False drift_blocks_new_trades=False
+  migrations=('M101_cp7_trade_plan', 'M102_cp7_ledger_audit', 'M100_cp6_risk_ladder_state') ladder_state={'migration': 'M100_cp6_risk_ladder_state', 'applied': True, 'table': 'apex_risk_ladder_state', 'immutability': 'triggers', 'l2_rename': {'migration': 'M102_cp146_l2_disable_new', 'rebuilt': False, 'noop': True}}
+{
+  "boot_state": "RECOVERY_REQUIRED",
+  "checks": [
+    {
+      "blocking": true,
+      "detail": "nine SBOM pins import cleanly",
+      "name": "dependencies",
+      "passed": true,
+      "status": "PASS"
+    },
+    {
+      "blocking": true,
+      "detail": "applied=8",
+      "name": "schema_version",
+      "passed": true,
+      "status": "PASS"
+    },
+    {
+      "blocking": true,
+      "detail": "drift 0.0s within tolerance 5.0s",
+      "name": "clock_sync",
+      "passed": true,
+      "status": "PASS"
+    },
+    {
+      "blocking": true,
+      "detail": "no ladder revision persisted yet \u2014 NORMAL (ratchet starts at the least restrictive level)",
+      "name": "ladder_state",
+      "passed": true,
+      "status": "PASS"
+    },
+    {
+      "blocking": true,
+      "detail": "query_open_positions returned UNKNOWN (TRANSPORT_SESSION_MISSING) \u2014 reconcile-before-action",
+      "name": "broker_reconciliation",
+      "passed": false,
+      "status": "FAIL"
+    }
+  ],
+  "drift_blocks_new_trades": false,
+  "drift_seconds": 0.0,
+  "environment": "PAPER",
+  "new_trades_allowed": false,
+  "open_intents": [],
+  "ready": false,
+  "reconciliation": {
+    "agree": false,
+    "reason": "EXCHANGE_UNKNOWN"
+  },
+  "rule": "Ch.23 L18242\u201318251 \u2014 no new trade before READY; ladder actions available in every state except STARTING"
+}
+APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)
+  boot_state=RECOVERY_REQUIRED new_trades_allowed=False drift=SYNCED (measured) artifact=AUDIT_MODEL_NOT_LOADED
+  plan seam: WIRED — governed PAPER store bridge (missing context refuses by name; no synthetic plan)
+  signal_source=DECISION_BRIDGE · cells=140 · max_trades_per_cycle=4 · telegram=DISABLED (no token)
+  (Ctrl-C stops the loop; the ledger chain and the durable cursors stay consistent)
+  cycles=0 trades=0 open=[] refusals=0 ledger_chain_intact=True
+{
+  "boot": {
+    "boot_state": "RECOVERY_REQUIRED",
+    "checks": [
+      {
+        "blocking": true,
+        "detail": "nine SBOM pins import cleanly",
+        "name": "dependencies",
+        "passed": true,
+        "status": "PASS"
+      },
+      {
+        "blocking": true,
+        "detail": "applied=8",
+        "name": "schema_version",
+        "passed": true,
+        "status": "PASS"
+      },
+      {
+        "blocking": true,
+        "detail": "drift 0.0s within tolerance 5.0s",
+        "name": "clock_sync",
+        "passed": true,
+        "status": "PASS"
+      },
+      {
+        "blocking": true,
+        "detail": "no ladder revision persisted yet \u2014 NORMAL (ratchet starts at the least restrictive level)",
+        "name": "ladder_state",
+        "passed": true,
+        "status": "PASS"
+      },
+      {
+        "blocking": true,
+        "detail": "query_open_positions returned UNKNOWN (TRANSPORT_SESSION_MISSING) \u2014 reconcile-before-action",
+        "name": "broker_reconciliation",
+        "passed": false,
+        "status": "FAIL"
+      }
+    ],
+    "drift_blocks_new_trades": false,
+    "drift_seconds": 0.0,
+    "environment": "PAPER",
+    "new_trades_allowed": false,
+    "open_intents": [],
+    "ready": false,
+    "reconciliation": {
+      "agree": false,
+      "reason": "EXCHANGE_UNKNOWN"
+    },
+    "rule": "Ch.23 L18242\u201318251 \u2014 no new trade before READY; ladder actions available in every state except STARTING"
+  },
+  "cycles": [],
+  "outcome": {
+    "boot_state": "RECOVERY_REQUIRED",
+    "contract_version": "4.0.0",
+    "cycles": 0,
+    "ledger_chain_intact": true,
+    "open_intents": [],
+    "refusals": 0,
+    "signal_source": "DECISION_BRIDGE",
+    "trades": 0
+  }
+}
+{"boot_exit": 3, "serve_exit": 2}
+{"control": "ONLY_OFFLINE_TRANSPORT_INJECTED", "boot_state": "READY", "queries": ["/api/v1/futures/positions", "/api/v1/futures/openOrders", "/api/v1/futures/userTrades"]}
+guard_blocked_attempts=[]
+PASS: production boot + zero-cycle serve refuse, transport-only control READY; no device acceptance

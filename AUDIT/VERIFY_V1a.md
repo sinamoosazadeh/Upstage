@@ -1,8 +1,8 @@
-# V1a independent verification — INCOMPLETE CHECKPOINT
+# V1a independent verification — in progress
 
 ID | Verdict | Auditor severity | Independent severity | Frozen? | Cross-ref (D/ISSUE) | Recommended option
 --- | --- | --- | --- | --- | --- | ---
-C-002 | INCOMPLETE — no verdict | S0 | Not assigned | Reviewed composition/adapter/FSM paths are non-frozen | = ISSUE-075; = user-provided D58 (see naming caveat below); related ISSUE-077/078 | Finish verification; do not add network transport to PAPER
+C-002 | CONFIRMED | S0 | S0 | No (factory/adapter/FSM); additive migration needed for fix | = ISSUE-075; = user-provided D58; D1/D2; related ISSUE-077/078 | A: governed simulator factory; never private network transport in PAPER
 C-001 | NOT VERIFIED | S3 (index only) | Not assigned | Not assessed | Not assessed | Verify full row
 C-003 | NOT VERIFIED | S1 (index only) | Not assigned | Not assessed | Not assessed | Verify and measure
 C-004 | NOT VERIFIED | S1 (index only) | Not assigned | Not assessed | Not assessed | Verify and measure
@@ -20,13 +20,13 @@ C-015 | NOT VERIFIED | S2 (index only) | Not assigned | Not assessed | Not asses
 O-006 | NOT VERIFIED | Not extracted | Not assigned | Not assessed | Not assessed | Verify full row
 V-003 | NOT VERIFIED | S4 | Not assigned | Not assessed | Not assessed | Verify full row
 
-**This is not completion of the requested 17-row verification.** INCOMPLETE/NOT VERIFIED are workflow labels, not additional audit verdicts. No row meets the entire mandatory-depth checklist yet. Narrow reproducible evidence for C-002 is preserved below rather than promoted to a completed verdict. No claim of complete source/caller/callee reading, test coverage, device acceptance, or measured performance verification is made.
+**Current status: C-002 CONFIRMED/S0; 16 rows remain unverified.** The appended C-002 formal-verdict section supersedes its retained initial evidence section. The full V1a scope is not complete; there is no real-data/device readiness claim.
 
-Baseline was checked before any repository work: `85b2c155d7b054a468379ddfd802eb239d0801f9`; `git log -1 --oneline` returned `85b2c15 Merge pull request #25 from sinamoosazadeh/arena/01a0d98b-upstage`. Work remains on `arena/01a0e911-upstage`. Input was fetched by the supplied SHA `690e2d8899319a7c7a96456f92c3008878e59346`, without checking it out. Its full report was read for C-002 from `/tmp/AUDIT.md`; the saved full row and input digest are in `probes_V1a/provenance.out`. The report at `015d19bd6ec1956b853fd566157a929f9f95f260` was not separately compared; the supplied combined-fetch procedure was used.
+Source baseline remains `85b2c155d7b054a468379ddfd802eb239d0801f9`. On continuation the sandbox had reconstructed baseline HEAD with the six prior AUDIT files untracked. I fetched this session's branch, staged only those AUDIT files, verified the entire staged tree was identical to remote checkpoint `7affafc5654027fc3a5c1a8bef0e8a9e39beb75f`, then restored this branch pointer with `git reset --soft origin/arena/01a0e911-upstage`. No source/worktree reset occurred, and no other branch was used. Report input was fetched again using the supplied SHA. All following source line numbers refer to the unchanged baseline.
 
-Dependencies were installed successfully with the requested lockfile and pytest; `dependencies.out` is empty because quiet pip succeeded without diagnostics. The native probe reports NumPy 1.26.0. No pytest suite has been run. Only new AUDIT files were authored. No CLI `main`, `_boot`, or `_serve` was executed, no device database/model inspected, no order submitted, no exchange/Telegram endpoint contacted, no `.env` loaded and no actual credential used. Probe configuration is an actual `Config` instance with only a synthetic dictionary assigned, deliberately bypassing its environment loader. Audit hooks reject network operations and `.env`/repository `data/` access; the probe records zero blocked attempts. GitHub fetch/push is separate from application network activity.
+Only AUDIT files are changed. Original provenance is retained in `probes_V1a/provenance.out`; continuation commands/results are recorded in the formal section. The initial section describes the earlier run, not the present coverage. No real credentials, `.env`, repository `data/`, exchange/Telegram calls or actual orders are used. Synthetic SQLite writes are restricted to in-memory/temp stores. Application network guards are distinct from permitted GitHub fetch/push.
 
-## C-002 — partial evidence only
+## C-002 — initial partial evidence (historical; superseded below)
 
 ### Auditor claim (short quote)
 
@@ -935,21 +935,123 @@ Complete mandatory verification before accepting or rejecting the claim.
 
 Not defined or run for this row; required performance probes, where applicable, remain outstanding.
 
+## C-002 — formal verdict (continuation)
+
+### Auditor claim (short quote)
+
+“آداپتر مسیر boot/serve بدون session و transport ساخته می‌شود.” The production boot/serve adapter is built without session/transport, cannot reconcile, and blocks PAPER readiness. Full row re-read from `/tmp/AUDIT.md` at report line 139, with its original text retained in `probes_V1a/provenance.out`. Auditor S0.
+
+### What I read (files, line ranges, functions, callers)
+
+Completed the previously missing reads rather than inferring from names:
+
+- `scripts/run_apex.py:1–1172`, entire file across this and the initial pass: factory 121–188; complete boot 195–236; demo alternative 274–401; notifier 466–475; full serve 695–812 including initialization, drift choice, boot, artifact diagnostic, run and cleanup; control-handler helpers 815–855; complete main/COMMANDS 1056–1172. Demo supplies a transport explicitly; production boot and serve do not.
+- `apex/execution/toobit_adapter.py:1–905`, entire file across both passes: five operations, token bucket, transport, credential checks, request execution/classification, dedup/refusal/interval helpers and result records. No lazy session factory or later session assignment rescues `aiohttp_transport(None)`.
+- `apex/execution/fsm.py:964–1336`, complete `StartupReconciliation`, including recovery helpers and ladder availability, plus `CheckResult` 955–961, boot matrix 175–195 and `_rows_of` 1339–1349. This is a full read of the requested startup class, not a claim that unrelated order-FSM logic has been fully verified.
+- Query-path callees: `toobit_map.py` endpoint/path selection 200–247, complete response classification 320–410, signing/query/idempotency functions 514–574; adapter-local helpers through 905. `clock.py` SystemClock 136–149 and complete drift functions 260–308. No equation was reconstructed from AST.
+- Direct runtime caller/consumer functions: `paper_loop.py` constructor 352–409, boot and initial ladder 412–452, trading-enabled property, execution stage 620–645, `_state` 687–689, cursor migration/load 218–254 and 951–954, full `run_cycle` 956–1067, and `run`/pause/stop 1103–1143. Reading the full cycle establishes it runs despite non-READY boot; preparation can refuse earlier than BOOT_NOT_READY. Other paper-loop functions/global mandatory files will be completed with their assigned rows.
+- Initialization and shutdown callees: SQLite DDL/migration/lifecycle 1–383; ledger DDL/records/lifecycle 1–327, writer/append 329–422, correction/read/position projection 480–571, verify-chain/head 645–679 and row helpers 704–754; risk ladder migration/revision functions 652–799; BootstrapService constructor/open/source-laziness/close 1112–1203; ResearchCheckpointStore constructor/open/close 106–150; EventBus 1–255; control-plane constructor/register 450–490; Watchdog constructor 335–365 and RecoveryLog constructor 173–182; EngineContextProducer constructor 1759–1773; PaperPlanBridge constructor 512–528; paper_balance 642–665. Optional Telegram handlers were inspected in the composition root, not exercised or accepted as operational.
+- Existing boot/recovery test classes read in full: `tests/unit/test_execution_fsm.py:1210–1455`, plus their store/env fixtures and harness 1–77, 113–215. Read the integration BOOT_NOT_READY regression `tests/integration/test_ops_paper_loop.py:618–633`. The full three globally requested test files are not claimed completed by this row.
+- Governing source: contract 17020–17062, 18424–18435, 18905–18907; decision log D1–D20 and Session-A reconciliation of signed-flag wording, 193–241; D52/D58 1163/1175; handoff CP9 627–636; traceability P3/P4 518–519; checkpoint status CP7 boot evidence at 73. Historical PASS claims were read as claims, not reused as proof.
+
+Mandatory `grep -rn` consumers search was repeated; results: `C-002-consumers-continuation.out`. It includes both production factory call sites, fixture/demo callers, startup-class consumers and transport callers. The verdict concerns the production dependency omission, not certification of every unrelated method in those modules.
+
+### Reproduction (command, probe file, actual result)
+
+All commands below ran from repository root. Dependency installation with the requested lockfile and pytest exited 0 (`dependencies-continuation.out`, empty quiet-pip output).
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V1a/C-002.py
+PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V1a/C-002-root.py
+env -i PATH=/usr/local/bin:/usr/bin:/bin PYTHONDONTWRITEBYTECODE=1 APEX_DOTENV_PATH='' PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=/home/user/Upstage/AUDIT/probes_V1a/guard MPLCONFIGDIR=/tmp/v1a-mpl python3 -m pytest -q -p no:cacheprovider tests/unit/test_execution_fsm.py::TestBootMachine tests/unit/test_execution_fsm.py::TestRecoveryReconciliation
+```
+
+Raw outputs, respectively: `C-002-repeat.out`, `C-002-root.out`, `C-002-pytest.out`. All exit 0. Existing tests: **18 passed, 13 warnings in 3.55s**, guard `blocked_attempts=[]`.
+
+New probe invokes the **actual `_boot` and `_serve(cycles=0)`**, with the actual Runtime factory, store, migrations, FSM, boot checks, driver and cleanup. Only public time is substituted with a local fixture and the optional classifier diagnostic deliberately returns `AUDIT_MODEL_NOT_LOADED`; it does not read a model. Submit/cancel are trapped as forbidden. No factory/adapter injection occurs in the principal experiment. Separate fresh in-memory stores are used by each invocation:
+
+| Configuration | Actual `_boot` | Actual zero-cycle `_serve` |
+| --- | --- | --- |
+| PAPER, allow flag 1, no credentials | DEGRADED / exit 2; clock UNAVAILABLE | DEGRADED / exit 2 |
+| PAPER, allow flag 1, synthetic credentials, locally synchronized time | RECOVERY_REQUIRED / exit 3; EXCHANGE_UNKNOWN; TRANSPORT_SESSION_MISSING | RECOVERY_REQUIRED / exit 2; same broker check failure |
+
+Counterfactual control changes **only** the adapter transport to an empty local GET responder with no network and observes READY from the same startup FSM/DDL. It records exactly positions/openOrders/userTrades queries. It is a diagnostic test double, **not** a compliant simulator or acceptance evidence for fills/restarts/accounting.
+
+The original native probe also exercises the actual execution-stage guard and observes BOOT_NOT_READY for both failed boot states. It reran successfully under NumPy 1.26.0. Native DDL EXPLAIN, with/without both supplied device indexes, remains `SCAN ledger` for the exact full-ledger projection. Performance observation: reconciliation and PAPER balance construction are linear full-ledger reads; neither market/PIT index addresses them. C-002's query is once per boot, not per bar/cell. No device latency or repeated-cell performance conclusion is inferred from the empty fixture.
+
+### Verdict and reasoning
+
+**CONFIRMED, independent S0 (same as auditor).** The unmodified production factory omits a required dependency, and the real boot/serve composition cannot reach READY in PAPER. A hypothetical successful server-time request does not cure this: with synchronized time, actual reconciliation reaches the sessionless adapter and returns UNKNOWN. When no credentials are present, the CLI instead fails earlier on its credential-coupled time source.
+
+**Is C-002 the root cause of ISSUE-075? Yes, at the production composition/code level:** the missing PAPER execution backend, implemented as an unavailable or sessionless venue adapter plus credential-coupled clock selection, is a sufficient root cause of PAPER BOOT_NOT_READY. The absent-session mechanism is the additional concrete explanation for why supplying credentials/time still cannot make that composition ready. **It is not established as the sole cause of the owner's particular device invocation.** BOOT_NOT_READY is a downstream generic guard and may also reflect independent self-test/clock/DB failures. Fixing the backend cannot by itself certify OI/model/context readiness or a usable plan.
+
+No permission to trade is inferred from the counterfactual READY. S0 here means basic PAPER operation blocked, not a proven loss of funds; retaining fail-closed admission is correct.
+
+### Root cause
+
+`Runtime.adapter()` gates on allow/key/secret but never selects an environment-specific execution backend. It constructs `ToobitAdapter(config=cfg)`. Defaults choose `aiohttp_transport(session=None)`, whose closure raises before `session.request`. `_execute` signs the synthetic query first, catches AdapterError as UNMAPPED, emits UNKNOWN with reconcile-required, and does not retry. `StartupReconciliation` makes all three queries, then detects the UNKNOWN and transitions to RECOVERY_REQUIRED. With no adapter, `_no_venue_time` makes drift unavailable, preventing entry into reconciliation.
+
+### Direct impact
+
+`new_trades_allowed=False`; real execution guard raises BOOT_NOT_READY before price lookup, budget reservation or order execution. `_boot` distinguishes RECOVERY_REQUIRED (3) from DEGRADED (2), while `_serve` returns 2 for either non-READY state after its run ends. The full serve path can still initialize, print the refusal and run market-data/context work; lack of an early loop abort does not authorize an order.
+
+### Secondary effects and interactions (upstream/downstream)
+
+Upstream allow-signed remains necessary under current flag semantics but is never permission to sign PAPER requests. The public-time coroutine creates its own local aiohttp session; it is unrelated to the private adapter's missing session and cannot supply one indirectly. The binding D1 simulator requirement overrides the older generic venue reading.
+
+Downstream decision/risk computation occurs before execution admission; a context/data refusal may mask BOOT_NOT_READY. No new fill/order-ledger transition is made by the reproduced guard, so no execution-derived training/replay history is produced by this attempt. Boot migration/initial ladder writes are separate synthetic state changes, not fills. The fix should leave proposal/intent hash rules and the E11 training protocol untouched; any changed execution outcomes belong in new append-only records, not rewritten historical hashes.
+
+ISSUE-077: actual `Runtime.start -> LedgerWriter.initialize` performs ladder migrations before SELF_TEST; the pure `PaperRuntime.boot` call ordering does not prove the composition root always lacks migrations. Separate device lock/migration faults remain possible. ISSUE-078: measured latency-dependent drift is independent of this session omission. D58/CP-15 is the known missing simulator, not a newly discovered second blocker. Beyond that known item, this row proves the exact missing-session composition mechanism (also present in the shared factory used for LIVE), rather than alleging any new observed LIVE incident.
+
+### Contract and decisions
+
+`APEX_GEN5.md:17020–17032`: PAPER replaces venue transport with the simulator, “no network packet and no signature”; “Constructing a signed packet in PAPER is a defect”. Lines 17044–17047 require queries from durable simulator state so reconciliation reaches READY without network. Lines 17059–17062 require additive `paper_sim_state` and preserve LIVE transport.
+
+`APEX_GEN5.md:18424–18435`: “No new trade may be created before READY”. `18905–18907`: synchronized clock and drift >500 ms pauses trading. No clause permits treating unmeasurable drift as zero; an offline PAPER clock policy needs an explicit trustworthy source, not fabricated synchronization.
+
+**Owner precedence:** `PHASE2_DECISION_LOG.md:193–207`, D1, says “PAPER execution mode = in-process PAPER simulator transport”, “sends NO packet to the venue”, same FSM/ledger path; D2 authorizes the normative clarification. The explicit resolution at 237–241 says the allow flag permits the loop, “it never authorizes a packet.” This later owner-specific instruction wins over older generic exchange-reconcile and signed-order language. The simulator still reconciles real durable simulated state.
+
+`PHASE2_TRACEABILITY_MATRIX.md:518` agrees; `PHASE2_HANDOFF_CP9.md:633` explicitly defers simulator/table/transport/replay implementation to CP-15. CP7 historical fixture PASS at `PHASE2_CHECKPOINT_STATUS.md:73` tests an injected fake responder, not this factory. Baseline decision-log D58 means calibrated walk-forward wiring; **user-provided D58** is retained solely as the user's known-item label for the simulator, with D1/D2 cited as actual repository authority.
+
+### Frozen status and non-frozen alternative
+
+Factory, adapter, startup FSM and ops runtime are outside the supplied frozen set. Frozen store DDL need not be edited: add a non-frozen simulator-owned migration through existing additive bookkeeping, as ladder/cursor code already does. Preserve frozen backtest cost constants and engine/catalog contracts. If a proposed fix changes frozen backtest/catalog/schema text, it needs explicit owner authorization; no such change is necessary for backend injection itself.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+**A — governed environment-specific factory (recommended).** PAPER gets durable simulator operations with signing bypassed entirely; LIVE gets an explicitly owned session/transport and shutdown. Maintain readiness guard and trusted-clock refusal. Additive DB migration is needed for simulator state and restart reconciliation. No E11 retraining or classifier/cache invalidation is inherently required by backend selection: do not modify engine inputs, parameters, existing event identity or hash algorithms. New fills/outcomes necessarily create new ledger/history identities; pre-existing signed/fake PAPER history must be reconciled or refused, never relabelled or rewritten. A future implementation must test compatibility rather than assume existing test-double state can become simulator state.
+
+Regression effects: `TestBootMachine.test_a_boot_without_an_adapter_is_degraded_never_ready` and the unmeasurable-clock tests **must remain passing** for explicitly unavailable dependencies. They should not be weakened to implement credential-free production PAPER boot. The production failure assertions in `C-002-root.py` will intentionally fail after a correct fix and must be replaced by production-PAPER READY/no-signature/no-packet tests. `test_a_degraded_boot_refuses_to_trade` must still refuse explicit failed readiness. LIVE adapter missing-session tests should continue guarding bad construction. Session lifecycle adds cancellation/exception cleanup obligations; simulator persistence adds schema upgrade, reconciliation and cost/exit parity obligations. No hidden risk-threshold or 20-cell/140-cell scope change is justified.
+
+**B — retain safe refusal until CP-15, improve diagnostics only.** No simulator migration, hash/cache invalidation or retraining is required; CLI message assertions may need updates. Basic PAPER remains unavailable, so this is mitigation/deferment, not resolution. Preserve explicit differences between missing backend, unknown clock and DB/self-test failure.
+
+**Not a viable option:** attach a private venue session to the current PAPER adapter, waive reconciliation, or set drift to zero. First violates no-packet/no-signature; latter choices misrepresent readiness. Injecting an empty-success responder is likewise only a test control, not a fix.
+
+### My recommendation
+
+Option A as the known CP-15/ISSUE-075 work, with B only as an honest interim. Do not duplicate the owner's simulator issue; attach the saved factory/root-cause reproduction to it. No source/config/test/document implementation outside AUDIT is changed. Resolving C-002 does not resolve upstream evidence, replay, emergency handling or long-loop performance findings.
+
+### Acceptance and regression tests
+
+Executed: both native probes and 18 existing startup/recovery tests, all successful as **defect reproductions / invariant checks**, not device acceptance. The production-root probe uses zero serve cycles to avoid real market/network work; full long-loop/device acceptance is expressly not claimed.
+
+Fix acceptance: (1) actual production PAPER factory without venue credentials produces no signature/packet across all five operations; (2) durable empty and nonempty simulator restart reconciles correctly, including mismatched state refusal; (3) unknown clock remains blocked; (4) known-good clock plus valid simulator becomes READY and can pass only authorized plans; (5) LIVE session closure on normal/exception/cancellation paths using a local responder, with no order to a venue; (6) existing startup/no-adapter/no-ledger/drift/divergence/ladder tests remain green; (7) simulator fee/slippage/exit/accounting parity and replay identities are tested separately against the governed contract. Run the remaining mandated integration files with isolated temporary databases and network/secret guards during their row reviews. Synthetic PASS cannot establish real market-data, model, device latency or accounting acceptance.
+
 ## New findings not in the audit
 
 None established at mandatory depth. No X-V1a IDs assigned. The limited ledger SCAN observation and decision-label caveat above are retained as follow-up notes, not promoted to completed new findings. Full audit duplication checks have not been performed.
 
 ## Rows not verified or incomplete
 
-All 17: **C-001, C-002, C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-013, C-014, C-015, O-006, V-003**.
+16 IDs remain: **C-001, C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-013, C-014, C-015, O-006, V-003**.
 
-C-002 has native partial reproduction, but incomplete mandatory source/caller/callee/contract closure, pytest, fix-impact and full boot/serve tracing. The other 16 have no independent row verification. Index severity extraction is not verification. Required measured reproductions for C-003/C-004/C-006/C-008/C-010/C-012/C-013, the C-006 ↔ ISSUE-079/gather analysis, and the other specified complete files/tests remain outstanding. No coverage claims are made. This checkpoint must not be used as a completed audit or an operational readiness sign-off.
+Next required order: C-006, C-003, C-004, C-008, C-010, C-012, C-013, C-001, C-005, C-007, C-009, C-011, C-014, C-015, O-006, V-003. Some shared runtime source has been read for C-002; that is not a verdict on these rows. Their full-row comparisons, mandated complete files/tests, measured reproductions, per-cell/bar SQL EXPLAIN and fix-side-effect analyses remain outstanding. No coverage or readiness sign-off for those rows.
 
 ## Final counts
 
-- CONFIRMED: **0**
+- CONFIRMED: **1** (C-002, S0)
 - PARTIAL: **0**
 - REJECTED: **0**
 - DEVICE-EVIDENCE-NEEDED: **0**
-- Incomplete/not verified: **17** (C-002 partial evidence; 16 unverified)
+- Unverified: **16**
 - Established new findings: **0**
