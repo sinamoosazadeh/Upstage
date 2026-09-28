@@ -1,0 +1,31 @@
+legacy_failures=1
+legacy_gate_status=OPEN/UNVERIFIED
+t_ad_001_synthetic_passed=True
+top_level_passed=True
+top_level_status=PASS
+cli_exit_code=0
+cli_output_begin
+fixture: tests/fixtures/toobit_adapter_conformance.json (19 cases, sha256 cd1ba3488bd610c1…, sealed=True)
+  [PASS] C-01 submit_order
+  [PASS] C-02 submit_order
+  [PASS] C-03 submit_order
+  [PASS] C-04 submit_order
+  [PASS] C-05 submit_order
+  [PASS] C-06 submit_order
+  [PASS] C-07 submit_order
+  [PASS] C-08 submit_order
+  [PASS] C-09 submit_order
+  [PASS] C-10 submit_order
+  [PASS] C-11 cancel_order
+  [PASS] C-12 cancel_order
+  [PASS] C-13 query_order_state
+  [PASS] C-14 query_order_state
+  [PASS] C-15 query_order_state
+  [PASS] C-16 query_open_positions
+  [PASS] C-17 query_account_margin_health
+  [PASS] C-18 submit_order
+  [PASS] C-19 submit_order
+T-AD-001 legacy translation: PASS
+T-AD-002 idempotent retries: PASS
+status: PASS (19/19 cases)
+cli_output_end
