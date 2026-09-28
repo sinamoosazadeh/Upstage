@@ -41,7 +41,10 @@ Read-only source/contract examination; probes used synthetic identities, injecte
 | G-024 | CONFIRMED (callback reachability unverified) | S1 | S1 | No | G-006/G-013 | A: per-update isolation |
 | G-025 | CONFIRMED | S2 | S2 | No | G-006/G-024 | A: callback ack |
 | G-028 | PARTIAL | S2 | S2 | No | G-004 distinct | A: split provider/internal receipt |
-| G-005, G-019, G-026, G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
+| G-029 | CONFIRMED (provider rejection unverified) | S2 | S2 | No | G-014/017 interactions | A: safe formatting |
+| G-026 | PARTIAL | S2 | S2 | No | D17 retention | A: typed provenance |
+| G-019 | CONFIRMED (composition scope) | S1 | S1 | No | D9; D-007 distinct | A: typed policy subscriber |
+| G-005 | CONFIRMED (composition scope) | S1 | S1 | research/bootstrap.py | D5/D22 distinct | A: durable job control |
 
 **Shared test execution:** `PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/unit/test_ledger_store.py tests/unit/test_telegram_control_plane.py tests/unit/test_ops_telegram_gateway.py tests/unit/test_telegram_signaling.py tests/unit/test_identity.py > AUDIT/probes_V4/TARGETED_TESTS.out 2>&1`: **286 passed, 13 warnings**. For individual probes use `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V4/<ID>.py`; output is the sibling `.out`. `QUERY-PLAN.py/.out` run against the real schema with/without the two device-only indexes. Scope of assertions below is the cited implementation behavior, not end-to-end or device acceptance. Owner decisions in PHASE2_DECISION_LOG.md supersede conflicting blueprint prose. No source changes proposed here are authorized.
 
@@ -1007,7 +1010,113 @@ A, preserving independent internal ID while reporting provider receipt truthfull
 ### Acceptance and regression tests
 `{}`, missing/null/invalid/valid receipt from synthetic transport, ack-after-timeout ambiguity, retry without duplicate send; provider-specific device behavior must be checked only through authorized read-only logs.
 
+## G-029
+### Auditor claim (short quote)
+Truncation leaves a lone MarkdownV2 backslash, and photo caption is unescaped under MarkdownV2 mode.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:162-211,666-741` (`escape_markdown_v2`, `format_markdown_v2`, `format_caption`, `send`), `AiogramTransport.send_photo:548-567`; `tests/unit/test_telegram_signaling.py:180-199,376-407`; grep `format_caption`, `format_markdown_v2`, `send_photo` in apex/scripts/tests, including `scripts/run_apex.py:839-856` text replies.
+### Reproduction (command, probe file, actual result)
+`G-029.py/.out`: actual formatter on `'x'*4095+'.'` yields 4096-char output ending in unpaired `\`; actual SignalingPlane.send with fake photo transport receives caption `'[BTC] +1.5%'` unchanged and `parse_mode='MarkdownV2'`. Fake image bytes/test transport **do not** validate Telegram parsing; provider rejection unproven.
+### Verdict and reasoning
+CONFIRMED S2 for format invariant/transport mismatch; consequences depend on Telegram parser/client. Existing tests only assert length/plain photo caption, not valid MarkdownV2 syntax.
+### Root cause
+Escaping before naive character-count truncation splits escape pair; caption is truncated raw and never escaped while parse_mode selected from text formatter.
+### Direct impact
+Potential malformed text/caption rejected by provider or rendered misleadingly.
+### Secondary effects and interactions (upstream/downstream)
+Upstream signal text/chart caption; downstream three retries repeat same malformed data, G-014 outbox and G-017 alert dedup can record failure; not a proved risk/order impact. Unicode/UTF-16 provider limits may require separate measurement beyond Python len.
+### Contract and decisions
+`APEX_GEN5.md:17959-17961`: MarkdownV2 escapes punctuation; `18093-18096`: length/caption degradation and retries; `PHASE2_DECISION_LOG.md:148` ISSUE-CP7-003 permits frozen module literals but no permission for broken escaping; owner decisions supersede any earlier formatter prose.
+### Frozen status and non-frozen alternative
+Signaling formatter non-frozen; no engine, DDL, locked requirements or original YAML edit.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: escape text and caption under same parse mode, truncate at safe token/escape boundary or split numbered messages within provider length, using measured provider units; changes exact escaped-text/length/quality tests and message hashes, idempotency/cache/outbox IDs may invalidate, no DB migration unless durable outbox G-014, no retraining. B: disable parse mode and send plain text/caption, avoids escape failures but loses intentional formatting and changes UX.
+### My recommendation
+A with parser/test-double validation; B interim on malformed/unknown input.
+### Acceptance and regression tests
+4095+punctuation boundary, caption `[BTC] +1.5%`, Unicode, mixed escaping, provider limit and retry; no trailing orphan escape, caption safe under selected parse mode; device delivery remains unverified.
+
+## G-026
+### Auditor claim (short quote)
+Outbox omits snapshot/text/lineage and operator reply uses `snapshot_id='gateway'`, not a SHA-256 source identity.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:440-495,629-665,666-807` (`SignalMessage`, `send`, `_record_outbox`), `scripts/run_apex.py:839-856` (`_telegram_reply`); `gateway.py:276-377` source/reply routing, `test_telegram_signaling.py:200-250,350-410`; grep `SignalMessage(` / `snapshot_id=` across apex/telegram, paper_loop and scripts identifies runtime sentinels and optional empty defaults.
+### Reproduction (command, probe file, actual result)
+`G-026.py/.out`: actual `_telegram_reply` through real SignalingPlane with synthetic transport succeeds; outbox contains signal ID/status/time but `snapshot_id`, text, lineage absent. `SignalMessage` has default empty snapshot/lineage and no `confirmed_at` field. No device evidence or real model snapshot.
+### Verdict and reasoning
+PARTIAL S2: inability to reconstruct text/lineage from *outbox* and non-hash `gateway` marker confirmed. But §3 “Every output” quality/provenance/snapshot may refer to market evidence, whereas an operator reply should have an explicitly distinct N/A identity; not proof that every market setup signal lacks its own valid snapshot. No 24-field evidence-event audit performed.
+### Root cause
+Generic `SignalMessage` permits missing provenance/time and outbox records only delivery metadata, while composition inserts a fixed fake snapshot-like string.
+### Direct impact
+Operator response cannot be causally reconstructed from its outbox entry alone; `gateway` is not valid 64-hex SHA-256.
+### Secondary effects and interactions (upstream/downstream)
+Upstream actual market/fabric snapshot and decisions not bound into replies; downstream replay, incident analysis, G-014 durable outbox and G-028 receipt proof lose attribution. Storing raw full text may create secrets/privacy retention exposure (D17); hash/encrypted content or references preferred, not blind plaintext persistence.
+### Contract and decisions
+`APEX_GEN5.md:17786-17787`: “Every output carries quality, provenance, and a deterministic SHA-256 snapshot_id, and confirmed_at”; `17976-17987`: TELEGRAM_MESSAGE output includes text and callback details. `PHASE2_DECISION_LOG.md:205` D17 forbids secret material in chat/logs, takes precedence over naive full-text audit; design separate operator-reply identity and protected content reference.
+### Frozen status and non-frozen alternative
+Signaling/composition and additive outbox schema non-frozen; frozen engines/store schema unchanged; producer/adapter can bind valid market identity without engine edit.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: version message types and bind market setup messages to canonical snapshot/confirmed_at/provenance, operator reply to explicit N/A plus referenced inbound update, durable encrypted/hash-only content audit; migrations, delivery/replay hashes/caches change, tests expecting `gateway` change, no retraining unless training consumes message identities. B: keep outbox metadata-only but store immutable content hash/ref elsewhere, less sensitive but reconstruction requires separate protected source.
+### My recommendation
+A with D17-safe retention and owner clarification of §3 scope for operator replies.
+### Acceptance and regression tests
+Synthetic market setup with known 64-hex hash and operator reply N/A, verified timestamp/quality/lineage across send/outbox/replay; no secret sentinel stored or printed; real message provenance requires device evidence separately.
+
+## G-019
+### Auditor claim (short quote)
+Runtime wires STORAGE alerts, not feed-staleness, veto-10 or FSM RECOVERY_REQUIRED producers/subscribers.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:107-127,831-963` (`ALERT_POLICY`, `check_feed_staleness`, `veto_alert_message`, `check_storage`, `emit_alert`); `scripts/run_apex.py:150-180,711-765` (Runtime bus collector and serve composition); `paper_loop.py:955-985,1065-1082`; `control_plane.py:922-935`; `apex/bus.py:96-170` subscription/publish; grep `check_feed_staleness\|veto_alert_message\|emit_alert\|check_storage\|CIRCUIT_OPEN\|EXEC_RECOVERY` apex/scripts excluding tests. Only `check_storage` has PaperRuntime production call; manual Emergency alert is not automatic veto/recovery producer.
+### Reproduction (command, probe file, actual result)
+`G-019.py/.out`: actual `scripts.run_apex.Runtime.start()` with temporary SQLite, real bus and synthetic plane bound to that same bus; subscriptions only collector topics execution.fsm.transition/boot/scheduler.cell/telegram.message. Publishing synthetic `RECOVERY_REQUIRED` event is collected but emits no alert; synthetic risk.veto event has no subscriber/transport call. This is not a true FSM/risk end-to-end execution or device proof.
+### Verdict and reasoning
+CONFIRMED S1 for missing runtime subscription/producer wiring in examined composition, limited to event paths named. Actual occurrence of stale feed/loss/recovery without device notification is not demonstrated. D-007 HOST_DOWN is a separate independent watchdog path, excluded here.
+### Root cause
+Alert helper functions have tests but no callsite/subscriber for feed/risk/FSM transitions, only storage guard and manual emergency.
+### Direct impact
+Contract alerts can be omitted when relevant runtime state changes.
+### Secondary effects and interactions (upstream/downstream)
+Upstream quality feed/risk veto/FSM transition available on other paths but not bound to alert policy; downstream operator escalation/audit/no-drop guarantees unenforced. G-027 mislabelled manual CIRCUIT_OPEN cannot substitute for real loss alert; G-018 Telegram failure still must not halt protective execution. No conclusion about venue order execution.
+### Contract and decisions
+`APEX_GEN5.md:18466-18478`: FEED_DEGRADED on staleness, EXEC_RECOVERY on recovery, CIRCUIT_OPEN on daily realized loss; `17747-17753`: downstream signaling must not block protection. `PHASE2_DECISION_LOG.md:203-205` D9 registers CIRCUIT_OPEN code for vetoes 10–12, not subscription; owner decisions take precedence and no later decision marks alert wiring complete. D-007 watchdog HOST_DOWN remains separate.
+### Frozen status and non-frozen alternative
+Signaling bus/ops/producer adapters non-frozen; risk kernel/engines frozen, consume their existing outputs rather than changing formulas. Additive outbox migration only if G-014 addressed.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: subscribe/wire typed feed-quality, veto result and FSM transition to policy dispatcher, with idempotency and failure isolation; tests expecting no alerts change, alert/audit IDs and replay caches change, durable outbox migration and delivery costs possible, no retraining. B: periodic polling of state could miss transitions or duplicate messages; weaker unless versioned cursor and ledger evidence.
+### My recommendation
+A, with first-class event identity, independent watchdog HOST_DOWN and G-018 safe exception containment.
+### Acceptance and regression tests
+Actual runtime quality staleness/veto10/RECOVERY_REQUIRED on temporary store produce exactly matching alert and audit in synthetic transport, no event→no alert, provider failure leaves protective management active; device evidence separately required.
+
+## G-005
+### Auditor claim (short quote)
+`bootstrap` CLI has outbound notifications but no inbound gateway; `serve` commands control another runner, not Phase-1 CLI job; pause/stop do not gate catch-up and >24h resume only returns a health-recheck flag.
+### What I read (files, line ranges, functions, callers)
+`/tmp/AUDIT.md` full G-005 row, `scripts/run_apex.py:504-570,711-765,815-824,1071-1100` (CLI/bootstrap/serve composition), `gateway.py:310-376` (owner word dispatch), `bootstrap_service.py:1120-1179,1260-1275,1456-1565` (runner ownership, command/catch-up), `research/bootstrap.py:153-242` (frozen runner state), `paper_loop.py:955-977,1103-1142` (catch-up before gateway; control pause only checks ControlPlane). Searched cross-references of `health_recheck`, `catch_up`, `runner.state` and gateway in apex/scripts; no shared job lease, restart hydration of state, or check invocation by `resume` found.
+### Reproduction (command, probe file, actual result)
+`G-005.py/.out`: real `BootstrapService.open/command/catch_up` through real `_bootstrap_handler` on temp SQLite, fake empty-page source, synthetic clock. `pause` accepted and `paused=True`, yet catch-up checks 1 cell and invokes source. After 25h `resume` accepted with `health_recheck.required=True` but no health-check call. `stop` accepted yet catch-up again checks 1 cell/invokes source. Newly opened service on same temp DB reports `stopped=False,paused=False`. `_bootstrap` function has no `TelegramGateway` reference; `_serve` does. No real CLI bootstrap subprocess, provider or venue tested; empty page means no ingestion proved.
+### Verdict and reasoning
+CONFIRMED S1, bounded to composition and source-invocation checks. Owner pause/stop are not effective for the `serve` catch-up function, and CLI bootstrap has no incoming gateway. Distinct checkpoint persistence for bar cursors works independently; no device loss or live page beyond pause demonstrated.
+### Root cause
+Separate per-instance in-memory runner states and independent command/poll/catch-up processes; service catch-up never consults runner paused/stopped; resume returns check advice but does not enforce it.
+### Direct impact
+Accepted W.8 control words do not reliably govern the acquisition job and may leave catch-up polling; restart loses control flags.
+### Secondary effects and interactions (upstream/downstream)
+Upstream OWNER authentication via gateway is separate from job identity; downstream page accounting/quality publishing may proceed while an operator believes acquisition stopped. PaperRuntime performs catch-up *before* inbound gateway polling each cycle, so even a future same-cycle pause check needs defined ordering. Broadly stopping PaperRuntime would also stop protective management/watchdog and violate D5/D22 isolation. No orders, actual data ingest or trade effects observed.
+### Contract and decisions
+`APEX_GEN5.md:17300-17316` W.8 pause after current cell with persisted state, stop bootstrap, >24h data-health recheck before resume; `PHASE2_DECISION_LOG.md:198,284` D5 per-cycle catch-up and D22 per-cell failure isolation are binding, so W.8 control must distinguish historical bootstrap from independent fresh-catch-up rather than silently blanket-halt risk/positions. Owner decisions outrank conflicting W.8 prose; no decision permits a false accepted status.
+### Frozen status and non-frozen alternative
+`apex/research/bootstrap.py` frozen; add non-frozen command adapter/job registry/persistent control state/`BootstrapService` admission before page, leaving frozen runner unchanged; no original YAML or frozen schema edits.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: bound owner commands to durable job ID/lease and process IPC with ack after target job takes control; gate historical fetch after current cell/page per chosen W.8 boundary and perform true health recheck before resume. Requires new durable state/IPC migration, lock lifecycle/restart tests, alert changes and possibly delayed pause acknowledgement; no model retraining, but replay/cursor semantics must be revalidated. B: explicitly reject commands in `serve` when no matching Phase-1 job and document catch-up as independently controlled; safer than false success, yet requires a dedicated catch-up policy/command if owner needs it. Neither option should pause position protection.
+### My recommendation
+A for actual Phase-1 job control plus B-style honest refusal where no job exists; make D5 catch-up policy explicit with owner approval.
+### Acceptance and regression tests
+Synthetic two-process/job-lease integration using real temp checkpoint: authorized command reaches correct running job, persists across restart, page boundary respected, unrelated job unchanged; >24h resume blocks until actual health check passes; serve catch-up either obeys explicit control or refuses independent stop unambiguously, while position protection continues. Separate device acceptance on real scheduler and provider.
+
 ## New findings not in the audit
+
+No additional independent X-ID arose from G-005/G-019/G-026/G-029; their new bounded observations are incorporated in those audit IDs and the final counts. X-V4-001 remains the independent finding.
 
 ### X-V4-001 — repeated ledger queries have no selective indexes (S2, CONFIRMED plan shape; latency DEVICE-EVIDENCE-NEEDED)
 #### Auditor claim (short quote)
@@ -1037,10 +1146,10 @@ EXPLAIN on real DDL before/after migration with device indexes both absent/prese
 
 ## Rows not verified or incomplete
 
-**Not verified (4 IDs; no verdict/severity assignment, no coverage claim):** G-005, G-019, G-026, G-029. Their unquoted full report rows and their complete referenced functions/caller/callee graphs were **not** independently reviewed to the mandatory depth; targeted suite success does not verify any of them. G-001 would also require strict synthetic config isolation before a safe probe. Known ISSUE-073 overlaps G-002, not a blanket verdict on other G rows. Device-specific facts for all rows remain unavailable. Do not extrapolate this report to 41-row coverage.
+**Not verified: none of the 41 requested IDs remain without a bounded verdict.** G-005, G-019 and G-026 have now been assessed on real imported code with synthetic boundaries; G-026 is PARTIAL, not a full provenance certification. ISSUE-073 overlaps G-002 only; it does not discharge other G rows. No device, Telegram provider, venue, model or actual long-running Phase-1 job was exercised. Synthetic evidence cannot certify device behavior or complete acceptance.
 
-**Depth limits for the 21 bounded findings above:** code slices and grep consumers are recorded, but full-file end-to-end semantic review of every referenced file (especially the entire 21k-line contract, `fsm.py`, `gateway.py`, `signaling.py`, `control_plane.py`, all five complete test files, and every transitive caller/callee) was not completed. Thus these are **bounded direct-behavior conclusions, not complete mandatory-depth closure**. The source report's Persian rows cited in their individual sections were read, but no real DB/model/device/transport was available. Query plans were on empty real schema with/without the two specified indexes; optimizer choices and p95 on device are unverified. No L1/L2 risk ladder or order placements were executed. A source-file review must precede any patch; this report is not approval to trade or change frozen files.
+**Depth limits across all 41 bounded findings:** per-row function slices and grep consumers are recorded, but an exhaustive end-to-end semantic review of every referenced file, the entire 21k-line contract, every complete test file and every transitive caller/callee was not completed. These are **bounded direct-behavior conclusions, not complete mandatory-depth closure**. The source report's Persian rows cited in their individual sections were read; no device DB, actual model fixture, external provider or venue was available. Query plans were on empty real schema with/without the two specified indexes; optimizer choices and p95 on device are unverified. No L1/L2 risk ladder or order placements were executed. A further source and device review must precede any patch or operational approval; this report is not approval to trade or change frozen files.
 
 ## Final counts
 
-Of 41 requested audit IDs: **32 CONFIRMED** (bounded direct behavior), **5 PARTIAL**, **0 REJECTED**, **0 DEVICE-EVIDENCE-NEEDED as sole verdict**, **4 NOT VERIFIED**. One additional finding X-V4-001: plan shape CONFIRMED, device impact pending. No row is claimed fully closed at the mandatory exhaustive-depth standard. These counts exclude tests and known-owner items outside the 41-ID scope.
+Of 41 requested audit IDs: **35 CONFIRMED** (bounded direct behavior), **6 PARTIAL**, **0 REJECTED**, **0 DEVICE-EVIDENCE-NEEDED as sole verdict**, **0 NOT VERIFIED**. One additional finding X-V4-001: plan shape CONFIRMED, device impact pending. Newly tested interactions: G-005 accepted W.8 commands do not gate synthetic catch-up or survive service restart; G-019 subscribed transition events do not trigger alerts; G-026 operator replies lose provenance fields in the in-memory outbox (scope PARTIAL), and G-029 text/caption formatting may be invalid for MarkdownV2 without a real provider test. No row is claimed fully closed at the mandatory exhaustive-depth standard. These counts exclude tests and known-owner items outside the 41-ID scope.

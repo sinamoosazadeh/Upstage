@@ -1,0 +1,8 @@
+CLI bootstrap references gateway= False serve references gateway= True
+start= True
+pause accepted= True paused= True
+while paused catch_up cells_checked= 1 source_calls= [('begin', ('BTCUSDT', '1m', None)), ('page', ('BTCUSDT', '1m'))] failures= []
+resume= True health_recheck= {'required': True, 'paused_hours': 25.0, 'threshold_hours': 24.0} paused= False
+stop accepted= True stopped= True
+while stopped catch_up cells_checked= 1 source_calls= [('begin', ('BTCUSDT', '1m', None)), ('page', ('BTCUSDT', '1m'))] failures= []
+new service state stopped= False paused= False

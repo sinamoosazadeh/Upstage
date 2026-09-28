@@ -1,0 +1,2 @@
+subscriptions= {'execution.fsm.transition': 1, 'execution.boot': 1, 'scheduler.cell': 1, 'telegram.message': 1}
+collected= [('execution.fsm.transition', {'state': 'RECOVERY_REQUIRED', 'synthetic': True})] alert_audit= [] transport_calls= 0

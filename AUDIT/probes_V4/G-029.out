@@ -1,0 +1,3 @@
+text_length= 4096 truncated= True trailing_backslash= True tail_repr= 'xxxx\\'
+caption_formatted= '[BTC] +1.5%'
+sent= True photo_caption= '[BTC] +1.5%' parse_mode= MarkdownV2
