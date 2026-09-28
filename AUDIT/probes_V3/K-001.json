@@ -1,0 +1,33 @@
+{
+  "id": "K-001",
+  "probe": "k001",
+  "result": {
+    "correct_raw_returned_event_id": "01a0e96f-31a6-707c-b4f5-c7191d18db00",
+    "hash_equal_for_high_only_change": true,
+    "market_rows": [
+      [
+        "obs-01a0e96f-31a6-707c-b4f5-c7191d18db00",
+        "105",
+        "CORRECTED",
+        "59dcd991b576e4f925632a5df1248cc46099e353bf48c80e3dcb1b7f644d5bce"
+      ]
+    ],
+    "original_event_id": "01a0e96f-31a6-707c-b4f5-c7191d18db00",
+    "raw_rows": [
+      [
+        "01a0e96f-31a6-707c-b4f5-c7191d18db00",
+        "105",
+        "f482121f4201abf2459435bb5f629069c436db7188263a7f35a8c7985e18cebe"
+      ]
+    ],
+    "revision_rows": [
+      [
+        "01a0e96f-31a6-707c-b4f5-c7191d18db00",
+        "01a0e96f-31a6-707c-b4f5-c7191d18db00"
+      ]
+    ],
+    "stored_window_highs": [
+      "105"
+    ]
+  }
+}
