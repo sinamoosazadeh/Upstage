@@ -676,8 +676,221 @@ async def k011() -> dict:
             await store.close()
 
 
+async def k012() -> dict:
+    from datetime import datetime, timedelta, timezone
+    from apex.data_catalog.catalog import Catalog
+    from apex.data_catalog.molecular.features import compute_sweep
+
+    utc = timezone.utc
+
+    def iso(value):
+        return value.astimezone(utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    def make_row(symbol, timeframe, opening, sequence, *, high="110", low="90",
+                 close="100", volume="10", availability=None):
+        return MarketObservation(
+            symbol=symbol, timeframe=timeframe, open=Decimal("100"),
+            high=Decimal(high), low=Decimal(low), close=Decimal(close),
+            volume=Decimal(volume), oi=None, timestamp=iso(opening),
+            sequence=sequence, status="CLOSED", source="V3-PROBE",
+            availability_time=iso(availability or opening + timedelta(minutes=1)),
+            oi_timestamp=None)
+
+    async def seed(store, row):
+        event_id = await store.ingest_raw(row, "MISSING")
+        # Make the market projection's receipt label match the synthetic raw
+        # availability; Catalog.get returns this field for a cache hit too.
+        await store.db.execute(
+            "UPDATE market_observation SET retrieved_at=? WHERE observation_id=?",
+            (row.availability_time, "obs-" + event_id))
+        return event_id
+
+    def json_value(value):
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return {key: (str(val) if isinstance(val, Decimal) else val)
+                    for key, val in value.items()}
+        return str(value)
+
+    def direct_result(value, q, status, reason):
+        return {"value": json_value(value), "q_component": q,
+                "status": status, "reason": reason}
+
+    with tempfile.TemporaryDirectory(prefix="v3-k012-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        try:
+            # Real ORGN contract: lookback=50 + warmup=49, so Catalog.get
+            # requests a 99-row window. The sparse 1m timestamps are one hour
+            # apart; each synthetic row is already closed/available by queries.
+            origin = datetime(2026, 1, 1, tzinfo=utc)
+            for i in range(140):
+                opening = origin + timedelta(hours=i)
+                await seed(store, make_row(
+                    "BTCUSDT", "1m", opening, i,
+                    availability=opening + timedelta(minutes=1)))
+
+            org_catalog = Catalog(provider=store)
+            org_contract = org_catalog.registry.lookup("time_of_day")
+            org_requests = [
+                ("forward_03", "2026-01-05T03:30:00.000Z"),
+                ("forward_04", "2026-01-05T04:30:00.000Z"),
+                ("rewind_02", "2026-01-05T02:30:00.000Z"),
+            ]
+            org_requests.append(
+                ("deep_rewind_02", "2026-01-03T02:30:00.000Z"))
+            org_observations = []
+            org_initial_cache_index = None
+            for label, as_of in org_requests:
+                result = await org_catalog.get(
+                    "time_of_day", "BTCUSDT", "1m", as_of)
+                window = await store.get_window(
+                    "BTCUSDT", "1m", as_of,
+                    org_contract.lookback + org_contract.warmup)
+                direct = org_catalog._computers["time_of_day"](
+                    window, org_catalog._feature_params(), {})
+                if org_initial_cache_index is None and window:
+                    org_initial_cache_index = window[-1].sequence
+                org_observations.append({
+                    "request": label,
+                    "as_of": as_of,
+                    "window_rows": len(window),
+                    "contract_lookback": org_contract.lookback,
+                    "contract_warmup": org_contract.warmup,
+                    "requested_window_rows": org_contract.lookback + org_contract.warmup,
+                    "first_window_sequence": window[0].sequence if window else None,
+                    "last_window_sequence": window[-1].sequence if window else None,
+                    "cache_age_from_first_query": (
+                        window[-1].sequence - org_initial_cache_index
+                        if window and org_initial_cache_index is not None else None),
+                    "last_window_timestamp": window[-1].timestamp if window else None,
+                    "last_window_availability": window[-1].availability_time if window else None,
+                    "catalog_value": json_value(result.value),
+                    "catalog_status": result.status.value,
+                    "catalog_reason": result.reason,
+                    "uncached_value_for_current_window": json_value(direct[0]),
+                    "uncached_status_for_current_window": direct[2],
+                })
+
+            # Real MOLE contract: lookback=5 + warmup=20, hence 25 input rows.
+            # Build a valid LONG sweep with rejection ratio 1.0 and VolumeZ>2.
+            sweep_origin = datetime(2026, 1, 10, tzinfo=utc)
+            sweep_ids = {}
+            sweep_rows = []
+            for i in range(25):
+                opening = sweep_origin + timedelta(minutes=5 * i)
+                kwargs = {}
+                if i == 21:
+                    kwargs = {"high": "101", "low": "88", "close": "92",
+                              "volume": "10"}
+                elif i < 20:
+                    kwargs = {"high": "110", "low": "90", "close": "100",
+                              "volume": "1"}
+                else:
+                    kwargs = {"high": "110", "low": "90", "close": "100",
+                              "volume": "1"}
+                row = make_row(
+                    "ETHUSDT", "5m", opening, i, **kwargs,
+                    availability=opening + timedelta(minutes=5))
+                sweep_rows.append(row)
+                sweep_ids[i] = await seed(store, row)
+
+            last_sweep_open = sweep_rows[-1].timestamp
+            last_sweep_dt = sweep_origin + timedelta(minutes=5 * 24)
+            sweep_as_of = iso(last_sweep_dt + timedelta(minutes=6))
+            # A later raw+market row supplies a future availability frontier
+            # without entering the as_of window.
+            frontier_open = last_sweep_dt + timedelta(hours=2)
+            await seed(store, make_row(
+                "ETHUSDT", "5m", frontier_open, 25,
+                availability=frontier_open + timedelta(minutes=5)))
+            await store.db.commit()
+
+            sweep_catalog = Catalog(provider=store)
+            sweep_contract = sweep_catalog.registry.lookup("sweep")
+            sweep_window = await store.get_window(
+                "ETHUSDT", "5m", sweep_as_of,
+                sweep_contract.lookback + sweep_contract.warmup)
+            first_sweep = await sweep_catalog.get(
+                "sweep", "ETHUSDT", "5m", sweep_as_of,
+                context={"theta_sweep": "0.5"})
+            theta6_sweep = await sweep_catalog.get(
+                "sweep", "ETHUSDT", "5m", sweep_as_of,
+                context={"theta_sweep": "6"})
+            direct_theta6 = compute_sweep(
+                sweep_window, sweep_catalog._feature_params(),
+                {"theta_sweep": "6"})
+
+            corrected_open = sweep_origin + timedelta(minutes=5 * 21)
+            corrected = make_row(
+                "ETHUSDT", "5m", corrected_open, 21,
+                high="101", low="88", close="89", volume="10",
+                availability=corrected_open + timedelta(minutes=5))
+            corrected_event = await store.correct_raw(
+                sweep_ids[21], corrected, "MISSING",
+                "synthetic close correction removes recovery", "V3-PROBE")
+            await store.db.execute(
+                "UPDATE market_observation SET retrieved_at=? WHERE observation_id=?",
+                (corrected.availability_time, "obs-" + corrected_event))
+            await store.db.commit()
+            corrected_window = await store.get_window(
+                "ETHUSDT", "5m", sweep_as_of,
+                sweep_contract.lookback + sweep_contract.warmup)
+            corrected_direct = compute_sweep(
+                corrected_window, sweep_catalog._feature_params(),
+                {"theta_sweep": "0.5"})
+            post_correction = await sweep_catalog.get(
+                "sweep", "ETHUSDT", "5m", sweep_as_of,
+                context={"theta_sweep": "0.5"})
+
+            return {
+                "orgn_contract": {
+                    "lookback": org_contract.lookback,
+                    "warmup": org_contract.warmup,
+                    "catalog_requested_bars": org_contract.lookback + org_contract.warmup,
+                },
+                "orgn_window_reproductions": org_observations,
+                "mole_contract": {
+                    "lookback": sweep_contract.lookback,
+                    "warmup": sweep_contract.warmup,
+                    "catalog_requested_bars": sweep_contract.lookback + sweep_contract.warmup,
+                },
+                "sweep_as_of": sweep_as_of,
+                "sweep_last_open": last_sweep_open,
+                "sweep_window_rows": len(sweep_window),
+                "sweep_window_last_sequence": sweep_window[-1].sequence if sweep_window else None,
+                "sweep_window_last_timestamp": sweep_window[-1].timestamp if sweep_window else None,
+                "initial_theta_0_5_catalog": {
+                    "value": json_value(first_sweep.value),
+                    "status": first_sweep.status.value,
+                    "reason": first_sweep.reason,
+                },
+                "changed_theta_6_catalog": {
+                    "value": json_value(theta6_sweep.value),
+                    "status": theta6_sweep.status.value,
+                    "reason": theta6_sweep.reason,
+                },
+                "uncached_theta_6_compute": direct_result(*direct_theta6),
+                "correction": {
+                    "corrected_event_id": corrected_event,
+                    "input_rows_after_correction": len(corrected_window),
+                    "last_sequence_after_correction": corrected_window[-1].sequence if corrected_window else None,
+                    "corrected_block_statuses": [o.status for o in corrected_window[-5:]],
+                    "uncached_compute_after_correction": direct_result(*corrected_direct),
+                    "catalog_after_correction": {
+                        "value": json_value(post_correction.value),
+                        "status": post_correction.status.value,
+                        "reason": post_correction.reason,
+                    },
+                },
+                "scope_note": "real Catalog, SQLiteStore migrations/ingest/get_window/correct_raw, TierCache, time_of_day and compute_sweep code ran against a temporary SQLite file; synthetic OHLCV only; no device data, network, live serving path or order was used",
+            }
+        finally:
+            await store.close()
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007, "K-008": k008, "K-009": k009, "K-010": k010, "K-011": k011}
+    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007, "K-008": k008, "K-009": k009, "K-010": k010, "K-011": k011, "K-012": k012}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}

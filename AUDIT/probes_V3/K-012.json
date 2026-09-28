@@ -1,0 +1,144 @@
+{
+  "id": "K-012",
+  "probe": "k012",
+  "result": {
+    "changed_theta_6_catalog": {
+      "reason": "TIER_CACHE_HIT",
+      "status": "OK",
+      "value": {
+        "kind": "LONG",
+        "strength": "1"
+      }
+    },
+    "correction": {
+      "catalog_after_correction": {
+        "reason": "TIER_CACHE_HIT",
+        "status": "OK",
+        "value": {
+          "kind": "LONG",
+          "strength": "1"
+        }
+      },
+      "corrected_block_statuses": [
+        "CLOSED",
+        "CORRECTED",
+        "CLOSED",
+        "CLOSED",
+        "CLOSED"
+      ],
+      "corrected_event_id": "01a0e988-40e6-7155-a821-baa1b0b3438c",
+      "input_rows_after_correction": 25,
+      "last_sequence_after_correction": 24,
+      "uncached_compute_after_correction": {
+        "q_component": 0.0,
+        "reason": "BLOCK_NOT_CLOSED",
+        "status": "CANDIDATE",
+        "value": null
+      }
+    },
+    "initial_theta_0_5_catalog": {
+      "reason": "",
+      "status": "OK",
+      "value": {
+        "kind": "LONG",
+        "strength": "1"
+      }
+    },
+    "mole_contract": {
+      "catalog_requested_bars": 25,
+      "lookback": 5,
+      "warmup": 20
+    },
+    "orgn_contract": {
+      "catalog_requested_bars": 99,
+      "lookback": 50,
+      "warmup": 49
+    },
+    "orgn_window_reproductions": [
+      {
+        "as_of": "2026-01-05T03:30:00.000Z",
+        "cache_age_from_first_query": 0,
+        "catalog_reason": "",
+        "catalog_status": "OK",
+        "catalog_value": "3",
+        "contract_lookback": 50,
+        "contract_warmup": 49,
+        "first_window_sequence": 0,
+        "last_window_availability": "2026-01-05T03:01:00.000Z",
+        "last_window_sequence": 98,
+        "last_window_timestamp": "2026-01-05T03:00:00.000Z",
+        "request": "forward_03",
+        "requested_window_rows": 99,
+        "uncached_status_for_current_window": "OK",
+        "uncached_value_for_current_window": "3",
+        "window_rows": 99
+      },
+      {
+        "as_of": "2026-01-05T04:30:00.000Z",
+        "cache_age_from_first_query": 0,
+        "catalog_reason": "TIER_CACHE_HIT",
+        "catalog_status": "OK",
+        "catalog_value": "3",
+        "contract_lookback": 50,
+        "contract_warmup": 49,
+        "first_window_sequence": 0,
+        "last_window_availability": "2026-01-05T04:01:00.000Z",
+        "last_window_sequence": 98,
+        "last_window_timestamp": "2026-01-05T04:00:00.000Z",
+        "request": "forward_04",
+        "requested_window_rows": 99,
+        "uncached_status_for_current_window": "OK",
+        "uncached_value_for_current_window": "4",
+        "window_rows": 99
+      },
+      {
+        "as_of": "2026-01-05T02:30:00.000Z",
+        "cache_age_from_first_query": 0,
+        "catalog_reason": "TIER_CACHE_HIT",
+        "catalog_status": "OK",
+        "catalog_value": "3",
+        "contract_lookback": 50,
+        "contract_warmup": 49,
+        "first_window_sequence": 0,
+        "last_window_availability": "2026-01-05T02:01:00.000Z",
+        "last_window_sequence": 98,
+        "last_window_timestamp": "2026-01-05T02:00:00.000Z",
+        "request": "rewind_02",
+        "requested_window_rows": 99,
+        "uncached_status_for_current_window": "OK",
+        "uncached_value_for_current_window": "2",
+        "window_rows": 99
+      },
+      {
+        "as_of": "2026-01-03T02:30:00.000Z",
+        "cache_age_from_first_query": -48,
+        "catalog_reason": "TIER_CACHE_HIT",
+        "catalog_status": "OK",
+        "catalog_value": "3",
+        "contract_lookback": 50,
+        "contract_warmup": 49,
+        "first_window_sequence": 0,
+        "last_window_availability": "2026-01-03T02:01:00.000Z",
+        "last_window_sequence": 50,
+        "last_window_timestamp": "2026-01-03T02:00:00.000Z",
+        "request": "deep_rewind_02",
+        "requested_window_rows": 99,
+        "uncached_status_for_current_window": "OK",
+        "uncached_value_for_current_window": "2",
+        "window_rows": 51
+      }
+    ],
+    "scope_note": "real Catalog, SQLiteStore migrations/ingest/get_window/correct_raw, TierCache, time_of_day and compute_sweep code ran against a temporary SQLite file; synthetic OHLCV only; no device data, network, live serving path or order was used",
+    "sweep_as_of": "2026-01-10T02:06:00.000Z",
+    "sweep_last_open": "2026-01-10T02:00:00.000Z",
+    "sweep_window_last_sequence": 24,
+    "sweep_window_last_timestamp": "2026-01-10T02:00:00.000Z",
+    "sweep_window_rows": 25,
+    "uncached_theta_6_compute": {
+      "q_component": 0.0,
+      "reason": "REJECTION_BELOW_THETA_SWEEP",
+      "status": "OK",
+      "value": null
+    }
+  }
+}
