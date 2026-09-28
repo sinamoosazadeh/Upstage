@@ -1,0 +1,188 @@
+Mandatory recursive consumer search (grep -Rn).
+\n=== Production call sites and validation path ===
+apex/data_catalog/contracts.py:185:def validate_market_observation(
+apex/engines/e05_fvg/__init__.py:7:    E05FVGEngine,
+apex/engines/e05_fvg/engine.py:762:class E05FVGEngine(EngineBase):
+apex/engines/e06_orderblock/__init__.py:7:    E06OrderBlockEngine,
+apex/engines/e06_orderblock/engine.py:802:class E06OrderBlockEngine(EngineBase):
+apex/ops/bootstrap_service.py:156:def _ohlc_violation(row: Any) -> Optional[str]:
+apex/ops/bootstrap_service.py:697:                reason = _ohlc_violation(obs)
+apex/ops/engine_context.py:1557:def complete_engine_bundle(item: Mapping[str, Any], symbol: str, timeframe: str,
+apex/ops/engine_context.py:1596:    fvg = E05.run_engine([E05.observation_to_bar(o) for o in window], symbol=symbol,
+apex/ops/engine_context.py:1598:    fvg_emitter = E05.E05FVGEngine()
+apex/ops/engine_context.py:1622:    events.extend(E06.E06OrderBlockEngine().compute(symbol, timeframe, end, ob_context))
+apex/ops/engine_context.py:1856:        bundle = await self.prepare_engine_bundle(symbol,timeframe,as_of)
+apex/ops/engine_context.py:2283:    async def prepare_engine_bundle(self, symbol: str, timeframe: str, as_of: str,
+apex/ops/engine_context.py:2318:        bundle = complete_engine_bundle(last, symbol, timeframe, artifact, rtm_context=rtm_context)
+apex/ops/engine_context.py:3590:        validate_market_observation(observation, prev_sequence)
+apex/ops/partial_bar_repair.py:431:    violation = _ohlc_violation(replacement)
+scripts/run_apex.py:760:        driver = PL.PaperRuntime(
+\n=== CP-3 test-module call sites ===
+tests/unit/test_e05_fvg.py:1:"""E05 Imbalance/FVG — §8 validation battery (blueprint L6683–6760) +
+tests/unit/test_e05_fvg.py:4:frozen θ_minW (CP-E05-001's 0.25 proposal NOT applied). T-DR-001 re-run."""
+tests/unit/test_e05_fvg.py:14:    E05_DEFAULTS,
+tests/unit/test_e05_fvg.py:15:    E05FVGEngine,
+tests/unit/test_e05_fvg.py:23:    detect_fvg_at,
+tests/unit/test_e05_fvg.py:30:    run_engine,
+tests/unit/test_e05_fvg.py:73:        det = detect_fvg_at(bars, f["i"], 0.2, 3, 0.01, atr_override=3.5)
+tests/unit/test_e05_fvg.py:87:        det = detect_fvg_at(bars, f["i"], 0.2, 3, 0.01, atr_override=2.0)
+tests/unit/test_e05_fvg.py:98:        det = detect_fvg_at(bars, f["i"], 0.2, 3, 0.01, atr_override=0.9)
+tests/unit/test_e05_fvg.py:129:        det = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=2.0)
+tests/unit/test_e05_fvg.py:170:        det = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=2.0)
+tests/unit/test_e05_fvg.py:340:        # frozen θ_minW = 0.2 (CP-E05-001 NOT applied): width 0.19·ATR
+tests/unit/test_e05_fvg.py:350:        det = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=1.0)
+tests/unit/test_e05_fvg.py:353:        det2 = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=1.0)
+tests/unit/test_e05_fvg.py:363:        det = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=1.0)
+tests/unit/test_e05_fvg.py:489:        r1 = run_engine(bars, tick_size=0.01, symbol="TESTUSDT",
+tests/unit/test_e05_fvg.py:491:        r2 = run_engine(bars, tick_size=0.01, symbol="TESTUSDT",
+tests/unit/test_e05_fvg.py:508:        det_full = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=1.5)
+tests/unit/test_e05_fvg.py:510:        det_trunc = detect_fvg_at(truncated, 2, 0.2, 3, 0.01,
+tests/unit/test_e05_fvg.py:532:        det = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=1.5)
+tests/unit/test_e05_fvg.py:603:        with pytest.raises(ValueError, match="E05_ADAPTER_AMBIGUOUS_QX"):
+tests/unit/test_e05_fvg.py:605:        with pytest.raises(ValueError, match="E05_ADAPTER_VERSION_QX"):
+tests/unit/test_e05_fvg.py:612:# §6 parameters (frozen literals; CP-E05-001 NOT applied)
+tests/unit/test_e05_fvg.py:616:        assert E05_DEFAULTS["min_width_atr"] == 0.2     # frozen, not 0.25
+tests/unit/test_e05_fvg.py:617:        assert E05_DEFAULTS["min_abs_ticks"] == 3
+tests/unit/test_e05_fvg.py:618:        assert E05_DEFAULTS["max_age_bars"] == 96
+tests/unit/test_e05_fvg.py:619:        assert E05_DEFAULTS["mit_activate"] == 0.5
+tests/unit/test_e05_fvg.py:620:        assert E05_DEFAULTS["rej_wick"] == 0.5
+tests/unit/test_e05_fvg.py:621:        assert E05_DEFAULTS["salience_weights"] == (0.35, 0.25, 0.25, 0.15)
+tests/unit/test_e05_fvg.py:622:        assert E05_DEFAULTS["mtf_required"] is False
+tests/unit/test_e05_fvg.py:623:        assert E05_DEFAULTS["inverse_enabled"] is False
+tests/unit/test_e05_fvg.py:624:        assert E05_DEFAULTS["half_life_bars"] == 48
+tests/unit/test_e05_fvg.py:625:        assert E05_DEFAULTS["fresh_thr"] == 0.15
+tests/unit/test_e05_fvg.py:626:        assert E05_DEFAULTS["iou_merge_thr"] == 0.7
+tests/unit/test_e05_fvg.py:627:        assert E05_DEFAULTS["body_ratio_doji_thr"] == 0.1
+tests/unit/test_e05_fvg.py:628:        assert E05_DEFAULTS["range_lookback"] == 20
+tests/unit/test_e05_fvg.py:629:        assert E05_DEFAULTS["atr_period"] == 14
+tests/unit/test_e05_fvg.py:630:        assert E05_DEFAULTS["vol_lookback"] == 20
+tests/unit/test_e05_fvg.py:631:        assert E05_DEFAULTS["sequential_boost"] == 1.25
+tests/unit/test_e05_fvg.py:632:        assert E05_DEFAULTS["sequential_tol_atr"] == 0.3
+tests/unit/test_e05_fvg.py:633:        assert E05_DEFAULTS["inverse_penalty"] == 0.5
+tests/unit/test_e05_fvg.py:637:        with pytest.raises(ValueError, match="E05_SALIENCE_WEIGHTS_SUM_QX"):
+tests/unit/test_e05_fvg.py:641:        with pytest.raises(ValueError, match="UNKNOWN_E05_PARAM_QX"):
+tests/unit/test_e05_fvg.py:642:            get_params({"min_width": 0.25})        # CP-E05-001 key absent
+tests/unit/test_e05_fvg.py:681:        return run_engine(CASE_BARS, tick_size=0.01, symbol="BNBUSDT",
+tests/unit/test_e05_fvg.py:759:            E05FVGEngine().compute("BNBUSDT", "6h",
+tests/unit/test_e05_fvg.py:763:        evs = E05FVGEngine().compute(
+tests/unit/test_e05_fvg.py:770:            assert ev.engine_id == "E05"
+tests/unit/test_e05_fvg.py:776:# T-DR-001 (E05 re-run)
+tests/unit/test_e05_fvg.py:790:        return run_engine(CASE_BARS, tick_size=0.01, symbol="BNBUSDT",
+tests/unit/test_e06_orderblock.py:1:"""E06 OrderBlock — §8 validation battery (blueprint L8046–8292) + §1–§6
+tests/unit/test_e06_orderblock.py:4:CONSUMPTION-LINT test: E06 consumes E01–E05 evidence strictly through the
+tests/unit/test_e06_orderblock.py:17:    E06OrderBlockEngine,
+tests/unit/test_e06_orderblock.py:18:    E06_DEFAULTS,
+tests/unit/test_e06_orderblock.py:33:    run_engine,
+tests/unit/test_e06_orderblock.py:80:# re-computation of E01–E05 evidence paths (SMA / ATR / Wilder / EWMA)
+tests/unit/test_e06_orderblock.py:102:            # no imports from sibling engine packages (E01..E05)
+tests/unit/test_e06_orderblock.py:111:    def test_run_engine_requires_both_evidence_streams(self):
+tests/unit/test_e06_orderblock.py:113:            run_engine([{"o": 1, "h": 1, "l": 1, "c": 1, "v": 1,
+tests/unit/test_e06_orderblock.py:174:        f = FIX["E06_F01_UP_Q3"]["ob"]
+tests/unit/test_e06_orderblock.py:190:        f = FIX["E06_F02_DOWN_Q2_low_volume"]
+tests/unit/test_e06_orderblock.py:210:        f = FIX["E06_F03_BREAKER"]["ob"]
+tests/unit/test_e06_orderblock.py:219:        f = FIX["E06_F04_REVERSAL_CHoCH"]["ob"]
+tests/unit/test_e06_orderblock.py:230:        f = FIX["E06_F05_INVALIDATED"]["ob"]
+tests/unit/test_e06_orderblock.py:236:        f = FIX["E06_F06_MITIGATED"]["ob"]
+tests/unit/test_e06_orderblock.py:244:        bar = FIX["E06_F07_H_EQ_L_rejected"]["bar"]
+tests/unit/test_e06_orderblock.py:250:        f = FIX["E06_F08_V_zero"]
+tests/unit/test_e06_orderblock.py:266:        f = FIX["E06_F09_IoU_merge"]
+tests/unit/test_e06_orderblock.py:292:        f = FIX["E06_F10_directional_wrong_side"]
+tests/unit/test_e06_orderblock.py:308:        f = FIX["E06_F11_context_via_disp_high"]["input"]
+tests/unit/test_e06_orderblock.py:316:        f = FIX["E06_F12_context_fails_low_volume"]["input"]
+tests/unit/test_e06_orderblock.py:376:        ob = ob_from_fixture(FIX["E06_F01_UP_Q3"]["ob"])
+tests/unit/test_e06_orderblock.py:380:        ob2 = ob_from_fixture(FIX["E06_F01_UP_Q3"]["ob"])
+tests/unit/test_e06_orderblock.py:384:        ob3 = ob_from_fixture(FIX["E06_F01_UP_Q3"]["ob"])
+tests/unit/test_e06_orderblock.py:394:def _scenario_bars():
+tests/unit/test_e06_orderblock.py:445:    bars = _scenario_bars()
+tests/unit/test_e06_orderblock.py:450:    res = run_engine(bars, struct_events_by_idx=struct_by_idx,
+tests/unit/test_e06_orderblock.py:520:        bars = _scenario_bars()
+tests/unit/test_e06_orderblock.py:530:        bars = _scenario_bars()
+tests/unit/test_e06_orderblock.py:582:        bars = _scenario_bars()
+tests/unit/test_e06_orderblock.py:620:        bars = _scenario_bars()
+tests/unit/test_e06_orderblock.py:634:        bars = _scenario_bars()
+tests/unit/test_e06_orderblock.py:752:        with pytest.raises(ValueError, match="E06_ADAPTER_AMBIGUOUS_QX"):
+tests/unit/test_e06_orderblock.py:755:        with pytest.raises(ValueError, match="E06_ADAPTER_AMBIGUOUS_QX"):
+tests/unit/test_e06_orderblock.py:760:        with pytest.raises(ValueError, match="E06_ADAPTER_VERSION_QX"):
+tests/unit/test_e06_orderblock.py:771:        assert E06_DEFAULTS["body_min"] == 0.55
+tests/unit/test_e06_orderblock.py:772:        assert E06_DEFAULTS["disp_min"] == 1.5
+tests/unit/test_e06_orderblock.py:773:        assert E06_DEFAULTS["disp_high"] == 1.8
+tests/unit/test_e06_orderblock.py:774:        assert E06_DEFAULTS["zone_tol"] == 0.15
+tests/unit/test_e06_orderblock.py:775:        assert E06_DEFAULTS["vol_min"] == 1.3
+tests/unit/test_e06_orderblock.py:776:        assert E06_DEFAULTS["max_age_bars"] == 144
+tests/unit/test_e06_orderblock.py:777:        assert E06_DEFAULTS["mit_activate"] == 0.5
+tests/unit/test_e06_orderblock.py:778:        assert E06_DEFAULTS["min_width_atr"] == 0.15
+tests/unit/test_e06_orderblock.py:779:        assert E06_DEFAULTS["inv_tol"] == 0.2
+tests/unit/test_e06_orderblock.py:780:        assert E06_DEFAULTS["iou_thresh"] == 0.7
+tests/unit/test_e06_orderblock.py:781:        assert E06_DEFAULTS["merge_bars"] == 20
+tests/unit/test_e06_orderblock.py:782:        assert E06_DEFAULTS["disp_max_k"] == 5
+tests/unit/test_e06_orderblock.py:783:        assert E06_DEFAULTS["atr_period"] == 14
+tests/unit/test_e06_orderblock.py:784:        assert E06_DEFAULTS["vol_sma_period"] == 20
+tests/unit/test_e06_orderblock.py:785:        assert E06_DEFAULTS["salience_weights"] == (0.35, 0.25, 0.25, 0.15)
+tests/unit/test_e06_orderblock.py:790:        with pytest.raises(ValueError, match="UNKNOWN_E06_PARAM_QX"):
+tests/unit/test_e06_orderblock.py:792:        with pytest.raises(ValueError, match="E06_SALIENCE_WEIGHTS_SUM_QX"):
+tests/unit/test_e06_orderblock.py:815:            E06OrderBlockEngine().compute("BTCUSDT", "1h",
+tests/unit/test_e06_orderblock.py:819:        bars = _scenario_bars()
+tests/unit/test_e06_orderblock.py:821:            E06OrderBlockEngine().compute(
+tests/unit/test_e06_orderblock.py:826:        bars = _scenario_bars()
+tests/unit/test_e06_orderblock.py:828:        evs = E06OrderBlockEngine().compute(
+tests/unit/test_e06_orderblock.py:838:            assert ev.engine_id == "E06"
+tests/unit/test_e06_orderblock.py:845:# T-DR-001 (E06 re-run)
+tests/unit/test_e06_orderblock.py:850:            bars = _scenario_bars()
+tests/unit/test_e06_orderblock.py:852:            return run_engine(bars,
+tests/integration/test_cp3_engines.py:1:"""CP-3 cross-engine integration battery (E04/E05/E06).
+tests/integration/test_cp3_engines.py:4:  - E04 → E05/E06 evidence chain: E04's governed ATR series is consumed
+tests/integration/test_cp3_engines.py:5:    by E05 (Gate_D) and E06 (I_Volatility_v4) — never recomputed.
+tests/integration/test_cp3_engines.py:6:  - E05 → E06 chain: a live E05 FVG zone feeds E06's I_FVG_v4 Context
+tests/integration/test_cp3_engines.py:8:  - E01 → E06 chain: structural BOS events feed E06's structural gate
+tests/integration/test_cp3_engines.py:10:  - §8.6 redundancy guard: an E05 zone and an E06 zone with IoU > 0.6
+tests/integration/test_cp3_engines.py:25:from apex.engines.e04_volatility import run_engine as run_e04
+tests/integration/test_cp3_engines.py:37:from apex.engines.e05_fvg import E05FVGEngine
+tests/integration/test_cp3_engines.py:38:from apex.engines.e05_fvg import run_engine as run_e05
+tests/integration/test_cp3_engines.py:39:from apex.engines.e06_orderblock import E06OrderBlockEngine
+tests/integration/test_cp3_engines.py:43:    run_engine as run_e06,
+tests/integration/test_cp3_engines.py:85:# E04 → E05 / E06 evidence chain
+tests/integration/test_cp3_engines.py:93:        # E05 consumes the E04 ATR pathway (atr_by_idx) — zones whose
+tests/integration/test_cp3_engines.py:116:        # E06 ran to completion on E04-supplied ATR (no internal
+tests/integration/test_cp3_engines.py:122:# E05 → E06 chain: FVG evidence lifts the OB Context term
+tests/integration/test_cp3_engines.py:124:def _chain_scenario_bars():
+tests/integration/test_cp3_engines.py:140:class TestE05FeedsE06:
+tests/integration/test_cp3_engines.py:142:        bars = _chain_scenario_bars()
+tests/integration/test_cp3_engines.py:159:        # a live E05-style FVG next to the origin supplies the OR-term
+tests/integration/test_cp3_engines.py:171:        # E05 run on the shared window; every active zone maps cleanly
+tests/integration/test_cp3_engines.py:172:        # into the I_FVG_v4 consumption shape used by E06
+tests/integration/test_cp3_engines.py:186:# §8.6 cross-engine redundancy guard (E05 zone vs E06 zone)
+tests/integration/test_cp3_engines.py:191:        fvg_lo, fvg_hi = 100.0, 102.0           # E05 zone
+tests/integration/test_cp3_engines.py:192:        ob_lo, ob_hi = 100.2, 102.2             # E06 zone
+tests/integration/test_cp3_engines.py:219:        evs += E05FVGEngine().compute(
+tests/integration/test_cp3_engines.py:223:        evs += E06OrderBlockEngine().compute(
+tests/integration/test_cp3_engines.py:232:        assert {"E04", "E05", "E06"} <= engine_ids
+tests/integration/test_cp3_engines.py:255:        assert set(engines) <= {"E04", "E05", "E06"} and engines
+tests/integration/test_cp3_engines.py:290:        # E05: fid + snapshot identical
+tests/integration/test_cp3_engines.py:296:        # E06: canonical OB list identical
+tests/integration/test_cp3_engines.py:306:            E06OrderBlockEngine().compute(
+\n=== Root-to-paper runtime links ===
+scripts/run_apex.py:88:from apex.ops import plan_bridge as PB                          # noqa: E402
+scripts/run_apex.py:748:        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+scripts/run_apex.py:750:        plan_bridge = PB.PaperPlanBridge(
+scripts/run_apex.py:765:            plan_provider=plan_bridge, catch_up=catch_up)
+scripts/run_apex.py:780:        if driver.plan_provider is None:
+apex/ops/paper_loop.py:13:The plan seam is ``plan_provider(symbol, timeframe, as_of) -> Mapping | None``
+apex/ops/paper_loop.py:363:                 plan_provider: Optional[Callable[..., Any]] = None,
+apex/ops/paper_loop.py:384:        self.plan_provider = plan_provider
+apex/ops/paper_loop.py:461:            "engines": self._stage_engines,
+apex/ops/paper_loop.py:466:            "execution": self._stage_execution,
+apex/ops/paper_loop.py:506:                              "increment; plans enter through plan_provider)"}
+apex/ops/paper_loop.py:518:    async def _stage_engines(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:555:        plan = await self._resolve_plan(payload)
+apex/ops/paper_loop.py:620:    async def _stage_execution(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:648:    async def _resolve_plan(self, payload: Mapping[str, Any]
+apex/ops/paper_loop.py:652:        if self.plan_provider is None:
+apex/ops/paper_loop.py:658:        provided = self.plan_provider(payload["symbol"], payload["timeframe"],
+apex/ops/paper_loop.py:662:            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+apex/ops/paper_loop.py:1008:        prepare = getattr(self.plan_provider, "prepare", None)
+apex/ops/engine_context.py:24:from apex.ops.plan_bridge import BridgeError
+apex/ops/engine_context.py:932:# D46 producer-side provenance key. plan_bridge.REQUIRED_CONTEXT_KEYS stays the
+apex/ops/engine_context.py:1759:class EngineContextProducer:
+apex/ops/engine_context.py:1845:        from apex.ops.plan_bridge import _fabric_ref, _normalise_bars
+apex/ops/engine_context.py:3148:    producer = EngineContextProducer(store, now=now)
+apex/ops/engine_context.py:3904:    from apex.ops.plan_bridge import REQUIRED_CONTEXT_KEYS, REQUIRED_RISK_KEYS, _validate_e11_context

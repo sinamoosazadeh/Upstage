@@ -1,0 +1,1145 @@
+I-006 production composition and baseline source excerpts
+Baseline commit: 85b2c155d7b054a468379ddfd802eb239d0801f9
+All excerpts below are from git show <baseline>:<path> and use baseline line numbers.
+
+===== APEX_GEN5.md:18670-18690 (baseline) =====
+ 18670	
+ 18671	**Validation order (sequential, fail-fast):**
+ 18672	1. Schema conformance: all required fields present, correct types.
+ 18673	2. Finite numerics: no NaN/Inf in OHLCV; Decimal precision adequate.
+ 18674	3. OHLC bounds: O ≥ 0, H ≥ max(O, C), L ≤ min(O, C), H ≥ L, no swaps.
+ 18675	4. Volume and OI: non-negative; zero volume is permitted only for OPEN status; OI policy (AI.6).
+ 18676	5. UTC timestamp: valid ISO 8601 UTC format, millisecond precision.
+ 18677	6. Sequence check: strictly increasing for same symbol+timeframe; gap or reorder triggers correction event.
+ 18678	7. Duplicate detection: (symbol, timeframe, timestamp, open, close, volume) hash against recent ledger; exact match = duplicate; similar hash = potential out-of-order.
+ 18679	8. Closed-only rule: only CLOSED status candles enter the feature pipeline; OPEN/PARTIAL are buffered or rejected.
+ 18680	9. Availability and PIT check: timestamp <= as_of <= max(availability_time + settlement_lag); if violated, mark STALE (AI.6).
+ 18681	10. Source health: check provider status, connection latency, last-quote age; degraded sources are flagged as QX (AI.6).
+ 18682	
+ 18683	**Never swap H and L or silently replace missing values.** If H < L, reject the record and log error; if numeric value is missing, mark MISSING (AI.6), not zero.
+ 18684	
+ 18685	**Correction and immutability model:**
+ 18686	
+ 18687	Define three canonical statuses:
+ 18688	- **MISSING:** field value not yet available or not provided.
+ 18689	- **PARTIAL:** candle not yet closed; only open/high/low/volume are reliable.
+ 18690	- **CLOSED:** candle is immutable; open, high, low, close, volume, and OI (if provided) are final.
+
+===== PHASE2_TRACEABILITY_MATRIX.md:483-490 (baseline) =====
+   483	### CP-12 — HOTFIX: venue OHLC-hygienic backfill source (drop-with-evidence)
+   484	
+   485	| Artifact | Owner | Requirement → evidence |
+   486	|---|---|---|
+   487	| `apex/ops/bootstrap_service.py` (`ToobitKlineSource`) | CP-12 | W.6 Phase-1 wiring hygiene (frozen `research/bootstrap.py`, `data_catalog/**`, `toobit_public.py`, store DDL and `params/*.yaml` byte-untouched): owner-measured venue defect (2026-09-16 probe walking every interval backward exactly as the source does — `1m`/`5m`/`15m`/`1h`/`4h` violations=0, `1d` violations=2 of 1747; verbatim BTCUSDT 1d rows `[1673395200000,"17440.25","17995.03","17551.51","17942.82",…]` low>open and `[1677196800000,"23940.6","23193.77","23183.93","23185.29",…]` high<open, Toobit's legacy Huobi-era candles) which aborted the first long run with `IntegrityError` on the frozen `raw_observation` CHECK → the gate is enforced at the single boundary where a walked row is appended into the per-cell history (`_walk_backward` append): OHLC numeric-parseable and `high>=max(open,close)` and `low<=min(open,close)` and `high>=low` (clause-for-clause the frozen DDL predicate, verified by a 625-case table test), volume/quote-volume/trades never a drop reason, no repair and no clip (fabrication forbidden), no silent skip (W.6) → drop-with-observable-evidence: `invalid_dropped` per source, `invalid_by_cell` per cell, `INVALID_BAR_OFFENDER_RETENTION=20` offenders per cell as (symbol, timeframe, open_time_ms, repr(row)[:160]) with named reasons, `dropped=<n>` plus offenders/reasons summary in the `bootstrap Phase 1 cell complete:` wiring print (drained by `BootstrapService._flush_cell_complete_prints` into the owner report, never gated off by `announce`), `invalid_bars_dropped` in the `status()` mirror so `scripts/run_apex.py status` (offline, read-only) surfaces it, and `invalid_offenders` in the run result → MUST-NOT-CHANGE semantics asserted green: empty-page shape (`next_cursor_ms=end_ms`) stays the only completion signal, an all-invalid page drops its rows but never ends the walk nor completes the cell (walk stop conditions still the venue's own, seen-open tracking), ascending `PAGE_LIMIT` serve, `open_time < cursor` resume filter (poison never re-served, even across a restart re-walk), `--max-pages` counts runner-facing pages only, −1003/429 walk-internal bounded backoff (`WALK_BACKOFF_SECONDS`) with the CP-10 seam intact (empty backoff surfaces −1003 to the runner), non-rate-limit errors remain `BootstrapError("FETCH_FAILED")`, completed-cell stamps and resume-never-rewind unchanged → `tests/unit/test_ops_bootstrap_service.py` (49 passed: 30 baseline + 19 CP-12 — `TestOhlcLaw`, `TestVenueDataHygiene`, `TestVenueDataHygieneService`, incl. the real-frozen-store test proving `IntegrityError` unreachable while the untouched DDL CHECK still refuses the verbatim poison bar) |
+   488	
+   489	**Result:** PASS(2026-09-16, 2680 passed / 0 failed on each of two `python -m pytest tests -q` runs — baseline 2661 plus 19 CP-12 tests, deterministic; `python -m pytest tests/unit/test_ops_bootstrap_service.py -q` = 49 passed; `sha256(APEX_GEN5.md)` rechecked immediately before push; commit range and PR recorded in the board continuation line and `HANDOFF_CP12_HOTFIX`).
+   490	
+
+===== apex/data_catalog/contracts.py:185-220 (baseline) =====
+   185	def validate_market_observation(
+   186	    obs: MarketObservation,
+   187	    prev_sequence: Optional[int] = None,
+   188	) -> None:
+   189	    """AI.4 validation order (sequential, fail-fast; T-DC-002).
+   190	
+   191	    Steps 1–8 are structural; step 9 (availability vs as_of) is enforced by
+   192	    the PIT module; step 10 (source health) is reported via the quality
+   193	    vector. Raises ValidationError with the first failing Ch.7 code.
+   194	    """
+   195	    # 1. schema conformance (T-DC-001: all 10 fields present, typed)
+   196	    for name in ("symbol", "timeframe", "timestamp", "status"):
+   197	        if not isinstance(getattr(obs, name), str) or not getattr(obs, name):
+   198	            raise ValidationError("E-Q-001", f"missing/blank field {name}")
+   199	    for name in ("open", "high", "low", "close", "volume"):
+   200	        if not isinstance(getattr(obs, name), Decimal):
+   201	            raise ValidationError("E-Q-001", f"field {name} not Decimal")
+   202	    if not isinstance(obs.sequence, int):
+   203	        raise ValidationError("E-Q-001", "sequence not int")
+   204	    # 2. finite numerics (NaN/Inf forbidden — never silently dropped)
+   205	    for name in ("open", "high", "low", "close", "volume"):
+   206	        v = getattr(obs, name)
+   207	        if not v.is_finite():
+   208	            code = "E-NUM-001" if v.is_nan() else "E-NUM-002"
+   209	            raise ValidationError(code, f"{name} non-finite")
+   210	    if obs.oi is not None and not obs.oi.is_finite():
+   211	        code = "E-NUM-001" if obs.oi.is_nan() else "E-NUM-002"
+   212	        raise ValidationError(code, "oi non-finite")
+   213	    # 3. OHLC bounds: H >= max(O,C), L <= min(O,C), H >= L, no swaps
+   214	    if obs.open < 0 or obs.high < 0 or obs.low < 0 or obs.close < 0:
+   215	        raise ValidationError("E-Q-001", "negative OHLC price")
+   216	    if obs.high < max(obs.open, obs.close) or obs.low > min(obs.open, obs.close):
+   217	        raise ValidationError("QX_INVALID", "OHLC bounds violated (H<max(O,C) or L>min(O,C))")
+   218	    if obs.high < obs.low:
+   219	        raise ValidationError("QX_INVALID", "High < Low — physically impossible; reject, never swap")
+   220	    # 4. volume and OI non-negative; zero volume permitted only for OPEN
+
+===== apex/ops/bootstrap_service.py:156-180 (baseline) =====
+   156	def _ohlc_violation(row: Any) -> Optional[str]:
+   157	    """The frozen OHLC law over one venue row; ``None`` when the row is sane.
+   158	
+   159	    Only OHLC is judged — volume/quote-volume/trade-count fields are NEVER a
+   160	    drop reason (the frozen client keeps parsing them tolerantly). A row that
+   161	    is geometrically impossible is returned with the named reason so the
+   162	    caller can drop it with evidence instead of reaching the DDL CHECK.
+   163	    """
+   164	    fields = _kline_ohlc_fields(row)
+   165	    if fields is None:
+   166	        return None
+   167	    parsed = [_decimal_or_none(value) for value in fields]
+   168	    for name, value in zip(_OHLC_NAMES, parsed):
+   169	        if value is None:
+   170	            return f"{REASON_OHLC_NOT_PARSEABLE}:{name}"
+   171	    open_, high, low, close = parsed
+   172	    if high < max(open_, close):
+   173	        return REASON_HIGH_BELOW_MAX_OPEN_CLOSE
+   174	    if low > min(open_, close):
+   175	        return REASON_LOW_ABOVE_MIN_OPEN_CLOSE
+   176	    if high < low:
+   177	        return REASON_HIGH_BELOW_LOW
+   178	    return None
+   179	
+   180	
+
+===== apex/ops/bootstrap_service.py:647-705 (baseline) =====
+   647	    def _walk_backward(self, symbol: str, timeframe: str,
+   648	                       end_ms: int) -> List[Any]:
+   649	        """Collect the venue's full available history for one cell, ascending.
+   650	
+   651	        Walks ``endTime`` backward from ``end_ms``. Dedup-guarded: an empty
+   652	        page or a page whose first row repeats the previous page's first row
+   653	        ends the walk. Rate-limit errors retry with bounded exponential
+   654	        backoff inside the walk; any other venue error fails closed.
+   655	
+   656	        CP-12: the walk ends at the append boundary below — every row that is
+   657	        about to become part of the per-cell history passes the frozen OHLC
+   658	        law, and a row that fails it is dropped with evidence (never served,
+   659	        never stored, never silently skipped). Dropping never ends the walk:
+   660	        the stop conditions stay the venue's own (empty page / no new row /
+   661	        no backward progress), so a fully poisoned page cannot complete a cell.
+   662	        """
+   663	        collected: Dict[int, Any] = {}
+   664	        # Every open time the venue has returned for this cell, valid or not:
+   665	        # the walk's "no new row" stop is about the VENUE repeating itself, so
+   666	        # a dropped row still counts as seen (and cannot stop the walk).
+   667	        seen_ms: Set[int] = set()
+   668	        key = (str(symbol), str(timeframe))
+   669	        walk_end = int(end_ms)
+   670	        prev_first_ms: Optional[int] = None
+   671	        # startTime is ignored by the tail-aligned venue; pass DEEP_START so a
+   672	        # head-aligned double (tests) still has a lawful lower bound.
+   673	        floor = getattr(self, "_catch_up_floor", {}).get(key)
+   674	        walk_start = int(DEEP_START_MS if floor is None else floor)
+   675	
+   676	        while walk_end >= walk_start:
+   677	            page = self._get_klines_with_walk_backoff(
+   678	                symbol, timeframe, walk_start, walk_end, PAGE_LIMIT)
+   679	            self.walk_pages += 1
+   680	            if not page:
+   681	                break
+   682	            first_ms = _iso_to_ms(page[0].timestamp)
+   683	            # Dedup-stop: venue re-returned the same window (own first row).
+   684	            if prev_first_ms is not None and first_ms == prev_first_ms:
+   685	                break
+   686	            prev_first_ms = first_ms
+   687	            new_any = False
+   688	            oldest_ms = first_ms
+   689	            for obs in page:
+   690	                open_ms = _iso_to_ms(obs.timestamp)
+   691	                if open_ms < oldest_ms:
+   692	                    oldest_ms = open_ms
+   693	                if open_ms not in seen_ms:
+   694	                    seen_ms.add(open_ms)
+   695	                    new_any = True
+   696	                # -- CP-12 hygiene gate: THE single boundary into the history --
+   697	                reason = _ohlc_violation(obs)
+   698	                if reason is not None:
+   699	                    self._record_invalid_bar(key, open_ms, obs, reason)
+   700	                    continue
+   701	                if open_ms not in collected:
+   702	                    collected[open_ms] = obs
+   703	            if not new_any:
+   704	                break
+   705	            # Step endTime to just before the oldest bar of this page.
+
+===== apex/data_catalog/store/sqlite_store.py:45-66 (baseline) =====
+    45	CH4_DDL = """
+    46	CREATE TABLE market_observation (
+    47	    observation_id TEXT PRIMARY KEY CHECK(typeof(observation_id)='text'),
+    48	    symbol TEXT CHECK(typeof(symbol)='text') CHECK(symbol IN ('BTCUSDT','ETHUSDT','SOLUSDT','BNBUSDT','XRPUSDT','ADAUSDT','DOGEUSDT','AVAXUSDT','LINKUSDT','LTCUSDT')),
+    49	    timeframe TEXT CHECK(typeof(timeframe)='text') CHECK(timeframe IN ('1m','3m','5m','15m','30m','1h','2h','4h','6h','8h','12h','1d','1w','1mo')),
+    50	    open_price TEXT CHECK(typeof(open_price)='text'),
+    51	    high_price TEXT CHECK(typeof(high_price)='text'),
+    52	    low_price TEXT CHECK(typeof(low_price)='text'),
+    53	    close_price TEXT CHECK(typeof(close_price)='text'),
+    54	    volume TEXT CHECK(typeof(volume)='text'),
+    55	    open_interest TEXT CHECK(typeof(open_interest)='text'),
+    56	    open_time TEXT CHECK(typeof(open_time)='text'),
+    57	    close_time TEXT CHECK(typeof(close_time)='text'),
+    58	    retrieved_at TEXT CHECK(typeof(retrieved_at)='text'),
+    59	    candle_status TEXT CHECK(candle_status IN ('MISSING','PARTIAL','CLOSED','CORRECTED','SUPERSEDED')),
+    60	    quality_state TEXT CHECK(quality_state IN ('Q0','Q1','Q2','Q3','Q4','QX')),
+    61	    source TEXT,
+    62	    schema_version TEXT,
+    63	    raw_payload_hash TEXT,
+    64	    CHECK(CAST(high_price AS REAL)>=max(CAST(open_price AS REAL),CAST(close_price AS REAL)) AND CAST(low_price AS REAL)<=min(CAST(open_price AS REAL),CAST(close_price AS REAL)) AND CAST(high_price AS REAL)>=CAST(low_price AS REAL))
+    65	);
+    66	
+
+===== apex/data_catalog/store/sqlite_store.py:208-226 (baseline) =====
+   208	CREATE TABLE IF NOT EXISTS raw_observation (
+   209	  event_id TEXT PRIMARY KEY,
+   210	  as_of TEXT NOT NULL,
+   211	  symbol TEXT NOT NULL,
+   212	  timeframe TEXT NOT NULL,
+   213	  open TEXT NOT NULL, high TEXT NOT NULL, low TEXT NOT NULL, close TEXT NOT NULL,
+   214	  volume TEXT NOT NULL,
+   215	  oi TEXT,
+   216	  oi_timestamp TEXT,
+   217	  oi_state TEXT NOT NULL CHECK(oi_state IN ('AVAILABLE','STALE','MISSING','INVALID','DEGRADED')),
+   218	  status TEXT NOT NULL CHECK(status IN ('OPEN','PARTIAL','CLOSED')),
+   219	  content_hash TEXT NOT NULL UNIQUE,
+   220	  source TEXT NOT NULL,
+   221	  availability_time TEXT,
+   222	  quality_vector TEXT,
+   223	  created_at TEXT NOT NULL
+   224	);
+   225	CREATE INDEX IF NOT EXISTS idx_raw_sym_tf_asof ON raw_observation(symbol, timeframe, as_of);
+   226	
+
+===== apex/engines/e05_fvg/engine.py:274-324 (baseline) =====
+   274	def detect_fvg_at(bars: Sequence[Dict[str, Any]], i: int,
+   275	                  theta_min_w: float, min_abs_ticks: int, tick_size: float,
+   276	                  atr_override: Optional[float] = None) -> Optional[Dict[str, Any]]:
+   277	    """Three-candle detection at closed candle i (§3.1 Gates A–D).
+   278	
+   279	    Gate_A candle validity; Gate_B imbalance; Gate_C safety net;
+   280	    Gate_D minimum width (θ_minW·ATR ∧ min_abs_ticks·tick_size).
+   281	    atr_override is the E04-evidence/fixture pathway; production computes
+   282	    the §4 PIT-safe fallback only when no ATR evidence is supplied.
+   283	    """
+   284	    if i < 2:
+   285	        return None
+   286	    b2, b1, b0 = bars[i - 2], bars[i - 1], bars[i]
+   287	    # Gate_A — invalid candle
+   288	    for b in (b2, b1, b0):
+   289	        if b["h"] < b["l"] - EPS or not math.isfinite(b["h"]):
+   290	            return {"invalid_reason": "INVALID_CANDLE"}
+   291	    # Gate_B — imbalance
+   292	    bullish_cond = b2["h"] < b0["l"]
+   293	    bearish_cond = b2["l"] > b0["h"]
+   294	    if not (bullish_cond or bearish_cond):
+   295	        return None
+   296	    atr_now = atr_override if atr_override is not None else atr_calc(
+   297	        bars, 14, i)
+   298	    if bullish_cond:
+   299	        # ICT-correct zone [H_{t−2}, L_t] — the middle candle does NOT
+   300	        # shrink the zone (§0/§2/§7 Ch.1-11; fixture-canonical).
+   301	        lower = b2["h"]
+   302	        upper = b0["l"]
+   303	        direction = "UP"
+   304	    else:
+   305	        # Bearish ICT zone [H_t, L_{t−2}] (§2 table main implementation).
+   306	        lower = b0["h"]
+   307	        upper = b2["l"]
+   308	        direction = "DOWN"
+   309	    # Gate_C — numerical safety net (structurally guaranteed by Gate_B;
+   310	    # the abandoned max/min formula is deliberately NOT used here).
+   311	    if lower > upper + EPS:
+   312	        return {"invalid_reason": "NEGATIVE_WIDTH", "lower": lower,
+   313	                "upper": upper, "direction": direction}
+   314	    width = upper - lower
+   315	    # Gate_D — minimum width
+   316	    min_w_atr = theta_min_w * atr_now
+   317	    min_w_abs = min_abs_ticks * tick_size
+   318	    if width < min_w_atr - EPS or width < min_w_abs - EPS:
+   319	        return {"invalid_reason": "INSUFFICIENT_WIDTH", "width": width,
+   320	                "thr_atr": min_w_atr}
+   321	    return {
+   322	        "direction": direction, "lower": lower, "upper": upper,
+   323	        "width": width, "atr": atr_now, "at_idx": i,
+   324	        "at_ts": b0.get("ts_close", b0.get("ts", 0)),
+
+===== apex/engines/e05_fvg/engine.py:676-701 (baseline) =====
+   676	def run_engine(bars: Sequence[Dict[str, Any]],
+   677	               params: Optional[Dict[str, Any]] = None,
+   678	               tick_size: float = 0.01, symbol: str = "",
+   679	               htf_fvgs_by_idx: Optional[Dict[int, List[FVGObject]]] = None,
+   680	               trend_htf_by_idx: Optional[Dict[int, str]] = None,
+   681	               bos_by_idx: Optional[Dict[int, List[Dict[str, Any]]]] = None,
+   682	               atr_by_idx: Optional[Dict[int, float]] = None
+   683	               ) -> Dict[str, Any]:
+   684	    """Pure batch driver over closed candles (CP-2 parity)."""
+   685	    eng = FVGEngine(params, tick_size=tick_size, symbol=symbol)
+   686	    events: List[Dict[str, Any]] = []
+   687	    for i in range(len(bars)):
+   688	        events.extend(eng.process_bar(
+   689	            bars, i,
+   690	            htf_fvgs=(htf_fvgs_by_idx or {}).get(i),
+   691	            trend_htf=(trend_htf_by_idx or {}).get(i),
+   692	            bos_events=(bos_by_idx or {}).get(i),
+   693	            atr_override=(atr_by_idx or {}).get(i)))
+   694	    return {"engine": eng, "events": events,
+   695	            "active": list(eng.active_fvgs.values()),
+   696	            "history": list(eng.history)}
+   697	
+   698	
+   699	# --------------------------------------------------------------------------
+   700	# §5.5 v3→v4 migration adapter (read-only; fail-closed on ambiguity)
+   701	# --------------------------------------------------------------------------
+
+===== apex/engines/e05_fvg/engine.py:748-810 (baseline) =====
+   748	def observation_to_bar(obs: MarketObservation) -> Dict[str, Any]:
+   749	    ts = obs.timestamp
+   750	    try:
+   751	        import datetime
+   752	        dt = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+   753	        ts_ms = int(dt.timestamp() * 1000)
+   754	    except (ValueError, AttributeError):
+   755	        ts_ms = 0
+   756	    return {"o": float(obs.open), "h": float(obs.high),
+   757	            "l": float(obs.low), "c": float(obs.close),
+   758	            "v": float(obs.volume), "ts_close": ts_ms,
+   759	            "symbol": obs.symbol}
+   760	
+   761	
+   762	class E05FVGEngine(EngineBase):
+   763	    """E05_FVG on the frozen EngineBase contract (v4.0.0).
+   764	
+   765	    compute(symbol, timeframe, as_of, context): window via
+   766	    context['window'] or a sync WindowProvider. Consumed context keys:
+   767	    window, provider, bars, e05_params, tick_size,
+   768	    htf_fvgs (List[FVGObject] — MTF_FVG_HTF@^4.0.0 input contract §1.3),
+   769	    trend_htf (UP/DOWN from E09-governed context),
+   770	    bos_events (E01_STRUCTURE_BOS@^3.2.0 governed input),
+   771	    atr_series (E04_ATR@^2.3.0 governed input — consumed, never
+   772	    recomputed for normative decisions). Produces FVG_ZONE@^4.0.0
+   773	    evidence on topics evidence.E05.* ."""
+   774	
+   775	    engine_id = "E05"
+   776	    analyst_version = ANALYST_VERSION
+   777	    code_revision = "0" * 40
+   778	
+   779	    def compute(self, symbol: str, timeframe: str, as_of: str,
+   780	                context: Optional[Dict[str, Any]] = None
+   781	                ) -> List[EvidenceEvent]:
+   782	        context = context or {}
+   783	        window_obs = self._resolve_window(symbol, timeframe, as_of, context)
+   784	        if not window_obs:
+   785	            return []
+   786	        bars = [observation_to_bar(o) for o in window_obs]
+   787	        params = get_params(context.get("e05_params"))
+   788	        atr_series = context.get("atr_series")
+   789	        atr_by_idx = ({i: float(v) for i, v in enumerate(atr_series)}
+   790	                      if atr_series is not None else None)
+   791	        result = run_engine(
+   792	            bars, params,
+   793	            tick_size=float(context.get("tick_size", 0.01)),
+   794	            symbol=symbol,
+   795	            htf_fvgs_by_idx=context.get("htf_fvgs_by_idx"),
+   796	            trend_htf_by_idx=context.get("trend_htf_by_idx"),
+   797	            bos_by_idx=context.get("bos_by_idx"),
+   798	            atr_by_idx=atr_by_idx)
+   799	        quality = self._window_quality(window_obs)
+   800	        out: List[EvidenceEvent] = []
+   801	        for fvg in result["active"] + result["history"]:
+   802	            out.append(self._to_evidence(fvg, symbol, timeframe, quality))
+   803	        return out
+   804	
+   805	    def _resolve_window(self, symbol: str, timeframe: str, as_of: str,
+   806	                        context: Dict[str, Any]) -> List[MarketObservation]:
+   807	        window = context.get("window")
+   808	        if window is not None:
+   809	            return list(window)
+   810	        provider = context.get("provider")
+
+===== apex/engines/e06_orderblock/engine.py:768-850 (baseline) =====
+   768	def run_engine(bars: Sequence[Dict[str, Any]],
+   769	               struct_events_by_idx: Optional[Dict[int, List[Dict[str, Any]]]] = None,
+   770	               fvg_by_idx: Optional[Dict[int, List[Dict[str, Any]]]] = None,
+   771	               volume_evidence: Optional[Sequence[Optional[Dict[str, Any]]]] = None,
+   772	               volatility_evidence: Optional[Sequence[Optional[Dict[str, Any]]]] = None,
+   773	               params: Optional[EngineParams] = None) -> Dict[str, Any]:
+   774	    """Pure batch driver (CP-2 parity). Evidence lists are mandatory —
+   775	    E06 never recomputes SMA/ATR (§1.4); omitted evidence fails closed."""
+   776	    if volume_evidence is None or volatility_evidence is None:
+   777	        raise ValueError("MISSING_EVIDENCE_QX: E06 requires I_Volume_v4 "
+   778	                         "and I_Volatility_v4 evidence (consumed, never "
+   779	                         "recomputed — §1.4)")
+   780	    eng = OrderBlockEngine(params)
+   781	    obs = eng.run_full(bars, struct_events_by_idx or {}, fvg_by_idx or {},
+   782	                       volume_evidence, volatility_evidence)
+   783	    return {"engine": eng, "obs": obs, "events": eng.events}
+   784	
+   785	
+   786	# --------------------------------------------------------------------------
+   787	# EngineBase binding (frozen CP-1 contract; consumed, never patched)
+   788	# --------------------------------------------------------------------------
+   789	def observation_to_bar(obs: MarketObservation) -> Dict[str, Any]:
+   790	    ts = obs.timestamp
+   791	    try:
+   792	        import datetime
+   793	        dt = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+   794	        ts_ms = int(dt.timestamp() * 1000)
+   795	    except (ValueError, AttributeError):
+   796	        ts_ms = 0
+   797	    return {"ts": ts_ms, "o": float(obs.open), "h": float(obs.high),
+   798	            "l": float(obs.low), "c": float(obs.close),
+   799	            "v": float(obs.volume), "is_closed": obs.is_closed}
+   800	
+   801	
+   802	class E06OrderBlockEngine(EngineBase):
+   803	    """E06_OrderBlock on the frozen EngineBase contract (v4.0.0).
+   804	
+   805	    compute(symbol, timeframe, as_of, context): window via
+   806	    context['window'] or a sync WindowProvider. Consumed context keys
+   807	    (versioned interfaces §1.4 — evidence ONLY, never recomputed):
+   808	      structure_events — I_Structure_v4 [{kind, direction, level, ts,
+   809	        valid_at_idx, strength?}] (E01; version <4.0 → structural_event
+   810	        None + Q2 cap per §1.4 compatibility)
+   811	      fvg_zones — I_FVG_v4 [{present, direction, lower, upper, type}]
+   812	        keyed by origin idx via fvg_by_idx
+   813	      volume_evidence — I_Volume_v4 per-bar [{volume_sma, volume_ratio,
+   814	        snapshot_id, as_of_ts}] (E03)
+   815	      volatility_evidence — I_Volatility_v4 per-bar [{atr_n, tr_method,
+   816	        snapshot_id, as_of}] (E04)
+   817	    Missing/misaligned evidence → QX fail-closed (no fallback, §1.4)."""
+   818	
+   819	    engine_id = "E06"
+   820	    analyst_version = ANALYST_VERSION
+   821	    code_revision = "0" * 40
+   822	
+   823	    def compute(self, symbol: str, timeframe: str, as_of: str,
+   824	                context: Optional[Dict[str, Any]] = None
+   825	                ) -> List[EvidenceEvent]:
+   826	        context = context or {}
+   827	        window_obs = self._resolve_window(symbol, timeframe, as_of, context)
+   828	        if not window_obs:
+   829	            return []
+   830	        bars = [observation_to_bar(o) for o in window_obs]
+   831	        params = get_params(context.get("e06_params"))
+   832	        volume_evidence = context.get("volume_evidence")
+   833	        volatility_evidence = context.get("volatility_evidence")
+   834	        if volume_evidence is None or volatility_evidence is None:
+   835	            raise ValueError("MISSING_EVIDENCE_QX: E06 requires I_Volume_v4 "
+   836	                             "and I_Volatility_v4 evidence (§1.4)")
+   837	        result = run_engine(
+   838	            bars,
+   839	            struct_events_by_idx=context.get("struct_events_by_idx"),
+   840	            fvg_by_idx=context.get("fvg_by_idx"),
+   841	            volume_evidence=volume_evidence,
+   842	            volatility_evidence=volatility_evidence,
+   843	            params=params)
+   844	        quality = self._window_quality(window_obs)
+   845	        return [self._to_evidence(ob, symbol, timeframe, quality)
+   846	                for ob in result["obs"]]
+   847	
+   848	    def _resolve_window(self, symbol: str, timeframe: str, as_of: str,
+   849	                        context: Dict[str, Any]) -> List[MarketObservation]:
+   850	        window = context.get("window")
+
+===== apex/ops/engine_context.py:1557-1623 (baseline) =====
+  1557	def complete_engine_bundle(item: Mapping[str, Any], symbol: str, timeframe: str,
+  1558	                           artifact: Mapping[str, Any], *, rtm_context: Mapping[str, Any]) -> dict:
+  1559	    """Native twelve-engine assembly from the shared PIT feature timeline.
+  1560	
+  1561	    No fixture defaults, replacement indicator or incomplete EvidenceEvent.
+  1562	    Native warmup is represented by missing optional evidence, not invented
+  1563	    volume/ATR scalars. E06 starts at the actual joint dependency frontier.
+  1564	    """
+  1565	    from dataclasses import asdict
+  1566	    artifact = validate_classifier(artifact)
+  1567	    derive_quality = rtm_context.get("derive_avg_quality") is True
+  1568	    for key in ("avg_quality", "mtf_align"):
+  1569	        if key == "avg_quality" and derive_quality:
+  1570	            continue
+  1571	        value = rtm_context.get(key)
+  1572	        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or not 0 <= value <= 1:
+  1573	            raise BridgeError("E07_CONTEXT_UNAVAILABLE", key)
+  1574	    if "vector" not in item:
+  1575	        raise BridgeError("E11_CONTEXT_UNAVAILABLE", str(item.get("reason", "missing vector")))
+  1576	    original = item["frame"]
+  1577	    prior_atr = [state.atr14_wilder for state in original["volatility"]["states"][:-1]]
+  1578	    frame = upstream_frame(original["raw_window"], symbol, timeframe, emit=True,
+  1579	        atr14_history=prior_atr, structure_result=original["structure"],
+  1580	        volatility_stream=item["volatility_stream"], temporal_profile=item.get("temporal_profile"))
+  1581	    # The timeline's IC/history is authoritative, including the full prior
+  1582	    # ATR reference; emission preparation must not replace it with a slice.
+  1583	    frame["ic"] = dict(item["ic"])
+  1584	    events, order = frame["events"], frame["engine_order"]
+  1585	    window, end = frame["window"], item["as_of"]
+  1586	    atr_by_idx = {i: value for i, value in enumerate(frame["atr14"]) if value is not None}
+  1587	    by_time = {_iso_to_ms(obs.timestamp): i for i, obs in enumerate(window)}
+  1588	    struct = {}
+  1589	    for event in frame["structural_events"]:
+  1590	        i = event["candle_index"]
+  1591	        direction = "UP" if "BULLISH" in event["event_type"] else "DOWN"
+  1592	        struct.setdefault(i, []).append({"idx": i, "dir": direction, "direction": direction,
+  1593	            "kind": "BOS" if event["event_type"].startswith(("EV_STR_007", "EV_STR_008")) else "CHoCH",
+  1594	            "valid_at_idx": i, "confirmed_at_idx": i, "source": event})
+  1595	    order.append("E05")
+  1596	    fvg = E05.run_engine([E05.observation_to_bar(o) for o in window], symbol=symbol,
+  1597	        tick_size=E01.resolve_tick_size(symbol), atr_by_idx=atr_by_idx, bos_by_idx=struct)
+  1598	    fvg_emitter = E05.E05FVGEngine()
+  1599	    objects = sorted(fvg["active"] + fvg["history"], key=lambda obj: obj.created_at_idx)
+  1600	    events.extend(fvg_emitter._to_evidence(obj, symbol, timeframe, fvg_emitter._window_quality(window)) for obj in objects)
+  1601	    fvg_by_idx = {}
+  1602	    for obj in objects:
+  1603	        fvg_by_idx.setdefault(obj.created_at_idx, []).append(asdict(obj))
+  1604	    volume_by_idx = {}
+  1605	    for evidence in frame["volume"].emitted:
+  1606	        source_index = evidence.pit_meta["history_len"]
+  1607	        source_time = frame["volume"].history_bars[source_index]["ts"]
+  1608	        volume_by_idx[by_time[source_time]] = dict(vars(evidence))
+  1609	    volatility_by_idx = {by_time[state.as_of]: {"atr_n": state.atr14_wilder,
+  1610	        "tr_method": "WILDER", "as_of": state.as_of, "snapshot_id": state.snapshot_id}
+  1611	        for state in frame["volatility"]["states"] if state.as_of in by_time}
+  1612	    order.append("E06")
+  1613	    joint = sorted(set(volume_by_idx) & set(volatility_by_idx))
+  1614	    if not joint or joint != list(range(joint[0], len(window))):
+  1615	        raise BridgeError("E06_DEPENDENCY_UNAVAILABLE", "no contiguous mature volume/volatility suffix")
+  1616	    first = joint[0]
+  1617	    ob_context = {"window": window[first:],
+  1618	        "volume_evidence": [volume_by_idx[i] for i in joint],
+  1619	        "volatility_evidence": [volatility_by_idx[i] for i in joint],
+  1620	        "struct_events_by_idx": {i-first: [{**e, "valid_at_idx": i-first} for e in es] for i, es in struct.items() if i >= first},
+  1621	        "fvg_by_idx": {i-first: es for i, es in fvg_by_idx.items() if i >= first}}
+  1622	    events.extend(E06.E06OrderBlockEngine().compute(symbol, timeframe, end, ob_context))
+  1623	    order.append("E11")
+
+===== apex/ops/engine_context.py:2283-2361 (baseline) =====
+  2283	    async def prepare_engine_bundle(self, symbol: str, timeframe: str, as_of: str,
+  2284	                                    *, rtm_context: Mapping[str, Any] | None = None) -> dict:
+  2285	        """Compute and persist a complete native bundle before plan admission.
+  2286	
+  2287	        Final bridge/risk projection is separate; this method never presents
+  2288	        an engine-only bundle as all REQUIRED_CONTEXT_KEYS/REQUIRED_RISK_KEYS.
+  2289	        """
+  2290	        from dataclasses import replace
+  2291	        artifact = load_classifier(self.classifier_path)
+  2292	        measured = mtf = None
+  2293	        if rtm_context is None:
+  2294	            measured = await self.quality_window(symbol, timeframe, as_of)
+  2295	            mtf = await self.mtf_inputs(symbol, timeframe, as_of)
+  2296	            rtm_context = {"derive_avg_quality": True, "mtf_align": mtf["mtf_align"]}
+  2297	        rows = await (await self.store.db.execute(
+  2298	            "SELECT COUNT(*) FROM market_observation WHERE symbol=? AND timeframe=? "
+  2299	            "AND candle_status IN ('CLOSED','CORRECTED') AND open_time<=?",
+  2300	            (symbol, timeframe, as_of))).fetchone()
+  2301	        window = await self.window(symbol, timeframe, as_of, int(rows[0]))
+  2302	        if not window:
+  2303	            raise BridgeError("NO_MARKET_DATA", f"{symbol}:{timeframe}")
+  2304	        last = None
+  2305	        async for item in self.feature_timeline(symbol, timeframe, window, incremental=True):
+  2306	            last = item
+  2307	        if last is None or "vector" not in last:
+  2308	            raise BridgeError("E11_CONTEXT_UNAVAILABLE", str((last or {}).get("reason", "empty timeline")))
+  2309	        if measured is not None:
+  2310	            expected = [(o.timestamp, o.content_hash()) for o in last["frame"]["raw_window"]]
+  2311	            actual = [(o.timestamp, o.content_hash()) for o in measured["window"]]
+  2312	            if actual != expected:
+  2313	                raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", "engine/quality window mismatch")
+  2314	            last["frame"]["raw_window"] = measured["window"]
+  2315	            history_candles = [E12.observation_to_candle(o) for o in closed_engine_window(window[:-1],timeframe)]
+  2316	            last["temporal_profile"] = E12.compute_temporal_profile(
+  2317	                E12.returns_by_tod_from_candles(history_candles),as_of=int(history_candles[-1]["ts"]))
+  2318	        bundle = complete_engine_bundle(last, symbol, timeframe, artifact, rtm_context=rtm_context)
+  2319	        bundle["volatility_history"] = [e.state for e in last["volatility_stream"]["evidence"]]
+  2320	        if measured is not None:
+  2321	            bundle["measured_quality"] = measured
+  2322	            bundle["measured_mtf"] = {k: v for k, v in mtf.items() if k != "frames"}
+  2323	        lineage = tuple(self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())]["observation_id"]
+  2324	                        for obs in bundle["raw_window"])
+  2325	        available = max([_iso_to_ms(bundle["window"][-1].timestamp)] + [_iso_to_ms(obs.availability_time) for obs in bundle["raw_window"]])
+  2326	        events = [replace(event, lineage=tuple(dict.fromkeys((*event.lineage, *lineage))),
+  2327	                          availability_time=_ms_to_iso(max(_iso_to_ms(event.availability_time), available)))
+  2328	                  for event in bundle["events"]]
+  2329	        bundle["events"] = await persist_complete_evidence(self.store, events)
+  2330	        bundle["raw_observation_ids"] = lineage
+  2331	        bundle["classifier_artifact_sha256"] = artifact["artifact_sha256"]
+  2332	        self.diagnostics[f"{symbol}:{timeframe}"] = {"status": "ENGINE_BUNDLE_PREPARED",
+  2333	            "engine_order": list(bundle["engine_order"]), "evidence_count": len(events),
+  2334	            "as_of": last["as_of"], "classifier_artifact_sha256": artifact["artifact_sha256"]}
+  2335	        return bundle
+  2336	
+  2337	    async def decision_inputs(self, symbol: str, timeframe: str, as_of: str) -> dict:
+  2338	        """D28 stored governance/venue inputs; not a fabricated complete context."""
+  2339	        if self.environment != "PAPER":
+  2340	            raise BridgeError("LIVE_GOVERNANCE_UNAVAILABLE", "PAPER bootstrap is not a LIVE source")
+  2341	        from apex.setup.family_sf_fvg_sweep_rev import FAMILY_ID
+  2342	        record = await read_family_record(self.store, FAMILY_ID, as_of)
+  2343	        governance = paper_bootstrap_inputs(environment=self.environment, family_record=record)
+  2344	        venue = await read_public_venue_facts(self.store, symbol, as_of)
+  2345	        return {**governance, "environment": "PAPER", "commission_rate": venue["commission_rate"],
+  2346	                "funding_rate": venue["funding_rate"], "venue_provenance": venue,
+  2347	                "contract_specs": {symbol: {k: venue[k] for k in (
+  2348	                    "contract_multiplier", "contract_type", "expiry_time")}}}
+  2349	
+  2350	    def _raw_content_hash(self, observation: Any) -> str:
+  2351	        """Memo only the frozen content_hash payload, with exact typed values.
+  2352	
+  2353	        repr preserves Decimal precision (numeric equality alone would alias
+  2354	        100.0 and 100.00). Every miss calls the native method on the actual
+  2355	        observation; this never constructs or modifies a raw record.
+  2356	        """
+  2357	        key = (type(observation), tuple((type(value),repr(value)) for value in
+  2358	            (observation.symbol,observation.timeframe,observation.timestamp,
+  2359	             observation.open,observation.close,observation.volume)))
+  2360	        if key not in self._content_hashes:
+  2361	            digest = observation.content_hash()
+
+===== apex/ops/engine_context.py:2367-2406 (baseline) =====
+  2367	    async def window(self, symbol: str, timeframe: str, as_of: str, bars: int) -> list[Any]:
+  2368	        end = _iso_to_ms(as_of)
+  2369	        window = await self.store.get_window(symbol, timeframe, as_of, bars)
+  2370	        if window is None:
+  2371	            raise BridgeError("NO_MARKET_DATA", "store returned no window")
+  2372	        from dataclasses import replace
+  2373	        window = [o for o in window if close_time_ms(_iso_to_ms(o.timestamp), timeframe) <= end]
+  2374	        if not window:
+  2375	            return []
+  2376	        # get_window is the authoritative bar reader. Its legacy projection
+  2377	        # substitutes retrieved_at for raw availability and loses OI lineage.
+  2378	        # Recover ONLY metadata through the immutable identity, never rewrite
+  2379	        # a market/raw row or substitute the derived close for raw availability.
+  2380	        rows = await (await self.store.db.execute(
+  2381	            "SELECT m.open_time,m.observation_id,m.raw_payload_hash,r.content_hash,"
+  2382	            "r.availability_time,r.oi_timestamp,r.oi_state FROM market_observation m "
+  2383	            "JOIN raw_observation r ON m.observation_id='obs-'||r.event_id "
+  2384	            "WHERE m.symbol=? AND m.timeframe=? AND m.candle_status IN ('CLOSED','CORRECTED') "
+  2385	            "AND m.open_time>=? AND m.open_time<=? ORDER BY m.open_time",
+  2386	            (symbol, timeframe, window[0].timestamp, window[-1].timestamp))).fetchall()
+  2387	        metadata = {}
+  2388	        for row in rows:
+  2389	            if row[0] in metadata:
+  2390	                raise BridgeError("RAW_LINEAGE_INVALID", "ambiguous active observation")
+  2391	            metadata[row[0]] = row
+  2392	        result = []
+  2393	        for obs in window:
+  2394	            row = metadata.get(obs.timestamp)
+  2395	            content_hash = self._raw_content_hash(obs)
+  2396	            if row is None or row[3] != content_hash or row[2] != hashlib.sha256(row[3].encode()).hexdigest():
+  2397	                raise BridgeError("RAW_LINEAGE_INVALID", "observation/raw content binding missing")
+  2398	            if row[4] is None:
+  2399	                raise BridgeError("RAW_LINEAGE_INVALID", "raw availability unavailable")
+  2400	            if _iso_to_ms(row[4]) > end:
+  2401	                continue  # never expose not-yet-available observations
+  2402	            oi_lag = (max(0., (end - _iso_to_ms(row[5])) / 1000.) if row[5] is not None else None)
+  2403	            result.append(replace(obs, availability_time=row[4], oi_timestamp=row[5], oi_lag_seconds=oi_lag))
+  2404	            self._raw_lineage[(symbol, timeframe, obs.timestamp, content_hash)] = {
+  2405	                "observation_id": row[1], "oi_state": row[6], "availability_time": row[4]}
+  2406	        return result
+
+===== scripts/run_apex.py:711-765 (baseline) =====
+   711	    runtime = await Runtime(cfg).start()
+   712	    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
+   713	    await service.open()
+   714	    gateway = None
+   715	    try:
+   716	        ledger, bus = runtime.ledger, runtime.bus
+   717	        clock = C.SystemClock()
+   718	        adapter = runtime.adapter()
+   719	        notifier = await _notifier_for(cfg)
+   720	        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+   721	                                       owner_chat_id=cfg.telegram_owner_chat_id
+   722	                                       or None)
+   723	                     if cfg.telegram_bot_token else None)
+   724	        control = CP.ControlPlane(
+   725	            signaling=signaling, config=cfg, clock=clock.monotonic,
+   726	            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+   727	            paper_balance=(await EC.paper_balance(ledger)
+   728	                           if cfg.apex_env == "PAPER" else "0"))
+   729	        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+   730	        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+   731	                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+   732	                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+   733	            control.register(name, _noop_handler(name))
+   734	        if cfg.telegram_bot_token:
+   735	            gateway = GW.TelegramGateway(
+   736	                control=control, source=GW.AiogramUpdateSource(config=cfg),
+   737	                notifier=_telegram_reply(signaling),
+   738	                bootstrap=service, clock=clock.monotonic,
+   739	                utc_now=clock.utc_now, poll_timeout=5.0)
+   740	        watchdog = WD.Watchdog(telegram_plane=signaling,
+   741	                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+   742	                               now=time.time)
+   743	        # CP-9 bridge: the provider is registered at the composition root, so
+   744	        # every PAPER cell now asks the governed store/context → pattern/setup
+   745	        # → gates → forecast → risk/decision chain for a real plan.  Missing
+   746	        # persisted engine context remains a named fail-closed refusal; the
+   747	        # provider never falls back to a hand-built plan.
+   748	        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+   749	                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+   750	        plan_bridge = PB.PaperPlanBridge(
+   751	            store=runtime.store, environment=cfg.apex_env,
+   752	            context_source=producer.get_bridge_context if producer is not None else None,
+   753	            context_preparer=producer.prepare if producer is not None else None)
+   754	        async def catch_up(now_ms: int) -> Dict[str, Any]:
+   755	            result = await service.catch_up(now_ms)
+   756	            if cfg.apex_env == "PAPER":
+   757	                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+   758	            return result
+   759	
+   760	        driver = PL.PaperRuntime(
+   761	            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+   762	            adapter=adapter, signaling=signaling, control=control,
+   763	            gateway=gateway, watchdog=watchdog, clock=clock,
+   764	            environment=cfg.apex_env, notifier=notifier,
+   765	            plan_provider=plan_bridge, catch_up=catch_up)
+
+===== apex/ops/paper_loop.py:479-535 (baseline) =====
+   479	    async def _stage_ingest(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   480	        window = await self.store.get_window(payload["symbol"], payload["timeframe"],
+   481	                                             payload["as_of"], WINDOW_BARS)
+   482	        if not window:
+   483	            raise CellRefusal("NO_MARKET_DATA",
+   484	                              f"{payload['cell_id']} has no bars at or before "
+   485	                              f"{payload['as_of']} — run `bootstrap` first")
+   486	        self._state(payload)["window"] = list(window)
+   487	        return {"detail": f"window={len(window)} bars "
+   488	                          f"last_closed={window[-1].timestamp}"}
+   489	
+   490	    async def _stage_quality(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   491	        window = self._state(payload).get("window") or []
+   492	        open_bars = [o for o in window if getattr(o, "status", "CLOSED") != "CLOSED"]
+   493	        if open_bars:
+   494	            raise CellRefusal("DATA_QUALITY_QX",
+   495	                              f"{len(open_bars)} non-CLOSED bars in the window")
+   496	        return {"detail": f"window accepted (CLOSED only) · "
+   497	                          f"last_availability="
+   498	                          f"{getattr(window[-1], 'availability_time', None)}"}
+   499	
+   500	    async def _stage_features(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   501	        """Declared skip: this increment consumes governed plans and does not
+   502	        produce engine evidence — and it never pretends otherwise."""
+   503	        if self.signal_source == SIGNAL_SOURCE_DECISION_BRIDGE:
+   504	            return {"detail": "DECLARED_SKIP signal_source=DECISION_BRIDGE "
+   505	                              "(the engine→evidence bridge is a separate "
+   506	                              "increment; plans enter through plan_provider)"}
+   507	        if self.signal_source == SIGNAL_SOURCE_ENGINE_BRIDGE:
+   508	            raise CellRefusal("ENGINE_BRIDGE_PENDING",
+   509	                              "signal_source=ENGINE_BRIDGE requested but the "
+   510	                              "engine→setup bridge is not wired in this "
+   511	                              "increment")
+   512	        count = await self._evidence_count(payload["symbol"], payload["timeframe"])
+   513	        if count == 0:
+   514	            raise CellRefusal("NO_EVIDENCE_FOR_CELL",
+   515	                              f"{payload['cell_id']} has no admitted evidence")
+   516	        return {"detail": f"evidence_rows={count}"}
+   517	
+   518	    async def _stage_engines(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   519	        if self.signal_source == SIGNAL_SOURCE_ENGINE_BRIDGE:
+   520	            raise CellRefusal("ENGINE_BRIDGE_PENDING",
+   521	                              "signal_source=ENGINE_BRIDGE requested but the "
+   522	                              "engine→setup bridge is not wired in this "
+   523	                              "increment")
+   524	        return {"detail": "DECLARED_SKIP signal_source=DECISION_BRIDGE "
+   525	                          "(the plan seam is the frozen SL-5 → SL-6 interface)"}
+   526	
+   527	    def _take_budget(self) -> bool:
+   528	        """Reserve one slot of this cycle's trade budget (D51).
+   529	
+   530	        Cells are scheduled CONCURRENTLY (the scheduler's semaphore is 4).
+   531	        The check and the increment are synchronous, so the reservation is
+   532	        atomic under that concurrency. ``self.trades`` is history only and
+   533	        is never a gate. A refusal does not call this method.
+   534	        """
+   535	        if self._budget_taken >= self.max_trades_per_cycle:
+
+===== apex/ops/paper_loop.py:610-675 (baseline) =====
+   610	                          f"vetoes={list(plan.get('vetoes_applied') or [])} "
+   611	                          f"(no re-adjudication: the kernel's verdict is "
+   612	                          f"autonomous)"}
+   613	
+   614	    async def _stage_decision(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   615	        plan = normalize_plan(self._state(payload).get("plan") or {})
+   616	        self._state(payload)["plan_obj"] = plan
+   617	        return {"detail": f"trade_plan={plan.proposal_id} qty={plan.sized_quantity} "
+   618	                          f"stop={plan.stop_price} target={plan.target_price}"}
+   619	
+   620	    async def _stage_execution(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   621	        state = self._state(payload)
+   622	        plan: F.TradePlan = state["plan_obj"]
+   623	        if not self.trading_enabled:
+   624	            raise CellRefusal("BOOT_NOT_READY",
+   625	                              f"boot_state={self.boot_verdict.get('boot_state')} "
+   626	                              f"new_trades_allowed=False")
+   627	        if str(plan.decision) not in ("ALLOW", "REDUCE"):
+   628	            raise CellRefusal("DECISION_NO_TRADE", str(plan.decision))
+   629	        price = await last_closed_price(self.store, plan.symbol, plan.timeframe,
+   630	                                        payload["as_of"])
+   631	        if price is None:
+   632	            raise CellRefusal("NO_PRICE_FOR_CELL", "no closed bar to price against")
+   633	        # D51: reserve only when a valid trade plan exists, immediately before
+   634	        # admission. The increment is synchronous (atomic under semaphore 4).
+   635	        if not self._take_budget():
+   636	            raise CellRefusal("TRADE_BUDGET_REACHED",
+   637	                              f"max_trades_per_cycle={self.max_trades_per_cycle}")
+   638	        record = await self.execute_plan(
+   639	            plan, price=price, timestamp_utc=payload["as_of"],
+   640	            close_ms=int(payload["close_ms"]))
+   641	        if not record.get("submitted"):
+   642	            self._release_budget()
+   643	        state["trade"] = record
+   644	        return {"detail": f"intent={record['intent_id']} state={record['state']} "
+   645	                          f"fill={record.get('fill')} protected="
+   646	                          f"{record.get('protected')}"}
+   647	
+   648	    async def _resolve_plan(self, payload: Mapping[str, Any]
+   649	                            ) -> Mapping[str, Any]:
+   650	        """Ask the decision bridge for this cell's plan (the frozen SL-5 → SL-6
+   651	        seam). No provider ⇒ a NAMED refusal, never a fabricated plan."""
+   652	        if self.plan_provider is None:
+   653	            raise CellRefusal(
+   654	                "NO_PLAN_PROVIDER",
+   655	                "no plan provider is wired: the engine → fabric → setup → "
+   656	                "forecast → risk → plan bridge is a separate increment "
+   657	                "(PHASE2_HANDOFF_WIRING §REMAINING WORK)")
+   658	        provided = self.plan_provider(payload["symbol"], payload["timeframe"],
+   659	                                      payload["as_of"])
+   660	        plan = await provided if hasattr(provided, "__await__") else provided
+   661	        if plan is None:
+   662	            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+   663	            if self.environment == "PAPER" and refusal:
+   664	                raise CellRefusal(refusal["reason"],refusal.get("detail",""))
+   665	            raise CellRefusal("NO_PLAN_FOR_CELL",
+   666	                              f"{payload['cell_id']} has no governed plan at "
+   667	                              f"{payload['as_of']}")
+   668	        if not isinstance(plan, Mapping):
+   669	            raise CellRefusal("PLAN_TYPE_QX", type(plan).__name__)
+   670	        return dict(plan)
+   671	
+   672	    async def _setup_exists(self, setup_id: str) -> bool:
+   673	        if not setup_id:
+   674	            return False
+   675	        cursor = await self.store.db.execute(
+
+===== apex/ops/paper_loop.py:955-1025 (baseline) =====
+   955	
+   956	    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+   957	        moment = self.clock.now_ms() if now_ms is None else int(now_ms)
+   958	        as_of = _ms_to_iso(moment)
+   959	        self._budget_taken = 0
+   960	        self._cycle_proposals = {}
+   961	        if not self._cursor_loaded:
+   962	            await self._load_cursor()
+   963	        cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
+   964	                                 "signal_source": self.signal_source,
+   965	                                 "trading_enabled": self.trading_enabled,
+   966	                                 "budget_limit": self.max_trades_per_cycle}
+   967	        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+   968	                             {"cells_checked": 0, "cells_updated": 0,
+   969	                              "bars_ingested": 0, "failures": []})
+   970	        self._catch_up_failed = {row["cell"]: row
+   971	                                 for row in cycle["catch_up"]["failures"]}
+   972	        if self.watchdog is not None:
+   973	            cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
+   974	        cycle["storage"] = await self._storage_guard()
+   975	        if self.gateway is not None:
+   976	            cycle["telegram"] = await self.gateway.run_once()
+   977	        # The scheduler's law is "on each TF close run the stages for THAT
+   978	        # cell": a cell runs once per close, and a cell whose close has not
+   979	        # advanced since the previous cycle is not run again.
+   980	        already = []
+   981	        due = []
+   982	        for item in self.scheduler.due_cells(now_ms=moment):
+   983	            recorded = self._last_close.get(item[0].cell_id)
+   984	            if recorded is not None and int(item[1]) <= int(recorded):
+   985	                already.append(item)
+   986	                continue
+   987	            due.append(item)
+   988	        cycle["cells_skipped_already_decided"] = len(already)
+   989	        if self.max_cells_per_cycle is not None:
+   990	            due = due[:self.max_cells_per_cycle]
+   991	        # G1: all expensive source preparation completes before run_cell
+   992	        # starts its latency clock. D22 failures never enter preparation;
+   993	        # a failed source must not fall back to its previous cached success.
+   994	        self._context_preparation_failed = {}
+   995	        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+   996	        receipt_ms = max(moment,self.clock.now_ms())
+   997	        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+   998	                                for cell,close in due} if self.environment == "PAPER" else {})
+   999	        cycle["decision_as_of"] = dict(self._decision_as_of)
+  1000	        cycle["publishers"] = await self._refresh_publishers(due)
+  1001	        published = (cycle.get("catch_up") or {}).get("quality_publish") or {}
+  1002	        cycle["publishers"]["quality_facts_written"] = int(
+  1003	            cycle["publishers"].get("quality_facts_written") or 0) + int(
+  1004	                published.get("written") or 0)
+  1005	        cycle["publishers"]["failures"] = list(
+  1006	            cycle["publishers"].get("failures") or [])
+  1007	        cycle["publishers"]["failures"].extend(list(published.get("failures") or []))
+  1008	        prepare = getattr(self.plan_provider, "prepare", None)
+  1009	        if callable(prepare):
+  1010	            for cell, close in due:
+  1011	                if cell.cell_id in self._catch_up_failed:
+  1012	                    continue
+  1013	                preparation["cells_checked"] += 1
+  1014	                try:
+  1015	                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+  1016	                    preparation["cells_prepared"] += 1
+  1017	                except Exception as exc:
+  1018	                    failed = {"cell": cell.cell_id,
+  1019	                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+  1020	                              "detail": getattr(exc, "detail", type(exc).__name__)}
+  1021	                    self._context_preparation_failed[cell.cell_id] = failed
+  1022	                    preparation["failures"].append(failed)
+  1023	        cycle["context_preparation"] = preparation
+  1024	        tasks = [asyncio.create_task(self.scheduler.run_cell(
+  1025	                    cell, close_ms=close, context={"cell_state": {}}))
+
+===== tests/unit/test_e05_fvg.py:114-185 (baseline) =====
+   114	    def test_rejection_fvg_wick_ratio_and_branch(self):
+   115	        f = FIX["REJECTION_FVG"]
+   116	        b0 = f["bars"][2]
+   117	        wr = (b0["h"] - max(b0["o"], b0["c"])) / (b0["h"] - b0["l"])
+   118	        assert wr == pytest.approx(f["expected"]["wick_ratio"], abs=1e-3)
+   119	        # classification branch on a Gate_B-passing shape with the same
+   120	        # closing-bar geometry (doc bars fail Gate_B — doc_inconsistency)
+   121	        bars = [
+   122	            {"o": 100, "h": 101, "l": 99, "c": 100, "v": 1000,
+   123	             "ts_close": 1000},
+   124	            {"o": 100, "h": 101.5, "l": 99.8, "c": 101, "v": 1100,
+   125	             "ts_close": 2000},
+   126	            {"o": 101, "h": 106, "l": 101.5, "c": 101.9, "v": 2000,
+   127	             "ts_close": 3000},
+   128	        ]
+   129	        det = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=2.0)
+   130	        assert "invalid_reason" not in det
+   131	        ftype, _ = classify_fvg(det, bars, 2, get_params())
+   132	        assert ftype == "REJECTION"
+   133	
+   134	    def test_sequential_mtf_alignment(self):
+   135	        f = FIX["SEQUENTIAL_MTF_ALIGNMENT"]
+   136	        htf = FVGObject(
+   137	            fid="fvg_HTF_UP_2000_abcdef123456", direction="UP",
+   138	            lower=f["htf_fvg"]["lower"], upper=f["htf_fvg"]["upper"],
+   139	            mid=f["htf_fvg"]["mid"], width=2.0, created_at_ts=2000,
+   140	            created_at_idx=0, atr_at_creation=f["htf_fvg"][
+   141	                "atr_at_creation"])
+   142	        e = eng()
+   143	        evs = e.process_bar(f["bars_ltf"], 2, htf_fvgs=[htf],
+   144	                            atr_override=0.9)   # zone width 0.2 ⇒ Gate_D
+   145	        obj = list(e.active_fvgs.values())[0]
+   146	        assert obj.ftype == f["expected"]["ftype"]
+   147	        mid_ltf = (obj.lower + obj.upper) / 2
+   148	        assert abs(mid_ltf - htf.mid) == pytest.approx(
+   149	            f["expected"]["mid_diff"], abs=1e-9)
+   150	        assert abs(mid_ltf - htf.mid) <= f["expected"]["alignment_tol"]
+   151	        # §3.5 Salience boost ×1.25 for SEQUENTIAL
+   152	        e2 = eng()
+   153	        e2.process_bar(f["bars_ltf"], 2, htf_fvgs=None, atr_override=0.9)
+   154	        base_obj = list(e2.active_fvgs.values())[0]
+   155	        assert obj.salience_0 == pytest.approx(
+   156	            base_obj.salience_0 * 1.25, rel=1e-9)
+   157	
+   158	    def test_inverse_with_bos_opp(self):
+   159	        f = FIX["INVERSE_WITH_BOS_OPP"]
+   160	        # Gate_B-passing UP zone (doc bars fail Gate_B — see fixture note)
+   161	        bars = [
+   162	            {"o": 110, "h": 112, "l": 108, "c": 109, "v": 1000,
+   163	             "ts_close": 1000},
+   164	            {"o": 109, "h": 112.5, "l": 108.8, "c": 112, "v": 1000,
+   165	             "ts_close": 2000},
+   166	            {"o": 112, "h": 115, "l": 113, "c": 114.5, "v": 1500,
+   167	             "ts_close": 3000},
+   168	        ]
+   169	        params = get_params({"inverse_enabled": True})
+   170	        det = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=2.0)
+   171	        assert "invalid_reason" not in det and det["direction"] == "UP"
+   172	        ftype, penalty = classify_fvg(
+   173	            det, bars, 2, params, trend_htf=f["trend_htf"],
+   174	            bos_events=f["bos_events"])
+   175	        assert ftype == f["expected"]["ftype"]
+   176	        assert penalty == pytest.approx(0.5)
+   177	        e = eng({"inverse_enabled": True})
+   178	        e.process_bar(bars, 2, trend_htf=f["trend_htf"],
+   179	                      bos_events=f["bos_events"], atr_override=2.0)
+   180	        obj = list(e.active_fvgs.values())[0]
+   181	        assert obj.quality_tag == f["expected"]["quality"]
+   182	        obj.validate_schema()
+   183	        # disabled by default (§6 inverse_enabled=false)
+   184	        ftype_off, _ = classify_fvg(det, bars, 2, get_params(),
+   185	                                    trend_htf=f["trend_htf"],
+
+===== tests/unit/test_e05_fvg.py:335-370 (baseline) =====
+   335	    def test_freshness_half_life(self):
+   336	        assert freshness_decay(48, 48) == pytest.approx(0.5)
+   337	        assert freshness_decay(0, 48) == pytest.approx(1.0)
+   338	
+   339	    def test_gate_d_min_width_0_2_rule(self):
+   340	        # frozen θ_minW = 0.2 (CP-E05-001 NOT applied): width 0.19·ATR
+   341	        # rejected, 0.21·ATR accepted (min_abs_ticks also satisfied)
+   342	        bars = [
+   343	            {"o": 100, "h": 101, "l": 99, "c": 100, "v": 1000,
+   344	             "ts_close": 1000},
+   345	            {"o": 100, "h": 101, "l": 99.9, "c": 100.5, "v": 1000,
+   346	             "ts_close": 2000},
+   347	            {"o": 100.5, "h": 102, "l": 101.19, "c": 101.8, "v": 1000,
+   348	             "ts_close": 3000},
+   349	        ]
+   350	        det = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=1.0)
+   351	        assert det and det.get("invalid_reason") == "INSUFFICIENT_WIDTH"
+   352	        bars[2]["l"] = 101.21
+   353	        det2 = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=1.0)
+   354	        assert det2 and "invalid_reason" not in det2
+   355	
+   356	    def test_invalid_candle_gate_a(self):
+   357	        bars = [{"o": 100, "h": 99, "l": 100, "c": 100, "v": 1,
+   358	                 "ts_close": 1000},
+   359	                {"o": 100, "h": 101, "l": 100, "c": 100.5, "v": 1,
+   360	                 "ts_close": 2000},
+   361	                {"o": 100.5, "h": 103, "l": 101, "c": 102, "v": 1,
+   362	                 "ts_close": 3000}]
+   363	        det = detect_fvg_at(bars, 2, 0.2, 3, 0.01, atr_override=1.0)
+   364	        assert det == {"invalid_reason": "INVALID_CANDLE"}
+   365	
+   366	
+   367	# ---------------------------------------------------------------------------
+   368	# §5 lifecycle state machine + events
+   369	# ---------------------------------------------------------------------------
+   370	def _bull_zone_bars():
+
+===== tests/unit/test_e05_fvg.py:650-710 (baseline) =====
+   650	    {"o": 516.0, "h": 518.2, "l": 515.0, "c": 517.5, "v": 100000,
+   651	     "ts_close": 1000},
+   652	    {"o": 517.6, "h": 520.0, "l": 517.5, "c": 519.8, "v": 110000,
+   653	     "ts_close": 2000},
+   654	    {"o": 519.9, "h": 522.4, "l": 519.8, "c": 521.5, "v": 130000,
+   655	     "ts_close": 3000},
+   656	    {"o": 521.6, "h": 524.0, "l": 521.0, "c": 523.2, "v": 125000,
+   657	     "ts_close": 4000},
+   658	    {"o": 523.3, "h": 527.5, "l": 523.5, "c": 526.8, "v": 180000,
+   659	     "ts_close": 5000},
+   660	    {"o": 526.9, "h": 528.0, "l": 524.6, "c": 525.2, "v": 140000,
+   661	     "ts_close": 6000},
+   662	    {"o": 525.3, "h": 526.0, "l": 522.9, "c": 523.5, "v": 135000,
+   663	     "ts_close": 7000},
+   664	    {"o": 523.6, "h": 529.5, "l": 523.0, "c": 528.8, "v": 190000,
+   665	     "ts_close": 8000},
+   666	    {"o": 528.9, "h": 530.0, "l": 527.0, "c": 529.0, "v": 150000,
+   667	     "ts_close": 9000},
+   668	    {"o": 529.1, "h": 531.2, "l": 528.5, "c": 530.5, "v": 160000,
+   669	     "ts_close": 10000},
+   670	    {"o": 530.6, "h": 532.0, "l": 529.5, "c": 531.0, "v": 155000,
+   671	     "ts_close": 11000},
+   672	    {"o": 531.0, "h": 528.5, "l": 525.0, "c": 526.0, "v": 170000,
+   673	     "ts_close": 12000},
+   674	]
+   675	CASE_ATR = {0: 3.8, 1: 3.9, 2: 4.0, 3: 4.1, 4: 4.3, 5: 4.2, 6: 4.2,
+   676	            7: 4.4, 8: 4.3, 9: 4.3, 10: 4.2, 11: 4.4}
+   677	
+   678	
+   679	class TestCaseStudy:
+   680	    def _run(self):
+   681	        return run_engine(CASE_BARS, tick_size=0.01, symbol="BNBUSDT",
+   682	                          atr_by_idx=CASE_ATR)
+   683	
+   684	    def test_candle2_zone_geometry_and_bris(self):
+   685	        r = self._run()
+   686	        zones = {(o.created_at_idx, round(o.lower, 4), round(o.upper, 4))
+   687	                 for o in r["active"] + r["history"]}
+   688	        assert (2, 518.2, 519.8) in zones          # §9 candle 2
+   689	        assert (3, 520.0, 521.0) in zones          # §9 candle 3
+   690	        assert (4, 522.4, 523.5) in zones          # §9 candle 4
+   691	        br = abs(519.8 - 517.6) / (520.0 - 517.5)
+   692	        assert br == pytest.approx(0.88, abs=1e-9)  # §9 BR 0.88 → CONV
+   693	
+   694	    def test_candle5_insufficient_width(self):
+   695	        # §9 candle 5: W=0.6 < 0.2×4.2=0.84 → EV_FVG_005
+   696	        r = self._run()
+   697	        inv = [ev for ev in r["events"]
+   698	               if ev["type"] == "EV_FVG_005_Zone_Invalidated"]
+   699	        assert any(ev["at_idx"] == 5 for ev in inv)
+   700	
+   701	    def test_candle6_mitigation_depth_and_direction(self):
+   702	        # §9 candle 6: FVG [522.4,523.5], bar L=522.9 H=526 → overlap
+   703	        # 0.6, depth 0.545, prev close 525.2 > upper → dir +1
+   704	        overlap = min(523.5, 526.0) - max(522.4, 522.9)
+   705	        depth = overlap / (523.5 - 522.4)
+   706	        assert overlap == pytest.approx(0.6)
+   707	        assert depth == pytest.approx(0.545, abs=1e-3)
+   708	        r = self._run()
+   709	        fvg3 = [o for o in r["active"] + r["history"]
+   710	                if o.created_at_idx == 4][0]
+
+===== tests/unit/test_e06_orderblock.py:394-430 (baseline) =====
+   394	def _scenario_bars():
+   395	    bars = []
+   396	    # 0..4 gentle noise
+   397	    for i in range(5):
+   398	        bars.append({"o": 100.0, "h": 100.2, "l": 99.8, "c": 100.1,
+   399	                     "v": 1000, "ts": i * 3600000})
+   400	    # 5: bearish origin (BR 0.68)
+   401	    bars.append({"o": 100.5, "h": 101.0, "l": 98.5, "c": 98.8, "v": 1500,
+   402	                 "ts": 5 * 3600000})
+   403	    # 6: displacement UP
+   404	    bars.append({"o": 98.8, "h": 103.5, "l": 98.7, "c": 103.2, "v": 3000,
+   405	                 "ts": 6 * 3600000})
+   406	    # 7: continuation
+   407	    bars.append({"o": 103.2, "h": 104.6, "l": 103.0, "c": 104.4, "v": 2000,
+   408	                 "ts": 7 * 3600000})
+   409	    # 8..11 drift up (no zone touch)
+   410	    for j, c in enumerate((105.2, 106.0, 106.8, 107.4)):
+   411	        bars.append({"o": c - 0.4, "h": c + 0.3, "l": c - 0.6, "c": c,
+   412	                     "v": 1200, "ts": (8 + j) * 3600000})
+   413	    # 12: retest from above (shallow)
+   414	    bars.append({"o": 107.0, "h": 100.5, "l": 98.9, "c": 100.2, "v": 1500,
+   415	                 "ts": 12 * 3600000})
+   416	    # 13: deep penetration → mitigated
+   417	    bars.append({"o": 100.2, "h": 100.8, "l": 98.3, "c": 98.6, "v": 1400,
+   418	                 "ts": 13 * 3600000})
+   419	    # 14: close below zone_lo − 0.2·ATR → invalidated
+   420	    bars.append({"o": 98.6, "h": 100.0, "l": 97.3, "c": 97.5, "v": 1300,
+   421	                 "ts": 14 * 3600000})
+   422	    # 15: reclaim through the far edge → breaker
+   423	    bars.append({"o": 97.5, "h": 100.2, "l": 99.0, "c": 99.9, "v": 2500,
+   424	                 "ts": 15 * 3600000})
+   425	    # 16..21 flat inside breaker-safe band (no touch, no invalidation)
+   426	    for j in range(6):
+   427	        bars.append({"o": 99.3, "h": 99.5, "l": 99.2, "c": 99.4,
+   428	                     "v": 900, "ts": (16 + j) * 3600000})
+   429	    return bars
+   430	
+
+===== tests/unit/test_e06_orderblock.py:450-485 (baseline) =====
+   450	    res = run_engine(bars, struct_events_by_idx=struct_by_idx,
+   451	                     fvg_by_idx={}, volume_evidence=vol,
+   452	                     volatility_evidence=vola)
+   453	    return res, bars
+   454	
+   455	
+   456	class TestLifecycleScenario:
+   457	    def test_up_ob_q3_detected_with_consumed_evidence(self):
+   458	        res, bars = _run_scenario(vr_override={6: 2.0})
+   459	        obs = res["obs"]
+   460	        created = [o for o in obs if o.oid == "ob_18000000_5_UP"]
+   461	        assert created, [o.oid for o in obs]
+   462	        ob = created[0]
+   463	        assert ob.direction == "UP" and ob.otype == "ENTRY"
+   464	        assert ob.zone_lo == pytest.approx(98.2)     # 98.5 − 0.15·2
+   465	        assert ob.zone_hi == pytest.approx(99.1)     # 98.8 + 0.15·2
+   466	        assert ob.displacement_multi == pytest.approx(4.8 / 2.0)
+   467	        assert ob.vol_ratio == pytest.approx(2.0)
+   468	        # creation-time quality (the scenario later walks the OB through
+   469	        # RETESTED → MITIGATED → INVALIDATED, ending at QX)
+   470	        formed = [e for e in res["events"] if e["code"] == "EV_OBK_001"
+   471	                  and e.get("ob") == ob.oid]
+   472	        assert formed and formed[0]["quality"] == "Q3"   # Context ∧ BOS
+   473	        codes = [e["code"] for e in res["events"]]
+   474	        assert "EV_OBK_001" in codes and "EV_OBK_002" in codes
+   475	
+   476	    def test_retest_mitigated_invalidated_breaker_chain(self):
+   477	        res, bars = _run_scenario(vr_override={6: 2.0})
+   478	        codes = [e["code"] for e in res["events"]]
+   479	        assert "EV_OBK_003" in codes     # RETESTED at bar 12
+   480	        assert "EV_OBK_004" in codes     # MITIGATED at bar 13
+   481	        assert "EV_OBK_005" in codes     # INVALIDATED at bar 14
+   482	        assert "EV_OBK_007" in codes     # BREAKER reclaim at bar 15
+   483	        breaker = [o for o in res["obs"] if o.otype == "BREAKER"]
+   484	        assert breaker and breaker[0].direction == "DOWN"
+   485	        assert breaker[0].zone_lo == pytest.approx(98.2)
+\n=== composition reading notes ===
+CP-12 Toobit source `_walk_backward` applies `_ohlc_violation` before collected rows are returned to the bootstrap runner; then `_ingest` routes only those accepted MarketObservation rows to ingest_observations/store.
+SQLiteStore CH4_DDL applies the same OHLC envelope CHECK to market_observation; CP-12 is the earlier observable drop gate.
+EngineContextProducer.window reads CLOSED/CORRECTED store observations and joins raw lineage; complete_engine_bundle maps canonical observation fields to E05 bars and invokes E06 with the aligned mature E03/E04 evidence suffix.
+run_apex serve constructs BootstrapService, EngineContextProducer, PaperPlanBridge, and PaperRuntime. PaperRuntime catches up via its injected catch_up; later stages use the plan provider and do not construct the CP-3 unit-test bar dicts.
+E05/E06 unit tests call frozen run_engine/detect functions with raw dict/list fixtures, bypassing the source and store boundaries by design. That supports formula tests, not end-to-end valid-market-input proof.

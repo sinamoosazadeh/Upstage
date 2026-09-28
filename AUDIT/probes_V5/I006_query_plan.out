@@ -1,0 +1,38 @@
+
+Repository DDL and indexes as declared
+SQLiteStore.get_window:
+  (2, 0, 0, 'CO-ROUTINE (subquery-1)')
+  (8, 2, 0, 'SCAN market_observation')
+  (42, 2, 0, 'USE TEMP B-TREE FOR ORDER BY')
+  (63, 0, 0, 'SCAN (subquery-1)')
+  (84, 0, 0, 'USE TEMP B-TREE FOR ORDER BY')
+EngineContextProducer.window lineage:
+  (5, 0, 0, 'SCAN r')
+  (7, 0, 0, 'SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)')
+  (36, 0, 0, 'USE TEMP B-TREE FOR ORDER BY')
+prepare_engine_bundle row count:
+  (3, 0, 0, 'SCAN market_observation')
+EngineContextProducer._input_fingerprint:
+  (5, 0, 0, 'SCAN r')
+  (9, 0, 0, 'SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)')
+  (29, 0, 0, 'USE TEMP B-TREE FOR ORDER BY')
+
+Repository DDL with the one declared secondary raw index removed
+SQLiteStore.get_window:
+  (2, 0, 0, 'CO-ROUTINE (subquery-1)')
+  (8, 2, 0, 'SCAN market_observation')
+  (42, 2, 0, 'USE TEMP B-TREE FOR ORDER BY')
+  (63, 0, 0, 'SCAN (subquery-1)')
+  (84, 0, 0, 'USE TEMP B-TREE FOR ORDER BY')
+EngineContextProducer.window lineage:
+  (5, 0, 0, 'SCAN r')
+  (7, 0, 0, 'SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)')
+  (36, 0, 0, 'USE TEMP B-TREE FOR ORDER BY')
+prepare_engine_bundle row count:
+  (3, 0, 0, 'SCAN market_observation')
+EngineContextProducer._input_fingerprint:
+  (5, 0, 0, 'SCAN r')
+  (9, 0, 0, 'SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)')
+  (29, 0, 0, 'USE TEMP B-TREE FOR ORDER BY')
+
+Note: repository DDL declares no market_observation composite window index; no device-specific indexes/data exist in this probe.

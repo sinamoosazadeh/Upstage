@@ -1,0 +1,28 @@
+CP-3 literal OHLC geometry scan; tests are not executed by this static pass
+tests/unit/test_e05_fvg.py:658 <module>: O=523.3 H=527.5 L=523.5 C=526.8: low>min(open,close)
+tests/unit/test_e05_fvg.py:672 <module>: O=531.0 H=528.5 L=525.0 C=526.0: high<max(open,close)
+tests/unit/test_e05_fvg.py:377 _bull_zone_bars: O=101.0 H=104 L=102.5 C=103.5: low>min(open,close)
+tests/unit/test_e05_fvg.py:126 TestGoldenFixtures.test_rejection_fvg_wick_ratio_and_branch: O=101 H=106 L=101.5 C=101.9: low>min(open,close)
+tests/unit/test_e05_fvg.py:166 TestGoldenFixtures.test_inverse_with_bos_opp: O=112 H=115 L=113 C=114.5: low>min(open,close)
+tests/unit/test_e05_fvg.py:347 TestFormulas.test_gate_d_min_width_0_2_rule: O=100.5 H=102 L=101.19 C=101.8: low>min(open,close)
+tests/unit/test_e05_fvg.py:357 TestFormulas.test_invalid_candle_gate_a: O=100 H=99 L=100 C=100: high<max(open,close),high<low
+tests/unit/test_e05_fvg.py:361 TestFormulas.test_invalid_candle_gate_a: O=100.5 H=103 L=101 C=102: low>min(open,close)
+tests/unit/test_e05_fvg.py:431 TestLifecycle.test_bisi_and_rejection_confirmation_events: O=101 H=106 L=101.5 C=101.9: low>min(open,close)
+tests/unit/test_e06_orderblock.py:414 _scenario_bars: O=107.0 H=100.5 L=98.9 C=100.2: high<max(open,close)
+tests/unit/test_e06_orderblock.py:423 _scenario_bars: O=97.5 H=100.2 L=99.0 C=99.9: low>min(open,close)
+tests/unit/test_e06_orderblock.py:568 TestWrongSideNoStateChange.test_approach_from_below_up_zone_ignored: O=98 H=101 L=99 C=100: low>min(open,close)
+tests/unit/test_e06_orderblock.py:247 TestGoldenFixtures.test_f07_h_eq_l_rejected: O=1 H=0.5 L=1.5 C=1: high<max(open,close),low>min(open,close),high<low
+invalid numeric OHLC dict literals=13 across 4 test files
+direct E05 detect_fvg_at on asserted-positive Gate-D bar: invalid_reason=None width=0.20999999999999375
+production _ohlc_violation E05_GateD_low_above_open: LOW_ABOVE_MIN_OPEN_CLOSE
+validate_market_observation E05_GateD_low_above_open: QX_INVALID: OHLC bounds violated (H<max(O,C) or L>min(O,C))
+production _ohlc_violation E05_case_study_low_above_open: LOW_ABOVE_MIN_OPEN_CLOSE
+validate_market_observation E05_case_study_low_above_open: QX_INVALID: OHLC bounds violated (H<max(O,C) or L>min(O,C))
+production _ohlc_violation E05_case_study_high_below_open: HIGH_BELOW_MAX_OPEN_CLOSE
+validate_market_observation E05_case_study_high_below_open: QX_INVALID: OHLC bounds violated (H<max(O,C) or L>min(O,C))
+production _ohlc_violation E06_scenario_high_below_open: HIGH_BELOW_MAX_OPEN_CLOSE
+validate_market_observation E06_scenario_high_below_open: QX_INVALID: OHLC bounds violated (H<max(O,C) or L>min(O,C))
+production _ohlc_violation E06_scenario_low_above_open: LOW_ABOVE_MIN_OPEN_CLOSE
+validate_market_observation E06_scenario_low_above_open: QX_INVALID: OHLC bounds violated (H<max(O,C) or L>min(O,C))
+repository CH4_DDL malformed-row insert: IntegrityError CHECK constraint failed: CAST(high_price AS REAL)>=max(CAST(open_price AS REAL),CAST(close_price AS REAL)) AND CAST(low_price AS REAL)<=min(CAST(open_price AS REAL),CAST(close_price AS REAL)) AND CAST(high_price AS REAL)>=CAST(low_price AS REAL)
+probe=PASS; in-memory SQLite only; no venue/network or data/ access
