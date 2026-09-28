@@ -1,0 +1,14 @@
+{
+  "fail_closed_to_normal": {
+    "from": "FAIL_CLOSED",
+    "require_startup_reconciliation": false,
+    "snapshot_id": "s1",
+    "to": "NORMAL"
+  },
+  "normal_to_manual_override": {
+    "from": "NORMAL",
+    "require_startup_reconciliation": false,
+    "snapshot_id": "s2",
+    "to": "MANUAL_OVERRIDE"
+  }
+}

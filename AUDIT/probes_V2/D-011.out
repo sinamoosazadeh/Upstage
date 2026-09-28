@@ -1,0 +1,15 @@
+{
+  "agreement": 1.0,
+  "disagreement": 0.0,
+  "resolve": {
+    "conflict_penalty": 0.0,
+    "contract_version": "4.0.0",
+    "gate_projection": {
+      "gate3_block": false,
+      "gate4_block": false
+    },
+    "output": "CONSENSUS",
+    "record": "ConflictRecord(conflict_id='cfl_conflict', disagreement=0.0, quality_asymmetry=0.0, redundancy=0.0, uncertainty=0.0, mtf_conflict='ALIGNED', stale_fraction=0.0, regime_state='RANGE', action_policy='NONE', package_id='pkg_0', snapshot_id='snap_0', lineage=('lineage_root',))",
+    "redundancy_penalty": 0.0
+  }
+}

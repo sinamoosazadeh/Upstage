@@ -1,0 +1,28 @@
+{
+  "boundary": "no SMTP/network evidence",
+  "send_result": {
+    "alert": "HOST_DOWN",
+    "created_at": "2026-09-28T16:01:21Z",
+    "result": {
+      "delivered": true,
+      "subject": "x",
+      "to": "owner@example.invalid"
+    },
+    "severity": "CRITICAL",
+    "subject": "x"
+  },
+  "sent": [
+    {
+      "alert": "HOST_DOWN",
+      "created_at": "2026-09-28T16:01:21Z",
+      "result": {
+        "delivered": true,
+        "subject": "x",
+        "to": "owner@example.invalid"
+      },
+      "severity": "CRITICAL",
+      "subject": "x"
+    }
+  ],
+  "transport_injected": false
+}

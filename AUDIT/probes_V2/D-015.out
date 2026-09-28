@@ -1,0 +1,7 @@
+{
+  "context_confidence": 0.39951172547,
+  "final_score": 0.9000000000000002,
+  "propagation": "COLLAPSED",
+  "reason": "ALL_GATES_PASS",
+  "status": "EMITTED"
+}

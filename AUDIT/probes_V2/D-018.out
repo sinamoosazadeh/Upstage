@@ -1,0 +1,5 @@
+{
+  "exception": "OSError:synthetic-log-failure",
+  "independent_calls": [],
+  "state": "NORMAL"
+}

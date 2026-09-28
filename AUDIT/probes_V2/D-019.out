@@ -1,0 +1,11 @@
+{
+  "after_reopen": {
+    "head": null,
+    "rows": 0
+  },
+  "before_close": {
+    "head": "a810e9fc8a70898259879946a243ba1d83faa625d2c446c9b3329785f0d23bf1",
+    "rows": 1
+  },
+  "durable_row_lost": true
+}

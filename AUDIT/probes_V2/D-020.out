@@ -1,0 +1,26 @@
+{
+  "db_bound": false,
+  "enter_result": {
+    "alerts": [
+      "FAIL_CLOSED"
+    ],
+    "allow_new_capital": false,
+    "allow_new_entry": false,
+    "autonomous_ladder_climb": false,
+    "cancel_pending": [],
+    "contract_version": "4.0.0",
+    "log_fields": {
+      "kind": "FAIL_CLOSED_ENTRY",
+      "reason": "synthetic",
+      "recovery_state": "AWAITING_OWNER",
+      "snapshot_id": "s"
+    },
+    "mode": "FAIL_CLOSED",
+    "protective_preserved": [],
+    "reason": "synthetic",
+    "recovery_state": "AWAITING_OWNER",
+    "snapshot_id": "s"
+  },
+  "path_exists": false,
+  "rows_in_memory": 1
+}

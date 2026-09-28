@@ -1,0 +1,7 @@
+{
+  "weekly_rollover_without_owner_review": {
+    "mechanism": "UTC_WEEK_ROLLOVER",
+    "owner_review_required": true,
+    "reset": true
+  }
+}

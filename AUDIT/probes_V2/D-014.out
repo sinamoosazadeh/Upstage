@@ -1,0 +1,32 @@
+{
+  "gate3": {
+    "action": null,
+    "gate": 3,
+    "measured": 0.4,
+    "name": "CONFLICT_PENALTY_MAX",
+    "passed": true,
+    "reason": "CONFLICT_PENALTY_IN_BOUNDS",
+    "threshold": 0.5
+  },
+  "gate4": {
+    "action": null,
+    "gate": 4,
+    "measured": 0.3,
+    "name": "REDUNDANCY_PENALTY_MAX",
+    "passed": true,
+    "reason": "REDUNDANCY_PENALTY_IN_BOUNDS",
+    "threshold": 0.3
+  },
+  "penalties": {
+    "conflict_penalty": 0.4,
+    "redundancy_penalty": 0.3
+  },
+  "thresholds": {
+    "gate12_q_forecast_min": 0.5,
+    "gate1_q_min_setup": 0.55,
+    "gate3_conflict_penalty_max": 0.5,
+    "gate4_redundancy_penalty_max": 0.3,
+    "gate7_entropy_max": 0.85,
+    "gate_score_unit": 0.01
+  }
+}
