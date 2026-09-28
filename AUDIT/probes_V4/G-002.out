@@ -1,0 +1,3 @@
+EXPORT dispatch= {'action': 'EXPORT', 'ok': True, 'reason': None, 'effect': 'EXPORT', 'recorded': True, 'detail': 'control-plane effect recorded by the runtime; the protective path is the FSM/AI.9 recovery'}
+BACKTEST_RUN dispatch= {'action': 'BACKTEST_RUN', 'ok': True, 'reason': None, 'effect': 'BACKTEST_RUN', 'recorded': True, 'detail': 'control-plane effect recorded by the runtime; the protective path is the FSM/AI.9 recovery'}
+valid_export_request= True

@@ -17,12 +17,14 @@ Read-only source/contract examination; probes used synthetic identities, injecte
 | F-010 | CONFIRMED (synthetic orphan exit) | S1 | S1 | No | — | A: validate projection |
 | F-011 | PARTIAL | S2 | S2 | No | — | A: typed parent validation |
 | F-012 | PARTIAL | S2 | S2 | No | — | A: owner resolves conflicting ID contract |
+| G-002 | CONFIRMED | S1 | S1 | No | = ISSUE-073 (no additional owner item) | A: explicit refusal until wired |
+| G-021 | PARTIAL | S2 | S2 | No | D30: training 20, not coverage 140 | A: distinguish capacity from observed status |
 | G-015 | CONFIRMED | S1 | S1 | No | — | A: rolling window |
 | G-016 | CONFIRMED | S1 | S1 | No | — | A: atomic in-flight reservation |
 | G-017 | CONFIRMED | S1 | S1 | No | — | A: delivery-aware dedup |
 | G-018 | PARTIAL | S1 | S1 | No | — | A: separate delivery from protection |
 | G-023 | CONFIRMED (synthetic timing) | S1 | S1 | No | — | A: priority admission |
-| G-001..G-008, G-010..G-014, G-019..G-022, G-024..G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
+| G-001, G-003..G-008, G-010..G-014, G-019..G-020, G-022, G-024..G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
 
 **Shared test execution:** `PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/unit/test_ledger_store.py tests/unit/test_telegram_control_plane.py tests/unit/test_ops_telegram_gateway.py tests/unit/test_telegram_signaling.py tests/unit/test_identity.py > AUDIT/probes_V4/TARGETED_TESTS.out 2>&1`: **286 passed, 13 warnings**. For individual probes use `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V4/<ID>.py`; output is the sibling `.out`. `QUERY-PLAN.py/.out` run against the real schema with/without the two device-only indexes. Scope of assertions below is the cited implementation behavior, not end-to-end or device acceptance. Owner decisions in PHASE2_DECISION_LOG.md supersede conflicting blueprint prose. No source changes proposed here are authorized.
 
@@ -285,3 +287,263 @@ A: same tolerance for verified-absent and present-zero after completeness proof;
 A only with explicit completeness bit, B for unknown response.
 ### Acceptance and regression tests
 .25 present zero vs absent verified zero match; 2 absent diverges; timeout/partial page refuses without inferred zero; read-only device response schema evidence required.
+
+## F-010
+### Auditor claim (short quote)
+Orphan `SELL_CLOSE` projects as SHORT instead of raising position-integrity error.
+### What I read (files, line ranges, functions, callers)
+`ledger/store.py:435-446,525-571`, `fsm.py:670-695,860-875`, tests `test_ledger_store.py:525-654`; grep of `positions_from_ledger` in apex/ops, apex/execution, scripts. Frozen DDL `sqlite_store.py:165-180` permits side in raw without close constraint.
+### Reproduction (command, probe file, actual result)
+`F-010.py/.out`: fault injected as synthetic missing OPEN upstream; real writer persists a standalone `SELL_CLOSE` qty2; projection returns `net=-2 direction=SHORT`, chain intact. File-backed SQLite with triggers, no real venue.
+### Verdict and reasoning
+CONFIRMED S1 for malformed fill projection, not evidence that production venue actually sends orphan exits. Unchecked close quantities can compromise recovery accounting.
+### Root cause
+Projection treats any `SELL_*` as subtraction and does not compare CLOSE to current net/direction; writer does not validate account position.
+### Direct impact
+Phantom opposite exposure from a close with no open.
+### Secondary effects and interactions (upstream/downstream)
+Upstream adapter/FSM may have additional guards but this API permits malformed entries; downstream reconciliation, backup and risk account state consume it. F-001 actual-fill P/L and F-003 stale basis are separate faults.
+### Contract and decisions
+`APEX_GEN5.md:16877-16883`: “Reconciliation is a first-class invariant”; `16919-16921`: position ledger single source of truth; D4 `PHASE2_DECISION_LOG.md:197` binds PAPER exposure to ledger. Later owner decision takes precedence, but none licenses inventing a SHORT on CLOSE.
+### Frozen status and non-frozen alternative
+Ledger projection and FSM non-frozen; leave frozen CP-1 schema untouched, validate in a versioned projection/adapter.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: preserve raw venue fill but quarantine invalid close in derived position/recovery, explicit correction after broker match; existing tests assuming signed sum may change, derived identity/replay hashes invalidate, legacy orphan rows require migration/quarantine (not ledger rewrite). B: reject at append before persist; simpler but loses raw external evidence during uncertainty and can block protective exits.
+### My recommendation
+A with strict admission check at FSM too; protect reduce-only evidence even when projection flags invalidity.
+### Acceptance and regression tests
+Orphan, over-close, wrong direction, partial valid close, independently authorized reversal, restart and broker mismatch; invalid CLOSE must not create position.
+
+## F-011
+### Auditor claim (short quote)
+Unknown event parent is accepted and `verify_chain.intact=True`.
+### What I read (files, line ranges, functions, callers)
+`ledger/store.py:336-359,397-422,645-673`; `test_identity.py:219-247`; `PHASE2_HANDOFF_CP1.md:129`, `PHASE2_TRACEABILITY_MATRIX.md:15,47`; grep `parents=` and `verify_chain` in apex. Parent list also contains hash link/supersedes, not only event IDs.
+### Reproduction (command, probe file, actual result)
+`F-011.py/.out`: append SEED then DERIVED with nonexistent `ev-...`; real writer accepts, verifier reports `records=2 intact=True breaks=[]` on temp file.
+### Verdict and reasoning
+PARTIAL S2: orphan *event-typed* parent is provably accepted; indiscriminately requiring every parent string to match an event_id would wrongly reject legitimate hash/correction links. T-ID-002 end-to-end recovery not proved by this isolated API.
+### Root cause
+Untyped `parent_ids` mixes references, verifier checks only predecessor hash.
+### Direct impact
+A missing event parent can be reported as intact.
+### Secondary effects and interactions (upstream/downstream)
+Upstream producer can supply typed/untagged parents; downstream provenance/recovery fails to distinguish references, without proving an orphan occurred on device. F-007 integrity coverage distinct.
+### Contract and decisions
+`APEX_GEN5.md:19075-19083`: “check all parent_event_ids exist”; `19107`: “500 derived events; all parent_event_ids exist in ledger”. `PHASE2_DECISION_LOG.md:194-210,1155-1175` contains no override of event-parent acceptance; owner decisions take precedence over general contract prose.
+### Frozen status and non-frozen alternative
+Non-frozen writer/producer and additive typed-reference sidecar; frozen store DDL need not change.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: separate typed event/hash/correction links and validate only event links, version lineage; migration of legacy ambiguous parents, test oracle and derived hash/replay cache invalidation required. B: document verifier as hash-only and enforce parent existence upstream; less protection against direct append/recovery.
+### My recommendation
+A after owner decides legacy reference typing, reject ambiguous new events.
+### Acceptance and regression tests
+500 derived events with valid event parents and negative orphan; valid hash/supersedes accepted; restart verifier checks typed references and marks orphan non-intact.
+
+## F-012
+### Auditor claim (short quote)
+Same-millisecond UUIDv7 may descend while verifier reports monotonic.
+### What I read (files, line ranges, functions, callers)
+`uuid_v7.py:1-38` (random rand_a/rand_b), `ledger/store.py:391-422,668-709`, `tests/unit/test_identity.py:209-229`, `APEX_GEN5.md:4114-4132,18626-18649,19105-19107`; grep `uuid_v7` consumers in apex/identity/ledger and tests.
+### Reproduction (command, probe file, actual result)
+`F-012.py/.out`: patched actual `uuid_v7` time/random returns descending same-ms IDs (`strictly_ascending=False`). Patch UUID source for real LedgerWriter and append two events with same timestamp in descending event-id order; `verify_chain.sequence_monotonic=True intact=True`. No fabricated algorithm substituted for repository UUID generator.
+### Verdict and reasoning
+PARTIAL S2: acceptance T-ID-001 demands strictly ascending event IDs, but blueprint's random UUIDv7 implementation example allows non-monotonic same-ms ordering. A contract/acceptance conflict needs owner resolution, not an assertion UUIDv7 itself is invalid.
+### Root cause
+Random same-ms bits; verifier `_monotonic` checks ledger IDs differ and timestamps nondecrease, not event_id ordering.
+### Direct impact
+T-ID-001 strict-ID assertion can fail in bursts while verifier reports healthy.
+### Secondary effects and interactions (upstream/downstream)
+Event identities/lineage and recovery sequence proofs may be affected, not a proven duplicate or order misroute. Any new ID scheme changes future UUIDs, fixtures, replay identities and audit logs but must not rewrite historical rows.
+### Contract and decisions
+`APEX_GEN5.md:19106`: “event_id strictly increasing; no duplicates”; `19075-19083`: startup validates sequence. `PHASE2_DECISION_LOG.md:1159` D50 governs deterministic *content* identities/intent hash but does not override operational UUID event ordering; owner decision wins over conflicting blueprint example after recorded ruling.
+### Frozen status and non-frozen alternative
+Non-frozen UUID helper/verifier; no frozen engine or store DDL edit. Sidecar sequence index in adapter possible without changing frozen UUID module.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: versioned monotonic UUIDv7 generation + verifier compares event IDs; concurrency/process restart/time reversal policy required, existing random-ID expectation tests change and future hash/identity caches may invalidate. B: owner explicitly redefines T-ID-001 to ledger-order/timestamp, verifier reports both; no identity migration, but strict event-ID promise withdrawn transparently.
+### My recommendation
+Seek owner A/B ruling before editing; use separate ledger sequence as ordering authority meanwhile.
+### Acceptance and regression tests
+Fixed ms 1000 IDs, concurrent creators, restart/clock rollback; verifier rejects whichever property the approved contract mandates, historical IDs treated version-aware.
+
+## G-015
+### Auditor claim (short quote)
+20-token initial burst plus refill admits 39 sends in 0.95 s.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:350-403,579-625,629-782`, `test_telegram_signaling.py:272-323`; grep `bucket_for`/`acquire`/`available` in apex/tests. Internal vs provider ceilings in blueprint.
+### Reproduction (command, probe file, actual result)
+`G-015.py/.out`: actual `MessageTokenBucket` with injected clock: `sent_between_t0_and_t0.95=39`. No network, provider behavior not claimed.
+### Verdict and reasoning
+CONFIRMED S1: algorithm fails both internal 20/s rolling window and 30/s provider ceiling in this constructed burst; actual 429 depends on real service.
+### Root cause
+Capacity 20 at t=0 and refill 20/s implement long-run rate, not no-burst sliding-window limit.
+### Direct impact
+Throttling risk and misleading claimed per-chat guarantee.
+### Secondary effects and interactions (upstream/downstream)
+Upstream P3 floods share bucket with P0; downstream retries, outbox/delivery and emergency alerts can be delayed. Separate from priority ordering G-023; no venue order impact demonstrated.
+### Contract and decisions
+`APEX_GEN5.md:17766`: “internal limiter = 20 messages per second per chat; provider ceiling = 30”; `18960-18961`: “No burst is permitted ... Implement sliding-window token bucket”. `PHASE2_DECISION_LOG.md:194-210,1155-1175` does not override those limits; owner decisions precede prose if later changed.
+### Frozen status and non-frozen alternative
+Non-frozen signaling limiter; no frozen params file should change. Policy logic can live in non-frozen scheduler.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: exact rolling-window per chat + bounded priority queue; tests assuming 20 immediate sends after idle change, timing/outbox and delivery metrics change; if persisted queue introduced add DB migration; no order/research retraining, but delivery/replay timing identities may differ. B: low-capacity leaky bucket with no burst (≤20/s), lower throughput and potential P0 starvation without separate lane.
+### My recommendation
+A with provider-ceiling backstop and G-023 priority design.
+### Acceptance and regression tests
+200 concurrent and sequential sends around 0, 0.95, 1.0 seconds; every trailing 1s interval ≤20, provider never >30; real provider acceptance remains unverified.
+
+## G-016
+### Auditor claim (short quote)
+Concurrent identical sends bypass idempotency gate before key is stored.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:411-442,629-665,666-782`, `test_telegram_signaling.py:221-249`; grep `send(` consumers in gateway/control_plane/scripts; `send(force=True)` bypasses gate explicitly.
+### Reproduction (command, probe file, actual result)
+`G-016.py/.out`: two concurrent real `SignalingPlane.send` calls, synthetic barrier transport holds both, output `transport_calls_before_release=2`, both sent True. No Telegram requests.
+### Verdict and reasoning
+CONFIRMED S1 for in-flight race; the probe intentionally synchronized the gap. Sequential dedup tests do not test concurrency.
+### Root cause
+Idempotency `exists` checked before first await; `store` occurs only after I/O.
+### Direct impact
+Duplicate messages from one signal identity.
+### Secondary effects and interactions (upstream/downstream)
+Consumes extra rate tokens, can amplify alert storm/retries, outbox has two entries. In-memory registry reset/replay durability is a separate audit item (G-014), not proved here.
+### Contract and decisions
+`APEX_GEN5.md:17768`: “Idempotency key: SHA-256(signal_id + timestamp_UTC + chat_id)”; `18168-18173`: P0 never drop; `PHASE2_DECISION_LOG.md:194-210` has no idempotency exception, owner decisions take precedence.
+### Frozen status and non-frozen alternative
+Non-frozen signaling/queue; no frozen DDL change. An additive outbox/reservation table can be outside frozen store.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: atomic per-key in-flight reservation and same-result waiters, define retry/UNKNOWN/cancel and durable state; duplicate/retry tests change, DB migration if durable, signal hash formula unchanged but delivery/outbox replay changes. B: coarse per-chat lock prevents race but also blocks P0 behind P3 (G-023).
+### My recommendation
+A integrated with durable priority outbox; avoid B.
+### Acceptance and regression tests
+2/10 simultaneous same-key sends → one transport call; mismatched payload same key refusal; failure/cancel/restart lead to exactly-once-or-UNKNOWN reconciliation, not blind resend.
+
+## G-017
+### Auditor claim (short quote)
+Failed alert is deduplicated for 30 minutes even after transport recovers.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:816-880` (`dedup_verdict`, `emit_alert`), `666-782` (`send` retries); `test_telegram_signaling.py:538-573`; grep runtime `emit_alert` in paper_loop/control_plane/scripts.
+### Reproduction (command, probe file, actual result)
+`G-017.py/.out`: synthetic transport fails three times; first STORAGE `emitted=False transport_calls=3`, second same trigger `DEDUP_SUPPRESSED transport_calls=3` despite fourth call configured to succeed. No real delivery assertion.
+### Verdict and reasoning
+CONFIRMED S1: suppression based on attempted, not delivered, alert can silence important non-exempt alert.
+### Root cause
+`_last_alert` set before ledger append/send, independent of outcome.
+### Direct impact
+Loss of retry opportunity inside 30-minute window.
+### Secondary effects and interactions (upstream/downstream)
+Storage/feed monitoring and operator escalation can be silent; exempt EXEC_RECOVERY/CIRCUIT_OPEN are not suppressed by this rule, but may fail for other reasons. Outbox durability separate.
+### Contract and decisions
+`APEX_GEN5.md:18168-18173`: P0 never drop; `18304-18309`: dedup except EXEC_RECOVERY and CIRCUIT_OPEN with logged alerts; `PHASE2_DECISION_LOG.md:194-210` has no authorization to mark failed delivery successful.
+### Frozen status and non-frozen alternative
+Non-frozen signaling; persistence can be additive migration outside frozen DDL.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: dedup on confirmed delivery or durable pending record and retry failed alerts; behavior of tests expecting attempt-based suppression changes, outbox DB migration if persisted, delivery/replay timeline changes but trading hashes/retraining do not. B: exempt STORAGE/FEED from dedup, smaller mitigation but floods on real failures.
+### My recommendation
+A, with honest UNKNOWN receipt handling.
+### Acceptance and regression tests
+Three failures then recovery gives fourth transport send; successful duplicates suppress; concurrent alerts, restart and exempt P0 behave as policy.
+
+## G-018
+### Auditor claim (short quote)
+Ledger append/transport construction failures escape before alert delivery and can interrupt the cycle.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:666-782,831-880`, `paper_loop.py:960-978,1060-1083`, `control_plane.py:920-937`; tests `test_telegram_signaling.py:352-372,538-573`; grep `emit_alert`, `check_storage` callers.
+### Reproduction (command, probe file, actual result)
+`G-018.py/.out`: injected ledger OSError → no transport calls, `alert_audit=1`; injected `transport()` factory OSError → `outbox_count=0`, exception escapes. Synthetic adapter, not an actual invalid token or disk fault.
+### Verdict and reasoning
+PARTIAL S1: exception boundaries proven, but actual serve without bot token constructs no signaling plane; cannot claim that particular missing-token path fires in ordinary serve. Cycle interruption depends on which callers await the alert, as shown by code, not a live outage.
+### Root cause
+Synchronous ledger append before transport; factory outside retry try; mutable audit appended before delivery outcome.
+### Direct impact
+Important alert can fail before attempt while audit records initiation.
+### Secondary effects and interactions (upstream/downstream)
+Potentially aborts a cycle before `manage_positions` where awaited; DB integrity failure must still prevent new entries, while Telegram outage must not block reduce-only. No bypass of ledger failure is safe.
+### Contract and decisions
+`APEX_GEN5.md:17748-17757`: “Telegram outage or delivery delay must not block protective execution”; `18168-18173`: signaling failure never blocks protective execution. D1 `PHASE2_DECISION_LOG.md:194` PAPER follows FSM/ledger/Telegram path; no owner override authorizes ignoring ledger write faults.
+### Frozen status and non-frozen alternative
+Non-frozen signaling/runtime; independent emergency delivery pending channel can be additive without changing frozen ledger DDL.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: separate ledger fail-closed admission from best-effort independently queued alert; catch transport-factory faults, durable unknown/pending state; affects exception-expecting tests, outbox migration and audit timing, no training change. B: catch all errors and continue is unsafe for ledger corruption; not recommended.
+### My recommendation
+A; protective exits must continue if only Telegram fails, new entries must stop if integrity cannot be recorded.
+### Acceptance and regression tests
+Inject ledger/transport factory/send failures before and after send; assert no new entry on ledger failure, continued reduce-only handling, honest pending/error records, no false delivery proof.
+
+## G-023
+### Auditor claim (short quote)
+P0 waits behind queued P3 on one shared FIFO bucket/lock.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:350-403,629-782`; `test_telegram_signaling.py:272-323`; grep `bucket_for`, `force`, `send` consumers in gateway/control_plane/scripts.
+### Reproduction (command, probe file, actual result)
+`G-023.py/.out`: after 20 initial P3, queue 44 P3; actual `SignalingPlane.send` P0 at tail → `urgent_queued=True`, `urgent_delivery_seconds` ≈2.2s with immediate synthetic transport. Value is scheduler/environment-specific, not a real Telegram latency measurement.
+### Verdict and reasoning
+CONFIRMED S1 for priority inversion; real P0 SLO remains **UNVERIFIED**. P0 is not given reserved admission, and `force` bypasses emission gate only.
+### Root cause
+All priorities share one per-chat token bucket and FIFO lock held during sleep.
+### Direct impact
+Emergency alert dispatch delayed by lower-priority traffic.
+### Secondary effects and interactions (upstream/downstream)
+G-015 burst and G-017 retries can worsen the queue; downstream operator containment feedback may arrive late, no proof of delayed venue orders.
+### Contract and decisions
+`APEX_GEN5.md:18168-18173`: P0 “never drop”, P3 “droppable”; `18963-18971`: P0 highest, P3 lowest. `PHASE2_DECISION_LOG.md:194-210` no override; owner decisions take precedence over blueprint.
+### Frozen status and non-frozen alternative
+Non-frozen signaling queue and limiter; frozen params not necessary to change.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: priority-aware bounded queue with P0 capacity reservation under global 20/s and provider 30/s; drop/degrade P3 by policy; timing tests change, possible durable outbox migration, delivery/replay metric behavior changes, no model retraining. B: separate per-priority buckets without aggregate ceiling risks 429, unacceptable alone.
+### My recommendation
+A integrated with G-015 rolling ceiling; no P0 bypass of provider safety.
+### Acceptance and regression tests
+Under 44 queued P3, failed/retried transport and 200 mixed messages, P0 admitted ahead of P3 within enforced rolling provider limit; device SLO measured separately.
+
+## G-002
+### Auditor claim (short quote)
+EXPORT/BACKTEST_RUN handlers succeed without export or backtest.
+### What I read (files, line ranges, functions, callers)
+`scripts/run_apex.py:711-765,827-838` (`serve`, `_noop_handler`); `control_plane.py:488-515,866-891` (`register`, `dispatch`, callback), `gateway.py:277-309`; grep `BACKTEST_RUN`/`EXPORT` apex/scripts/tests, `test_telegram_control_plane.py:743-790` only supplied handlers.
+### Reproduction (command, probe file, actual result)
+`G-002.py/.out`: register actual `_noop_handler` on real ControlPlane; `dispatch('EXPORT')` and `dispatch('BACKTEST_RUN')` return `ok=True recorded=True` with no job/file. Synthetic configuration without env/credentials; no actual gateway traffic.
+### Verdict and reasoning
+CONFIRMED S1 for falsely reported success, entirely = ISSUE-073 known owner item (no beyond-known claim). Severity remains serious operator-facing missing function, not a claim that research backend is broken.
+### Root cause
+Composition registers `_noop_handler` as successful effect in serve.
+### Direct impact
+Accepted operator action has no product.
+### Secondary effects and interactions (upstream/downstream)
+Research/backtest and export are not called; downstream report/replay absent, but no exchange/order path. G-022 unsafe path validation becomes consequential only after real exporter wired.
+### Contract and decisions
+`APEX_GEN5.md:17837-17848`: Export path → “Send/Share the resulting file”; `17892-17904` Lab Backtest stays active. `PHASE2_DECISION_LOG.md:194-210` D4 separates PAPER/LIVE displayed/exported balances; no later owner authorization for noop-success. ISSUE-073 schedules CP-16; owner decision/log takes precedence over generic promise of readiness.
+### Frozen status and non-frozen alternative
+Run composition/control-plane non-frozen; backtest engine frozen and need not be changed to report NOT_WIRED or call existing read-only job API.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: until CP-16, register refusal handler instead of success; changes tests/gateway acknowledgements, no hash/training/migration. B: integrate background jobs and exact audited output path, introduces queue/job persistence, migration and output identity/hash/replay contract; keep frozen research backtest via non-frozen adapter.
+### My recommendation
+A immediately for truthful status, B in authorized CP-16 with tested job contract.
+### Acceptance and regression tests
+Without worker, explicit refusal; with worker, returned durable job/file and error outcome, no cross-environment export; never assert `recorded=True` as actual completion.
+
+## G-021
+### Auditor claim (short quote)
+Info always displays `HEALTHY` and “Data Coverage=140” without real health/coverage.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:97-102,450-487,576-587,675-695`; `test_telegram_control_plane.py:548-563`; grep `screen_info` in gateway/control_plane/tests; `APEX_GEN5.md:17897-17904`, D30 `PHASE2_DECISION_LOG.md:523-532`.
+### Reproduction (command, probe file, actual result)
+`G-021.py/.out`: instantiate ControlPlane without store/health; `screen_info()` returns `{'System Status': 'HEALTHY', 'Data Coverage': 140}`. This is constant output, not a claim about device data.
+### Verdict and reasoning
+PARTIAL S2: constants are confirmed, but blueprint §5.5 **literally** prescribes the 140-combination Info screen and “HEALTHY”, so a bare claim that those literals violate this UI contract is overstated. In an operational screen, labeling capacity as observed coverage and health as live is misleading; newer fail-closed safety principles and D30 disambiguate training scope (20), not data capacity (140).
+### Root cause
+Info method does not depend on measured boot/feed/data state; screen template conflates capacity with observation.
+### Direct impact
+False impression of live health/coverage if shown as measurements.
+### Secondary effects and interactions (upstream/downstream)
+Upstream actual boot/store quality absent; downstream operator confidence, not automatic order or model training; D30 20 base training cells never equal 140 available symbol/timeframe combinations.
+### Contract and decisions
+`APEX_GEN5.md:17897-17904`: “full data coverage (140 symbol/timeframe combinations), and System Status (HEALTHY)”; `PHASE2_DECISION_LOG.md:523-532` D30: “train-e11 ... 1h and 4h ... (20 cells), never over all 14 timeframes”. Later D30 wins for training, does not imply observed data coverage; owner should clarify UI literal versus measured-status obligation.
+### Frozen status and non-frozen alternative
+Non-frozen control-plane/status producer; frozen engines and store DDL untouched.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: show “capacity 140” separately from measured cells/boot state with timestamp/quality, UNAVAILABLE on absent evidence; fixture tests of hardcoded fields change, live reporting cache/identity version may change, no DB migration unless status snapshots persisted. B: relabel current constants as “example/capacity”, do not assert operational HEALTHY; smaller interim UI fix, no retraining.
+### My recommendation
+A after owner clarifies §5.5 literal; B until a measured status producer exists.
+### Acceptance and regression tests
+Store absent, 0/partial/140 measured cells, DEGRADED boot and stale feed: accurate labels and timestamps; no implication 20 trained cells equals 140 data cells; device coverage still needs read-only evidence.

@@ -1,0 +1,1 @@
+exit_filled_quantity= 2 booked_quantity= 2 booked_pnl= 100 gross_at_actual_quantity= 20 outcome= [{'intent_id': 'i', 'exit_reason': 'TARGET_1', 'exit_price': '110', 'state': 'MANAGED', 'filled': True, 'pnl': '100', 'stop_gap': None, 'reconciled': True}]
