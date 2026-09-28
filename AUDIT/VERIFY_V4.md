@@ -36,7 +36,12 @@ Read-only source/contract examination; probes used synthetic identities, injecte
 | G-014 | CONFIRMED | S1 | S1 | No | — | A: durable outbox |
 | G-020 | CONFIRMED | S2 | S2 | No | — | B: truthful close-only |
 | G-027 | CONFIRMED | S2 | S2 | No | D9 veto10-12 distinct | A: manual alert type |
-| G-005..G-007, G-019, G-024..G-026, G-028..G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
+| G-006 | CONFIRMED | S1 | S1 | No | G-024/025 interactions | A: keyboard codec + transport |
+| G-007 | CONFIRMED (group configuration conditional) | S1 | S1 | No | D17/D20 | A: sender+private auth |
+| G-024 | CONFIRMED (callback reachability unverified) | S1 | S1 | No | G-006/G-013 | A: per-update isolation |
+| G-025 | CONFIRMED | S2 | S2 | No | G-006/G-024 | A: callback ack |
+| G-028 | PARTIAL | S2 | S2 | No | G-004 distinct | A: split provider/internal receipt |
+| G-005, G-019, G-026, G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
 
 **Shared test execution:** `PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/unit/test_ledger_store.py tests/unit/test_telegram_control_plane.py tests/unit/test_ops_telegram_gateway.py tests/unit/test_telegram_signaling.py tests/unit/test_identity.py > AUDIT/probes_V4/TARGETED_TESTS.out 2>&1`: **286 passed, 13 warnings**. For individual probes use `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V4/<ID>.py`; output is the sibling `.out`. `QUERY-PLAN.py/.out` run against the real schema with/without the two device-only indexes. Scope of assertions below is the cited implementation behavior, not end-to-end or device acceptance. Owner decisions in PHASE2_DECISION_LOG.md supersede conflicting blueprint prose. No source changes proposed here are authorized.
 
@@ -872,6 +877,136 @@ A after owner settles policy name/priority; retain independent veto10 alert gene
 ### Acceptance and regression tests
 L1–L3 with no loss never emit CIRCUIT_OPEN; veto10 daily realized-loss event does emit policy-matched metric/threshold; dedup/priority and audit logs checked without sending Telegram.
 
+## G-006
+### Auditor claim (short quote)
+Menu keyboards are not sent; their own callback payloads would be rejected as ACTION_UNKNOWN.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:575-725,800-896,980-1007` (`render`, `_callback_for`, `_action`); `gateway.py:191-225,260-382` (`render_screen`, `_reply_from`, `reply`); `signaling.py:215-249,506-568,666-739` (inline keyboard and transport seam); `scripts/run_apex.py:839-856` `_telegram_reply` builds `SignalMessage` without inline_keyboard; tests `test_telegram_control_plane.py:493-520`, `test_ops_telegram_gateway.py:167-237`; `grep -Rn 'inline_keyboard\|render_screen\|reply_markup'` apex/scripts/tests.
+### Reproduction (command, probe file, actual result)
+`G-006.py/.out`: real gateway `/start` calls injected notifier with exactly 2 args (chat/text), no markup; real `ControlPlane.render('MAIN_MENU')` first/back buttons `MAIN_MENU:TRADING`, `MAIN_MENU:BACK`; real handle_callback returns ACTION_UNKNOWN for both. Synthetic OWNER, no Telegram network.
+### Verdict and reasoning
+CONFIRMED S1: linked runtime path cannot deliver generated keyboard, and if independently delivered its callbacks aren't recognized. Direct `SCREEN:TRADING` tests inject a callback the renderer does not produce; no claim real users can send forged callbacks or click absent buttons.
+### Root cause
+Renderer produces keyboard data but gateway flattens screen to text; callback serializer uses `screen:slug` whereas dispatcher accepts `SCREEN`, `BACK`, `HOME`, etc. `SignalMessage.inline_keyboard` remains empty in composition reply.
+### Direct impact
+Screen/wizard navigation and emergency menu unavailable through generated Telegram replies.
+### Secondary effects and interactions (upstream/downstream)
+Upstream operator receives `/start` text; downstream G-024 malformed callback exception path can surface once keyboards are wired. G-025 callback ack also absent. No market/ledger/identity impact until command actions are reachable; manually typed `/lock` still operates separately (G-008/009).
+### Contract and decisions
+`APEX_GEN5.md:17802-17816` main menu/navigation with Back/Home; `17821-17830` trading wizard and Yes/No nonce; `17913-17926` emergency controls. `PHASE2_DECISION_LOG.md:148` ISSUE-CP7-003 freezes module literals only, not a license to omit actual keyboard; `194-210` D1 PAPER path. Owner decisions override earlier UI prose but none resolves this wiring.
+### Frozen status and non-frozen alternative
+Gateway/control-plane/signaling adapters non-frozen; do not touch frozen engine/DDL or original YAML. Reply interface can carry keyboard as typed metadata.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: unify one action→callback codec with dispatcher and pass `reply_markup` end-to-end via notifier/transport; tests using synthetic SCREEN payloads must add generated-button roundtrips, callback/approval identities and delivery caches may change, no DB migration unless pending callbacks persisted, no retraining. B: text-only slash commands for all actions avoids keyboards but violates approved screen UX/confirmation.
+### My recommendation
+A with generated-keyboard acceptance tests before enabling capital-affecting buttons.
+### Acceptance and regression tests
+Bot double inspects actual reply_markup from `/start`; click every generated button, Back/Home/wizards and YES/NO, see valid screen/action; reject oversized data and unauthorized principal, retain existing callback ack G-025 follow-up.
+
+## G-007
+### Auditor claim (short quote)
+Group destination chat ID takes precedence over human sender ID for OWNER authorization.
+### What I read (files, line ranges, functions, callers)
+`gateway.py:128-183,276-342` (`extract_update`, `_chat_id`, `handle_update`, `_bootstrap`), `control_plane.py:162-211,450-487,725-775,800-938` (`AccessControl`, command/callback), `config.py:163-175` chat ID accessors; `test_telegram_control_plane.py:28-33`, `test_ops_telegram_gateway.py:160-240`. Grep `extract_update`, `access.check`, `role_of` apex/scripts/tests; there is no private-chat or verified sender check.
+### Reproduction (command, probe file, actual result)
+`G-007.py/.out`: group `-1001234567890` in synthetic OWNER allowlist, different sender=987654321; real gateway `pause` reaches injected handler (`accepted=True`, call count1). Callback `EMERGENCY:L1` from same foreign sender is treated OWNER, gives nonce/raises ratchet (G-010). No Telegram/network or device owner config.
+### Verdict and reasoning
+CONFIRMED S1 **conditional on an OWNER group chat ID being configured**; if owner chat is exclusively private and sender verified, this particular group exploit is not established. Test fixture’s group-shaped negative IDs show API permits configuration, not that real device uses it.
+### Root cause
+Authorization principal conflated with reply destination (`chat.id` prioritized over `from.id`) and chat type not checked.
+### Direct impact
+Any sender in allowed group can invoke group-OWNER commands at policy seam.
+### Secondary effects and interactions (upstream/downstream)
+Upstream D17 secrecy of owner ID does not establish human identity; downstream bootstrap/ratchet and, if D-002 noop fixed, capital-protective actions could be triggered by non-owner. G-008 USER `/lock` separately lacks even group check; G-011 nonce binding to chat rather than sender compounds shared-group risk. No real order effect demonstrated.
+### Contract and decisions
+`APEX_GEN5.md:1159-1163`: USER cannot operate emergency state, human capital actions need two-factor-protected account; `17913-17926`: Emergency OWNER-only. `PHASE2_DECISION_LOG.md:205` D17 chat IDs held only on phone and D20 watchdog chat = owner chat; neither permits using a group *destination* as verified human identity. Owner decision prevails over any UI convenience.
+### Frozen status and non-frozen alternative
+Gateway/access policy/config adapter non-frozen; no frozen engines, original params or store DDL change. OWNER mapping migration may need identity-confirmation on device (not secret disclosure).
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: bind authorized sender principal (`from.id`) plus private chat requirement for capital/emergency, destination remains reply target, reject channel_post/anonymous sender; tests with group OWNER IDs must change, existing group config may be denied pending owner re-enrolment, identity/audit hashes and cache keys change, no training/DB migration unless durable roles added. B: group policy with sender-specific allowlist and per-action MFA, more complexity and anonymity risk.
+### My recommendation
+A; first obtain device policy evidence without exposing chat IDs, then fail closed for non-private actions.
+### Acceptance and regression tests
+Group owner destination with foreign sender denied for message/callback/channel_post; private owner sender allowed; forward/anonymous malformed sender denied and logged; test group real Telegram semantics only with owner permission.
+
+## G-024
+### Auditor claim (short quote)
+Invalid callback handler error escapes `run_once`, outside poll-error handling, and interrupts cycle.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:664-695,800-827,834-859` (render unknown-screen raises, handle_callback dispatch), `gateway.py:277-309,385-422` (handler then offset update, catches only GatewayError around source poll), `paper_loop.py:955-985` (await gateway before position management), `test_ops_telegram_gateway.py:261-320`. Grep `SCREEN_UNKNOWN`, `poll_errors`, `run_once` apex/ops/scripts/tests. No generated callback is currently sent via keyboard (G-006).
+### Reproduction (command, probe file, actual result)
+`G-024.py/.out`: synthetic source yields `SCREEN:NOT_A_SCREEN` followed by `/myid`; actual gateway `run_once` raises `ControlPlaneError(SCREEN_UNKNOWN)`, `handled=[]`, `poll_errors=[]`, `offset=None`; second message unprocessed. No actual provider or venue.
+### Verdict and reasoning
+CONFIRMED S1 for uncontained handler exception and potential cycle interruption. Exploitability from real Telegram remains unverified because G-006 omits buttons and provider callback shape may restrict arbitrary payload; a stale/changed UI callback is still possible after wiring.
+### Root cause
+`try/except GatewayError` surrounds only `source.get_updates`; per-update `handle_update` and `_reply_from` are outside handler-error containment.
+### Direct impact
+One bad update aborts processing of subsequent updates, can abort `run_cycle` before manage_positions.
+### Secondary effects and interactions (upstream/downstream)
+Upstream malformed/stale callback or handler failure; downstream offset remains old, so G-013 replay risk increases; `paper_loop.run_cycle` may skip later position management; G-025 callback ack unavailable. No actual order cancellation or fill evidence.
+### Contract and decisions
+`APEX_GEN5.md:17747-17753`: Telegram failure/delay “must not block protective execution”; `18985-18987`: failed callback should be MESSAGE_UNACKED. `PHASE2_DECISION_LOG.md:194-210` D1 PAPER FSM/Telegram path, no override permitting exception to stop protection. Owner decision precedence intact.
+### Frozen status and non-frozen alternative
+Gateway/ControlPlane/PaperRuntime non-frozen; no risk engines/store DDL edits.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: isolate each update, audit/refuse expected ControlPlaneError, alert unexpected errors, continue protective cycle, advance durable offset only with recorded resolution; changes tests expecting propagated exception, introduces durable checkpoint if combined G-013, changes inbound audit/replay identity, no retraining. B: catch at `paper_loop.run_cycle` and continue position management, protects exits but leaves later updates/offset unresolved; temporary containment only.
+### My recommendation
+A plus B as defense in depth; never mark update acknowledged before an auditable refusal or safe recovery.
+### Acceptance and regression tests
+Invalid callback followed by valid update, synthetic handler raises, notifier fails; next update processed and management runs; poll_errors vs handler_errors separated; durable offset/restart semantics proven.
+
+## G-025
+### Auditor claim (short quote)
+Callback ID parsed but not acknowledged with Telegram callback-query API.
+### What I read (files, line ranges, functions, callers)
+`gateway.py:77-115,140-180,230-310,385-405` (`AiogramUpdateSource`, `extract_update`, `handle_update`, `run_once`), `signaling.py:506-568` (TelegramTransport only send_message/send_photo), `scripts/run_apex.py:839-856` reply notifier; `test_ops_telegram_gateway.py:166-240,261-320`; `grep -Rn 'answerCallbackQuery\|answer_callback_query\|callback_id\|MESSAGE_UNACKED' apex/telegram scripts/tests` yields only callback_id extraction, no ack/UNACKED consumer.
+### Reproduction (command, probe file, actual result)
+`G-025.py/.out`: real `AiogramUpdateSource` and Gateway with injected fake Bot whose `get_updates` returns valid `SCREEN:INFO` callback and whose `answer_callback_query` records calls: processed INFO and offset3, `callback_ack_calls=[]`. No real Telegram endpoint.
+### Verdict and reasoning
+CONFIRMED S2 for absent acknowledgement path; actual Telegram client spinner/timeout depends on provider, not measured. G-006 absent buttons limits current UI reachability, not correctness of callback handling once introduced.
+### Root cause
+Callback id extracted by normalizer but omitted from parsed record/transport action; notifier creates separate text message only.
+### Direct impact
+No explicit callback-query acknowledgement for success/refusal/error.
+### Secondary effects and interactions (upstream/downstream)
+Upstream clicks may remain pending; downstream repeated clicks can interact with G-011 nonce, G-013 replay and G-024 handler exceptions. A text reply delivery (G-004) is not callback ack; no order effects proven.
+### Contract and decisions
+`APEX_GEN5.md:18985-18987`: “Telegram callback: 1 callback per message; if callback fails, mark MESSAGE_UNACKED”; `17747-17753` Telegram downstream and must not block protective execution. `PHASE2_DECISION_LOG.md:194-210` D1 shared FSM path and D17 secret custody, no override of callback ack. Decisions prevail over contract prose if later revised.
+### Frozen status and non-frozen alternative
+Gateway/transport non-frozen, add ack method to injected bot/source adapter; no frozen engine/store/params.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: ack every callback exactly once with callback_id; distinguish ack from handler effect and sent text reply, persist/alert MESSAGE_UNACKED on failure; tests with fake bot/receipt change, durable ack state migration if persisted, identity/replay keys change, no model retraining. B: reply text only; does not fulfil provider callback protocol, insufficient.
+### My recommendation
+A coordinated with G-024 per-update containment and G-013 durable effect, avoid acknowledging unprocessed capital action as completed.
+### Acceptance and regression tests
+Bot double verifies ack for success/denial/invalid/replay and failure outcome MESSAGE_UNACKED; callback effect remains at-most-once across restart; actual provider behavior requires authorized device test.
+
+## G-028
+### Auditor claim (short quote)
+Empty transport response becomes synthetic message ID and `sent=True`.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:506-568,666-807` (`TelegramTransport`, `AiogramTransport`, `send`, `_record_outbox`); `scripts/run_apex.py:839-856` `_telegram_reply` consumes `SendResult.sent`; `gateway.py:261-275` delivery; `test_telegram_signaling.py:352-372`; grep `message_id`, `sent` consumers in apex/telegram/scripts.
+### Reproduction (command, probe file, actual result)
+`G-028.py/.out`: real SignalingPlane with injected transport responding `{}`: calls1, sent=True, state ACTIVE, quality Q2, UUIDv7 fallback message_id, outbox status SENT. `{}` is a deliberately incomplete test-double response, not an observed aiogram response or proof Telegram rejected the send.
+### Verdict and reasoning
+PARTIAL S2: absent provider receipt is mislabeled successful in the public adapter contract, but blueprint §9 also uses UUIDv7 for an internal `message_id`; an internally generated ID is not inherently invalid *if it is clearly separate from provider receipt*. Here that separation/receipt validation is absent. Real provider delivery remains device-evidence-needed, not rejected.
+### Root cause
+`response.get('message_id') or uuid_v7()` conflates provider acknowledgement and internal operational identity, sets success unconditionally if call does not raise.
+### Direct impact
+No receipt can be reported as delivered with fabricated ID.
+### Secondary effects and interactions (upstream/downstream)
+Upstream fake/real provider response schema; downstream G-004 delivered flag, G-014 outbox and G-017 dedup may trust invented success. No trading instruction or order changed; replay of ambiguous provider outcome requires UNKNOWN rather than blind retry.
+### Contract and decisions
+`APEX_GEN5.md:18029-18031`: return UUIDv7 message ID *if success*; `18089-18091`: “Message ID invalid | QX INVALID”; later row expects verification of invalid receipt and earlier example names internal UUIDv7, so owner should clarify dual identity. `PHASE2_DECISION_LOG.md:194-210` D1/17 do not override receipt semantics; decisions take precedence.
+### Frozen status and non-frozen alternative
+Signaling adapter/result non-frozen, no engine/store/params changes required; durable outbox migration G-014 could add distinct provider receipt column.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: distinguish immutable internal event UUIDv7 from optional provider receipt, validate provider schema, return UNKNOWN/INVALID on missing receipt with no invented success; changes tests/metrics/outbox identifiers, schema migration if receipts persisted, invalidates delivery caches not trading/model hashes; no retraining. B: treat empty response as transport success but mark receipt unknown; cannot claim `sent=True` confirmed, requires timeout reconciliation.
+### My recommendation
+A, preserving independent internal ID while reporting provider receipt truthfully.
+### Acceptance and regression tests
+`{}`, missing/null/invalid/valid receipt from synthetic transport, ack-after-timeout ambiguity, retry without duplicate send; provider-specific device behavior must be checked only through authorized read-only logs.
+
 ## New findings not in the audit
 
 ### X-V4-001 — repeated ledger queries have no selective indexes (S2, CONFIRMED plan shape; latency DEVICE-EVIDENCE-NEEDED)
@@ -902,10 +1037,10 @@ EXPLAIN on real DDL before/after migration with device indexes both absent/prese
 
 ## Rows not verified or incomplete
 
-**Not verified (9 IDs; no verdict/severity assignment, no coverage claim):** G-005, G-006, G-007, G-019, G-024, G-025, G-026, G-028, G-029. Their unquoted full report rows and their complete referenced functions/caller/callee graphs were **not** independently reviewed to the mandatory depth; targeted suite success does not verify any of them. G-001 would also require strict synthetic config isolation before a safe probe. Known ISSUE-073 overlaps G-002, not a blanket verdict on other G rows. Device-specific facts for all rows remain unavailable. Do not extrapolate this report to 41-row coverage.
+**Not verified (4 IDs; no verdict/severity assignment, no coverage claim):** G-005, G-019, G-026, G-029. Their unquoted full report rows and their complete referenced functions/caller/callee graphs were **not** independently reviewed to the mandatory depth; targeted suite success does not verify any of them. G-001 would also require strict synthetic config isolation before a safe probe. Known ISSUE-073 overlaps G-002, not a blanket verdict on other G rows. Device-specific facts for all rows remain unavailable. Do not extrapolate this report to 41-row coverage.
 
 **Depth limits for the 21 bounded findings above:** code slices and grep consumers are recorded, but full-file end-to-end semantic review of every referenced file (especially the entire 21k-line contract, `fsm.py`, `gateway.py`, `signaling.py`, `control_plane.py`, all five complete test files, and every transitive caller/callee) was not completed. Thus these are **bounded direct-behavior conclusions, not complete mandatory-depth closure**. The source report's Persian rows cited in their individual sections were read, but no real DB/model/device/transport was available. Query plans were on empty real schema with/without the two specified indexes; optimizer choices and p95 on device are unverified. No L1/L2 risk ladder or order placements were executed. A source-file review must precede any patch; this report is not approval to trade or change frozen files.
 
 ## Final counts
 
-Of 41 requested audit IDs: **28 CONFIRMED** (bounded direct behavior), **4 PARTIAL**, **0 REJECTED**, **0 DEVICE-EVIDENCE-NEEDED as sole verdict**, **9 NOT VERIFIED**. One additional finding X-V4-001: plan shape CONFIRMED, device impact pending. No row is claimed fully closed at the mandatory exhaustive-depth standard. These counts exclude tests and known-owner items outside the 41-ID scope.
+Of 41 requested audit IDs: **32 CONFIRMED** (bounded direct behavior), **5 PARTIAL**, **0 REJECTED**, **0 DEVICE-EVIDENCE-NEEDED as sole verdict**, **4 NOT VERIFIED**. One additional finding X-V4-001: plan shape CONFIRMED, device impact pending. No row is claimed fully closed at the mandatory exhaustive-depth standard. These counts exclude tests and known-owner items outside the 41-ID scope.

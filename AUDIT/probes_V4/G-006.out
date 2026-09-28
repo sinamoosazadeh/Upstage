@@ -1,0 +1,4 @@
+gateway_route= COMMAND sent_arg_counts= [2] has_keyboard_argument= False
+first_button= {'text': '📈 Trading', 'callback_data': 'MAIN_MENU:TRADING'} back_button= {'text': '🔙 Back', 'callback_data': 'MAIN_MENU:BACK'}
+callback= MAIN_MENU:TRADING result= {'ok': False, 'action': 'MAIN_MENU', 'reason': 'ACTION_UNKNOWN', 'role': 'OWNER'}
+callback= MAIN_MENU:BACK result= {'ok': False, 'action': 'MAIN_MENU', 'reason': 'ACTION_UNKNOWN', 'role': 'OWNER'}
