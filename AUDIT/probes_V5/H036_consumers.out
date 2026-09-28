@@ -1,0 +1,16 @@
+apex/research/backtest.py:354:def cvar_bootstrap(returns: Sequence[float], *, paths: int = MC_PATHS,
+apex/research/governance.py:148:       owner="apex.risk.kernel.cvar_advisory"),
+apex/research/proxies.py:124:       "Q1", "apex.risk.kernel", "cvar_bootstrap", "IMPLEMENTED"),
+apex/risk/kernel.py:365:         cvar_fraction: Optional[float] = None) -> Dict[str, Any]:
+apex/risk/kernel.py:377:    if (cvar_fraction is not None
+apex/risk/kernel.py:378:            and float(cvar_fraction) > DEFAULT_CVAR_CAP_FRACTION):
+apex/risk/kernel.py:491:               cvar_fraction=risk_input.get("cvar_fraction"))
+apex/risk/kernel.py:607:def cvar_advisory(*, cvar_fraction: float, risk_state: str) -> Dict[str, Any]:
+apex/risk/kernel.py:614:    if float(cvar_fraction) <= DEFAULT_CVAR_CAP_FRACTION:
+tests/unit/test_research_backtest.py:152:        out = bt.cvar_bootstrap([0.01, -0.02, 0.03, -0.01, 0.02], paths=300,
+tests/unit/test_risk_kernel.py:320:    def test_cvar_advisory_downgrade_reaches_sizing(self):
+tests/unit/test_risk_kernel.py:324:                   risk_state="MediumRisk", cvar_fraction=0.05)
+tests/unit/test_risk_kernel.py:436:        from apex.risk.kernel import cvar_advisory
+tests/unit/test_risk_kernel.py:437:        ok = cvar_advisory(cvar_fraction=0.04, risk_state="LowRisk")
+tests/unit/test_risk_kernel.py:439:        bad = cvar_advisory(cvar_fraction=0.041, risk_state="LowRisk")
+tests/unit/test_risk_kernel.py:441:        top = cvar_advisory(cvar_fraction=1.0, risk_state="CriticalRisk")

@@ -39,7 +39,7 @@
 | H-033 | CONFIRMED | S1 | S2 | Partial | = W.6 cursor never rewinds; CP9-007 mirror exists, but status/payload lack stale-generation guards | A — add per-run generation/CAS protection for status and payload while retaining monotone cursor; preserve intentional resume transitions and CP13 evidence carry-forward. Non-frozen checkpoint/wiring only. |
 | H-034 | CONFIRMED | S2 | S2 | No | = D58 for NOT_WIRED; delta: standalone estimate accepts incomplete components | A — validate complete component provenance/quality and make insufficient data unavailable; keep composite unwired per D58. Non-frozen logistic implementation but adapter alternative exists; forecast identities/calibration outputs change, no DB migration until persistence is added. |
 | H-035 | PARTIAL | S2 | S2 | No | = Ch.13 §13.1/T_FORECAST_INV; forecast object is serializable but invalidation has no production caller or durable lifecycle | A — retain the immutable invalidation rule and wire an owner-approved forecast lifecycle adapter with durable lineage; do not imply current PaperPlanBridge traces are persistent. D54 remains open and is not silently resolved. |
-| H-036 | UNVERIFIED | S2 | — | Yes | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-036 | CONFIRMED | S2 | S2 | Yes | = APEX_GEN5 §15 tail-risk contract; signed return-tail statistic is not the positive portfolio-loss fraction consumed by Risk Kernel | A — keep frozen backtest helper semantics unchanged; add an approved adapter that derives/validates positive portfolio-loss CVaR from current positions/correlation/window and records provenance before passing it to the Risk Kernel. No current PAPER risk input is wired. |
 | H-037 | PARTIAL | S2 | S2 | No | — | A — document independence as an assumption or use dependence-aware effective sample/cluster interval. Promotion protocol is non-frozen but contract Z.2 is normative; owner decision required before changing statistical acceptance, recompute all family gates and do not treat ATR as proof. |
 | I-001 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-002 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -110,7 +110,7 @@ Baseline source files were not changed. Selected actual-repository probes are in
 | H-033 | CONFIRMED | S1 | S2 | Partial | = W.6 cursor never rewinds; CP9-007 mirror exists, but status/payload lack stale-generation guards | A — add per-run generation/CAS protection for status and payload while retaining monotone cursor; preserve intentional resume transitions and CP13 evidence carry-forward. Non-frozen checkpoint/wiring only. |
 | H-034 | CONFIRMED | S2 | S2 | No | = D58 for NOT_WIRED; delta: standalone estimate accepts incomplete components | A — validate complete component provenance/quality and make insufficient data unavailable; keep composite unwired per D58. Non-frozen logistic implementation but adapter alternative exists; forecast identities/calibration outputs change, no DB migration until persistence is added. |
 | H-035 | PARTIAL | S2 | S2 | No | = Ch.13 §13.1/T_FORECAST_INV; forecast object is serializable but invalidation has no production caller or durable lifecycle | A — retain the immutable invalidation rule and wire an owner-approved forecast lifecycle adapter with durable lineage; do not imply current PaperPlanBridge traces are persistent. D54 remains open and is not silently resolved. |
-| H-036 | UNVERIFIED | S2 | — | Yes | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-036 | CONFIRMED | S2 | S2 | Yes | = APEX_GEN5 §15 tail-risk contract; signed return-tail statistic is not the positive portfolio-loss fraction consumed by Risk Kernel | A — keep frozen backtest helper semantics unchanged; add an approved adapter that derives/validates positive portfolio-loss CVaR from current positions/correlation/window and records provenance before passing it to the Risk Kernel. No current PAPER risk input is wired. |
 | H-037 | PARTIAL | S2 | S2 | No | — | A — document independence as an assumption or use dependence-aware effective sample/cluster interval. Promotion protocol is non-frozen but contract Z.2 is normative; owner decision required before changing statistical acceptance, recompute all family gates and do not treat ATR as proof. |
 | I-001 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-002 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -1399,39 +1399,38 @@ Retain all seven reason/immutability tests. Compose producer → PaperPlanBridge
 ### Auditor claim (short quote)
 Bootstrap CVaR is a signed tail mean, not positive portfolio loss validated at the risk boundary.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers/callees)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: complete frozen `cvar_bootstrap` in `apex/research/backtest.py:354–375`; complete Risk Kernel `size`, `adjudicate`, and `cvar_advisory` in `apex/risk/kernel.py:365–430,468–503,607–621`; full production context construction in `apex/ops/engine_context.py:1829–2001`, full forecast/risk/plan segment in `apex/ops/plan_bridge.py:912–975`, `scripts/run_apex.py` composition at `:745–765`, and `PaperRuntime._resolve_plan`/`execute_plan` at `paper_loop.py:644–695`. `grep -RIn` for `cvar_bootstrap`, `cvar_fraction`, and `cvar_advisory` across `apex`, `scripts`, and `tests` is saved in `H036_consumers.out`. Tests read in full: `TestMonteCarlo.test_cvar_is_the_left_tail`, `TestSizingMachine.test_cvar_advisory_downgrade_reaches_sizing`, and `TestMarginAndTail.test_cvar_is_advisory_only`. Normative APEX_GEN5 §15 tail-risk contract `:16851–16857` and relevant Risk Kernel interface were checked. No SQL row/cell/bar query or database persistence is implicated.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+`H036_cvar_boundary.py` uses the real frozen helper on `[0.01,-0.02,0.03,-0.01,0.02]` with seed 7 and 300 paths; it returns `cvar=-0.0088`, a signed mean of bootstrapped lower-tail period returns. The real Risk Kernel `size()` leaves the state at `MediumRisk` for `cvar_fraction=-0.05` and missing input, but downgrades it to `HighRisk` for positive `0.05`. Raw output: `H036_cvar_boundary.out`. The helper test only asserts `cvar <= 0` and path count; the risk tests pass a positive scalar and check the 4% threshold/downgrade, not origin, sign, portfolio positions, correlation, or window. All 121 tests in `tests/unit/test_research_backtest.py` and `tests/unit/test_risk_kernel.py` pass (`H036_pytest_full.out`). There are no cvar references in `scripts/run_apex.py`, `paper_loop.py`, `engine_context.py`, or `plan_bridge.py`; the production context’s risk mapping contains no `cvar_fraction`, and the plan bridge forwards the supplied risk mapping to `adjudicate`. No device/account/order was used.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**CONFIRMED, independent severity S2.** `cvar_bootstrap` returns a signed return-series tail mean. The risk interface expects a separate caller-supplied positive `cvar_fraction`; `size()` compares it with the threshold but does not reject negative/nonfinite values or bind it to the frozen bootstrap result. The audit confirms an interface/meaning and validation gap. However, the production PAPER composition does not supply a CVaR value at all, and no production consumer of the research helper was found. Therefore no active PAPER/LIVE sizing failure or order consequence is established; the finding is bounded to the helper/API contract.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+The frozen helper bootstraps means of resampled raw return observations, sorts them, and returns the mean of the lower `(1-level)` tail under the key `cvar`. This is a signed return statistic, not a loss fraction of capital for the current portfolio. Separately, Risk Kernel `size`/`cvar_advisory` accept optional `cvar_fraction` and treat values above the 4% cap as a one-level downgrade; no adapter converts, validates, or provenance-binds the research helper output. In current production context, the risk map omits this optional key entirely.
 
 ### Direct impact
-Not determined.
+A consumer that mislabels the negative research return-tail as a positive loss fraction would pass a negative number and receive no downgrade; an arbitrary positive scalar would trigger one regardless of source. The unit tests demonstrate those separated semantics. No current production call does this, so the probe demonstrates the exposed API gap only, not an actual under-sized or over-sized production plan.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Research input is a sequence of returns and a bootstrap seed/path count; it does not model current positions and their correlation records as specified in the risk contract. Downstream, production EngineContextProducer builds a risk mapping from live PAPER account/market/context fields without `cvar_fraction`; `PaperPlanBridge` passes that map to Risk Kernel adjudication and PaperRuntime only consumes its resulting TradePlan. The absent CVaR wiring means there is no present training/cache/hash, ledger, execution, or order consequence proved. Adding it could change ladder multiplier and quantity, which would affect plan identity, replay, and PAPER sizing evidence. No device query-plan evidence applies.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 §15 (`:16851–16857`) requires weekly portfolio `CVaR_95` from the Monte-Carlo battery using current positions and correlation records; above the governed fraction of capital (default 4%) it downgrades the risk ladder one level, and computation/window/assumptions are recorded. `backtest.py:cvar_bootstrap` instead defines A10 over a return series and returns the signed tail mean; its unit test checks left-tail sign only. Risk Kernel tests prove behavior only after a positive `cvar_fraction` is supplied. No owner decision was found redefining the return-tail mean as portfolio loss or authorizing the missing production connection. The frozen backtest constraint bars changing the helper in this audit.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`apex/research/backtest.py` is frozen. Risk Kernel, `engine_context.py`, and `plan_bridge.py` are non-frozen, while `scripts/run_apex.py` and `paper_loop.py` are also editable but should remain composition-only. Keep the research helper’s signed statistic unchanged. A non-frozen portfolio-CVaR provider/adapter can consume current position exposure and correlation records, compute positive loss/capital semantics with governed weekly PIT boundaries, validate finite/nonnegative values, persist computation/window/assumptions, and pass a typed result to the risk boundary. Do not imply current PAPER is already connected.
 
 ### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+A: add a distinct `portfolio_cvar_fraction` result type/provider in the non-frozen risk integration layer, explicitly deriving positive loss fraction from current positions/correlation and binding to the weekly window and seed/assumptions; have the kernel reject missing provenance, negative, NaN, or infinity before sizing. This introduces account/position dependencies, persistent evidence and replay identity changes, and may lower risk state/quantity; verify the exact current-position and denominator semantics with the owner. B: document the current bootstrap helper as a research-only return-tail utility and leave the normative risk CVaR marked unwired until the portfolio provider is approved. Neither option changes frozen `backtest.py`; option A requires PAPER risk/plan replay updates and downstream sizing acceptance.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Preserve the frozen helper’s signed return-tail meaning. Do not pass it directly as `cvar_fraction`. Track normative portfolio CVaR as unwired in the current production composition; implement a separately named, owner-approved portfolio-loss provider before claiming the §15 control is active. Keep source read-only in this audit.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Retain both helper left-tail and Risk Kernel threshold tests, then test a full synthetic portfolio with explicit positions, correlation, capital denominator, weekly PIT window, bootstrap seed, and persisted assumptions. Assert positive loss fraction, exact 4% boundary, one-level downgrade only above the boundary, and fail-closed behavior for negative/NaN/infinite/missing provenance. Compose EngineContextProducer → PaperPlanBridge → Risk Kernel and prove the typed result reaches sizing once; assert no downgrade when the provider is explicitly unavailable only under an approved policy, and no live venue call. Re-run backtest/risk suites and deterministic replay with/without the portfolio-CVaR receipt; no frozen file diff.
 
 ## H-037
 
@@ -2176,9 +2175,9 @@ Acceptance: on a fresh checkout without f14be36, the test can execute determinis
 
 ## Rows not verified or incomplete
 
-No coverage claim is made for the following 18 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
+No coverage claim is made for the following 17 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
 
-`H-036, I-001, I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
+`I-001, I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
 
 Rows with a non-UNVERIFIED status were independently evidenced only to the exact scope stated in their sections. Synthetic tests do not establish real data/device/model behavior. H-002/H-003/H-005/H-006/H-007/H-011/H-013 have new bounded real-function probe evidence in this continuation; untested integration/device assertions remain explicitly excluded. H-004 is PARTIAL as above; H-022 and H-034 retain their prior partial caller/governance/integration review caveat. Full V5 acceptance requires completing all remaining unverified rows, mandatory caller/callee and test reads, and relevant SQLite plan checks where applicable.
 
@@ -2186,10 +2185,10 @@ Rows with a non-UNVERIFIED status were independently evidenced only to the exact
 
 | Verdict | Count |
 |---|---:|
-| CONFIRMED | 27 |
+| CONFIRMED | 28 |
 | PARTIAL | 9 |
 | REJECTED | 0 |
-| UNVERIFIED / incomplete | 18 |
+| UNVERIFIED / incomplete | 17 |
 | DEVICE-EVIDENCE-NEEDED | 0 (no real-device dependent claim was assigned this verdict; device evidence was not obtained) |
 
-New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle).
+New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle); H-036 (signed return-series CVaR helper is not positive portfolio-loss CVaR and is unwired from production sizing).

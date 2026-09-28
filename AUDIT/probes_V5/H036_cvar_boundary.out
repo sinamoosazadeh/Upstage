@@ -1,0 +1,11 @@
+{
+  "research_cvar": {
+    "cvar": -0.008800000000000004,
+    "level": 0.95,
+    "paths": 300,
+    "seed": 7
+  },
+  "risk_kernel_risk_state_missing_input": "MediumRisk",
+  "risk_kernel_risk_state_negative_input": "MediumRisk",
+  "risk_kernel_risk_state_positive_input": "HighRisk"
+}
