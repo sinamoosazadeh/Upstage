@@ -1,0 +1,11 @@
+phase1 boot_state=DEGRADED new_trades_allowed=False
+phase1 cycle1: due=1 complete=0 halted=1 halted_reasons={'BOOT_NOT_READY': 1}
+phase1 cursor after HALTED cell: {'BTCUSDT:1h': 1767229200000} (expected close_ms=1767229200000)
+phase1 adapter submissions: 0
+phase1 runtime.trades: []
+phase2 boot_state=READY new_trades_allowed=True
+phase2 cycle2 SAME close: due=0 skipped_already_decided=1 halted=0 complete=0
+phase2 adapter submissions: 0 (0 == the halted close was never reconsidered)
+phase3 cycle3 NEXT close: due=1 halted_reasons={} complete=1
+phase3 cursor: {'BTCUSDT:1h': 1767232800000}
+CLAIM_REPRODUCED=True

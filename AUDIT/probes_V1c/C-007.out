@@ -1,0 +1,10 @@
+boot_state=READY
+cycle: due=1 complete=1 halted=0 halt_reasons={}
+len(cycle['trades'])=1 (these are COMPLETE CellRuns, not fills)
+runtime.trades[-1]: submitted=False outcome=REJECTED reason=REFUSED_BEFORE_SUBMISSION fill=None state=REJECTED
+refusals recorded: 3
+adapter real round-trips: submitted=[] queries=[{'scope': 'open', 'symbol': None, 'client_order_id': None}, {'scope': 'fills', 'symbol': None, 'client_order_id': None}]
+run() outcome: cycles=1 trades=1 refusals=3 open=[] boot_state=READY chain=True
+-> outcome['trades']==1 although 0 orders left the process
+serve exit rule (code, run_apex.py:806): EXIT_READY iff boot['boot_state']=='READY' -> here 'READY' => EXIT_READY regardless of refusals=3
+CLAIM_REPRODUCED=True

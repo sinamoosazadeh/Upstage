@@ -1,0 +1,13 @@
+boot_state=READY trading_enabled=True
+cycle1: due=1 halted=1 status=HALTED reason=STAGE_FAILED:execution
+cycle1 failed-stage detail: 'OSError: simulated pre-send transport failure (no bytes sent)'
+budget after cycle1: _budget_taken=1 (D51 says a not-sent submission releases the slot -> expected 0)
+materialized trade_plan rows after cycle1: {'materialized': 1, 'sent': 1}
+ledger events cycle1: ['TRADE_PLAN', 'FSM_TRANSITION']
+cell2 _stage_execution: CellRefusal reason=TRADE_BUDGET_REACHED detail=max_trades_per_cycle=1
+adapter submit calls so far: BTC attempt=[] (empty: the venue never saw anything; ETH never tried)
+cursor after cycle1: {'BTCUSDT:1h': 1767229200000}  (BTC close locked despite HALT)
+cycle2 fresh budget: halt_reasons={'PLAN_CELL_MISMATCH': 1} 
+cycle2 fresh budget: complete=0 halted=1 _budget_taken=0
+ledger chain intact: True
+CLAIM_REPRODUCED=True
