@@ -1,0 +1,63 @@
+apex/ops/engine_context.py:569:                           "max_bars_per_cell"}:
+apex/ops/engine_context.py:571:        if window["max_bars_per_cell"] is not None and (
+apex/ops/engine_context.py:572:                type(window["max_bars_per_cell"]) is not int or window["max_bars_per_cell"] <= 0):
+apex/ops/engine_context.py:573:            raise ValueError("max_bars_per_cell")
+apex/ops/engine_context.py:1736:    observations in ascending open order (see training_dep_window) covering
+apex/ops/engine_context.py:2040:        window = await self.window(symbol, timeframe, as_of, bars)
+apex/ops/engine_context.py:2152:        window = await self.window(symbol,"1h",as_of,30*24+int((end_ms-midnight)//3600000)+1)
+apex/ops/engine_context.py:2301:        window = await self.window(symbol, timeframe, as_of, int(rows[0]))
+apex/ops/engine_context.py:2408:    async def training_dep_window(self, symbol: str, timeframe: str, *,
+apex/ops/engine_context.py:2419:        return await self.window(symbol, timeframe, _ms_to_iso(close_to_ms), count) if count else []
+apex/ops/engine_context.py:2425:            window = await self.window(symbol, timeframe, as_of, 301)
+apex/ops/engine_context.py:2945:                         max_bars_per_cell: int | None = DEFAULT_MAX_BARS_PER_CELL,
+apex/ops/engine_context.py:2956:    max_bars = training_bar_cap(max_bars_per_cell)
+apex/ops/engine_context.py:3001:def training_bar_cap(value: int | None) -> int | None:
+apex/ops/engine_context.py:3014:         "max_bars_per_cell": max_bars}).encode()).hexdigest()
+apex/ops/engine_context.py:3033:         "max_bars_per_cell": max_bars}).encode()).hexdigest()
+apex/ops/engine_context.py:3116:                           max_bars_per_cell: int | None = DEFAULT_MAX_BARS_PER_CELL,
+apex/ops/engine_context.py:3134:    max_bars = training_bar_cap(max_bars_per_cell)
+apex/ops/engine_context.py:3159:        window = await producer.window(symbol, timeframe, _ms_to_iso(end_ms), int(count)) if count else []
+apex/ops/engine_context.py:3192:            dep_rows[dep_tf] = await producer.training_dep_window(
+apex/ops/engine_context.py:3241:            "closed_bars": len(window), "max_bars_per_cell": max_bars,
+apex/ops/engine_context.py:3254:                       "max_bars_per_cell": max_bars}
+apex/ops/engine_context.py:3295:                symbols=symbols, max_minutes=max_minutes, max_bars_per_cell=max_bars,
+apex/ops/engine_context.py:3315:        max_minutes=DEFAULT_TRAINING_MAX_MINUTES, max_bars_per_cell=None,
+apex/ops/engine_context.py:3334:                                    training_bar_cap(max_bars_per_cell), cache_arg, profile))
+apex/ops/engine_context.py:3412:                "max_bars_per_cell"):
+scripts/run_apex.py:863:                         max_bars_per_cell: Optional[int] = None,
+scripts/run_apex.py:875:                                         max_bars_per_cell=max_bars_per_cell,
+scripts/run_apex.py:949:                     max_bars_per_cell: Optional[int] = None,
+scripts/run_apex.py:975:            max_bars_per_cell=max_bars_per_cell, profile=profile, progress=progress)
+scripts/run_apex.py:1137:                                             max_bars_per_cell=args.max_bars_per_cell))
+scripts/run_apex.py:1142:                                         max_bars_per_cell=args.max_bars_per_cell, profile=args.profile))
+tests/integration/test_cp14_producer.py:195:        before=await source.window('BTCUSDT','1d',ASOF,300)
+tests/integration/test_cp14_producer.py:199:        after=await source.window('BTCUSDT','1d',ASOF,300)
+tests/unit/test_engine_context.py:591:                         "max_bars_per_cell": None},
+tests/unit/test_engine_context.py:649:            window = await producer.window("BTCUSDT", "1h", "2026-01-01T02:00:00.000Z", 10)
+tests/unit/test_engine_context.py:1093:            recovered = (await producer.window("BTCUSDT", "1h", "2026-01-01T01:00:00.000Z", 10))[0]
+tests/unit/test_engine_context.py:1098:            assert len(await producer.window("BTCUSDT", "1h", "2026-01-01T02:00:00.000Z", 10)) == 1
+tests/unit/test_engine_context.py:1099:            assert len(await producer.window("BTCUSDT", "1h", "2026-01-01T03:00:00.000Z", 10)) == 2
+tests/unit/test_engine_context.py:1827:    assert EC.training_bar_cap(None) is None
+tests/unit/test_engine_context.py:1828:    assert EC.training_bar_cap(1000) == 1000
+tests/unit/test_engine_context.py:1831:            EC.training_bar_cap(bad)
+tests/unit/test_engine_context.py:1849:               "max_bars_per_cell": None, "vector_keys": list(EC.E11.VECTOR_KEYS),
+tests/unit/test_engine_context.py:1904:                                          max_bars_per_cell=100, cache_dir=cache)
+tests/unit/test_engine_context.py:1949:                rows = await producer.training_dep_window(
+tests/unit/test_engine_context.py:1955:                    live = await producer.window("BTCUSDT", tf, as_of, 301)
+tests/unit/test_engine_context.py:2130:        assert report["training_window"]["max_bars_per_cell"] == 3
+tests/unit/test_engine_context.py:2138:        assert json.loads(uncapped.stdout)["training_window"]["max_bars_per_cell"] is None
+tests/unit/test_engine_context.py:2552:                window = await producer.window("BTCUSDT", "1h", EC._ms_to_iso(now_ms), 120)
+tests/unit/test_engine_context.py:2560:                    dep_rows[tf] = await producer.training_dep_window(
+tests/unit/test_engine_context.py:2572:                    "closed_bars": len(window), "max_bars_per_cell": None,
+tests/unit/test_engine_context.py:2880:        "max_bars_per_cell": None, "vector_keys": list(EC.E11.VECTOR_KEYS),
+tests/unit/test_engine_context.py:2884:                                     max_bars_per_cell=None, cache_dir=tmp_path)
+tests/unit/test_engine_context.py:2891:    for scope in ({"symbols": "BTCUSDT,ETHUSDT", "max_bars_per_cell": None},
+tests/unit/test_engine_context.py:2892:                  {"symbols": "BTCUSDT", "max_bars_per_cell": 168}):
+tests/unit/test_engine_context.py:2901:                                max_bars_per_cell=168, cache_dir=tmp_path)
+tests/unit/test_engine_context.py:2927:            "max_bars_per_cell": None, "vector_keys": list(EC.E11.VECTOR_KEYS),
+tests/unit/test_engine_context.py:3057:            "max_bars_per_cell": None,
+tests/unit/test_engine_context.py:3196:        "max_bars_per_cell": None,
+tests/unit/test_engine_context.py:3311:                "max_bars_per_cell", "vector_keys", "samples", "excluded",
+tests/unit/test_engine_context.py:3314:         "max_bars_per_cell", "vector_keys", "samples", "excluded",
+tests/unit/test_engine_context_store_sources.py:73:            await source.window(obs.symbol, obs.timeframe, EC._ms_to_iso(receipt), 1)
+tests/unit/test_engine_context_store_sources.py:216:                for obs in await source.window("ETHUSDT",tf,asof,300):

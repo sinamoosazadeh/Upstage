@@ -1,0 +1,42 @@
+{
+  "absent": {
+    "Q": "Q4",
+    "T": null,
+    "base_rates": {},
+    "state": "EXPANSION",
+    "xi": [
+      0.1111111111111111,
+      0.1111111111111111,
+      0.1111111111111111,
+      0.1111111111111111,
+      0.1111111111111111,
+      0.1111111111111111,
+      0.1111111111111111,
+      0.1111111111111111,
+      0.1111111111111111
+    ]
+  },
+  "explicit_n0": {
+    "Q": "Q3",
+    "T": null,
+    "base_rates": {
+      "EXPANSION": {
+        "k": 0,
+        "n": 0,
+        "p": null,
+        "wilson_ci": null
+      }
+    },
+    "state": "EXPANSION"
+  },
+  "producer_context_keys_from_source": [
+    "candles",
+    "W",
+    "b",
+    "classifier_artifact_sha256",
+    "history",
+    "mu0",
+    "Sigma0",
+    "prev_mom"
+  ]
+}

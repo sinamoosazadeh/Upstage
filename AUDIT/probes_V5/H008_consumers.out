@@ -1,0 +1,33 @@
+apex/ops/bootstrap_service.py:44:* the OI policy is ``oi_state=MISSING`` (the klines endpoint carries no OI
+apex/ops/bootstrap_service.py:642:        # the ingest labels the rows oi_state=MISSING (never a fabricated 0).
+apex/ops/bootstrap_service.py:1043:                              timeframe: str, *, oi_state: str = "MISSING"
+apex/ops/bootstrap_service.py:1045:    """``await store.ingest_raw(obs, oi_state)`` per row.
+apex/ops/bootstrap_service.py:1064:        await store.ingest_raw(obs, oi_state)
+apex/ops/bootstrap_service.py:1069:            "oi_state": oi_state, "contract_version": CONTRACT_VERSION}
+apex/ops/engine_context.py:1230:def participation_input(volume_z: float, oi_z: float | None, oi_state: str) -> dict[str, Any]:
+apex/ops/engine_context.py:1232:    if oi_state not in ("AVAILABLE", "MISSING", "STALE", "INVALID", "DEGRADED"):
+apex/ops/engine_context.py:1236:    partial = oi_state != "AVAILABLE"
+apex/ops/engine_context.py:1240:    return {"participation_raw": raw, "oi_state": oi_state,
+apex/ops/engine_context.py:1241:            "contributing_features": {"participation": "PARTIAL" if partial else "COMPLETE"}}
+apex/ops/engine_context.py:1519:                     "tf_seconds": duration, "bos_event": bos, "oi_state": vol.oi_state}
+apex/ops/engine_context.py:1523:                          oi_state=vol.oi_state)
+apex/ops/engine_context.py:1537:    part = participation_input(vol.volume_z, vol.oi_z, vol.oi_state)
+apex/ops/engine_context.py:1755:        result.append(replace(obs, oi_lag_seconds=oi_lag))
+apex/ops/engine_context.py:1781:            ("raw", "SELECT m.observation_id,m.raw_payload_hash,r.availability_time,r.oi_timestamp,r.oi_state "
+apex/ops/engine_context.py:1986:            "oi_lag_seconds":oi_lag,"oi_lag_threshold_seconds":load_params()["quality_weights"]["oi_lag_threshold_seconds"][timeframe],
+apex/ops/engine_context.py:2078:                measured = replace(obs, **measurements, oi_lag_seconds=lag)
+apex/ops/engine_context.py:2382:            "r.availability_time,r.oi_timestamp,r.oi_state FROM market_observation m "
+apex/ops/engine_context.py:2403:            result.append(replace(obs, availability_time=row[4], oi_timestamp=row[5], oi_lag_seconds=oi_lag))
+apex/ops/engine_context.py:2405:                "observation_id": row[1], "oi_state": row[6], "availability_time": row[4]}
+apex/ops/engine_context.py:2435:        native_input = [{k:v for k,v in o.to_dict().items() if k != "oi_lag_seconds"} for o in window]
+apex/ops/engine_context.py:2461:        signatures = [canonical_json({k:v for k,v in o.to_dict().items() if k != "oi_lag_seconds"}) for o in window]
+apex/ops/engine_context.py:2481:            source_window = [replace(o,oi_lag_seconds=(max(0.,(_iso_to_ms(as_of)-_iso_to_ms(o.oi_timestamp))/1000)
+apex/ops/engine_context.py:3029:        return {k: v for k, v in obs.to_dict().items() if k != "oi_lag_seconds"}
+apex/ops/engine_context.py:3647:             "volume, oi, oi_timestamp, oi_state, status, content_hash, source, "
+apex/ops/engine_context.py:3666:        (event_id, as_of, sym, tf, o, h, l, c, volume, oi, oi_ts, oi_state,
+apex/ops/engine_context.py:3841:    obs = replace(observation, **measurements, delay_seconds=delay, oi_lag_seconds=lag)
+apex/ops/plan_bridge.py:161:    "oi_lag_seconds",
+apex/risk/kernel.py:255:    check(8, float(risk_input.get("oi_lag_seconds", 0.0))
+apex/risk/kernel.py:257:          {"oi_lag": risk_input.get("oi_lag_seconds"),
+scripts/run_apex.py:553:        _say(f"  oi policy: {result.get('oi_policy', 'oi_state=MISSING (never 0)')}")
+scripts/run_nfr_harness.py:124:        "freshness_sla_seconds": 30.0, "oi_lag_seconds": 5.0,

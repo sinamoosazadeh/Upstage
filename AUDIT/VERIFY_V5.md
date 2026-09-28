@@ -7,15 +7,15 @@
 | H-001 | CONFIRMED | S1 | S1 | No | = ISSUE-076; delta: required per-cell G-PAPER-001 receipt/envelope details | A — implement the normative replay CLI as a non-network, read-only runner; CP-15 owns it. No frozen file change if composed outside backtest; acceptance hashes change only when replay outcome changes. |
 | H-002 | CONFIRMED | S1 | S1 | Partial | = D21; independent producer persistence gap; R-019 is separate | A — preserve prior confirmed E11 state across chronologically ordered calls/restarts, keyed by symbol/timeframe/artifact and PIT; separately test journal vs EvidenceEvent so R-019 is not conflated. Non-frozen producer/state adapter; no frozen engine edit. Re-run deterministic replay and restart/correction tests. |
 | H-003 | CONFIRMED | S1 | S1 | Yes | = D21 + E11 §3.8 shock-gap; training/inference projection parity delta | A — share the governed gap-adjusted projection before training X/rule0 and runtime EWMA/softmax, or obtain an explicit owner ruling for divergence. E11 engine is frozen: no edit without authorization; training-side alternative changes labels/features and invalidates cache, fitted W/b, and replay evidence. |
-| H-004 | UNVERIFIED | S1 | — | Partial | — | No recommendation until contract necessity for T/base-rate in PAPER is independently verified. |
+| H-004 | PARTIAL | S1 | S2 | Partial | E11 §§1.2, 3.4–3.9, 8.5; D21/D23/D49 do not identify runtime source | A — obtain owner decision on the PIT T and outcome/BaseRate source; until then represent unavailable separately and do not synthesize counts. E11 engine is frozen; adapter-only provider option, or owner-approved schema contract. Revalidate quality/replay if inputs change. |
 | H-005 | CONFIRMED | S1 | S1 | Partial | = D35 cache compatibility; D47 digest is artifact-only, not cache identity | A — add governed code/feature-policy identity to cache namespace/input manifest only with owner approval; preserve D35 resume behavior and prove old cache invalidation. Non-frozen changes; invalidates cache files and affected samples/artifacts, not raw data. |
 | H-006 | CONFIRMED | S2 | S2 | No | = D47 hash scope; provenance sidecar absent | A — retain D47 artifact_sha256 meaning, add independently authenticated provenance manifest binding sample count, query, cell scope and time window; reject mismatches. New schema/identity needs owner approval and invalidates downstream fit evidence, not the frozen E11 code. |
 | H-007 | CONFIRMED | S1 | S1 | Partial | = D21 PIT t−48 + D47 schema; historical version selection absent | A — publish model fit/deploy/label-maturity time and select only a version available at the requested as_of; replay must use walk-forward versions. Non-frozen loader/producer adapter; no D47 hash redefinition. Historical decisions and replay hashes require recomputation. |
-| H-008 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-008 | PARTIAL | S1 | S2 | No | = D23; PAPER context refuses when latest OI is absent, before risk input | A — retain named OI-unavailable refusal; add producer/bridge regression proving no risk decision with missing OI, while preserving D23 E11 partial-quality behavior. Non-frozen producer/adapter only; do not relax refusal or change frozen engines. |
 | H-009 | CONFIRMED | S1 | S2 | Yes | D6/P4 (Phase-2 entry gate) | A — validate structured replay receipt and critical failures before defaults_active; persist a receipt. Non-frozen bootstrap adapter/service alternative; existing tests expecting arbitrary callbacks to activate will need tightening. |
-| H-010 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-010 | PARTIAL | S1 | S2 | No | = D30 effective/requested scope is not a per-cell yield guarantee | A — keep selected-scope semantics; expose per-cell contributing sample counts in the final report/provenance if owners require realized coverage. No E11/frozen change; preserve the 20-cell default and nine-class refusal. |
 | H-011 | CONFIRMED | S1 | S1 | Partial | = D35 cache resume; distinct from H-005 identity | A — validate/attest cached sample payload against recomputation or an owner-approved manifest before it can enter fit; malformed or tampered-but-well-shaped payload must miss/refuse. Preserve D35 resume only for verified payloads; recompute affected cells and invalidate affected model evidence. |
-| H-012 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-012 | PARTIAL | S1 | S2 | Partial | = D35 bar cap; CP-15 ISSUE-076 owns index work, not caller-side cap pushdown | A — pass the cap into the non-frozen training read path before window/lineage materialization, while retaining latest-N semantics and cache identity. Frozen SQLiteStore stays untouched; re-run parity/cache tests. |
 | H-013 | CONFIRMED | S2 | S2 | No | = D49 governed threshold; research-only | A — remove silent legacy fallback; fail with named configuration status or mark report INVALID with fallback source explicitly identified. Research-only change; does not change runtime classifier or frozen files, but invalidates affected fit-study reports and human decisions based on them. |
 | H-014 | CONFIRMED | S1 | S2 | No | = D58; delta: minimal non-null package accepted as LIVE calibrated | A — require a governed, schema-validated, versioned calibration artifact and bind p_hat to it; retain D58 fail-closed until supplied. Adapter/schema outside frozen logistic code is possible; invalidates only calibration package identities and related forecast caches. |
 | H-015 | CONFIRMED | S1 | S1 | Yes | — | A — supply PIT order notional and ADV to a cost adapter; do not patch the frozen backtest module without owner ruling. B10 notional/slippage tests must be reconciled to avoid double count; cost changes invalidate backtest metrics, caches, WFO and promotion evidence. |
@@ -27,7 +27,7 @@
 | H-021 | CONFIRMED | S1 | S1 | No | — | A — rank only finite feasible results; return NO_FEASIBLE when none. Non-frozen optimizer; update optimizer tests and stored suggestion identity/checkpoint semantics; no training or DB migration required. |
 | H-022 | PARTIAL | S1 | S1 | No | — | A — persist canonical grid, seed, input, code and protocol manifest; verify on resume and restore results. Non-frozen optimizer/checkpoint layer; change checkpoint schema/migration and rerun any incompatible incomplete run. |
 | H-023 | CONFIRMED | S1 | S2 | No | — | A — re-check workload/time at each cell and checkpoint a named halt. Non-frozen scheduler/optimizer; interruption changes may affect expected run completion and need resume tests, no frozen change. |
-| H-024 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-024 | PARTIAL | S2 | S2 | No | = W.1 scope enforcement gap; W.5 RED LINE is a pre-paper-trial validation contract, not proof of live bypass | A — reject grid keys outside the selected optimizer scope before evaluation; validate RED LINE fields before candidate/paper-trial handoff. Optimizer/tests only; suggestions remain research-only and frozen params untouched. |
 | H-025 | CONFIRMED | S1 | S1 | No | — | A — pass per-trade exposure/limit evidence and enforce all trades, and require finite five-regime metrics. Non-frozen objective API; callers/tests and candidate identity change; no order path should consume prior summary-only approvals. |
 | H-026 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | H-027 | CONFIRMED | S1 | S1 | No | — | A — assert family equality across candidate, pool, WFO, PBO, DSR, benchmark and package. Non-frozen promotion layer; reject cross-family cached evidence and re-run affected candidates. |
@@ -78,15 +78,15 @@ Baseline source files were not changed. Selected actual-repository probes are in
 | H-001 | CONFIRMED | S1 | S1 | No | = ISSUE-076; delta: required per-cell G-PAPER-001 receipt/envelope details | A — implement the normative replay CLI as a non-network, read-only runner; CP-15 owns it. No frozen file change if composed outside backtest; acceptance hashes change only when replay outcome changes. |
 | H-002 | CONFIRMED | S1 | S1 | Partial | = D21; independent producer persistence gap; R-019 is separate | A — preserve prior confirmed E11 state across chronologically ordered calls/restarts, keyed by symbol/timeframe/artifact and PIT; separately test journal vs EvidenceEvent so R-019 is not conflated. Non-frozen producer/state adapter; no frozen engine edit. Re-run deterministic replay and restart/correction tests. |
 | H-003 | CONFIRMED | S1 | S1 | Yes | = D21 + E11 §3.8 shock-gap; training/inference projection parity delta | A — share the governed gap-adjusted projection before training X/rule0 and runtime EWMA/softmax, or obtain an explicit owner ruling for divergence. E11 engine is frozen: no edit without authorization; training-side alternative changes labels/features and invalidates cache, fitted W/b, and replay evidence. |
-| H-004 | UNVERIFIED | S1 | — | Partial | — | No recommendation until contract necessity for T/base-rate in PAPER is independently verified. |
+| H-004 | PARTIAL | S1 | S2 | Partial | E11 §§1.2, 3.4–3.9, 8.5; D21/D23/D49 do not identify runtime source | A — obtain owner decision on the PIT T and outcome/BaseRate source; until then represent unavailable separately and do not synthesize counts. E11 engine is frozen; adapter-only provider option, or owner-approved schema contract. Revalidate quality/replay if inputs change. |
 | H-005 | CONFIRMED | S1 | S1 | Partial | = D35 cache compatibility; D47 digest is artifact-only, not cache identity | A — add governed code/feature-policy identity to cache namespace/input manifest only with owner approval; preserve D35 resume behavior and prove old cache invalidation. Non-frozen changes; invalidates cache files and affected samples/artifacts, not raw data. |
 | H-006 | CONFIRMED | S2 | S2 | No | = D47 hash scope; provenance sidecar absent | A — retain D47 artifact_sha256 meaning, add independently authenticated provenance manifest binding sample count, query, cell scope and time window; reject mismatches. New schema/identity needs owner approval and invalidates downstream fit evidence, not the frozen E11 code. |
 | H-007 | CONFIRMED | S1 | S1 | Partial | = D21 PIT t−48 + D47 schema; historical version selection absent | A — publish model fit/deploy/label-maturity time and select only a version available at the requested as_of; replay must use walk-forward versions. Non-frozen loader/producer adapter; no D47 hash redefinition. Historical decisions and replay hashes require recomputation. |
-| H-008 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-008 | PARTIAL | S1 | S2 | No | = D23; PAPER context refuses when latest OI is absent, before risk input | A — retain named OI-unavailable refusal; add producer/bridge regression proving no risk decision with missing OI, while preserving D23 E11 partial-quality behavior. Non-frozen producer/adapter only; do not relax refusal or change frozen engines. |
 | H-009 | CONFIRMED | S1 | S2 | Yes | D6/P4 (Phase-2 entry gate) | A — validate structured replay receipt and critical failures before defaults_active; persist a receipt. Non-frozen bootstrap adapter/service alternative; existing tests expecting arbitrary callbacks to activate will need tightening. |
-| H-010 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-010 | PARTIAL | S1 | S2 | No | = D30 effective/requested scope is not a per-cell yield guarantee | A — keep selected-scope semantics; expose per-cell contributing sample counts in the final report/provenance if owners require realized coverage. No E11/frozen change; preserve the 20-cell default and nine-class refusal. |
 | H-011 | CONFIRMED | S1 | S1 | Partial | = D35 cache resume; distinct from H-005 identity | A — validate/attest cached sample payload against recomputation or an owner-approved manifest before it can enter fit; malformed or tampered-but-well-shaped payload must miss/refuse. Preserve D35 resume only for verified payloads; recompute affected cells and invalidate affected model evidence. |
-| H-012 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-012 | PARTIAL | S1 | S2 | Partial | = D35 bar cap; CP-15 ISSUE-076 owns index work, not caller-side cap pushdown | A — pass the cap into the non-frozen training read path before window/lineage materialization, while retaining latest-N semantics and cache identity. Frozen SQLiteStore stays untouched; re-run parity/cache tests. |
 | H-013 | CONFIRMED | S2 | S2 | No | = D49 governed threshold; research-only | A — remove silent legacy fallback; fail with named configuration status or mark report INVALID with fallback source explicitly identified. Research-only change; does not change runtime classifier or frozen files, but invalidates affected fit-study reports and human decisions based on them. |
 | H-014 | CONFIRMED | S1 | S2 | No | = D58; delta: minimal non-null package accepted as LIVE calibrated | A — require a governed, schema-validated, versioned calibration artifact and bind p_hat to it; retain D58 fail-closed until supplied. Adapter/schema outside frozen logistic code is possible; invalidates only calibration package identities and related forecast caches. |
 | H-015 | CONFIRMED | S1 | S1 | Yes | — | A — supply PIT order notional and ADV to a cost adapter; do not patch the frozen backtest module without owner ruling. B10 notional/slippage tests must be reconciled to avoid double count; cost changes invalidate backtest metrics, caches, WFO and promotion evidence. |
@@ -98,7 +98,7 @@ Baseline source files were not changed. Selected actual-repository probes are in
 | H-021 | CONFIRMED | S1 | S1 | No | — | A — rank only finite feasible results; return NO_FEASIBLE when none. Non-frozen optimizer; update optimizer tests and stored suggestion identity/checkpoint semantics; no training or DB migration required. |
 | H-022 | PARTIAL | S1 | S1 | No | — | A — persist canonical grid, seed, input, code and protocol manifest; verify on resume and restore results. Non-frozen optimizer/checkpoint layer; change checkpoint schema/migration and rerun any incompatible incomplete run. |
 | H-023 | CONFIRMED | S1 | S2 | No | — | A — re-check workload/time at each cell and checkpoint a named halt. Non-frozen scheduler/optimizer; interruption changes may affect expected run completion and need resume tests, no frozen change. |
-| H-024 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-024 | PARTIAL | S2 | S2 | No | = W.1 scope enforcement gap; W.5 RED LINE is a pre-paper-trial validation contract, not proof of live bypass | A — reject grid keys outside the selected optimizer scope before evaluation; validate RED LINE fields before candidate/paper-trial handoff. Optimizer/tests only; suggestions remain research-only and frozen params untouched. |
 | H-025 | CONFIRMED | S1 | S1 | No | — | A — pass per-trade exposure/limit evidence and enforce all trades, and require finite five-regime metrics. Non-frozen objective API; callers/tests and candidate identity change; no order path should consume prior summary-only approvals. |
 | H-026 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | H-027 | CONFIRMED | S1 | S1 | No | — | A — assert family equality across candidate, pool, WFO, PBO, DSR, benchmark and package. Non-frozen promotion layer; reject cross-family cached evidence and re-run affected candidates. |
@@ -232,40 +232,40 @@ Use same OHLCV/ATR/candle flags and clock in training and runtime; assert all 8 
 ## H-004
 
 ### Auditor claim (short quote)
-The producer supplies neither the E11 transition matrix T nor regime base rates.
+The production producer supplies neither the E11 transition matrix T nor regime base rates.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references, full functions, direct callers)
+Read the full production assembly `apex/ops/engine_context.py:1557–1640`; it builds `regime_context` at `:1628–1630` without `T` or `base_rates`. Read `E11RegimeEngine.compute` (`apex/engines/e11_regime/engine.py:1476–1511`) and its complete `run_engine` call mapping, the complete Hamilton/base-rate functions and gates (`:614–650`, `:749–770`, `:937–965`, `:988–1009`), state schema validation (`:1120–1190`), and calibration reporting (`:1282–1300`). `grep -Rn` consumers/callers for `transition_matrix`, `base_rates`, `base_rate_quality_cap`, and `hamilton_filter_step` across `apex scripts tests` is saved at `AUDIT/probes_V5/H004_consumers.out`; no production caller outside E11 passes or consumes these values. Read normative E11 §§1.2, 3.4–3.9, 5.1 and D21/D23/D49 entries; no later decision found that supplies a T/base-rate source to this PAPER assembly. No frozen source was changed.
 
-### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+### Reproduction (command, probe, actual result)
+Ran `PYTHONPATH=. /tmp/upstage-audit-venv/bin/python AUDIT/probes_V5/H004_e11_inputs.py`; raw output is `H004_e11_inputs.out`. Real `run_engine` on synthetic GF_09 input with omitted args produced `transition_matrix=null`, `base_rates={}`, uniform untouched `xi_filtered`, Q4. Supplying a structurally valid zero-count EXPANSION row produced Q3 under the §8.5 cap. The test selection `python -m pytest ... tests/unit/test_e11_regime.py -k 'hamilton or base_rates'` passed 2 tests (output in `H004_pytest.out`); those tests exercise mathematical helper/report functions, not production wiring. No device or store data used.
 
 ### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+**PARTIAL, independent severity S2.** The factual omission in the producer is confirmed, and empty `base_rates` bypasses the low-sample Q3 cap. However, schema permits `transition_matrix: null`, §3.9 conditions BaseRate on a defined outcome Y, and the binding text does not clearly define which outcome or data source the PAPER producer must populate; the global Gaussian Hamilton emission is explicitly regime-independent. Thus I do not confirm a mandatory T/Hamilton runtime decision defect. The matrix/base-rate output and unavailable-vs-empty quality behavior remain a contract gap requiring owner clarification.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+The store-backed composition builds classifier/normalization state only; it has no PIT transition-count stream or defined continuation-outcome reporter. `run_engine` defaults T/base rates to None/empty; Hamilton executes only with a T mapping, and base-rate cap only applies when a row exists.
 
 ### Direct impact
-Not determined.
+PAPER E11 state carries no transition matrix or base-rate rows from this producer. An empty row set does not trigger Q3 under the existing helper, whereas explicit n=0 does. The resulting Q4 on the synthetic fixture is proven; downstream trade acceptance is not.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+E11 state/evidence is passed into the native bridge/forecast/risk chain, but `grep -Rn` found no explicit downstream T/base_rates consumer outside E11. Do not infer an order bypass. D23 already limits Q5 when OI is unavailable; this row is a separate BaseRate/T omission. No effect on ledger/order proven.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 E11 §1.2 names T and BaseRate among outputs; §§3.4–3.5 require delayed transition statistics/Hamilton, §3.9 defines BaseRate for a specified Y with 48-bar PIT, and §8.5 says n_r<30 caps Q3. The RegimeState schema allows a null T; no owner decision inspected defines the event Y or a PAPER source. D21 is training labels only; D23 is OI only; D49 governs entropy thresholds and does not resolve this. Therefore partial, not a blanket confirmation.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`engine_context.py` producer is non-frozen; `apex/engines/e11_regime/engine.py` is frozen. Any fix should be a governed, non-frozen PIT provider/context binding unless owner explicitly authorizes frozen changes. Do not fabricate a transition matrix or outcome counts.
 
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+### Fix options (side effects)
+A: owner specifies T estimation window, label source, Y event, maturity/availability rule, and required behavior when unavailable; pass those versioned inputs and mark unavailable distinctly. B: owner confirms null/empty is an allowed PAPER diagnostic-only state and removes the expectation of cap absent counts. Either changes quality/evidence and needs replay/quality validation; only option A alters feature cache/model if label/features change, which is not assumed here.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Keep PAPER fail-closed/unavailable for any future decision explicitly requiring T or BaseRate until owner defines their source; avoid treating absent rows as evidence of n≥30. Do not change the frozen engine in this audit.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
+Add producer-level tests for T absent/valid and base rates absent, n=0, n=29, n=30 with PIT timestamps, and assert availability/Q behavior through `complete_engine_bundle` and `PaperPlanBridge`. Preserve existing formula tests; if owner rules out runtime use, assert schema null/empty is visibly diagnostic-only. Confirm no unrelated cache/hash defaults change.
 
 
 ## H-005
@@ -345,39 +345,38 @@ Build synthetic models with different publish/maturity times; query before fit/m
 ### Auditor claim (short quote)
 Kline-only PAPER source leaves OI lag unavailable for the risk decision despite E11 partial-quality training.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: `bootstrap_service.py:620–644` Kline page result/oi_available contract and its caller at `:1043–1069`; `engine_context.py:1230–1241` `participation_input`, `:1829–2010` `get_bridge_context` (including latest-OI validation and risk assembly), and `:2337–2510` decision-input quality hydration and `feature_timeline`; `plan_bridge.py:155–165` required risk inputs; `risk/kernel.py:247–260` OI-lag veto; `paper_loop.py:518–525,545–670` engine skip, plan resolution and named-refusal propagation; `scripts/run_apex.py:748–765` production producer/bridge/runtime composition. `grep -Rn` for `oi_state`, `oi_lag_seconds`, and `contributing_features` across `apex/ops`, `apex/decision`, `apex/risk`, `apex/forecast`, and `scripts` is saved in `H008_consumers.out`. Referenced D23 and the E11 missing-OI contract were read. No SQL row-scan/index claim is made, so no query-plan experiment applies.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+Ran `PYTHONPATH=. /tmp/upstage-audit-venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/test_engine_context.py::test_d23_formula_marker_and_only_q5_cap tests/unit/test_engine_context_store_sources.py::test_native_bundle_without_injected_quality_or_mtf`; six parametrized/test cases passed in 35.64s (`H008_pytest.out`). The D23 cases assert missing OI uses VolumeZ only, records `oi_state`/PARTIAL, and cannot reach Q5. The real store-backed producer test seeds OI-missing observations and executes `prepare_engine_bundle` through all native engines, but does not assert what `get_bridge_context` or `PaperPlanBridge` does with missing OI; therefore those tests alone do not prove the risk/order claim. Source trace supplies that missing composition evidence: `get_bridge_context` raises `OI_LAG_UNAVAILABLE` if the latest bar has no OI timestamp or value, before constructing its `risk` mapping. No exchange, device, or `data/` access.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**PARTIAL, independent severity S2.** D23's training/runtime E11 partial participation behavior is present. The Kline-only stream does not provide an OI series, but in the production PAPER composition this does not reach risk with an implicit zero lag: the producer refuses context with `OI_LAG_UNAVAILABLE` before the required risk field is formed. The narrow availability/producer test is missing, so the end-to-end fail-closed behavior is code-traced, not test-proven. A blocked cell is established; no order bypass is established.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+Kline ingestion deliberately labels OI `MISSING` and carries no OI values/timestamps. D23 makes that acceptable for E11 participation by removing the OI term and limiting quality, while the PAPER decision context has the stricter requirement of an actual latest OI timestamp/value to calculate seconds of lag. Those are distinct consumers/contracts, not a train/serve formula mismatch.
 
 ### Direct impact
-Not determined.
+For Kline-only latest observations, `get_bridge_context` raises before producing the risk input (`oi_lag_seconds` and its threshold), so `PaperPlanBridge` cannot return a trade plan through this path. The production PAPER loop receives that named refusal and halts that cell; it does not proceed to execution. An alternate or standalone caller that fabricates the required risk field is outside this composition and is not proven safe by these tests.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream: Kline bootstrap/catch-up marks OI missing; E03/E11 still compute PARTIAL participation as D23 requires, with no sample exclusion. Downstream: `plan_bridge.REQUIRED_RISK_KEYS` includes `oi_lag_seconds`; the risk kernel vetoes when the supplied lag exceeds its governed threshold; the producer currently refuses earlier when the value cannot be derived. `PaperRuntime._resolve_plan` forwards the PAPER bridge refusal into its cell-stage halt, and execution is therefore not reached for that cell. No ledger/order is emitted by the refusal path. No training artifact, replay, cache, or hash impact is established; changing D23 would require retraining/replay validation and is not proposed.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 E11 §2 and binding D23 (`PHASE2_DECISION_LOG.md:343`; summarized in `APEX_GEN5.md:11765`) require non-AVAILABLE OI to have zero weight, renormalize to `VolumeZ`, retain `oi_state` and `participation=PARTIAL`, prohibit Q5, and make no other quality change. This is not a promise that OI lag is optional for risk. In the producer, latest missing OI explicitly raises `OI_LAG_UNAVAILABLE`; the required risk schema requires the lag, and `risk/kernel.py` compares it with the required threshold. D23 does not override that risk contract. Owner items D58/D57 do not resolve or supersede this OI-context behavior; no overlap beyond preserving D23's existing policy is claimed.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+The implicated composition is non-frozen (`bootstrap_service.py`, `engine_context.py`, `plan_bridge.py`, `paper_loop.py`, `scripts/run_apex.py`); no file in the frozen list needs modification. Do not fabricate OI=0, a timestamp, or zero lag. A producer-level regression can be added in non-frozen tests and, if owner-approved, a clearer named refusal/diagnostic can be added in the non-frozen bridge. No E03/E11 engine change is needed.
 
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+### Fix options and side effects
+A: preserve the current fail-closed behavior and add an integration assertion that missing latest OI produces `OI_LAG_UNAVAILABLE`, no risk mapping/plan, and a PaperRuntime cell halt without execution. B: if PAPER is intended to trade with Kline-only data, obtain an owner-approved alternative OI source and PIT/availability contract; then calculate and bind its lag through the existing required risk field. Do not default missing lag to zero. Option A is test-only; option B changes context provenance, risk veto outcomes, and requires replay/decision validation and possibly schema/provenance work.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Keep the named fail-closed refusal, preserve D23's E11 PARTIAL behavior, and add a producer→bridge→PaperRuntime regression before representing this as proven by tests. Do not treat a D23 Q4 cap as a substitute for risk freshness and do not infer an order bypass from the audit claim.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+With isolated SQLite/test fixtures only, ingest a Kline-only closed bar with `oi_state=MISSING`, `oi=None`, and `oi_timestamp=None`; assert `prepare_engine_bundle` still follows D23 and cannot report Q5, then assert `get_bridge_context` raises `OI_LAG_UNAVAILABLE` before risk construction. Drive the production `PaperPlanBridge` and `PaperRuntime` with that producer; assert named cell halt and no setup, plan materialization, ledger intent, adapter submission, or order. Add the positive control with a real PIT OI timestamp/value and verify derived lag reaches the risk kernel and its threshold veto. Keep all D23 formula tests and confirm no fabricated OI or change to training sample inclusion.
 
 ## H-009
 
@@ -423,39 +422,38 @@ Run row-specific regression tests against the contract and ensure the proposed f
 ### Auditor claim (short quote)
 Training can report all ten symbols although only a subset of the 20 default base cells contributes samples.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: `engine_context.py:2984–3026` scope/hash functions and `:3111–3280` complete `train_classifier` (cell discovery, per-cell window/cache/sample aggregation, class refusal and report/artifact construction); `:3281–3410` bounded worker/supervisor caller; `scripts/run_apex.py:944–1037` `_train_e11` CLI and output/persistence; tests `test_d30_default_scope_and_progress_are_exactly_twenty_base_cells`, `test_d30_subset_is_canonical_and_excludes_other_training_cells`, and parametrized `test_d30_scope_rejects_nonbase_or_ambiguous_selection`. `grep -Rn` for trainer, CLI and scope consumers across `scripts`, `apex`, and `tests` is saved in `H010_consumers.out`. D30 and its later D35 cache refinement were checked. Source line refs are against the requested baseline, not current branch HEAD.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+Real-code controlled probe `H010_one_cell_scope.py` (raw JSON in `.out`) ran `train_classifier` with an isolated temporary cache and stubbed only the optimizer to avoid creating a classifier. Exactly 1 of 20 selected cells had nonempty market data and a contributing cached sample (`BTCUSDT:1h`); output reported all ten selected symbols and timeframes `1h`,`4h`. Eight of nine labels had one sample and derived `TRANSITION` had zero; no optimizer fit or artifact persistence occurred. The cache key included empty dependency entries after the initial cache-miss correction. Then ran the three D30 tests above: 6 passed in 0.72s (`H010_pytest.out`). The tests prove exact default 20-cell enumeration, requested scope reporting, subset canonicalization, and invalid-scope rejection; they do not require a minimum number of contributing cells. No repository cache, `data/`, device, or live store was used.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**PARTIAL, independent severity S2.** The premise is reproduced: the effective/requested scope in `training_window` lists all ten symbols and both timeframes when only one cell contributes any cached training samples. However, D30 governs which cells are selected, records effective/default scope, and requires per-cell progress; it does not require every selected cell to contain bars or samples. Thus no training-scope or model defect is confirmed. The final artifact/JSON's scope list is not itself a realized-contribution manifest, which is a bounded provenance/interpretation ambiguity.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+`train_classifier` loops the Cartesian product of selected symbols and timeframes, and empty cells are reported/excluded then skipped. `training_window` intentionally stores the configured/effective symbol and timeframe lists, while sample arrays aggregate across contributing cells; the final artifact and CLI result do not carry per-cell contributing sample counts. Per-cell eligible counts exist only in progress messages. The probe's optimizer stub and absent artifact mean this finding does not claim a production model was fitted from this distribution.
 
 ### Direct impact
-Not determined.
+Consumers of `training_window.symbols/timeframes` can read them as requested training scope, but cannot infer realized cell-level coverage from those fields. The H010 probe proves one contributing cell, not a broken default scope. This does not prove underfit, invalid classifier, wrong artifact identity, or trade/order impact. All eight required rule-tree classes still gate fit; `TRANSITION` may be empty under D36.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream: D30 limits training cells to the 1h/4h base timeframes × Core-10 (20 by default); permitted dependency reads do not add training cells. D35 may resume a cell's finalized samples from cache but hashes current inputs. Downstream: successful samples feed the shared E11 fit; classifier/artifact hash, runtime E11 state and later decisions could reflect uneven realized coverage, but this controlled probe did not fit or persist an artifact, so no such downstream effect is measured. Existing per-cell stderr progress displays eligible counts during CLI runs; no risk/order/ledger bypass is shown. Keep distinct from D30's 140-cell data scope or higher-timeframe dependency reads.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+Binding D30 is transcribed in `PHASE2_DECISION_LOG.md:523–533` and `APEX_GEN5.md:11894`: 1h/4h only, Core-10, 20 default cells, flags/defaults, effective/default scope in `training_window`, one progress line per cell, hard deadline, unchanged nine-class refusal, one shared classifier. D35 (`APEX_GEN5.md:11896`) governs resume cache and bar cap. These clauses specify selected scope and observability but no per-cell contribution minimum or requirement that all ten symbols yield labels. Therefore the claim is only partial; do not reinterpret D30 as a 140-cell scope or as a promise of 20 populated cells.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`engine_context.py` trainer, `scripts/run_apex.py`, and tests are non-frozen; no frozen engine, data-catalog, bootstrap, backtest, original six YAML, or lockfile change is implicated. Preserve D30's exact defaults and D36's class refusal. If desired by owners, add per-cell counts to a non-frozen report/provenance layer; avoid changing the meaning of the existing `training_window` fields without a decision.
 
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+### Fix options and side effects
+A: no behavior change; document that `training_window` is selected scope and retain existing per-cell `TRAIN_CELL` progress. B: add a per-cell manifest containing closed-bar count, eligible-sample count, cache hit/miss, and exclusion counts to the final report/artifact provenance, with owner approval if artifact schema changes. Option B improves reproducibility and makes sparse cells explicit but changes report/artifact shape and may require schema/hash and downstream consumer compatibility tests; it must not alter training scope, cache identity, optimizer inputs, or class thresholds. Do not impose a contribution minimum without an owner decision; that could turn currently valid sparse-store runs into refusals.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Treat the reproduced fact as a report-scope clarity gap, not a D30 violation. Keep the default at 20 selected base cells and preserve existing fit/refusal behavior. If the report is used to claim sample coverage, append actual per-cell contribution counts to the report; never infer realized coverage from the selected scope alone.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Retain the exact-20/default, subset, invalid-scope, cache and class-refusal tests. Add a sparse isolated store with one nonempty cell and assert both configured scope and realized per-cell counts are separately named in the final report (if the optional manifest is approved), with empty cells explicitly zero. Assert no implicit minimum/expansion to 140 cells, no change to D30 default scope or D36 refusal, and no artifact written on degenerate required classes. Re-run D35 cache-hit parity and verify the report preserves requested scope plus actual contribution totals.
 
 ## H-011
 
@@ -486,39 +484,38 @@ Change a valid label, timestamp or finite vector while preserving input hash and
 ### Auditor claim (short quote)
 The training bar cap is applied after full-window reads and lineage preparation.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: `engine_context.py:3001–3007` cap validation; `:3111–3280` full `train_classifier`, especially row counts/window call, cap slice, dependency reads, label timeline/cache and report construction; `:2367–2420` complete `EngineContextProducer.window` and `training_dep_window`; `sqlite_store.py:497–521` frozen `SQLiteStore.get_window`; `scripts/run_apex.py:944–1037` trainer CLI/artifact caller. `grep -Rn` for cap, window and dependency consumers across `apex`, `scripts`, and tests is saved in `H012_consumers.out`. D35 and ISSUE-076 index ownership were checked. No repository/device DB was touched.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+In-memory SQLite probe `H012_read_cap_explain.py` (raw output `.out`) used repository DDL and real producer/query text. With three closed bars and cap=1, `train_classifier`'s ordering is: cell count=3 → `producer.window(..., bars=3)` reads and lineage-hydrates 3 rows → Python `window[-1:]` retains 1 for feature/label processing. `get_window` uses SQL `LIMIT 3`, while the subsequent lineage metadata query spans the returned first/last timestamps. The baseline DDL has no market-observation device index: `EXPLAIN QUERY PLAN` reports scans for cell discovery and `get_window`, and a raw-observation scan for lineage. A candidate composite index was created only in the same in-memory DB: discovery becomes a covering-index scan and `get_window` a bounded index search; lineage still scans `raw_observation`. Full before/after plans are saved in the probe output. Then ran `test_d35_bar_cap_validation`, `test_d35_bar_cap_caps_window_and_namespace`, and `test_d35_cli_bar_cap_records_window_and_rejects_invalid`: 3 passed in 12.01s (`H012_pytest.out`). These assert positive-int validation, latest 100 of 120 bars and namespace separation, and report/invalid-CLI behavior; they do not assert how many rows were read before slicing. No persistent index or `data/` access.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**PARTIAL, independent severity S2.** The literal ordering claim is confirmed for the base training cell: cap is applied only after all counted rows have been fetched and lineage-prepared. The cap still limits the rows passed into feature/label processing and changes the cache namespace, matching the D35 latest-N semantic. D35 does not explicitly promise bounded prefetch/I/O or lineage work, so this is a resource-efficiency gap, not a proven D35 semantic violation or sample correctness defect. Severity S2 reflects wasted I/O/memory/runtime under phone-scale stores; no real-device timing was obtained.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+`train_classifier` asks `CELL_QUERY` for per-cell total counts, passes that full count to `EngineContextProducer.window`, which calls the frozen `SQLiteStore.get_window` and then reads raw lineage for the returned window, and only then applies `window[-max_bars:]`. HTF dependencies are also prefetched using their full stored counts. The cache/hash and label timeline operate on the capped base window, so sample computation is capped while source materialization is not.
 
 ### Direct impact
-Not determined.
+A capped run can still materialize all CLOSED/CORRECTED base-cell rows (and the corresponding lineage range) before discarding earlier rows in Python. The cap bounds later feature-timeline/label work and the cached finalized sample set, but does not bound this query's row return or lineage preparation. The query-plan probe confirms a full scan with repository DDL for the tested schema; it does not establish wall time, memory exhaustion, device failure, or a real store's index state.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream: `CELL_QUERY` counts stored cell rows; `get_window` selects those rows PIT/closed and `window` verifies immutable raw content/availability before the cap. Downstream: the capped suffix is used for D21 label generation and cached under the D35 protocol/input identity; changing fetch limits must preserve exact suffix, lineage and cache parity. HTF dependency prefetch remains a separate feature-history need and is not shown capped by the base cell's N. Index work overlaps CP-15 ISSUE-076; this probe adds only that caller-side cap pushdown can reduce rows reaching the lineage preparation. No decision/risk/order/ledger/hash/training-output correctness defect is proven.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+D35 in `APEX_GEN5.md:11896` says `--max-bars-per-cell N` caps each cell at its latest N CLOSED bars and records N in `training_window` and the protocol hash. D35 tests confirm the resulting 100-bar window from 120 and distinct capped/uncapped namespaces. It does not state that all reads, cell-count discovery, or HTF dependencies are themselves bounded to N. D30 defaults and scope remain unchanged. `SQLiteStore.get_window` is frozen and already parameterized by `bars`; the caller can potentially request the latest N without changing the store API. ISSUE-076 owns broader replay query/index work; no index installation or frozen DDL modification is proposed.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`apex/data_catalog/**` including `SQLiteStore.get_window` is frozen, as are the original data catalog contracts/engines and backtest; do not edit them. The non-frozen trainer can pass `min(count, max_bars)` to its base-cell window read before lineage hydration while preserving the same latest-N closed suffix. That would not by itself eliminate the full-table `CELL_QUERY` count scan or govern HTF dependency needs; index/DDL changes would require the existing owner path.
 
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+### Fix options and side effects
+A: keep current behavior and describe `--max-bars-per-cell` as a downstream feature/label cap, not an I/O or memory ceiling. B: pass the base-cell cap into `producer.window` before materialization (and assess equivalent dependency policy separately), with an owner-approved resource contract. B reduces returned rows and lineage work, but may change PIT/correction/read behavior if count and suffix selection are not equivalent; re-run exact feature timeline, training/cache hit parity, query-plan and capped/uncapped tests. Do not change D35 cap hash semantics or freeze constraints. A schema/index alternative overlaps ISSUE-076 and is not proposed without ownership.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Treat as a bounded resource optimization opportunity, not a model-data correctness failure. Keep frozen `SQLiteStore` untouched; if D35 is intended as a phone memory/I/O guard, push the base cap into the non-frozen query caller and separately measure `CELL_QUERY` and dependency costs. Do not claim it has been device-validated.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Instrument the real store/query boundary in an isolated SQLite fixture with >N closed bars. Assert the trainer requests/materializes at most N base bars when capped, gets exactly the same latest-N observations, raw-lineage identities and samples as current post-slice behavior, and uses a distinct cap cache namespace; uncapped behavior remains identical. Re-run D35 cap, cache, PIT/correction and training parity tests. Include EXPLAIN plans for discovery/window/lineage with repository DDL and temporary candidate indexes; verify any new optimization does not alter D30 scope, D21 labels or the frozen data-catalog tree. Real-device claims require separate device evidence.
 
 ## H-013
 
@@ -939,39 +936,38 @@ Run row-specific regression tests against the contract and ensure the proposed f
 ### Auditor claim (short quote)
 Grid parameter names are not checked against optimizer scope/RED LINE before evaluation.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: complete `optimizer.py` including `ParameterGrid` `:94–165`, `DualOptimizer.run_run` `:347–421`, `write_suggestion` `:424–462`, and scope constants/disjoint check `:50–87`; `governance.py` `validate_package` `:494–532` and `assert_live_params_untouched` `:535–558`; `promotion.py` package-validation handoff; optimizer test classes `TestScopes`, `TestGrids`, `TestDualOptimizerRun`, and `TestSuggestionOutput`. `grep -Rn` for `ParameterGrid`, `run_run`, `DualOptimizer`, `write_suggestion`, and `validate_package` consumers is saved in `H024_consumers.out`: no production optimizer caller outside the optimizer API/promotion code was found; direct `run_run` call sites are tests. Read APEX_GEN5 W.1/W.5 (`:17208–17247`) and matrix row `R-CP8|8` (`PHASE2_TRACEABILITY_MATRIX.md:346`). No external/device optimizer run or package injection was attempted.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+Ran `H024_scope_probe.py` against the real API with `optimizer="SIGNAL"` and a one-state `ParameterGrid` named `capital_hard_cap` (not in `SIGNAL_SCOPE`, and listed in governance `FORBIDDEN_FIELDS`). `run_run` returned `COMPLETE`, called the evaluator once with that key, and returned it as `best_params`; the probe also persisted only a temporary suggestion under `/tmp`, without a `ParameterPackage` or package validation. Raw output is `H024_scope_probe.out`. Then ran the complete referenced `tests/unit/test_research_optimizer.py`: 43 passed in 0.14s (`H024_pytest.out`). Those tests prove the scope constants are disjoint, grid enumeration and schedule/checkpoint/write-path behavior, but do not assert each supplied grid's names belong to its selected optimizer scope or are screened for RED LINE fields before evaluation. No repository suggestions, `params/`, checkpoint DB, or exchange endpoints were touched.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**PARTIAL, independent severity S2.** The scope-enforcement portion is confirmed at the standalone optimizer API: `ParameterGrid` validates only nonempty/unique names and range bounds; `run_run` validates the optimizer enum, schedule and checkpoints, then calls the evaluator without comparing `grid.names` to `SIGNAL_SCOPE`/`RISK_SCOPE`. The RED LINE wording is narrower than the auditor's timing: W.5 requires forbidden candidate packages to be rejected at validation before paper trial, not necessarily before research evaluation. However, this optimizer path does not itself enforce that boundary before evaluating or writing a suggestion. No production caller or paper-trial/injection path was found, so no current order/live-parameter effect is established. S2: governance/research integrity gap with a suggestion-only boundary, not a demonstrated live safety bypass.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+Scope constants are used only by `assert_scopes_disjoint`, which checks overlap between the two declared sets, not membership of each grid. `ParameterGrid` accepts arbitrary string names; `run_run` sends every generated combination to the supplied evaluator. `validate_package` checks forbidden field names and governed bounds when it is called, but `run_run` does not call it. `write_suggestion` protects the target path, and calls `validate_package` only when an optional package is supplied; it records that result but still writes the suggestion. A bare `params` mapping is not independently checked. Promotion has a later package-validation handoff, but `grep` found no wired optimizer→paper-trial production caller in this checkout.
 
 ### Direct impact
-Not determined.
+A caller can ask the SIGNAL optimizer to evaluate a grid for a risk-only or RED LINE parameter and receive a completed result and `best_params` for it. This violates the declared W.1 separation at the API boundary and can contaminate research evaluation/suggestion metadata. The demonstrated file is only a temporary suggestion; `assert_live_params_untouched` prevents writing live `params/*.yaml`. No live package injection, paper trial, runtime config change, or order is demonstrated.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream range construction is caller-supplied; there is no registry or configuration source binding each range to optimizer type. Downstream, the evaluator/backtest receives the unchecked key; results/checkpoints record optimizer and best params, and suggestion serialization may carry it forward. `validate_package` provides a later forbidden-field check if explicitly invoked with a package, while W.5/promotion are intended to gate candidate trial. The standalone `run_run` caller may use custom evaluation logic; no connection to frozen `backtest.py`, PAPER runtime `scripts/run_apex.py`, ledger, or orders is present in production consumer search. Any fix should reject before invoking caller code and avoid changing objective/replay arithmetic, checkpoint identity or suggestion-path guarantees.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 W.1 (`:17208–17216`) assigns disjoint Signal and Risk scopes and says no parameter belongs to both. W.3 (`:17223–17230`) governs exhaustive grid generation; D3 only authorizes random-search exceptions and does not relax scope. W.5 (`:17237–17247`) says forbidden fields are rejected at package validation before paper trial. The matrix row `R-CP8|8` reports tests for scope disjointness, grid size, owner-only random search, schedule and checkpointing; current tests' assertions match that limited coverage, not per-grid key admission. No later owner decision was found that authorizes cross-scope names. Accordingly, the scope claim is confirmed; the stronger “RED LINE must be checked before evaluation” timing is not the W.5 contract as written, though validation must precede paper trial.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`apex/research/optimizer.py`, `governance.py`, `promotion.py` and associated tests are non-frozen; `apex/research/backtest.py` and `bootstrap.py` are frozen, as are original parameter YAMLs and `requirements.lock`. A validator in the non-frozen optimizer can enforce `grid.names ⊆ SIGNAL_SCOPE` or `RISK_SCOPE` before any evaluate callback and reject forbidden names before producing candidates. Retain independent governance/package validation before paper trial. No frozen file, live YAML, config value, research output, or runtime artifact needs alteration.
 
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+### Fix options and side effects
+A: add fail-closed `validate_grid_scope(optimizer, grid)` at `run_run` entry (before evaluation/checkpoint completion); reject any unknown/out-of-scope or RED LINE key with a named error. Update tests to cover both optimizer directions, unknown names, every `FORBIDDEN_FIELDS` family, and prove evaluator call count stays zero. Side effect: previously accepted custom/private optimizer grids will refuse and require explicit classification/owner approval. B: keep a generic research grid API but require typed scope metadata and enforce W.1 at a separate authorized runner; this is more flexible but leaves direct `run_run` callers vulnerable unless the raw method is explicitly marked low-level and gated. In either option, leave exhaustive enumeration, objective formulas, frozen replay code, suggestion directory and W.5 paper-trial authority unchanged; rerun optimizer/promotion/checkpoint tests.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Implement option A in the non-frozen optimizer: validate every parameter name against the selected optimizer's declared scope, and reject any RED LINE field before the evaluator is called. Keep W.5 package validation at the later paper-trial boundary as a separate defense. Until then, treat the standalone API as research-only and do not infer an operational order bypass.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Use real `ParameterGrid`/`DualOptimizer.run_run` with one in-scope Signal key and one in-scope Risk key as positives. For each cross-scope, unknown, and RED LINE key, assert a named refusal before the evaluator is called, before a COMPLETE checkpoint is stored, and before a suggestion is emitted. Assert package validation still rejects forbidden values before paper trial; preserve suggestion-path refusal, full-grid defaults, schedule, W.8 resume and deterministic identities. Run `tests/unit/test_research_optimizer.py`, governance and promotion suites; no frozen files or live `params/` may change.
 
 ## H-025
 
@@ -2184,20 +2180,20 @@ Acceptance: on a fresh checkout without f14be36, the test can execute determinis
 
 ## Rows not verified or incomplete
 
-No coverage claim is made for the following 28 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
+No coverage claim is made for the following 23 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
 
-`H-004, H-008, H-010, H-012, H-024, H-026, H-030, H-031, H-033, H-035, H-036, I-001, I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
+`H-026, H-030, H-031, H-033, H-035, H-036, I-001, I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
 
-Rows with a non-UNVERIFIED status were independently evidenced only to the exact scope stated in their sections. Synthetic tests do not establish real data/device/model behavior. H-002/H-003/H-005/H-006/H-007/H-011/H-013 have new bounded real-function probe evidence in this continuation; untested integration/device assertions remain explicitly excluded. H-022 and H-034 retain their prior partial caller/governance/integration review caveat. Full V5 acceptance requires completing all remaining unverified rows, mandatory caller/callee and test reads, and relevant SQLite plan checks where applicable.
+Rows with a non-UNVERIFIED status were independently evidenced only to the exact scope stated in their sections. Synthetic tests do not establish real data/device/model behavior. H-002/H-003/H-005/H-006/H-007/H-011/H-013 have new bounded real-function probe evidence in this continuation; untested integration/device assertions remain explicitly excluded. H-004 is PARTIAL as above; H-022 and H-034 retain their prior partial caller/governance/integration review caveat. Full V5 acceptance requires completing all remaining unverified rows, mandatory caller/callee and test reads, and relevant SQLite plan checks where applicable.
 
 ## Final counts
 
 | Verdict | Count |
 |---|---:|
 | CONFIRMED | 24 |
-| PARTIAL | 2 |
+| PARTIAL | 7 |
 | REJECTED | 0 |
-| UNVERIFIED / incomplete | 28 |
+| UNVERIFIED / incomplete | 23 |
 | DEVICE-EVIDENCE-NEEDED | 0 (no real-device dependent claim was assigned this verdict; device evidence was not obtained) |
 
-New finding: `X-V5-001` (test reproducibility dependency on unavailable base commit).
+New findings: `X-V5-001` (test reproducibility dependency on unavailable base commit); H-010 adds a bounded report-provenance ambiguity between selected scope and realized per-cell contribution, without establishing a D30 contract violation.

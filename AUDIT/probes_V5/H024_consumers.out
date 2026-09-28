@@ -1,0 +1,28 @@
+apex/research/optimizer.py:347:    async def run_run(self, *, run_id: str, cells: Sequence[str],
+apex/research/optimizer.py:424:    def write_suggestion(self, *, run_id: str, cell_id: str,
+tests/unit/test_research_optimizer.py:23:    return opt.ParameterGrid([
+tests/unit/test_research_optimizer.py:85:            opt.ParameterGrid([])
+tests/unit/test_research_optimizer.py:90:            opt.ParameterGrid([opt.ParameterRange("x", 0.0, 1.0, 1.0),
+tests/unit/test_research_optimizer.py:122:        big = opt.ParameterGrid([opt.ParameterRange("x", 0.0, 999.0, 1.0),
+tests/unit/test_research_optimizer.py:253:        optimizer = opt.DualOptimizer()
+tests/unit/test_research_optimizer.py:254:        result = _run(optimizer.run_run(
+tests/unit/test_research_optimizer.py:264:        result = _run(opt.DualOptimizer().run_run(
+tests/unit/test_research_optimizer.py:271:        optimizer = opt.DualOptimizer()
+tests/unit/test_research_optimizer.py:272:        _run(optimizer.run_run(run_id="run-1", cells=["A"],
+tests/unit/test_research_optimizer.py:275:        second = opt.DualOptimizer()
+tests/unit/test_research_optimizer.py:276:        _run(second.run_run(run_id="run-1", cells=["A"], grids={"A": _grid()},
+tests/unit/test_research_optimizer.py:287:        result = _run(opt.DualOptimizer().run_run(
+tests/unit/test_research_optimizer.py:295:        result = _run(opt.DualOptimizer().run_run(
+tests/unit/test_research_optimizer.py:302:            _run(opt.DualOptimizer().run_run(
+tests/unit/test_research_optimizer.py:320:                optimizer = opt.DualOptimizer(checkpoint_store=opened)
+tests/unit/test_research_optimizer.py:322:                    await optimizer.run_run(
+tests/unit/test_research_optimizer.py:344:                rerun = opt.DualOptimizer(checkpoint_store=opened)
+tests/unit/test_research_optimizer.py:345:                result = await rerun.run_run(
+tests/unit/test_research_optimizer.py:360:                optimizer = opt.DualOptimizer(checkpoint_store=opened)
+tests/unit/test_research_optimizer.py:361:                await optimizer.run_run(run_id="run-2", cells=["A"],
+tests/unit/test_research_optimizer.py:372:        optimizer = opt.DualOptimizer(suggestions_dir=tmp_path / "suggestions")
+tests/unit/test_research_optimizer.py:373:        out = optimizer.write_suggestion(
+tests/unit/test_research_optimizer.py:384:        optimizer = opt.DualOptimizer()
+tests/unit/test_research_optimizer.py:387:            optimizer.write_suggestion(
+tests/unit/test_research_optimizer.py:393:        out1 = opt.DualOptimizer(suggestions_dir=tmp_path / "a").write_suggestion(
+tests/unit/test_research_optimizer.py:396:        out2 = opt.DualOptimizer(suggestions_dir=tmp_path / "b").write_suggestion(

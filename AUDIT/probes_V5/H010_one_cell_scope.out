@@ -1,0 +1,38 @@
+{
+  "artifact_persisted": false,
+  "cache_root": "/tmp/h010-pmgkydg2",
+  "captured_labels": 8,
+  "class_counts": {
+    "CHOP": 1,
+    "COMPRESSION": 1,
+    "CRISIS": 1,
+    "EXPANSION": 1,
+    "RANGE": 1,
+    "TRANSITION": 0,
+    "TREND": 1,
+    "TREND_CONTRACTION": 1,
+    "TREND_EXPANSION": 1
+  },
+  "contributing_cache_cells": [
+    "BTCUSDT:1h"
+  ],
+  "nonempty_market_cells": 1,
+  "optimizer_stubbed": true,
+  "reported_timeframes": [
+    "1h",
+    "4h"
+  ],
+  "reported_training_symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "BNBUSDT",
+    "XRPUSDT",
+    "ADAUSDT",
+    "DOGEUSDT",
+    "AVAXUSDT",
+    "LINKUSDT",
+    "LTCUSDT"
+  ],
+  "selected_cells": 20
+}

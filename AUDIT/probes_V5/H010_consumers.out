@@ -1,0 +1,16 @@
+scripts/run_apex.py:944:async def _train_e11(cfg: Config, *, as_json: bool, sqlite: Optional[str] = None,
+scripts/run_apex.py:973:        artifact, report = await EC.train_classifier_bounded(sqlite or cfg.sqlite_path, seed=seed,
+scripts/run_apex.py:1073:            "repair-partial": _repair_partial, "train-e11": _train_e11,
+scripts/run_apex.py:1139:            return asyncio.run(_train_e11(cfg, as_json=args.json,
+apex/ops/engine_context.py:3111:async def train_classifier(store: Any, *, seed: int = DEFAULT_TRAINING_SEED,
+apex/ops/engine_context.py:3294:            artifact, report = await train_classifier(store, seed=seed, timeframes=timeframes,
+apex/ops/engine_context.py:3313:async def train_classifier_bounded(sqlite: str, *, seed=DEFAULT_TRAINING_SEED,
+tests/unit/test_engine_context.py:1235:                await EC.train_classifier(store, symbols="BTCUSDT", timeframes="1h", progress=progress.append)
+tests/unit/test_engine_context.py:1816:    """Run train_classifier; normalize TRAINED/degenerate into one shape."""
+tests/unit/test_engine_context.py:1819:        artifact, report = await EC.train_classifier(store, progress=progress.append, **kwargs)
+tests/unit/test_engine_context.py:1999:                await EC.train_classifier(store, symbols="BTCUSDT,ETHUSDT", timeframes="1h",
+tests/unit/test_engine_context.py:2031:            artifact, report = await EC.train_classifier(
+tests/unit/test_engine_context.py:2398:def test_d36_train_classifier_zero_transition_fits_and_validates(tmp_path, monkeypatch):
+tests/unit/test_engine_context.py:2409:            return await EC.train_classifier(store, symbols="BTCUSDT",
+tests/unit/test_engine_context.py:2433:def test_d36_train_classifier_missing_other_class_refuses_named(tmp_path, monkeypatch):
+tests/unit/test_engine_context.py:2446:                await EC.train_classifier(store, symbols="BTCUSDT",

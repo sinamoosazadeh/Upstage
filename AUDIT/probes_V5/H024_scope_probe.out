@@ -1,0 +1,30 @@
+{
+  "evaluate_calls": 1,
+  "evaluate_received": [
+    {
+      "cell": "BTCUSDT-1h",
+      "optimizer": "SIGNAL",
+      "params": {
+        "capital_hard_cap": 0.5
+      }
+    }
+  ],
+  "grid_names": [
+    "capital_hard_cap"
+  ],
+  "package_validation_invoked": false,
+  "red_line_name": "capital_hard_cap",
+  "returned_best_params": {
+    "capital_hard_cap": 0.5
+  },
+  "run_status": "COMPLETE",
+  "signal_scope": [
+    "engine_thresholds",
+    "setup_scoring_weights",
+    "gate_thresholds"
+  ],
+  "suggestion_params": {
+    "capital_hard_cap": 0.5
+  },
+  "suggestion_written_outside_repo": "/tmp/h024-suggestion-6xkqqoxw/suggestions/h024-probe/BTCUSDT-1h-signal.json"
+}

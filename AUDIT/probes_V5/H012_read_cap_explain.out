@@ -1,0 +1,58 @@
+{
+  "actual_get_window_rows": 3,
+  "baseline_market_indexes_in_frozen_ddl": [],
+  "plans": [
+    {
+      "case": "repository DDL; no market_observation device index; cell_discovery",
+      "details": [
+        "SCAN market_observation",
+        "USE TEMP B-TREE FOR GROUP BY"
+      ]
+    },
+    {
+      "case": "repository DDL; no market_observation device index; get_window",
+      "details": [
+        "CO-ROUTINE (subquery-1)",
+        "SCAN market_observation",
+        "USE TEMP B-TREE FOR ORDER BY",
+        "SCAN (subquery-1)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "case": "repository DDL; no market_observation device index; lineage",
+      "details": [
+        "SCAN r",
+        "SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "case": "temporary candidate composite index; cell_discovery",
+      "details": [
+        "SCAN market_observation USING COVERING INDEX probe_market_cell_close"
+      ]
+    },
+    {
+      "case": "temporary candidate composite index; get_window",
+      "details": [
+        "CO-ROUTINE (subquery-1)",
+        "SEARCH market_observation USING INDEX probe_market_cell_close (symbol=? AND timeframe=? AND candle_status=? AND open_time<?)",
+        "USE TEMP B-TREE FOR ORDER BY",
+        "SCAN (subquery-1)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "case": "temporary candidate composite index; lineage",
+      "details": [
+        "SEARCH m USING INDEX probe_market_cell_close (symbol=? AND timeframe=? AND candle_status=? AND open_time>? AND open_time<?)",
+        "SCAN r",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    }
+  ],
+  "python_slice_rows_when_cap_is_1": 1,
+  "repository_query_count": 3,
+  "slice_is_after_window_read_and_lineage": true
+}

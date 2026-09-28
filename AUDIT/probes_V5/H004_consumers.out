@@ -1,0 +1,46 @@
+apex/engines/e08_wyckoff/__init__.py:81:    transition_matrix,
+apex/engines/e08_wyckoff/engine.py:501:def transition_matrix(counts: Optional[Dict[Tuple[str, str], int]] = None,
+apex/engines/e08_wyckoff/engine.py:1340:    "spring_recovered", "transition_matrix", "true_range", "volume_z",
+apex/engines/e11_regime/__init__.py:41:    base_rate_quality_cap,
+apex/engines/e11_regime/__init__.py:42:    base_rates_report,
+apex/engines/e11_regime/__init__.py:57:    hamilton_filter_step,
+apex/engines/e11_regime/engine.py:614:def hamilton_filter_step(xi_prev: np.ndarray, T: np.ndarray,
+apex/engines/e11_regime/engine.py:749:def base_rates_report(outcomes: Sequence[Tuple[str, bool]]
+apex/engines/e11_regime/engine.py:764:def base_rate_quality_cap(state: str, base_rates: Dict[str, Any],
+apex/engines/e11_regime/engine.py:767:    row = (base_rates or {}).get(state)
+apex/engines/e11_regime/engine.py:789:                 base_rates: Optional[Dict[str, Any]] = None,
+apex/engines/e11_regime/engine.py:798:        self.base_rates = dict(base_rates or {})
+apex/engines/e11_regime/engine.py:948:                _pred, xi_filt = hamilton_filter_step(
+apex/engines/e11_regime/engine.py:963:            br_cap = base_rate_quality_cap(
+apex/engines/e11_regime/engine.py:964:                confirmed_state, self.base_rates,
+apex/engines/e11_regime/engine.py:988:                "transition_matrix": self.T,
+apex/engines/e11_regime/engine.py:989:                "base_rates": self.base_rates,
+apex/engines/e11_regime/engine.py:1008:                "transition_matrix": self.T,
+apex/engines/e11_regime/engine.py:1009:                "base_rates": self.base_rates,
+apex/engines/e11_regime/engine.py:1036:                    "transition_matrix": self.T, "as_of": as_of})
+apex/engines/e11_regime/engine.py:1129:    "transition_matrix", "base_rates", "contract_versions")
+apex/engines/e11_regime/engine.py:1181:    tm = state.get("transition_matrix")
+apex/engines/e11_regime/engine.py:1184:            raise ValueError("E11_STATE_SCHEMA_QX: transition_matrix shape")
+apex/engines/e11_regime/engine.py:1186:            raise ValueError("E11_STATE_SCHEMA_QX: transition_matrix must be "
+apex/engines/e11_regime/engine.py:1282:def calibration_report(base_rates: Dict[str, Dict[str, Any]],
+apex/engines/e11_regime/engine.py:1287:    out: Dict[str, Any] = {"base_rates": dict(base_rates),
+apex/engines/e11_regime/engine.py:1289:    for regime, row in (base_rates or {}).items():
+apex/engines/e11_regime/engine.py:1326:               base_rates: Optional[Dict[str, Any]] = None,
+apex/engines/e11_regime/engine.py:1341:                       base_rates=base_rates, symbol=symbol,
+apex/engines/e11_regime/engine.py:1460:      ``T``, ``history``, ``mu0``, ``Sigma0``, ``prev_mom``, ``base_rates``
+apex/engines/e11_regime/engine.py:1495:            base_rates=context.get("base_rates"), symbol=symbol,
+apex/engines/e11_regime/engine.py:1636:    "apply_delayed_labels", "apply_quality_caps", "base_rate_quality_cap",
+apex/engines/e11_regime/engine.py:1637:    "base_rates_report", "calibration_report", "catalog_events",
+apex/engines/e11_regime/engine.py:1642:    "hamilton_filter_step", "hysteresis_manager", "load_v3_adapter",
+tests/unit/test_e08_wyckoff.py:80:    transition_matrix,
+tests/unit/test_e08_wyckoff.py:401:    def test_transition_matrix_is_the_dirichlet_formula(self):
+tests/unit/test_e08_wyckoff.py:402:        t = transition_matrix({})
+tests/unit/test_e08_wyckoff.py:406:        t2 = transition_matrix(counts)
+tests/unit/test_e08_wyckoff.py:413:            transition_matrix({("NOPE", "MARKUP"): 1})
+tests/unit/test_e11_regime.py:46:    base_rates_report,
+tests/unit/test_e11_regime.py:60:    hamilton_filter_step,
+tests/unit/test_e11_regime.py:123:                      timeframe="1h", base_rates=fx.get("base_rates"), **kw)
+tests/unit/test_e11_regime.py:247:        pred, filt = hamilton_filter_step(np.array(fx["xi0"]),
+tests/unit/test_e11_regime.py:746:    def test_wilson_and_base_rates(self):
+tests/unit/test_e11_regime.py:751:        rep = base_rates_report([("TREND", True)] * 6 + [("TREND", False)] * 4)
+tests/unit/test_e11_regime.py:757:        rep = base_rates_report([("TREND", True)] * 10)
