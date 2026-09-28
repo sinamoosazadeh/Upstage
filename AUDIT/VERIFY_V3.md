@@ -11,7 +11,7 @@
 | K-007 | CONFIRMED | S2 | S2 | Yes — purge and raw_revision DDL are in frozen SQLiteStore | — | Single safe path: preflight/hold referenced rows with explicit owner-approved archival/retention policy; never disable FK |
 | K-008 | CONFIRMED | S2 | S2 | Yes — store frozen; non-frozen readers/training discovery can contain orphans | — | Single safe path: lineage-filter all non-frozen readers/discovery and refuse orphans consistently |
 | K-009 | CONFIRMED | S1 | S1 | No — EngineContextProducer timeline cache is non-frozen; frozen engines unchanged | — | A — include all per-prefix MTF input identities and replay from earliest affected prefix |
-| K-010 | PENDING | S2 | — | — | — | — |
+| K-010 | CONFIRMED | S2 | S2 | No — quality/backfill/scheduler wiring is non-frozen | — | Single path — enumerate calendar-month boundaries over explicit coverage; reuse for page and backfill |
 | K-011 | PENDING | S1 | — | — | — | — |
 | K-012 | PENDING | S1 | — | — | — | — |
 | K-013 | PENDING | S2 | — | — | — | — |
@@ -396,3 +396,41 @@ Implement A with B as the fail-closed fallback. Invalidation must include select
 
 #### Acceptance and regression tests
 With an unchanged base window, correct each required HTF separately (H4, H1, M15) and assert warm incremental output equals a fresh cold producer at the same `as_of` for bias, trendiness, E11 vector, and downstream evidence. Also test newly available/deleted/missing HTF rows, availability-only changes, quality revision, a correction before and after the current prefix, and a changed base candle. Prove no stale cached `last_item`, history, μ/Σ, previous momentum, ATR history, or E04 stream survives an affected dependency; assert exact parity when all dependency identities are unchanged.
+
+### K-010
+
+#### Auditor claim (short quote)
+> “qualityِ صفحه و backfill expected count را با تقسیم اختلاف زمان بر طول نخستین ماه حساب می‌کنند؛ طول 1mo ثابت نیست. ژانویه تا مه۲۰۲۶ با غیبت مارس: ۴ کندل، `expected_count=4`، `gap_count=0`، completeness=۱۰۰٪؛ گپ مشابه ساعتی ۸۰٪ شد.” — “Page and backfill quality calculate expected count by dividing the elapsed range by the first month’s length; 1mo is not fixed. January to May 2026 with March missing yields four candles, expected_count=4, gap_count=0, 100% completeness; the equivalent hourly gap yields 80%.”
+
+#### What I read (files, line ranges, functions, callers)
+Read `page_quality_measurements` (`apex/ops/engine_context.py:3601–3625`), `publish_quality_backfill` (`:3632–3745`), `publish_catch_up_quality` (`:3765–3810`), and direct callers in `apex/ops/bootstrap_service.py:1497–1520` and `scripts/run_apex.py:1049–1068`. Both monthly paths derive one `step` from the earliest open using calendar-aware `close_time_ms`, then treat that first-month duration as fixed across the range; backfill uses the same arithmetic on distinct raw opens. `apex/scheduler/clock.py:187–242` independently enumerates `1mo` boundaries by calendar month.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONDONTWRITEBYTECODE=1 python3 -B AUDIT/probes_V3/store_probes.py K-010`. Probe: `store_probes.py::k010`; raw result: `AUDIT/probes_V3/K-010.json`. The actual `page_quality_measurements` returned, for Jan/Feb/Apr/May 2026 rows with March absent, `expected_count=4`, `gap_count=0`, `completeness_pct=100.0`; the Jan/Feb/Apr/May hourly control with one missing hour returned expected 5, gap 1, completeness 80%. I then ran the real `publish_quality_backfill` against four matching old monthly rows in temporary SQLite: it wrote four facts, and the May fact carried `expected_count=4`, `gap_count=0`, completeness 100%. Its `quality_state` was `QUARANTINED_FRESHNESS` because the synthetic backfill rows were old; the measured completeness defect remains present but this run does not establish that the stale row passed the full quality vector. No owner data or exchange call was used.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). Both publisher and backfill share the non-calendar denominator and produce a false zero gap for the missing monthly interval. The independent probe distinguishes this measurement defect from the separate freshness veto; the latter still quarantined the intentionally old backfill fact.
+
+#### Root cause
+The first 1mo candle determines `step` as its own calendar length (for Jan 2026, 31 days). Integer division by that single step is then applied from January through May, so the 120-day span yields `120 // 31 + 1 = 4` expected observations. The true calendar sequence has five month boundaries; with March missing, the four observed opens do not cover the interval.
+
+#### Direct impact
+Monthly `gap_count`, `expected_count`, and completeness can report a gap-free window despite a missing month. `publish_catch_up_quality` stores the page calculation with the new quality fact; historical backfill persists the same false measurement. An independent freshness/quarantine veto may still refuse a particular old row, but it does not correct the recorded completeness.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the page and retained raw history can omit a calendar boundary. Downstream, `calc_quality_vector` consumes `completeness_pct`/`gap_count`, and 1mo MTF, E11, `data_trust`, and `Q_seq` depend on truthful coverage. Hourly fixed-duration calculations are unaffected by this specific month-length defect; K-025 is a separate across-page frontier/source-health issue. No device publisher, live quality result, model fit, or trade was observed.
+
+#### Contract and decisions
+`APEX_GEN5.md:485` defines `Q_seq=1−gap_count/expected_count`; `:516` states the completeness veto when coverage is below 100%. `:20629–20637` defines D14’s wiring close as `close_time_ms`, with `1mo` the next calendar month in UTC. Binding `PHASE2_DECISION_LOG.md:1165` D53 says monthly boundaries are the first of each UTC month and the frozen 2,592,000-second duration is age/expiry arithmetic only, never a close boundary. Precedence: D53 calendar boundaries govern the quality denominator; the publisher’s local first-month step cannot override them.
+
+#### Frozen status and non-frozen alternative
+**Not frozen:** `page_quality_measurements`, backfill/publisher wiring, and scheduler calendar helpers are outside the frozen store/features/engines. Both paths can share a non-frozen calendar-boundary enumerator without schema changes. Preserve original raw timestamps and persist the expected coverage interval/provenance with each measurement.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**Single path — enumerate expected boundaries over an explicit interval:** derive every 1mo open/close boundary with the D53 calendar helper (or `tf_close_times`) using the requested page/backfill coverage start/end, then count observed unique boundaries against that set; never infer monthly count by dividing by the first month’s duration. Side effects: gaps can reduce completeness/Q_raw and trigger previously missed vetoes; corrected historical quality facts differ. Facts are append-only and backfill skips an existing fact for an observation, so ship a versioned measurement namespace/source or explicit remeasurement path; invalidate dependent snapshots/cache and regenerate replay/training inputs rather than mutating old facts. Fixed intervals should retain their current exact behavior.
+
+#### My recommendation
+Use one shared calendar-boundary function for catch-up page facts and historical backfill, with the interval boundaries explicit in provenance. Preserve old quality facts as historical evidence; publish corrected facts under a versioned identity and report the recalculated 1mo coverage.
+
+#### Acceptance and regression tests
+Cover continuous monthly data, missing middle/first/last month, Jan→May 2026, 28/29-day February, 30/31-day months, Dec→Jan, and duplicate opens. Assert exact expected boundary lists, gaps, completeness and `Q_seq`; compare page and backfill results for the same raw interval. Verify every fixed timeframe remains bit-identical, old facts are not rewritten, and dependent snapshots/training caches are invalidated or reissued.

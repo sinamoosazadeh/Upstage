@@ -1,0 +1,32 @@
+{
+  "id": "K-010",
+  "probe": "k010",
+  "result": {
+    "backfill_report_counts": {
+      "already_present": 0,
+      "skipped": 0,
+      "written": 4
+    },
+    "hourly_one_gap_control": {
+      "completeness_pct": 80.0,
+      "expected_count": 5,
+      "gap_count": 1,
+      "source_health": 1.0
+    },
+    "may_backfill_measurements": {
+      "completeness_pct": 100.0,
+      "delay_seconds": 10351953.01699996,
+      "expected_count": 4,
+      "gap_count": 0,
+      "source_health": 1.0
+    },
+    "may_backfill_quality_state": "QUARANTINED_FRESHNESS",
+    "monthly_page_measurements": {
+      "completeness_pct": 100.0,
+      "expected_count": 4,
+      "gap_count": 0,
+      "source_health": 1.0
+    },
+    "scope_note": "real page_quality_measurements and publish_quality_backfill ran; monthly/hourly rows are synthetic and stored only in temporary repository SQLite; no owner data or network was used"
+  }
+}

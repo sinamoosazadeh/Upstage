@@ -574,8 +574,61 @@ async def k009() -> dict:
             ec.E11.ewma_update = original_functions["ewma_update"]
 
 
+async def k010() -> dict:
+    import datetime as dt
+    from apex.ops.engine_context import page_quality_measurements, publish_quality_backfill, read_context_fact
+
+    def iso(value):
+        return value.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    monthly_starts = [dt.datetime(2026,1,1,tzinfo=dt.timezone.utc),
+        dt.datetime(2026,2,1,tzinfo=dt.timezone.utc),
+        dt.datetime(2026,4,1,tzinfo=dt.timezone.utc),
+        dt.datetime(2026,5,1,tzinfo=dt.timezone.utc)]
+    monthly_rows = []
+    for i, opening in enumerate(monthly_starts):
+        if opening.month == 12:
+            closing = dt.datetime(opening.year+1,1,1,tzinfo=dt.timezone.utc)
+        else:
+            closing = dt.datetime(opening.year,opening.month+1,1,tzinfo=dt.timezone.utc)
+        monthly_rows.append(MarketObservation(symbol="BTCUSDT", timeframe="1mo", open=Decimal("100"),
+            high=Decimal("105"), low=Decimal("95"), close=Decimal("101"), volume=Decimal("10"), oi=None,
+            timestamp=iso(opening), sequence=i+1, status="CLOSED", source="V3-PROBE",
+            availability_time=iso(closing), oi_timestamp=None))
+    monthly_page = page_quality_measurements(monthly_rows, "1mo", http_status=200)
+    hourly_starts = [dt.datetime(2026,1,1,tzinfo=dt.timezone.utc)+dt.timedelta(hours=i)
+        for i in (0,1,3,4)]
+    hourly_rows = [MarketObservation(symbol="BTCUSDT", timeframe="1h", open=Decimal("100"),
+        high=Decimal("105"), low=Decimal("95"), close=Decimal("101"), volume=Decimal("10"), oi=None,
+        timestamp=iso(opening), sequence=i+1, status="CLOSED", source="V3-PROBE",
+        availability_time=iso(opening+dt.timedelta(hours=1)), oi_timestamp=None)
+        for i, opening in enumerate(hourly_starts)]
+    hourly_page = page_quality_measurements(hourly_rows, "1h", http_status=200)
+
+    with tempfile.TemporaryDirectory(prefix="v3-k010-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        try:
+            for row in monthly_rows:
+                await store.ingest_raw(row, "MISSING")
+            backfill_result = await publish_quality_backfill(
+                store, environment="PAPER", symbol="BTCUSDT", timeframe="1mo")
+            target_open = iso(monthly_starts[-1])
+            identity = await (await store.db.execute(
+                "SELECT observation_id FROM market_observation WHERE symbol='BTCUSDT' "
+                "AND timeframe='1mo' AND open_time=?", (target_open,))).fetchone()
+            fact = await read_context_fact(store, "QUALITY_"+identity[0], "BTCUSDT", "1mo",
+                iso(dt.datetime.now(dt.timezone.utc)+dt.timedelta(days=1)))
+            return {"monthly_page_measurements": monthly_page,
+                "hourly_one_gap_control": hourly_page,
+                "backfill_report_counts": {k:backfill_result[k] for k in ("written","already_present","skipped")},
+                "may_backfill_measurements": fact["measurements"],
+                "may_backfill_quality_state": fact["quality_state"],
+                "scope_note": "real page_quality_measurements and publish_quality_backfill ran; monthly/hourly rows are synthetic and stored only in temporary repository SQLite; no owner data or network was used"}
+        finally:
+            await store.close()
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007, "K-008": k008, "K-009": k009}
+    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007, "K-008": k008, "K-009": k009, "K-010": k010}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}
