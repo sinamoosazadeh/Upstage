@@ -1,0 +1,277 @@
+Baseline recursive caller/consumer search; no data, device, or network endpoints accessed:
+
+-- insert_snapshot\( --
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:559:    async def insert_snapshot(self, snapshot: Dict[str, Any]) -> None:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1196:        await store.insert_snapshot({"snapshot_id": identity, "as_of": observed_at,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3557:        await store.insert_snapshot({"snapshot_id": identity, "as_of": as_of,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_store_integration.py:402:    run(store.insert_snapshot(snapshot))
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:806:            await store.insert_snapshot({"snapshot_id": "owner-demotion", "as_of": "2026-01-01T01:00:00.000Z",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:808:            await store.insert_snapshot({"snapshot_id": "other-family", "as_of": "2026-01-01T02:00:00.000Z",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:882:            await store.insert_snapshot({"snapshot_id": "family-demoted", "as_of": stamp,
+
+-- insert_evidence\( --
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:577:    async def insert_evidence(self, event: EvidenceEvent) -> None:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3494:            await store.insert_evidence(evidence_storage_copy(event))
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp2_engines.py:236:                    await store.insert_evidence(ev)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp3_engines.py:241:                    await store.insert_evidence(ev)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:376:                    await store.insert_evidence(ev)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:399:                await store.insert_evidence(ev)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:401:                    await store.insert_evidence(ev)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:349:                    await store.insert_evidence(ev)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:371:                await store.insert_evidence(ev)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:373:                    await store.insert_evidence(ev)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_store_integration.py:277:        run(store.insert_evidence(good))
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_store_integration.py:291:            run(store.insert_evidence(bad))
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:536:            await store.insert_evidence(replace(event, evidence_id="legacy-reduced"))
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1428:            await store.insert_evidence(replace(event, explanation=raw))
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1448:                await store.insert_evidence(replace(_d31_terminal_e05_event(), resolution_class=invalid))
+
+-- persist_complete_evidence\( --
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:2329:        bundle["events"] = await persist_complete_evidence(self.store, events)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3484:async def persist_complete_evidence(store: Any, events: list[Any]) -> list[Any]:
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:529:            assert await EC.persist_complete_evidence(store, [event]) == [event]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:530:            assert await EC.persist_complete_evidence(store, [event]) == [event]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:533:                await EC.persist_complete_evidence(store, [replace(event, age=3)])
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1430:            assert await EC.persist_complete_evidence(store, [event]) == [event]
+
+-- append_context_fact\( --
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1817:                await append_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1882:        await append_context_fact(self.store,"SL14_ADMISSION",symbol,timeframe,as_of,{"transitions":admission})
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1910:        await append_context_fact(self.store,"UNCERTAINTY",symbol,timeframe,as_of,current)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:2021:        await append_context_fact(self.store,"COMPONENTS",symbol,timeframe,as_of,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3544:async def append_context_fact(store: Any, kind: str, symbol: str, timeframe: str,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3854:    return await append_context_fact(store, "QUALITY_"+rows[0][0], obs.symbol, obs.timeframe, measured_at, payload)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3882:    await append_context_fact(store,"PUBLIC_FUNDING_SCHEDULE",symbol,"",stamp,value)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context_store_sources.py:87:            await EC.append_context_fact(store, "QUALITY_"+identity, obs.symbol, obs.timeframe, EC._ms_to_iso(receipt+1), fact)
+
+-- snapshot_pit --
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:76:CREATE TABLE snapshot_pit (
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:563:            "INSERT INTO snapshot_pit (snapshot_id, as_of, symbol_scope, "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1034:        "SELECT snapshot_id,vector_quality_state FROM snapshot_pit WHERE "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1194:    exists = await (await store.db.execute("SELECT snapshot_id FROM snapshot_pit WHERE snapshot_id=?", (identity,))).fetchone()
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1209:        "SELECT snapshot_id,vector_quality_state,as_of,parameter_package_id FROM snapshot_pit WHERE source_state='PUBLIC_VENUE_FACTS' "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1784:            ("facts", "SELECT snapshot_id FROM snapshot_pit WHERE as_of<=? AND "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1786:            ("prior", "SELECT snapshot_id FROM snapshot_pit WHERE source_state IN ('CP14_UNCERTAINTY','CP14_COMPONENTS') "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1888:        history_rows = await (await self.store.db.execute("SELECT vector_quality_state FROM snapshot_pit "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3555:    found = await (await store.db.execute("SELECT snapshot_id FROM snapshot_pit WHERE snapshot_id=?", (identity,))).fetchone()
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3568:        "SELECT snapshot_id,vector_quality_state,as_of FROM snapshot_pit "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/paper_loop.py:902:                    "SELECT as_of FROM snapshot_pit WHERE source_state="
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/paper_loop.py:922:                    "SELECT as_of FROM snapshot_pit WHERE source_state="
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/quality/pit.py:60:def calc_snapshot_pit_window(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_store_integration.py:58:            "snapshot_pit": {"snapshot_id", "as_of", "symbol_scope",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_store_integration.py:406:        "FROM snapshot_pit WHERE snapshot_id=?", (snapshot["snapshot_id"],)))).fetchone())
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:800:def test_d28_family_snapshot_pit_read_does_not_create_or_overwrite_records(tmp_path):
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:810:            before = await (await store.db.execute("SELECT * FROM snapshot_pit")).fetchall()
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:815:            assert await (await store.db.execute("SELECT * FROM snapshot_pit")).fetchall() == before
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:875:            row = await (await store.db.execute("SELECT count(*) FROM snapshot_pit")).fetchone()
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:936:            assert (await (await store.db.execute("SELECT count(*) FROM snapshot_pit")).fetchone())[0] == 3
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_quality.py:32:    calc_snapshot_pit_window,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_quality.py:270:        snap, state, cls = calc_snapshot_pit_window(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_quality.py:287:            calc_snapshot_pit_window([obs], ["1h"], minimum_bars=1)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_quality.py:291:        snap, state, cls = calc_snapshot_pit_window(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_quality.py:297:        snap, state, cls = calc_snapshot_pit_window(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_quality.py:305:        snap, state, cls = calc_snapshot_pit_window(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_quality.py:311:        s1, _, _ = calc_snapshot_pit_window(obs, ["1h"], minimum_bars=1)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_quality.py:312:        s2, _, _ = calc_snapshot_pit_window(obs, ["1h"], minimum_bars=1)
+
+-- snapshot_id --
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/catalog.py:17:availability_time, snapshot_id, status, reason}`` with status ∈ {OK,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/catalog.py:126:        outputs=(f"{alias}_t", "Q_formula_valid", "snapshot_id", "validity",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/catalog.py:179:        outputs=("sweep_b", "Q_formula_valid", "snapshot_id", "validity",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/catalog.py:303:                availability_time=None, snapshot_id=None,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/catalog.py:311:                availability_time=None, snapshot_id=None,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/catalog.py:324:                        snapshot_id=None, status=CatalogStatus.INVALID,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/catalog.py:332:                    snapshot_id=None, status=CatalogStatus.INVALID,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/catalog.py:356:                    snapshot_id=None, status=CatalogStatus.OK,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/catalog.py:378:            availability_time=availability, snapshot_id=None,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:316:    "snapshot_id",          #  6 PIT binding
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:320:    "feature_snapshot_id",  # 10 data capture version
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:347:    snapshot_id: str
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:351:    feature_snapshot_id: str
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:377:        if not self.snapshot_id:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:378:            raise ValueError("snapshot_id empty (contract #6)")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:400:            "snapshot_id": self.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:424:    snapshot_id: Optional[str]
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:77:    snapshot_id TEXT PRIMARY KEY CHECK(typeof(snapshot_id)='text'),
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:103:    snapshot_id TEXT,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:155:    snapshot_id TEXT,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:563:            "INSERT INTO snapshot_pit (snapshot_id, as_of, symbol_scope, "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:568:            (snapshot["snapshot_id"], snapshot.get("as_of"),
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:590:            " confidence, quality, validity, snapshot_id, parent_ids, "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:598:             row["validity"], row["snapshot_id"], row["parent_ids"],
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/decision/pipeline.py:47:    "sizing_request", "EU", "PUC", "conflict_state", "snapshot_id",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/decision/pipeline.py:426:    snapshot_id: str
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/decision/pipeline.py:440:        if not self.snapshot_id:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/decision/pipeline.py:442:                                "lineage is mandatory (snapshot_id)")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/decision/pipeline.py:465:                   snapshot_id: str, r_penalty: float, cost_unit: float,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/decision/pipeline.py:476:            snapshot_id=snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/decision/pipeline.py:492:        conflict_state=conflict_state, snapshot_id=snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:30:from apex.identity.snapshot import canonical_snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:35:ENGINE_NAME_FOR_IDENTITY = "E01_Structure"   # canonical_snapshot_id engine arg
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:275:def generate_snapshot_id(payload: Dict[str, Any]) -> str:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:276:    """snapshot_id = SHA256(canonical_json(canonical_snapshot_payload)) —
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:278:    return canonical_snapshot_id(ENGINE_NAME_FOR_IDENTITY,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:304:                "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:315:                "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:350:                "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:363:                "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:509:                "snapshot_id": generate_snapshot_id({"t": t, "gap": gap}),
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:606:                    "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:609:                    "level_snapshot_id": level.get("snapshot_id"),
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:679:                    "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:707:                    "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:743:                    "bos_snapshot_id": bos["snapshot_id"],
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:752:                    "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:761:                        "bos_snapshot_id": bos["snapshot_id"],
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:769:                        "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:778:                        "bos_snapshot_id": bos["snapshot_id"],
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:786:                        "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:822:                        "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:842:            "snapshot_id": generate_snapshot_id({"bias": bias})}
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:846:# §5 SCHEMA — objects, state machines, events, versioning, snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:851:    "q_tag", "snapshot_id", "version")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:854:    "timestamp", "q_tag", "snapshot_id", "version")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:972:    if len(sw["snapshot_id"]) != 64:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:973:        raise ValueError("SwingPoint snapshot_id must be 64-hex")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1096:    list (snapshot_ids derive from candle timestamps, never wall-clock)."""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1121:        return {e["snapshot_id"] for e in output["events"]
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1122:                if e.get("snapshot_id") is not None
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1144:        early_swings_before = {s["snapshot_id"] for s in before["swings"]
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1146:        early_swings_full = {s["snapshot_id"] for s in full["swings"]
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1215:    the full event list stays deduplicated by snapshot_id."""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1241:            key = ev.get("snapshot_id") or repr(sorted(ev.items()))
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1337:                "snapshot_id": bias["snapshot_id"],
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1410:        # RETEST carries its parent BOS id in bos_snapshot_id but the event
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1431:            snapshot_id=ev.get("snapshot_id") or generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1438:            feature_snapshot_id=_sha_of(_canon(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:29:from apex.identity.snapshot import canonical_snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:72:    snapshot_id: str = ""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:88:    snapshot_id: str = ""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:105:    snapshot_id: str = ""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:129:def generate_snapshot_id(payload: dict) -> str:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:132:    return canonical_snapshot_id("E02_Liquidity", CONTRACT_VERSION, payload)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:761:                                "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:863:            sid = generate_snapshot_id({"lid": lid, "inst":
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:867:                  "Q": lv.Q, "evidence_id": uuid_v7(), "snapshot_id": sid,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:879:                       snapshot_id=generate_snapshot_id({"lid": lid}),
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:882:            sid = generate_snapshot_id({"lid": lid, "formed": bar})
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:885:                  "Q": "Q1", "evidence_id": uuid_v7(), "snapshot_id": sid,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:988:                               "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1004:                        "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1016:                        "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1059:                    snapshot_id=generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1067:                               "snapshot_id": sweep_ev.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1076:                    "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1093:                        "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1123:                                       snapshot_id=generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1130:                               "snapshot_id": self.pools[pid].snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1142:                        "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1158:                        "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1205:                    "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1224:                    "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1247:                "fate": lv.fate, "Q": lv.Q, "snapshot_id": lv.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1253:            "fate": p.fate, "Q": p.Q, "snapshot_id": p.snapshot_id}
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1262:            "snapshot_id": generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1309:                "snapshot_id", "evidence_id", "members", "atr_at_formation")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1329:                "fate", "Q", "snapshot_id")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1339:                "snapshot_id", "payload")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1631:            snapshot_id=ev.get("snapshot_id") or generate_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1638:            feature_snapshot_id=_sha_of(_cj(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/__init__.py:34:    snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:26:from apex.identity.snapshot import canonical_snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:40:# code in this file — snapshot_id, as_of, last_error, t-1 exclusion):
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:44:#    canonical_snapshot_id semantics.
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:58:#  `snapshot_id()` delegates to canonical_snapshot_id("E03_Volume", "4.0.0",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:63:def snapshot_id(payload: dict) -> str:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:65:    rebound to canonical_snapshot_id semantics; UUIDv7 never enters the
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:68:    payload.pop("snapshot_id", None)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:69:    return canonical_snapshot_id("E03_Volume", CONTRACT_VERSION, payload)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:440:# `vol_ratio`, `snapshot_id`, `as_of`). The previous local SMA utility is
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:450:    I_Volume_v4 contract ({volume_sma, vol_ratio, snapshot_id, as_of})."""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:453:    snapshot_id: str = ""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:478:        for k in ("engine", "version", "snapshot_id", "as_of_ts",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:729:            ev.snapshot_id = snapshot_id(ev.__dict__)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:862:    """§8.2: hash(evidence excluding snapshot_id) equal across two runs;
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:869:            {k: v for k, v in ev.__dict__.items() if k != "snapshot_id"}
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:1096:            snapshot_id=ev.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:1101:            feature_snapshot_id=_sha_of(_canon(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/__init__.py:41:    snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:37:from apex.identity.snapshot import canonical_snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:672:    "q_tag", "as_of", "snapshot_id", "contract_version",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:687:def snapshot_id(content_dict: Dict[str, Any]) -> str:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:688:    """§4 snapshot_id(content_dict) — canonical snapshot form (§9.5-5)."""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:689:    return canonical_snapshot_id(ENGINE, CONTRACT_VERSION, content_dict)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:721:    snapshot_id: str = ""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:749:        self.snapshot_id = snapshot_id(self.to_canonical())
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:780:        snapshot_id=payload["snapshot_id"])
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:1237:                  for ev in out["states"] if ev.snapshot_id]
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:1311:            snapshot_id=state.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:1315:            feature_snapshot_id=state.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:35:from apex.identity.snapshot import canonical_snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:69:    "salience_0", "salience", "freshness", "premium_z", "snapshot_id",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:124:    return canonical_snapshot_id(ENGINE, CONTRACT_VERSION, obj)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:219:    snapshot_id: str = ""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:224:        """Governed E05 state payload; the global canonical_snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:246:        self.snapshot_id = canonical_snapshot_id(
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:252:            if getattr(self, key, None) is None and key != "snapshot_id":
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:264:        if not (isinstance(self.snapshot_id, str)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:265:                and len(self.snapshot_id) == 64):
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:512:                # Short fingerprint = local FVG key only; never snapshot_id.
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:847:            snapshot_id=fvg.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:851:            feature_snapshot_id=fvg.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/__init__.py:23:    e06_snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:32:from apex.identity.snapshot import canonical_snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:62:               "snapshot_id", "version")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:114:    return canonical_snapshot_id(ENGINE, CONTRACT_VERSION, obj)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:123:def e06_snapshot_id(ob: "OB") -> str:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:124:    return canonical_snapshot_id(ENGINE, CONTRACT_VERSION,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:230:    snapshot_id: str = ""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:238:        d.pop("snapshot_id", None)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:254:        if not (isinstance(self.snapshot_id, str)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:255:                and len(self.snapshot_id) == 64):
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:315:            if (ev is None or ev.get("snapshot_id") is None
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:325:            if (ev is None or ev.get("snapshot_id") is None
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:469:            ob.snapshot_id = e06_snapshot_id(ob)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:472:                                           snapshot_id=ob.snapshot_id))
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:607:            new_ob.snapshot_id = e06_snapshot_id(new_ob)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:642:            new_ob.snapshot_id = e06_snapshot_id(new_ob)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:764:    ob.snapshot_id = e06_snapshot_id(ob)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:814:        snapshot_id, as_of_ts}] (E03)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:816:        snapshot_id, as_of}] (E04)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:894:            snapshot_id=ob.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:898:            feature_snapshot_id=ob.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/__init__.py:45:    make_snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:52:from apex.identity.snapshot import canonical_snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:90:    "snapshot_id", "version", "fate",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:269:    snapshot_id: str
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:284:        """Canonical snapshot payload (§5.4); ``snapshot_id`` excluded."""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:293:        self.snapshot_id = make_snapshot_id(self.to_canonical())
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:319:        if not re.fullmatch(r"[0-9a-f]{64}", self.snapshot_id):
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:320:            raise ValueError("BUNDLE_SCHEMA_QX: snapshot_id not 64-hex")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:329:def make_snapshot_id(payload: Dict[str, Any]) -> str:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:331:    return canonical_snapshot_id(ENGINE, CONTRACT_VERSION, payload)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:335:    """§4 non-authoritative local fingerprint; NEVER used as snapshot_id."""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:886:        snapshot_id=make_snapshot_id(payload),
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:1022:    "snapshot": "snapshot_id",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:1057:        snapshot_id=str(data.get("snapshot_id", "")),
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:1067:    if not bundle.snapshot_id:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:1291:            snapshot_id=bundle.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:1296:            feature_snapshot_id=bundle.snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:1335:    "make_snapshot_id", "mss_confirmed", "mss_proximity_check",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/__init__.py:52:    e08_snapshot_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:43:from apex.identity.snapshot import canonical_snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:105:                        "confirmed_events", "fate", "snapshot_id", "as_of",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:803:    snapshot_id: str
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:815:        """Canonical snapshot payload (``snapshot_id`` excluded)."""
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:828:        self.snapshot_id = e08_snapshot_id(self.to_canonical())
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:834:        out["snapshot_id"] = self.snapshot_id
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:857:        if len(self.snapshot_id) != 64:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:858:            raise ValueError("CYCLE_STATE_QX: snapshot_id not 64-hex")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:861:def e08_snapshot_id(payload: Dict[str, Any]) -> str:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:863:    return canonical_snapshot_id(ENGINE, CONTRACT_VERSION, payload)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:1109:            fate=fate, snapshot_id="", as_of=ts, quality=quality,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:1124:        # snapshot payload, so `snapshot_id` is unchanged.
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:1274:        snapshot = e08_snapshot_id({"event": event["code"], "ts": ts,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:1288:            snapshot_id=snapshot,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:1292:            feature_snapshot_id=snapshot,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:1333:    "detect_utad", "e08_snapshot_id", "effort_without_result",

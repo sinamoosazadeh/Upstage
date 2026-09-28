@@ -1,0 +1,683 @@
+I-010 duplicate evidence identity versus snapshot identity
+Baseline source commit: 85b2c155d7b054a468379ddfd802eb239d0801f9; excerpts are read-only.
+
+===== PHASE2_TRACEABILITY_MATRIX.md:136-137 (baseline) =====
+   136	| X-4 | E07/E08/E09 §8 + CP-4 stage prompt | cross-engine: E04 governed ATR → E07 range gate ∧ E08 Q0 gate ∧ E09 pos; E01 swings/BOS → E09 seq + EV_TRD_001 under PIT; E07 bundle integrity identical across both temporal modes | tests/integration/test_cp4_engines.py::TestE09StackAndADLine + TestE07TemporalBranches::test_both_branches_agree_on_integrity | PASS(2026-09-12) |
+   137	| X-5 | PHASE2_CHECKPOINTS §CP-4 EXIT | emission rows insert through the frozen store DDL (E07+E08+E09) + duplicate-snapshot rejection; T-DR-001 shared-window double run byte-identical for all three engines | tests/integration/test_cp4_engines.py::TestCP4EmissionsInsertIntoStore + TestTDR001CP4 | PASS(2026-09-12) |
+
+===== PHASE2_TRACEABILITY_MATRIX.md:168-169 (baseline) =====
+   168	| X-7 | E07 §3.6 + E12 §3.5 + CP-5 stage prompt | E07↔E12 integration BOTH modes: RESOLVED — real E12TemporalProvider ⇒ source E12_Temporal_Context.Contract v4.0.0, degraded=False, config_version v2024a, which=[primary]+derived-overlap-label, Q5 reachable only on the authoritative overlap (real E12 non-overlap caps Q4 non-degraded); DEGRADED — absent/raising provider ⇒ E07_LOCAL_NON_AUTHORITATIVE + E12_UNAVAILABLE_DEGRADED_QX + Q4 cap; registry agreement at 8 boundary hours; §3.1 sequence math identical across modes; §8.8 stability end-to-end through E07 | tests/integration/test_cp5_engines.py::TestE07E12BothModes (8 tests) | PASS(2026-09-12) |
+   169	| X-8 | PHASE2_CHECKPOINTS §CP-5 EXIT | emission rows E10+E11+E12 insert through the frozen store DDL + duplicate-snapshot rejection; T-DR-001 shared-window double run byte-identical for all three engines (run_engine AND EngineBase surfaces); E11 live-gate default-OFF + Wave-Out raises; E11/E12 direction=0 context engines (NG1) | TestCP5EmissionsInsertIntoStore + TestTDR001CP5 + TestE11GateAndWaveOut | PASS(2026-09-12) |
+
+===== APEX_GEN5.md:901-984 (baseline) =====
+   901	### 2.3 Snapshot / Point-in-Time (PIT) Window Management
+   902
+   903	**Mission:** define `as_of` — the single, dynamic point-in-time boundary a
+   904	decision is made against — plus per-consumer observation windows, multi-
+   905	timeframe (MTF) alignment, and multi-symbol/multi-timeframe scope, so that no
+   906	computation can ever see data from the future.
+   907
+   908	### `as_of` definition
+   909
+   910	`as_of` is **not** a fixed 5-second tick — it is the point-in-time boundary
+   911	derived from the most recent fully-closed data that satisfies every
+   912	consumer's stated requirements:
+   913
+   914	```
+   915	as_of = max(availability_time of all required artifacts)
+   916	        where required_timeframes[], minimum_bars, closed_only=true,
+   917	        freshness_reference <= threshold(tf)
+   918	```
+   919
+   920	Each consumer declares its own `required_timeframes[]`, `minimum_bars`,
+   921	`closed_only`, and `freshness_reference`. A Snapshot is only built once every
+   922	required artifact's `availability_time ≤ as_of` (the PIT rule). Example: a
+   923	1-hour BOS detector needs 20 closed bars; the last closed 1h candle is at
+   924	14:00 with `availability_time` 14:00:03, so `as_of = 14:00:03`. If any
+   925	required artifact's availability is 14:00:10 (after `as_of`), the Snapshot is
+   926	not built until that artifact arrives, or the consumer downgrades/refuses.
+   927
+   928	This PIT rule is what prevents: future candles, future OI, future
+   929	corrections, future parameter packages/models/calibration/labels, future
+   930	portfolio state, centered lookahead windows, and unfinished higher-timeframe
+   931	bars from leaking into any calculation.
+   932
+   933	### Observation window per consumer
+   934
+   935	`observation_window = {start = as_of − bars×tf_duration, end = as_of,
+   936	timeframe, bars = required_depth_bars + warmup_bars}`, built by the Data
+   937	Manager from each consumer's dependency graph — **not** a fixed count. For
+   938	example: a Structure engine's BOS detector needs 20 bars on 1h; a Volatility
+   939	engine's `ATR_14` needs 14 bars plus 14 bars warmup on 1h; a Temporal Context engine
+   940	might need 100 bars on 1h. Each gets its own window sized to its own
+   941	declared need, all bound to the same `as_of`.
+   942
+   943	### MTF (multi-timeframe) alignment
+   944
+   945	All decision-relevant timeframe states are read from one frozen
+   946	`SnapshotBarrier` with a single `as_of` boundary. A timeframe may be
+   947	absent/insufficient without invalidating unrelated timeframes, but any
+   948	consumer whose required timeframe cannot satisfy its freshness/depth
+   949	contract must downgrade or refuse the dependent calculation, rather than
+   950	silently proceeding. States: `ALIGNED`, `PARTIALLY_ALIGNED`, `CONFLICTING`,
+   951	`INSUFFICIENT`. Example: a 1h BOS setup needs 1m, 1h, and 4h context; at
+   952	`as_of` 14:00:03, 1m has 100 bars available (OK), 1h has 20 bars (OK), but 4h
+   953	only has 10 of the 20 bars it needs — the 4h state is `INSUFFICIENT`, and the
+   954	consumer must downgrade or refuse rather than reporting a false `ALIGNED`.
+   955
+   956	Each timeframe within a Snapshot separately tracks its own `computed_at`,
+   957	`source_snapshot_id`, `lookback_policy`, `regime_scope`, and
+   958	`expires_at`/freshness — using one Snapshot-wide `as_of` prevents a subtle PIT
+   959	violation where one timeframe's future data could otherwise combine with
+   960	another timeframe's past data.
+   961
+   962	### Multi-symbol / multi-timeframe scope
+   963
+   964	- `symbol_scope`: a list of up to 10 symbols (e.g. for a BTC/ETH correlation
+   965	  calculation, both symbols must be present in one Snapshot sharing one
+   966	  `as_of`).
+   967	- `timeframe_scope`: a list of up to 14 timeframes.
+   968	- An observation/data manifest hash (SHA-256 over canonical JSON, sorted
+   969	  keys, no whitespace) covers the full scope.
+   970
+   971	### Snapshot binding
+   972
+   973	A Snapshot binds: `snapshot_id` (deterministic SHA-256 identity), `as_of`, `symbol_scope`,
+   974	`timeframe_scope`, `source_state`, manifest hash, `parameter_package_id`,
+   975	`code_version`, a combined quality state (minimum-veto plus weighted
+   976	average), and `created_at`.
+   977
+   978	**Session-CP-14 (2026-09-17):** D28's PAPER bootstrap binds `parameter_package_id = "cp14_paper_bootstrap-v1.0.0-" + SHA256(canonical_parameter_bytes)[:12]`. Canonical parameter bytes are UTF-8 `canonical_json({filename: parsed_YAML_document, ...})` using the repository's sole canonical serializer over every present governed `params/*.yaml` document; the optional `params/e11_classifier_v1.yaml` is included once. Filenames bind package membership, ordering/formatting/comments do not change parameter values, and any governed-value change yields a new package identity. The full parameter digest remains available for provenance; the snapshot identity itself remains the full 64-hex canonical hash, not the 12-hex package suffix. LIVE obtains no PAPER bootstrap package.
+   979
+   980	Snapshots are immutable; any new artifact triggers supertemporal_window:
+   981	OLD → CORRECTION EVENT → NEW VERSION → SUPERSEDES, producing a new `as_of`
+   982	(e.g. 14:00:03 → 14:05:10 when a later artifact arrives), invalidating
+   983	dependent evidence, and creating a new Snapshot.
+   984
+
+===== APEX_GEN5.md:18360-18393 (baseline) =====
+ 18360	**Evidence Event — 24-field contract mapped to storage.** The frozen
+ 18361	24-field contract (Chapter 6 §8) is the semantic reference; no DDL column of
+ 18362	the Data Plane is removed — columns beyond the contract are implementation
+ 18363	extensions governed by SL-12.
+ 18364
+ 18365	| # | Field (24-field contract) | DDL column | Note |
+ 18366	|---|---|---|---|
+ 18367	| 1 | `evidence_id` | `evidence_id` (UUIDv7) | unique evidence key |
+ 18368	| 2 | `engine_id` | `engine_id` (E01..E12) | producer |
+ 18369	| 3 | `analyst_version` | (side-table) | SemVer + git40 for reproducibility |
+ 18370	| 4 | `symbol` | `symbol` | |
+ 18371	| 5 | `timeframe` | `timeframe` | |
+ 18372	| 6 | `snapshot_id` | `snapshot_id` | PIT binding |
+ 18373	| 7 | `event_time` | `timestamp_utc` | event instant (UTC) |
+ 18374	| 8 | `availability_time` | (from snapshot) | PIT condition |
+ 18375	| 9 | `observation_window` | (from snapshot) | observation window |
+ 18376	| 10 | `feature_snapshot_id` | `snapshot_id` | data capture version |
+ 18377	| 11 | `feature_dependencies` | `parent_ids` | input dependencies |
+ 18378	| 12 | `condition_state` | `event_type` + `validity` | preconditions |
+ 18379	| 13 | `direction` | (from `event_type`) | direction |
+ 18380	| 14 | `strength` | `strength` | intensity on the engine's own scale |
+ 18381	| 15 | `confidence` | `confidence` | calibrated statistical confidence |
+ 18382	| 16 | `quality` | `quality` | data quality (zero removes, never permits) |
+ 18383	| 17 | `validity` | `validity` | conditional contract validity |
+ 18384	| 18 | `fate_state` | (side-table) | CANDIDATE→CONFIRMED→ACTIVE→{...} |
+ 18385	| 19 | `age` | (derivable) | evidence age |
+ 18386	| 20 | `decay` | (derivable, λ = 0.1) | weight decay |
+ 18387	| 21 | `explanation` | `raw` | human-readable explanation |
+ 18388	| 22 | `parameter_version` | (side-table) | parameter class + version |
+ 18389	| 23 | `lineage` | `lineage` | derivation chain down to `observation_id` |
+ 18390	| 24 | `resolution_class` | (side-table, Q0..QX) | cross-engine reference frame |
+ 18391
+ 18392	**Session-CP-14 D31:** The validator is aligned to the documented Q0..QX set, with no schema change.
+ 18393
+
+===== tests/integration/test_cp4_engines.py:391-405 (baseline) =====
+   391	    def test_duplicate_snapshot_insert_is_rejected_by_the_ddl(self):
+   392	        evs = self._events()
+   393	        ev = evs[0]
+   394
+   395	        async def scenario():
+   396	            store = SQLiteStore(path=":memory:")
+   397	            await store.open()
+   398	            try:
+   399	                await store.insert_evidence(ev)
+   400	                with pytest.raises(Exception):
+   401	                    await store.insert_evidence(ev)
+   402	            finally:
+   403	                await store.close()
+   404
+   405	        asyncio.run(scenario())
+
+===== tests/integration/test_cp5_engines.py:364-377 (baseline) =====
+   364	    def test_duplicate_snapshot_insert_is_rejected_by_the_ddl(self):
+   365	        ev = self._events()[0]
+   366
+   367	        async def scenario():
+   368	            store = SQLiteStore(path=":memory:")
+   369	            await store.open()
+   370	            try:
+   371	                await store.insert_evidence(ev)
+   372	                with pytest.raises(Exception):
+   373	                    await store.insert_evidence(ev)
+   374	            finally:
+   375	                await store.close()
+   376
+   377	        asyncio.run(scenario())
+
+===== apex/data_catalog/store/sqlite_store.py:76-119 (baseline) =====
+    76	CREATE TABLE snapshot_pit (
+    77	    snapshot_id TEXT PRIMARY KEY CHECK(typeof(snapshot_id)='text'),
+    78	    as_of TEXT,
+    79	    symbol_scope TEXT,
+    80	    timeframe_scope TEXT,
+    81	    source_state TEXT,
+    82	    manifest_hash TEXT,
+    83	    parameter_package_id TEXT,
+    84	    code_version TEXT,
+    85	    vector_quality_state TEXT,
+    86	    min_quality REAL,
+    87	    weighted_quality REAL,
+    88	    created_at TEXT
+    89	);
+    90
+    91	CREATE TABLE evidence_event (
+    92	    evidence_id TEXT PRIMARY KEY CHECK(typeof(evidence_id)='text'),
+    93	    timestamp_utc TEXT CHECK(typeof(timestamp_utc)='text'),
+    94	    symbol TEXT,
+    95	    timeframe TEXT,
+    96	    engine_id TEXT CHECK(engine_id IN ('E01','E02','E03','E04','E05','E06','E07','E08','E09','E10','E11','E12')),
+    97	    event_type TEXT,
+    98	    price_level TEXT CHECK(typeof(price_level)='text'),
+    99	    strength INTEGER,
+   100	    confidence REAL,
+   101	    quality TEXT,
+   102	    validity INTEGER,
+   103	    snapshot_id TEXT,
+   104	    parent_ids TEXT,
+   105	    payload_hash TEXT,
+   106	    source_hash TEXT,
+   107	    epsilon TEXT,
+   108	    atr TEXT,
+   109	    volume TEXT,
+   110	    oi TEXT,
+   111	    regime TEXT,
+   112	    utc_activity_window_id TEXT,
+   113	    lineage TEXT,
+   114	    until TEXT,
+   115	    raw TEXT,
+   116	    authority TEXT,
+   117	    authority_scope TEXT,
+   118	    CHECK(length(evidence_id)>0)
+   119	);
+
+===== apex/data_catalog/store/sqlite_store.py:559-601 (baseline) =====
+   559	    async def insert_snapshot(self, snapshot: Dict[str, Any]) -> None:
+   560	        from apex.identity.canonical_json import canonical_json
+   561	        qs = snapshot.get("quality_state", {})
+   562	        await self.db.execute(
+   563	            "INSERT INTO snapshot_pit (snapshot_id, as_of, symbol_scope, "
+   564	            " timeframe_scope, source_state, manifest_hash, "
+   565	            " parameter_package_id, code_version, vector_quality_state, "
+   566	            " min_quality, weighted_quality, created_at) "
+   567	            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+   568	            (snapshot["snapshot_id"], snapshot.get("as_of"),
+   569	             ",".join(snapshot.get("symbol_scope", [])),
+   570	             ",".join(snapshot.get("timeframe_scope", [])),
+   571	             snapshot.get("source_state", "VALID"),
+   572	             snapshot.get("manifest_hash"), snapshot.get("parameter_package_id"),
+   573	             snapshot.get("code_version"), canonical_json(qs),
+   574	             qs.get("min_q"), qs.get("weighted_q"), _utc_now_ms_iso()))
+   575	        await self.db.commit()
+   576
+   577	    async def insert_evidence(self, event: EvidenceEvent) -> None:
+   578	        """Validate the 24-field contract, then insert the Data-Plane row
+   579	        (contract→DDL mapping at APEX_GEN5.md L18185)."""
+   580	        event.validate_24_fields()
+   581	        row = event.to_ddl_row()
+   582	        # DDL columns beyond the 24-field contract (price_level/epsilon/atr/
+   583	        # volume/oi/regime/utc_activity_window_id/authority/authority_scope/
+   584	        # payload_hash/source_hash/until) are implementation extensions
+   585	        # governed by SL-12 — no DDL column is removed (L18185). Engine
+   586	        # stages populate them; CP-1 fills TEXT-typed columns with ''.
+   587	        await self.db.execute(
+   588	            "INSERT INTO evidence_event (evidence_id, timestamp_utc, symbol, "
+   589	            " timeframe, engine_id, event_type, price_level, strength, "
+   590	            " confidence, quality, validity, snapshot_id, parent_ids, "
+   591	            " payload_hash, source_hash, epsilon, atr, volume, oi, regime, "
+   592	            " utc_activity_window_id, lineage, until, raw, authority, "
+   593	            " authority_scope) "
+   594	            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+   595	            (row["evidence_id"], row["timestamp_utc"], row["symbol"],
+   596	             row["timeframe"], row["engine_id"], row["event_type"], "",
+   597	             row["strength"], row["confidence"], str(row["quality"]),
+   598	             row["validity"], row["snapshot_id"], row["parent_ids"],
+   599	             None, None, "", "", "", "", "", "",
+   600	             row["lineage"], "", row["raw"], "", ""))
+   601	        await self.db.commit()
+
+===== tests/integration/test_store_integration.py:395-408 (baseline) =====
+   395	def test_cp14_insert_snapshot_accepts_quality_mapping(store):
+   396	    """CP-14 authorized exception: the public writer must bind its mapping."""
+   397	    snapshot = {
+   398	        "snapshot_id": "cp14-snapshot-quality", "as_of": "2026-01-01T00:00:00.000Z",
+   399	        "symbol_scope": ["BTCUSDT"], "timeframe_scope": ["1h"],
+   400	        "quality_state": {"min_q": 0.8, "weighted_q": 0.9},
+   401	    }
+   402	    run(store.insert_snapshot(snapshot))
+   403	    import json
+   404	    row = run((run(store.db.execute(
+   405	        "SELECT vector_quality_state, min_quality, weighted_quality "
+   406	        "FROM snapshot_pit WHERE snapshot_id=?", (snapshot["snapshot_id"],)))).fetchone())
+   407	    assert json.loads(row[0]) == snapshot["quality_state"]
+   408	    assert row[1:] == (0.8, 0.9)
+
+===== apex/ops/engine_context.py:1174-1203 (baseline) =====
+  1174	async def persist_public_venue_facts(store: Any, symbol: str, *, environment: str,
+  1175	                                    client: Any = None,
+  1176	                                    now: Callable[[], float] = time.time) -> dict:
+  1177	    package = paper_package_binding(environment=environment)
+  1178	    if package is None:
+  1179	        raise BridgeError("LIVE_GOVERNANCE_UNAVAILABLE", "PAPER publisher is not a LIVE package source")
+  1180	    refusal = None
+  1181	    try:
+  1182	        facts = await collect_public_venue_facts(symbol, client=client, now=now)
+  1183	        payload, observed_at = {"venue_facts": facts}, facts["observed_at"]
+  1184	    except BridgeError as exc:
+  1185	        # Append failure too: a later missing fact must not resurrect an old
+  1186	        # successful measurement. This never affects another symbol's row.
+  1187	        refusal = exc
+  1188	        observed_at = _ms_to_iso(int(now() * 1000))
+  1189	        payload = {"venue_fact_refusal": {"symbol": symbol, "observed_at": observed_at,
+  1190	                                          "reason": exc.reason}}
+  1191	    bound = {"source_state": "PUBLIC_VENUE_FACTS", **payload,
+  1192	             "parameter_package_id": package["parameter_package_id"]}
+  1193	    identity = hashlib.sha256(canonical_json(bound).encode("utf-8")).hexdigest()
+  1194	    exists = await (await store.db.execute("SELECT snapshot_id FROM snapshot_pit WHERE snapshot_id=?", (identity,))).fetchone()
+  1195	    if exists is None:
+  1196	        await store.insert_snapshot({"snapshot_id": identity, "as_of": observed_at,
+  1197	            "symbol_scope": [symbol], "source_state": "PUBLIC_VENUE_FACTS",
+  1198	            "parameter_package_id": package["parameter_package_id"], "code_version": "CP14-D28-v1",
+  1199	            "quality_state": payload})
+  1200	    if refusal is not None:
+  1201	        raise refusal
+  1202	    return facts
+  1203
+
+===== apex/ops/engine_context.py:1798-1842 (baseline) =====
+  1798	    async def prepare(self, symbol: str, timeframe: str, as_of: str) -> None:
+  1799	        """Outside-budget source preparation; a failed refresh clears success."""
+  1800	        key = (symbol,timeframe,as_of)
+  1801	        self._ready.pop(key,None)
+  1802	        self._failed.pop(key,None)
+  1803	        try:
+  1804	            if self.environment != "PAPER":
+  1805	                raise BridgeError("PAPER_ONLY_EXECUTION",self.environment)
+  1806	            from apex.data_catalog.contracts import TIMEFRAMES_14
+  1807	            if symbol not in CORE10_SYMBOLS or timeframe not in TIMEFRAMES_14:
+  1808	                raise BridgeError("CELL_OUT_OF_UNIVERSE",f"{symbol}:{timeframe}")
+  1809	            parse_utc_ms(as_of)
+  1810	            fingerprint = await self._input_fingerprint(symbol,timeframe,as_of)
+  1811	            saved = await read_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,exact=True)
+  1812	            if saved and saved["input_fingerprint"] == fingerprint:
+  1813	                context = saved["context"]
+  1814	                context["events"] = await read_complete_evidence(self.store,context["events"])
+  1815	            else:
+  1816	                context = await self._compose_bridge_context(symbol,timeframe,as_of)
+  1817	                await append_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,
+  1818	                    {"input_fingerprint":fingerprint,"context":{**context,"events":[e.evidence_id for e in context["events"]]}})
+  1819	            validate_produced_context(context)
+  1820	            self._ready[key] = context
+  1821	        except BridgeError as exc:
+  1822	            self._failed[key] = exc
+  1823	            raise
+  1824	        except (ValueError,KeyError,TypeError,ArithmeticError) as exc:
+  1825	            refusal = BridgeError("ENGINE_CONTEXT_INVALID",f"{type(exc).__name__}: {exc}")
+  1826	            self._failed[key] = refusal
+  1827	            raise refusal from exc
+  1828
+  1829	    async def get_bridge_context(self, symbol: str, timeframe: str, as_of: str) -> dict:
+  1830	        """Exactly 38 context fields / 23 risk fields; no fixture fallback.
+  1831
+  1832	        PAPER serve binds prepare separately so this accessor is a cheap copy
+  1833	        inside the scheduler budget. A standalone caller may prepare lazily.
+  1834	        """
+  1835	        import copy
+  1836	        key = (symbol,timeframe,as_of)
+  1837	        if key in self._failed:
+  1838	            raise self._failed[key]
+  1839	        if key not in self._ready:
+  1840	            await self.prepare(symbol,timeframe,as_of)
+  1841	        return copy.deepcopy(self._ready[key])
+  1842
+
+===== apex/ops/engine_context.py:1843-1884 (baseline) =====
+  1843	    async def _compose_bridge_context(self, symbol: str, timeframe: str, as_of: str) -> dict:
+  1844	        from dataclasses import asdict
+  1845	        from apex.ops.plan_bridge import _fabric_ref, _normalise_bars
+  1846	        from apex.fabric.evidence import EvidenceFabric, expiry_age_bars
+  1847	        from apex.fabric.conflict import resolve, disagreement_of, quality_asymmetry_of, stale_fraction_of, penalties
+  1848	        from apex.fabric.context import COMPONENT_ENGINE, redundancy_rho
+  1849	        from apex.pattern.detect import detect_all, CATALOGUE, entity_for
+  1850	        from apex.setup.family_sf_fvg_sweep_rev import sweep_and_reclaim, ENTRY_LOGIC_REF, PLAYBOOK_ID, HORIZON_BARS
+  1851	        from apex.playbook.pb_fvg_sweep_rev_a import build_stops
+  1852	        from apex.forecast.logistic import ForecastEvent, build_forecast
+  1853	        from apex.research.governance import GOVERNED_DEFAULTS
+  1854	        import json
+  1855	        end = _iso_to_ms(as_of)
+  1856	        bundle = await self.prepare_engine_bundle(symbol,timeframe,as_of)
+  1857	        q, mtf = bundle["measured_quality"], bundle["measured_mtf"]
+  1858	        governance = await self.decision_inputs(symbol,timeframe,as_of)
+  1859	        package = governance["package"]
+  1860	        state = bundle["regime_state"]
+  1861	        uncertainty = regime_uncertainty_input(state)
+  1862	        refs = [_fabric_ref(e,symbol=symbol,timeframe=timeframe,as_of_ms=end) for e in bundle["events"]]
+  1863	        ages = {e.evidence_id: decision_evidence_age(e.event_time,timeframe,end) for e in bundle["events"]}
+  1864	        from dataclasses import replace
+  1865	        refs = [replace(r,age_bars=ages[r.evidence_id]) for r in refs]
+  1866	        from apex.fabric.evidence import advance_lifecycle
+  1867	        admission = {}
+  1868	        for i,(event,ref) in enumerate(zip(bundle["events"],refs)):
+  1869	            target = None
+  1870	            if ref.state == "CONFIRMED" and event.validity == "VALID" and event.resolution_class != "QX" and ref.as_of <= end:
+  1871	                target = "ACTIVE"
+  1872	            if ref.state == "ACTIVE" and event.engine_id == "E05":
+  1873	                obj = next((o for o in bundle["fvg_objects"] if o.snapshot_id == event.snapshot_id),None)
+  1874	                if obj is not None and obj.fate in ("EXPIRED","INVALIDATED","MITIGATED"):
+  1875	                    target = obj.fate
+  1876	                elif obj is not None and obj.fate == "FILLED":
+  1877	                    target = "MITIGATED"
+  1878	            if target is not None:
+  1879	                state_to = advance_lifecycle(ref.state,target)
+  1880	                admission[event.evidence_id] = {"from":ref.state,"to":state_to,"reason":"NATIVE_EMISSION_OR_ZONE_FATE"}
+  1881	                refs[i] = replace(ref,state=state_to)
+  1882	        await append_context_fact(self.store,"SL14_ADMISSION",symbol,timeframe,as_of,{"transitions":admission})
+  1883	        fabric = EvidenceFabric.assemble(symbol=symbol,timeframe=timeframe,as_of=end,evidence=refs,
+  1884	            data_trust=q["data_trust"],raw_observation_ids=bundle["raw_observation_ids"])
+
+===== apex/ops/engine_context.py:3484-3498 (baseline) =====
+  3484	async def persist_complete_evidence(store: Any, events: list[Any]) -> list[Any]:
+  3485	    """Use the canonical public insert, then verify full readback equality."""
+  3486	    for event in events:
+  3487	        row = await (await store.db.execute(
+  3488	            "SELECT raw FROM evidence_event WHERE evidence_id=?",
+  3489	            (event.evidence_id,))).fetchone()
+  3490	        if row is not None:
+  3491	            if canonical_json(evidence_from_raw(row[0])) != canonical_json(event):
+  3492	                raise BridgeError("EVIDENCE_CONTEXT_INVALID", "evidence identity collision")
+  3493	        else:
+  3494	            await store.insert_evidence(evidence_storage_copy(event))
+  3495	    result = await read_complete_evidence(store, [e.evidence_id for e in events])
+  3496	    if canonical_json(result) != canonical_json(events):
+  3497	        raise BridgeError("EVIDENCE_CONTEXT_INVALID", "complete-event round trip mismatch")
+  3498	    return result
+
+===== apex/ops/engine_context.py:3544-3580 (baseline) =====
+  3544	async def append_context_fact(store: Any, kind: str, symbol: str, timeframe: str,
+  3545	                              as_of: str, data: Mapping) -> str:
+  3546	    """Append an identity-bound producer input/result via public snapshot API.
+  3547
+  3548	    No UPDATE/DELETE, schema change or replacement of raw availability. The
+  3549	    input owner supplies measurement time, not the candle's convenient time.
+  3550	    """
+  3551	    as_of = _ms_to_iso(_iso_to_ms(as_of))
+  3552	    body = {"kind": kind, "symbol": symbol, "timeframe": timeframe,
+  3553	            "as_of": as_of, "data": dict(data)}
+  3554	    identity = hashlib.sha256(canonical_json(body).encode()).hexdigest()
+  3555	    found = await (await store.db.execute("SELECT snapshot_id FROM snapshot_pit WHERE snapshot_id=?", (identity,))).fetchone()
+  3556	    if not found:
+  3557	        await store.insert_snapshot({"snapshot_id": identity, "as_of": as_of,
+  3558	            "symbol_scope": [symbol], "timeframe_scope": [timeframe],
+  3559	            "source_state": "CP14_"+kind, "parameter_package_id": "CP14_PRODUCER_V1",
+  3560	            "code_version": "CP14_PRODUCER_V1", "quality_state": body})
+  3561	    return identity
+  3562
+  3563
+  3564	async def read_context_fact(store: Any, kind: str, symbol: str, timeframe: str,
+  3565	                            as_of: str, *, exact: bool = False) -> dict | None:
+  3566	    import json
+  3567	    rows = await (await store.db.execute(
+  3568	        "SELECT snapshot_id,vector_quality_state,as_of FROM snapshot_pit "
+  3569	        "WHERE source_state=? AND symbol_scope=? AND timeframe_scope=? AND as_of"+
+  3570	        ("=?" if exact else "<=?")+" ORDER BY as_of DESC,rowid DESC LIMIT 1",
+  3571	        ("CP14_"+kind, symbol, timeframe, as_of))).fetchall()
+  3572	    if not rows:
+  3573	        return None
+  3574	    try:
+  3575	        identity, raw, stamp = rows[0]
+  3576	        body = json.loads(raw)
+  3577	        if (hashlib.sha256(canonical_json(body).encode()).hexdigest() != identity
+  3578	                or (body["kind"], body["symbol"], body["timeframe"], body["as_of"]) != (kind,symbol,timeframe,stamp)):
+  3579	            raise ValueError("fact identity mismatch")
+  3580	        return {**body["data"], "fact_snapshot_id": identity, "fact_as_of": stamp}
+
+===== scripts/run_apex.py:695-813 (baseline) =====
+   695	async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
+   696	                 interval: float = 60.0, report_every: int = 1) -> int:
+   697	    if cfg.apex_env == "LIVE" and not cfg.economic_gate_signed:
+   698	        code = "LIVE_CAPITAL_LOCKED"
+   699	        _say(f"REFUSED: {code} — APEX_ENV=LIVE is not a capital switch; LIVE "
+   700	             "capital stays locked until APEX_ECONOMIC_GATE_SIGNED=1 (Y.1 "
+   701	             "L17093) and the owner's written approval. Run PAPER first.")
+   702	        return EXIT_DEGRADED
+   703	    if not cfg.allow_signed:
+   704	        _say("REFUSED: SIGNED_NOT_ALLOWED — PAPER orders require "
+   705	             "APEX_ALLOW_SIGNED=1 (Y.1 L17093). Re-run exactly:")
+   706	        _say("  APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 TOOBIT_API_KEY=... "
+   707	             "TOOBIT_API_SECRET=... TELEGRAM_BOT_TOKEN=... "
+   708	             "TELEGRAM_OWNER_CHAT_ID=... python scripts/run_apex.py serve")
+   709	        return EXIT_DEGRADED
+   710
+   711	    runtime = await Runtime(cfg).start()
+   712	    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
+   713	    await service.open()
+   714	    gateway = None
+   715	    try:
+   716	        ledger, bus = runtime.ledger, runtime.bus
+   717	        clock = C.SystemClock()
+   718	        adapter = runtime.adapter()
+   719	        notifier = await _notifier_for(cfg)
+   720	        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+   721	                                       owner_chat_id=cfg.telegram_owner_chat_id
+   722	                                       or None)
+   723	                     if cfg.telegram_bot_token else None)
+   724	        control = CP.ControlPlane(
+   725	            signaling=signaling, config=cfg, clock=clock.monotonic,
+   726	            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+   727	            paper_balance=(await EC.paper_balance(ledger)
+   728	                           if cfg.apex_env == "PAPER" else "0"))
+   729	        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+   730	        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+   731	                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+   732	                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+   733	            control.register(name, _noop_handler(name))
+   734	        if cfg.telegram_bot_token:
+   735	            gateway = GW.TelegramGateway(
+   736	                control=control, source=GW.AiogramUpdateSource(config=cfg),
+   737	                notifier=_telegram_reply(signaling),
+   738	                bootstrap=service, clock=clock.monotonic,
+   739	                utc_now=clock.utc_now, poll_timeout=5.0)
+   740	        watchdog = WD.Watchdog(telegram_plane=signaling,
+   741	                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+   742	                               now=time.time)
+   743	        # CP-9 bridge: the provider is registered at the composition root, so
+   744	        # every PAPER cell now asks the governed store/context → pattern/setup
+   745	        # → gates → forecast → risk/decision chain for a real plan.  Missing
+   746	        # persisted engine context remains a named fail-closed refusal; the
+   747	        # provider never falls back to a hand-built plan.
+   748	        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+   749	                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+   750	        plan_bridge = PB.PaperPlanBridge(
+   751	            store=runtime.store, environment=cfg.apex_env,
+   752	            context_source=producer.get_bridge_context if producer is not None else None,
+   753	            context_preparer=producer.prepare if producer is not None else None)
+   754	        async def catch_up(now_ms: int) -> Dict[str, Any]:
+   755	            result = await service.catch_up(now_ms)
+   756	            if cfg.apex_env == "PAPER":
+   757	                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+   758	            return result
+   759
+   760	        driver = PL.PaperRuntime(
+   761	            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+   762	            adapter=adapter, signaling=signaling, control=control,
+   763	            gateway=gateway, watchdog=watchdog, clock=clock,
+   764	            environment=cfg.apex_env, notifier=notifier,
+   765	            plan_provider=plan_bridge, catch_up=catch_up)
+   766	        _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
+   767	             "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
+   768	        drift = await C.measure_drift(
+   769	            _venue_server_time if adapter is not None else _no_venue_time, clock)
+   770	        boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+   771	        try:
+   772	            EC.load_classifier()
+   773	            artifact_name = "E11_ARTIFACT"
+   774	        except EC.BridgeError as exc:
+   775	            artifact_name = exc.reason
+   776	        _say(f"  boot_state={boot['boot_state']} "
+   777	             f"new_trades_allowed={boot['new_trades_allowed']} "
+   778	             f"drift={drift['state']} ({drift.get('reason') or 'measured'}) "
+   779	             f"artifact={artifact_name}")
+   780	        if driver.plan_provider is None:
+   781	            _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
+   782	                 "refusal NO_PLAN_PROVIDER")
+   783	        else:
+   784	            _say("  plan seam: WIRED — governed PAPER store bridge "
+   785	                 "(missing context refuses by name; no synthetic plan)")
+   786	        _say(f"  signal_source={driver.signal_source} · cells=140 · "
+   787	             f"max_trades_per_cycle={driver.max_trades_per_cycle} · "
+   788	             f"telegram={'WIRED' if gateway is not None else 'DISABLED (no token)'}")
+   789	        _say("  (Ctrl-C stops the loop; the ledger chain and the durable "
+   790	             "cursors stay consistent)")
+   791	        outcome = await driver.run(cycles=cycles, interval=interval)
+   792	        for cycle in driver.cycles[-3:]:
+   793	            _say(f"  cycle {cycle['cycle']}: cells={cycle['cells_due']} "
+   794	                 f"complete={cycle['cells_complete']} "
+   795	                 f"halted={cycle['cells_halted']} blocked={cycle['cells_blocked']} "
+   796	                 f"trades={len(cycle['trades'])} open={len(cycle['open_intents'])}")
+   797	            if cycle.get("halt_reasons"):
+   798	                _say(f"    named refusals: "
+   799	                     f"{json.dumps(cycle['halt_reasons'], sort_keys=True)}")
+   800	        _say(f"  cycles={outcome['cycles']} trades={outcome['trades']} "
+   801	             f"open={outcome['open_intents']} refusals={outcome['refusals']} "
+   802	             f"ledger_chain_intact={outcome['ledger_chain_intact']}")
+   803	        if as_json:
+   804	            _say(json.dumps({"boot": boot, "outcome": outcome,
+   805	                             "cycles": driver.cycles}, default=str, indent=2,
+   806	                            sort_keys=True))
+   807	        return EXIT_READY if boot["boot_state"] == "READY" else EXIT_DEGRADED
+   808	    finally:
+   809	        if gateway is not None:
+   810	            await gateway.aclose()
+   811	        await service.close()
+   812	        await runtime.stop()
+   813
+
+===== apex/ops/paper_loop.py:956-1064 (baseline) =====
+   956	    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+   957	        moment = self.clock.now_ms() if now_ms is None else int(now_ms)
+   958	        as_of = _ms_to_iso(moment)
+   959	        self._budget_taken = 0
+   960	        self._cycle_proposals = {}
+   961	        if not self._cursor_loaded:
+   962	            await self._load_cursor()
+   963	        cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
+   964	                                 "signal_source": self.signal_source,
+   965	                                 "trading_enabled": self.trading_enabled,
+   966	                                 "budget_limit": self.max_trades_per_cycle}
+   967	        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+   968	                             {"cells_checked": 0, "cells_updated": 0,
+   969	                              "bars_ingested": 0, "failures": []})
+   970	        self._catch_up_failed = {row["cell"]: row
+   971	                                 for row in cycle["catch_up"]["failures"]}
+   972	        if self.watchdog is not None:
+   973	            cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
+   974	        cycle["storage"] = await self._storage_guard()
+   975	        if self.gateway is not None:
+   976	            cycle["telegram"] = await self.gateway.run_once()
+   977	        # The scheduler's law is "on each TF close run the stages for THAT
+   978	        # cell": a cell runs once per close, and a cell whose close has not
+   979	        # advanced since the previous cycle is not run again.
+   980	        already = []
+   981	        due = []
+   982	        for item in self.scheduler.due_cells(now_ms=moment):
+   983	            recorded = self._last_close.get(item[0].cell_id)
+   984	            if recorded is not None and int(item[1]) <= int(recorded):
+   985	                already.append(item)
+   986	                continue
+   987	            due.append(item)
+   988	        cycle["cells_skipped_already_decided"] = len(already)
+   989	        if self.max_cells_per_cycle is not None:
+   990	            due = due[:self.max_cells_per_cycle]
+   991	        # G1: all expensive source preparation completes before run_cell
+   992	        # starts its latency clock. D22 failures never enter preparation;
+   993	        # a failed source must not fall back to its previous cached success.
+   994	        self._context_preparation_failed = {}
+   995	        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+   996	        receipt_ms = max(moment,self.clock.now_ms())
+   997	        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+   998	                                for cell,close in due} if self.environment == "PAPER" else {})
+   999	        cycle["decision_as_of"] = dict(self._decision_as_of)
+  1000	        cycle["publishers"] = await self._refresh_publishers(due)
+  1001	        published = (cycle.get("catch_up") or {}).get("quality_publish") or {}
+  1002	        cycle["publishers"]["quality_facts_written"] = int(
+  1003	            cycle["publishers"].get("quality_facts_written") or 0) + int(
+  1004	                published.get("written") or 0)
+  1005	        cycle["publishers"]["failures"] = list(
+  1006	            cycle["publishers"].get("failures") or [])
+  1007	        cycle["publishers"]["failures"].extend(list(published.get("failures") or []))
+  1008	        prepare = getattr(self.plan_provider, "prepare", None)
+  1009	        if callable(prepare):
+  1010	            for cell, close in due:
+  1011	                if cell.cell_id in self._catch_up_failed:
+  1012	                    continue
+  1013	                preparation["cells_checked"] += 1
+  1014	                try:
+  1015	                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+  1016	                    preparation["cells_prepared"] += 1
+  1017	                except Exception as exc:
+  1018	                    failed = {"cell": cell.cell_id,
+  1019	                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+  1020	                              "detail": getattr(exc, "detail", type(exc).__name__)}
+  1021	                    self._context_preparation_failed[cell.cell_id] = failed
+  1022	                    preparation["failures"].append(failed)
+  1023	        cycle["context_preparation"] = preparation
+  1024	        tasks = [asyncio.create_task(self.scheduler.run_cell(
+  1025	                    cell, close_ms=close, context={"cell_state": {}}))
+  1026	                 for cell, close in due]
+  1027	        runs = list(await asyncio.gather(*tasks)) if tasks else []
+  1028	        import dataclasses
+  1029	        cycle["cell_runs"] = [dataclasses.asdict(run) for run in runs]
+  1030	        cycle["cells_due"] = len(due)
+  1031	        cycle["cells_complete"] = sum(1 for r in runs if r.status == "COMPLETE")
+  1032	        cycle["cells_halted"] = sum(1 for r in runs if r.status == "HALTED")
+  1033	        cycle["cells_blocked"] = sum(1 for r in runs if r.status == "BLOCKED")
+  1034	        halt_reasons: Dict[str, int] = {}
+  1035	        halt_stages: Dict[str, int] = {}
+  1036	        for run in runs:
+  1037	            if run.status != "HALTED":
+  1038	                continue
+  1039	            failed = [st for st in run.stages if st.status == "FAIL"]
+  1040	            stage = failed[-1].stage if failed else str(run.reason or "").split(
+  1041	                ":", 1)[-1]
+  1042	            code = _refusal_code(failed[-1]) if failed else str(run.reason)
+  1043	            halt_reasons[code] = halt_reasons.get(code, 0) + 1
+  1044	            halt_stages[stage] = halt_stages.get(stage, 0) + 1
+  1045	        cycle["halt_reasons"] = halt_reasons
+  1046	        cycle["halt_stages"] = halt_stages
+  1047	        for run in runs:
+  1048	            if (run.cell_id in self._catch_up_failed
+  1049	                    or run.cell_id in self._context_preparation_failed):
+  1050	                continue
+  1051	            close_ms = max(self._last_close.get(run.cell_id, -1), int(run.close_ms))
+  1052	            # D50: the close lock is durable. A new PaperLoop on this store
+  1053	            # must not decide the same close again.
+  1054	            await upsert_cell_cursor(
+  1055	                self.store.db, run.cell_id, close_ms, decided_at=as_of,
+  1056	                proposal_id=self._cycle_proposals.get(run.cell_id))
+  1057	            self._last_close[run.cell_id] = close_ms
+  1058	        cycle["trades"] = [r for r in runs if r.status == "COMPLETE"]
+  1059	        cycle["managed"] = await self.manage_positions(as_of=as_of)
+  1060	        cycle["open_intents"] = sorted(self.working)
+  1061	        if self.notifier is not None:
+  1062	            await self._report(cycle)
+  1063	        self.cycles.append(_plain(cycle))
+  1064	        return cycle

@@ -1,0 +1,9 @@
+evidence_event indexes=[('sqlite_autoindex_evidence_event_1', 1, 'pk')]
+snapshot_pit indexes=[('sqlite_autoindex_snapshot_pit_1', 1, 'pk')]
+evidence_event snapshot lookup without secondary index plan=[(3, 0, 0, 'SCAN evidence_event')]
+evidence_event snapshot lookup with temporary in-memory index plan=[(3, 0, 0, 'SEARCH evidence_event USING COVERING INDEX probe_snapshot_idx (snapshot_id=?)')]
+snapshot_pit identity lookup using repository PK plan=[(2, 0, 0, 'SEARCH snapshot_pit USING COVERING INDEX sqlite_autoindex_snapshot_pit_1 (snapshot_id=?)')]
+same snapshot_id with two distinct evidence_ids inserted: rows=2
+same evidence_id duplicate rejected: IntegrityError: UNIQUE constraint failed: evidence_event.evidence_id
+same snapshot_id duplicate in snapshot_pit rejected: IntegrityError: UNIQUE constraint failed: snapshot_pit.snapshot_id
+probe=PASS; SQLiteStore :memory: and repository DDL only
