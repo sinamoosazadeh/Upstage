@@ -45,7 +45,7 @@
 | I-002 | PARTIAL | S2 | S2 | No | = CP-1 Part I tests prove pinned metadata/literals, not parser rejection, installation, or immutable Params; CP-14 separately covers fixture boundary | A — add hermetic parser/immutability/install assertions; retain CP-14 fixture separation and do not broaden matrix claims beyond asserted scope. No source/frozen change in this audit. |
 | I-003 | PARTIAL | S1 | S2 | No | = Matrix X-12 explicitly uses fixture clock/fake responder; test does not compose production `PaperRuntime` root | A — keep the harness evidence scoped to FSM/ledger under test doubles; add no-network composition coverage through `run_apex`/`PaperRuntime`. Synthetic pause/ACK assertions are not venue/fill evidence; CP-15 owns fill realism. |
 | I-004 | PARTIAL | S2 | S2 | No | = X-11 deterministic CP-6 chain uses synthetic refs/injected context; later G1 test adds native producer + PaperRuntime refusal, not a successful native plan | A — scope X-11 to deterministic CP-6 inputs; extend no-network G1 acceptance to a valid native producer → bridge → PaperRuntime plan and keep venue/device behavior separate. |
-| I-005 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| I-005 | PARTIAL | S2 | S2 | Yes | = CP-3 E04–E06 rows list concrete edge nodes and tests; current 176-test rerun covers enumerated synthetic cases, not the full production root/device distribution | A — retain CP-3 test evidence for the exact asserted cases; scope claims to unit/cross-engine fixtures and cite G1 separately for native producer ordering. No frozen-engine change. |
 | I-006 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-007 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-008 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -116,7 +116,7 @@ Baseline source files were not changed. Selected actual-repository probes are in
 | I-002 | PARTIAL | S2 | S2 | No | = CP-1 Part I tests prove pinned metadata/literals, not parser rejection, installation, or immutable Params; CP-14 separately covers fixture boundary | A — add hermetic parser/immutability/install assertions; retain CP-14 fixture separation and do not broaden matrix claims beyond asserted scope. No source/frozen change in this audit. |
 | I-003 | PARTIAL | S1 | S2 | No | = Matrix X-12 explicitly uses fixture clock/fake responder; test does not compose production `PaperRuntime` root | A — keep the harness evidence scoped to FSM/ledger under test doubles; add no-network composition coverage through `run_apex`/`PaperRuntime`. Synthetic pause/ACK assertions are not venue/fill evidence; CP-15 owns fill realism. |
 | I-004 | PARTIAL | S2 | S2 | No | = X-11 deterministic CP-6 chain uses synthetic refs/injected context; later G1 test adds native producer + PaperRuntime refusal, not a successful native plan | A — scope X-11 to deterministic CP-6 inputs; extend no-network G1 acceptance to a valid native producer → bridge → PaperRuntime plan and keep venue/device behavior separate. |
-| I-005 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| I-005 | PARTIAL | S2 | S2 | Yes | = CP-3 E04–E06 rows list concrete edge nodes and tests; current 176-test rerun covers enumerated synthetic cases, not the full production root/device distribution | A — retain CP-3 test evidence for the exact asserted cases; scope claims to unit/cross-engine fixtures and cite G1 separately for native producer ordering. No frozen-engine change. |
 | I-006 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-007 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-008 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -1628,39 +1628,38 @@ Keep current 13 CP-6 and 9 G1 tests. Add one positive synthetic-native integrati
 ### Auditor claim (short quote)
 CP-3 historical status does not prove current tests cover reported engine edge cases.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers/callees)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: complete CP-3 test files `tests/unit/test_e04_volatility.py`, `test_e05_fvg.py`, `test_e06_orderblock.py`, and `tests/integration/test_cp3_engines.py`, including every referenced test body in `PHASE2_TRACEABILITY_MATRIX.md:418–448`; full production `complete_engine_bundle` in `apex/ops/engine_context.py:1557–1693`, producer call path at `:2283–2360`, and G1 call-order tests in `tests/integration/test_cp14_producer.py:135–189`; production root `scripts/run_apex.py:745–779` and PaperRuntime seam `apex/ops/paper_loop.py:644–675`. Consumer grep is in `I005_consumers.out`; root/test/matrix comparison in `I005_composition.out`. The frozen engine implementations under `apex/engines/e04_volatility`, `e05_fvg`, and `e06_orderblock` were inspected at the entry/consumer interfaces implicated by these tests. Matrix Part I CP-3 row `:23`, Part II row `:50`, and Part III edge rows `:418–448` were cross-checked. No device/environment data used.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+Ran `tests/unit/test_e04_volatility.py`, `tests/unit/test_e05_fvg.py`, `tests/unit/test_e06_orderblock.py`, and `tests/integration/test_cp3_engines.py`: **176 passed in 33.76s** (`I005_cp3_pytest.out`). The matrix’s specific examples have current assertion-bearing nodes: E04 F01–F12 re-derivations, ATR/quantile no-lookahead, GARCH/HAR and nondir fallback; E05 negative-width old formula with new positive-valid case, 0.2·ATR Gate D, DOJI/rejection/sequential/inverse, expiry/lifecycle, and no-future-leak; E06 evidence-consumption/misalignment/PIT/nonfinite refusals, 12 golden fixtures, H==L/V=0, wrong-side no state change, breaker chain, no-future-leak and upstream E04/E05 feeds. CP-3 cross-engine tests exercise E04→E05/E06 and E05→E06 assertions and DDL emission. The historical matrix PASS string alone is not the evidence here; current named bodies plus this rerun are. These are synthetic fixtures, not field-distribution/device tests.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**PARTIAL, independent severity S2.** The concern that a historical PASS entry alone cannot establish present coverage is methodologically correct. But the specific matrix-listed E04–E06 edge cases are currently asserted in the referenced tests and all 176 CP-3 tests pass; a blanket claim that these edge cases are absent is not supported. The remaining limit is scope: unit/cross-engine fixtures verify exact code behavior, not the full run_apex/PaperRuntime path or real-device distributions. No current engine defect was reproduced.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+The traceability matrix records a historical completion date, which by itself cannot detect later test/source drift. Independent inspection shows the matrix now identifies concrete test nodes and the current tests contain named assertions for the listed boundaries. At runtime, `EngineContextProducer.prepare_engine_bundle` reaches the frozen E04 stream and `complete_engine_bundle` composes E05 FVG and E06 order block using E04/volume/structure evidence; the CP-3 suite tests component and selected cross-engine interfaces directly rather than invoking `scripts/run_apex`/`PaperRuntime` end to end.
 
 ### Direct impact
-Not determined.
+The tests support the specific tested E04/E05/E06 formulas, serialization, lifecycle, event, PIT and evidence-consumption behavior. They do not prove that arbitrary market/device inputs hit the tested edge cases or that every PaperRuntime plan sees these branches. No claim of incorrect order sizing/execution follows; E04–E06 are upstream evidence producers and PaperRuntime receives a plan from the production bridge, it does not recompute their formulas.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream, unit tests use deterministic bar fixtures and direct engine entry points; `test_cp3_engines.py` constructs synthetic ATR/volume/structure/FVG evidence for cross-engine pathways and inserts emitted rows into an in-memory store. Producer `complete_engine_bundle` uses actual E04 volatility stream, calls E05 with ATR/BOS maps, and calls E06 with aligned native volume/volatility evidence at its joint mature suffix. Downstream, engine events enter producer context/fabric, then PaperPlanBridge gates and PaperRuntime consumes only the resulting plan. CP14 G1’s separate 9-test integration (saved `I004_cp14_pytest.out`) asserts the native twelve-engine call order and bridge/runtime refusal path, not each CP-3 formula edge. Training/cache/risk/ledger/order effects are not established. No per-row/cell/bar query plan applies to this edge-coverage claim; the CP-3 store test is an insert/COUNT/DISTINCT fixture, not a performance assertion.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 CP-3 engine §8 batteries and their concrete Part III rows require the named E04 formulas/fallback/PIT/schema, E05 fixture/lifecycle/Gate-D/no-future-leak, and E06 evidence consumption, lifecycle, directional/no-future-leak properties. Matrix `:23`, `:50`, and `:418–448` identifies exact test files/nodes; current bodies and rerun substantiate the listed synthetic acceptance cases. Matrix X-4/X-5 (`:446–447`) separately assert cross-engine feed and evidence-event insertion, and both have current tests in `test_cp3_engines.py`. No later owner decision was found waiving the frozen engine contracts or turning a dated PASS into device proof. E04–E06 are frozen; no source modification is authorized in this audit.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`apex/engines/**` is frozen. CP-3 tests and production `engine_context.py`/`PaperPlanBridge` composition are non-frozen, but no code fix is indicated by this row. If evidence scope needs expansion, add tests/composition at the non-frozen producer/integration boundary; do not patch E04/E05/E06 or frozen parameters. Existing synthetic edge fixtures remain necessary to preserve deterministic regressions.
 
 ### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+A: preserve current tests and narrow the inference: exact fixtures prove exact edge behavior, not frequency/field behavior. B: add native producer-to-plan no-network integration cases for each required E04→E05→E06 evidence path and tie the returned plan/refusal to raw lineage; synthetic records must remain explicit and cannot be presented as real market data. This increases fixture and runtime cost and still does not establish target-device behavior. No formula or frozen-file change is justified by the current evidence.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Do not mark the matrix row unverified just because its PASS date is historical. The current test bodies and rerun prove the named CP-3 edge assertions. Retain a bounded PARTIAL verdict only for full production-root/device coverage and describe those limitations; use G1 for the later native-producer path, not as proof of each engine’s field distribution.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Keep the 176-test CP-3 rerun as the present synthetic acceptance evidence. For any expanded claim, add a no-network test using `EngineContextProducer` and real E04→E05→E06 function composition over temp/in-memory repository DDL; assert the same missing/misaligned/nonfinite/PIT failures and lineage into the bridge result. Preserve X-4/X-5, T-DR-001 and the E04/E05/E06 no-future-leak/serialization tests. Device/market-frequency validation remains a separate owner task; do not alter frozen engines or call external services.
 
 ## I-006
 
@@ -2171,9 +2170,9 @@ Acceptance: on a fresh checkout without f14be36, the test can execute determinis
 
 ## Rows not verified or incomplete
 
-No coverage claim is made for the following 13 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
+No coverage claim is made for the following 12 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
 
-`I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
+`I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
 
 Rows with a non-UNVERIFIED status were independently evidenced only to the exact scope stated in their sections. Synthetic tests do not establish real data/device/model behavior. H-002/H-003/H-005/H-006/H-007/H-011/H-013 have new bounded real-function probe evidence in this continuation; untested integration/device assertions remain explicitly excluded. H-004 is PARTIAL as above; H-022 and H-034 retain their prior partial caller/governance/integration review caveat. Full V5 acceptance requires completing all remaining unverified rows, mandatory caller/callee and test reads, and relevant SQLite plan checks where applicable.
 
@@ -2182,9 +2181,9 @@ Rows with a non-UNVERIFIED status were independently evidenced only to the exact
 | Verdict | Count |
 |---|---:|
 | CONFIRMED | 28 |
-| PARTIAL | 13 |
+| PARTIAL | 14 |
 | REJECTED | 0 |
-| UNVERIFIED / incomplete | 13 |
+| UNVERIFIED / incomplete | 12 |
 | DEVICE-EVIDENCE-NEEDED | 0 (no real-device dependent claim was assigned this verdict; device evidence was not obtained) |
 
-New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle); H-036 (signed return-series CVaR helper is not positive portfolio-loss CVaR and is unwired from production sizing); I-001 (classifier-absence unit assertion reads the gitignored runtime artifact path and can vary with device state; it does not prove runtime composition); I-002 (CP-1 lacks direct YAML-negative, install, and immutable-view assertions; later CP-14 tests do cover fixture separation); I-003 (X-12 exercises real FSM/adapter primitives behind fake clock/responder and a custom harness, not the run_apex/PaperRuntime composition; its ACK and pause assertions are explicitly separated from fill/trade success); I-004 (X-11 is deterministic over assembled inputs; later G1 tests add native producer/PaperRuntime refusal but not a positive native plan).
+New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle); H-036 (signed return-series CVaR helper is not positive portfolio-loss CVaR and is unwired from production sizing); I-001 (classifier-absence unit assertion reads the gitignored runtime artifact path and can vary with device state; it does not prove runtime composition); I-002 (CP-1 lacks direct YAML-negative, install, and immutable-view assertions; later CP-14 tests do cover fixture separation); I-003 (X-12 exercises real FSM/adapter primitives behind fake clock/responder and a custom harness, not the run_apex/PaperRuntime composition; its ACK and pause assertions are explicitly separated from fill/trade success); I-004 (X-11 is deterministic over assembled inputs; later G1 tests add native producer/PaperRuntime refusal but not a positive native plan); I-005 (176 current CP-3 tests assert matrix-listed synthetic E04–E06 edge cases; historical PASS alone was insufficient, and full production/device coverage remains outside that evidence).

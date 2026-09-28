@@ -1,0 +1,200 @@
+apex/ops/engine_context.py:26:ENGINE_ORDER = ("E01", "E02", "E12", "E04", "E03", "E10", "E09", "E05",
+apex/ops/engine_context.py:27:                "E06", "E11", "E07", "E08")
+apex/ops/engine_context.py:39:# cost unattributed). E05-E08 never run during training and report 0.0 there.
+apex/ops/engine_context.py:40:PROFILE_ENGINE_ORDER = ("E01", "E02", "E03", "E04", "E05", "E06", "E07",
+apex/ops/engine_context.py:100:        raise BridgeError("SIZE_INPUT_UNAVAILABLE", "ATR <= native E04 EPS")
+apex/ops/engine_context.py:403:        if row.get("engine_id") not in ("E01", "E02", "E03", "E05") or not row.get("evidence_id"):
+apex/ops/engine_context.py:491:    """D32: mid-rank of native HV30, prior same-cell E04 states only.
+apex/ops/engine_context.py:493:    The caller owns the per-cell native stream; no reconstructed HV or E04
+apex/ops/engine_context.py:501:        window = max(30, int(round(volatility.E04_DEFAULTS["regime_window_days"]
+apex/ops/engine_context.py:508:        if not math.isfinite(value) or len(history) < volatility.E04_DEFAULTS["min_bars"]:
+apex/ops/engine_context.py:1248:from apex.engines.e04_volatility import engine as E04
+apex/ops/engine_context.py:1249:from apex.engines.e05_fvg import engine as E05
+apex/ops/engine_context.py:1250:from apex.engines.e06_orderblock import engine as E06
+apex/ops/engine_context.py:1307:    """D26-A: E04's published ATR14, E11's Method-B lag-one reference.
+apex/ops/engine_context.py:1398:    """D35(e) P4: bisect slice of chronological E04 evidence, inclusive.
+apex/ops/engine_context.py:1460:    order.append("E04")
+apex/ops/engine_context.py:1461:    bars = [E04.observation_to_bar(o, timeframe) for o in window]
+apex/ops/engine_context.py:1463:        volatility = _time_engine(engine_profile, "E04", E04.run_engine, bars, timeframe=timeframe)
+apex/ops/engine_context.py:1465:        # Native chronological E04, never a partial/reimplemented indicator.
+apex/ops/engine_context.py:1474:            engine_profile["E04"] += time.monotonic() - drain_start
+apex/ops/engine_context.py:1479:        emitter = E04.E04VolatilityEngine()
+apex/ops/engine_context.py:1483:    # published E04 schema and align by as_of, not emitted-list position.
+apex/ops/engine_context.py:1494:        raise BridgeError("INSUFFICIENT_HISTORY", "E03/E04 warmup")
+apex/ops/engine_context.py:1563:    volume/ATR scalars. E06 starts at the actual joint dependency frontier.
+apex/ops/engine_context.py:1595:    order.append("E05")
+apex/ops/engine_context.py:1596:    fvg = E05.run_engine([E05.observation_to_bar(o) for o in window], symbol=symbol,
+apex/ops/engine_context.py:1598:    fvg_emitter = E05.E05FVGEngine()
+apex/ops/engine_context.py:1612:    order.append("E06")
+apex/ops/engine_context.py:1615:        raise BridgeError("E06_DEPENDENCY_UNAVAILABLE", "no contiguous mature volume/volatility suffix")
+apex/ops/engine_context.py:1622:    events.extend(E06.E06OrderBlockEngine().compute(symbol, timeframe, end, ob_context))
+apex/ops/engine_context.py:1669:                      "vol_confirm": "E03", "fvg": "E05"}[cid]
+apex/ops/engine_context.py:1724:    "E04_replay": "native chronological VolatilityEngineV4, each CLOSED observation once; no future-state reuse",
+apex/ops/engine_context.py:1872:            if ref.state == "ACTIVE" and event.engine_id == "E05":
+apex/ops/engine_context.py:1913:        atr = measured_number(bundle["vlt"].atr14_wilder,"ATR_UNAVAILABLE",lower=E04.EPS)
+apex/ops/engine_context.py:2459:        volatility_stream = {"engine": E04.VolatilityEngineV4(timeframe=timeframe), "pending": [], "evidence": []}
+apex/ops/engine_context.py:2475:            volatility_stream["pending"].append(E04.observation_to_bar(closed_engine_window([obs], timeframe)[0], timeframe))
+apex/ops/engine_context.py:3863:    if not documented or timeframe not in E04.TF_SECONDS:
+apex/ops/plan_bridge.py:663:                    elif ref.engine_id != "E05" or change["to"] not in ("EXPIRED","INVALIDATED","MITIGATED"):
+apex/ops/plan_bridge.py:792:        # E01 BOS and E05 zones are consumed from the engine context; the
+tests/unit/test_e04_volatility.py:1:"""E04 Volatility — §8 validation battery (blueprint L5497–5570) + §3/§5/§6/§7
+tests/unit/test_e04_volatility.py:16:    E04_DEFAULTS,
+tests/unit/test_e04_volatility.py:17:    E04VolatilityEngine,
+tests/unit/test_e04_volatility.py:100:        f = FIX["E04_F01_ATR_seed"]
+tests/unit/test_e04_volatility.py:109:        f = FIX["E04_F02_RMA_step"]
+tests/unit/test_e04_volatility.py:115:        f = FIX["E04_F03_TR_gap"]
+tests/unit/test_e04_volatility.py:121:        f = FIX["E04_F04_TR_gap_up"]
+tests/unit/test_e04_volatility.py:128:        f = FIX["E04_F05_Parkinson"]
+tests/unit/test_e04_volatility.py:134:        f = FIX["E04_F06_GK_floor"]
+tests/unit/test_e04_volatility.py:145:        f = FIX["E04_F07_YZ"]
+tests/unit/test_e04_volatility.py:153:        f = FIX["E04_F08_BollWidth"]
+tests/unit/test_e04_volatility.py:163:        f = FIX["E04_F09_VolRatio"]
+tests/unit/test_e04_volatility.py:174:        f = FIX["E04_F10_Regime_PIT"]
+tests/unit/test_e04_volatility.py:185:        f = FIX["E04_F11_Ljung"]
+tests/unit/test_e04_volatility.py:194:        f = FIX["E04_F12_VolTargeting"]
+tests/unit/test_e04_volatility.py:335:        assert EPS == 1e-12            # §2.2 E04 operational EPS (§6 row)
+tests/unit/test_e04_volatility.py:565:        with pytest.raises(ValueError, match="E04_V3_PAYLOAD_REJECTED"):
+tests/unit/test_e04_volatility.py:670:        assert E04_DEFAULTS["atr_short"] == 14
+tests/unit/test_e04_volatility.py:671:        assert E04_DEFAULTS["atr_long"] == 50
+tests/unit/test_e04_volatility.py:672:        assert E04_DEFAULTS["hv_window"] == 30
+tests/unit/test_e04_volatility.py:673:        assert E04_DEFAULTS["boll_period"] == 20
+tests/unit/test_e04_volatility.py:674:        assert E04_DEFAULTS["boll_k"] == 2.0
+tests/unit/test_e04_volatility.py:675:        assert E04_DEFAULTS["squeeze_vr"] == 0.75
+tests/unit/test_e04_volatility.py:676:        assert E04_DEFAULTS["squeeze_bw"] == 0.12
+tests/unit/test_e04_volatility.py:677:        assert E04_DEFAULTS["extreme_z"] == 3.5
+tests/unit/test_e04_volatility.py:678:        assert E04_DEFAULTS["regime_window_days"] == 180
+tests/unit/test_e04_volatility.py:679:        assert E04_DEFAULTS["cluster_window"] == 200
+tests/unit/test_e04_volatility.py:680:        assert E04_DEFAULTS["ewma_lambda"] == 0.94
+tests/unit/test_e04_volatility.py:681:        assert E04_DEFAULTS["winsorize_tr_mult"] == 10
+tests/unit/test_e04_volatility.py:682:        assert E04_DEFAULTS["epsilon"] == 1e-12
+tests/unit/test_e04_volatility.py:683:        assert E04_DEFAULTS["ljung_m"] == 20
+tests/unit/test_e04_volatility.py:684:        assert E04_DEFAULTS["k_targeting"] == {"VERY_LOW": 1.5, "LOW": 1.8,
+tests/unit/test_e04_volatility.py:689:        with pytest.raises(ValueError, match="UNKNOWN_E04_PARAM_QX"):
+tests/unit/test_e04_volatility.py:694:# Wave-Out: adaptive ATR E04↔E11 (§9.5-9)
+tests/unit/test_e04_volatility.py:703:        eng = E04VolatilityEngine()
+tests/unit/test_e04_volatility.py:741:        eng = E04VolatilityEngine()
+tests/unit/test_e04_volatility.py:746:        eng = E04VolatilityEngine()
+tests/unit/test_e04_volatility.py:752:            assert ev.engine_id == "E04"
+tests/unit/test_e04_volatility.py:757:        eng = E04VolatilityEngine()
+tests/unit/test_e04_volatility.py:766:        eng = E04VolatilityEngine()
+tests/unit/test_e04_volatility.py:774:# T-DR-001 (E04 re-run): data-availability contract — identical windows ⇒
+tests/unit/test_e05_fvg.py:1:"""E05 Imbalance/FVG — §8 validation battery (blueprint L6683–6760) +
+tests/unit/test_e05_fvg.py:4:frozen θ_minW (CP-E05-001's 0.25 proposal NOT applied). T-DR-001 re-run."""
+tests/unit/test_e05_fvg.py:14:    E05_DEFAULTS,
+tests/unit/test_e05_fvg.py:15:    E05FVGEngine,
+tests/unit/test_e05_fvg.py:340:        # frozen θ_minW = 0.2 (CP-E05-001 NOT applied): width 0.19·ATR
+tests/unit/test_e05_fvg.py:603:        with pytest.raises(ValueError, match="E05_ADAPTER_AMBIGUOUS_QX"):
+tests/unit/test_e05_fvg.py:605:        with pytest.raises(ValueError, match="E05_ADAPTER_VERSION_QX"):
+tests/unit/test_e05_fvg.py:612:# §6 parameters (frozen literals; CP-E05-001 NOT applied)
+tests/unit/test_e05_fvg.py:616:        assert E05_DEFAULTS["min_width_atr"] == 0.2     # frozen, not 0.25
+tests/unit/test_e05_fvg.py:617:        assert E05_DEFAULTS["min_abs_ticks"] == 3
+tests/unit/test_e05_fvg.py:618:        assert E05_DEFAULTS["max_age_bars"] == 96
+tests/unit/test_e05_fvg.py:619:        assert E05_DEFAULTS["mit_activate"] == 0.5
+tests/unit/test_e05_fvg.py:620:        assert E05_DEFAULTS["rej_wick"] == 0.5
+tests/unit/test_e05_fvg.py:621:        assert E05_DEFAULTS["salience_weights"] == (0.35, 0.25, 0.25, 0.15)
+tests/unit/test_e05_fvg.py:622:        assert E05_DEFAULTS["mtf_required"] is False
+tests/unit/test_e05_fvg.py:623:        assert E05_DEFAULTS["inverse_enabled"] is False
+tests/unit/test_e05_fvg.py:624:        assert E05_DEFAULTS["half_life_bars"] == 48
+tests/unit/test_e05_fvg.py:625:        assert E05_DEFAULTS["fresh_thr"] == 0.15
+tests/unit/test_e05_fvg.py:626:        assert E05_DEFAULTS["iou_merge_thr"] == 0.7
+tests/unit/test_e05_fvg.py:627:        assert E05_DEFAULTS["body_ratio_doji_thr"] == 0.1
+tests/unit/test_e05_fvg.py:628:        assert E05_DEFAULTS["range_lookback"] == 20
+tests/unit/test_e05_fvg.py:629:        assert E05_DEFAULTS["atr_period"] == 14
+tests/unit/test_e05_fvg.py:630:        assert E05_DEFAULTS["vol_lookback"] == 20
+tests/unit/test_e05_fvg.py:631:        assert E05_DEFAULTS["sequential_boost"] == 1.25
+tests/unit/test_e05_fvg.py:632:        assert E05_DEFAULTS["sequential_tol_atr"] == 0.3
+tests/unit/test_e05_fvg.py:633:        assert E05_DEFAULTS["inverse_penalty"] == 0.5
+tests/unit/test_e05_fvg.py:637:        with pytest.raises(ValueError, match="E05_SALIENCE_WEIGHTS_SUM_QX"):
+tests/unit/test_e05_fvg.py:641:        with pytest.raises(ValueError, match="UNKNOWN_E05_PARAM_QX"):
+tests/unit/test_e05_fvg.py:642:            get_params({"min_width": 0.25})        # CP-E05-001 key absent
+tests/unit/test_e05_fvg.py:759:            E05FVGEngine().compute("BNBUSDT", "6h",
+tests/unit/test_e05_fvg.py:763:        evs = E05FVGEngine().compute(
+tests/unit/test_e05_fvg.py:770:            assert ev.engine_id == "E05"
+tests/unit/test_e05_fvg.py:776:# T-DR-001 (E05 re-run)
+tests/unit/test_e06_orderblock.py:1:"""E06 OrderBlock — §8 validation battery (blueprint L8046–8292) + §1–§6
+tests/unit/test_e06_orderblock.py:4:CONSUMPTION-LINT test: E06 consumes E01–E05 evidence strictly through the
+tests/unit/test_e06_orderblock.py:17:    E06OrderBlockEngine,
+tests/unit/test_e06_orderblock.py:18:    E06_DEFAULTS,
+tests/unit/test_e06_orderblock.py:80:# re-computation of E01–E05 evidence paths (SMA / ATR / Wilder / EWMA)
+tests/unit/test_e06_orderblock.py:102:            # no imports from sibling engine packages (E01..E05)
+tests/unit/test_e06_orderblock.py:174:        f = FIX["E06_F01_UP_Q3"]["ob"]
+tests/unit/test_e06_orderblock.py:190:        f = FIX["E06_F02_DOWN_Q2_low_volume"]
+tests/unit/test_e06_orderblock.py:210:        f = FIX["E06_F03_BREAKER"]["ob"]
+tests/unit/test_e06_orderblock.py:219:        f = FIX["E06_F04_REVERSAL_CHoCH"]["ob"]
+tests/unit/test_e06_orderblock.py:230:        f = FIX["E06_F05_INVALIDATED"]["ob"]
+tests/unit/test_e06_orderblock.py:236:        f = FIX["E06_F06_MITIGATED"]["ob"]
+tests/unit/test_e06_orderblock.py:244:        bar = FIX["E06_F07_H_EQ_L_rejected"]["bar"]
+tests/unit/test_e06_orderblock.py:250:        f = FIX["E06_F08_V_zero"]
+tests/unit/test_e06_orderblock.py:266:        f = FIX["E06_F09_IoU_merge"]
+tests/unit/test_e06_orderblock.py:292:        f = FIX["E06_F10_directional_wrong_side"]
+tests/unit/test_e06_orderblock.py:308:        f = FIX["E06_F11_context_via_disp_high"]["input"]
+tests/unit/test_e06_orderblock.py:316:        f = FIX["E06_F12_context_fails_low_volume"]["input"]
+tests/unit/test_e06_orderblock.py:376:        ob = ob_from_fixture(FIX["E06_F01_UP_Q3"]["ob"])
+tests/unit/test_e06_orderblock.py:380:        ob2 = ob_from_fixture(FIX["E06_F01_UP_Q3"]["ob"])
+tests/unit/test_e06_orderblock.py:384:        ob3 = ob_from_fixture(FIX["E06_F01_UP_Q3"]["ob"])
+tests/unit/test_e06_orderblock.py:752:        with pytest.raises(ValueError, match="E06_ADAPTER_AMBIGUOUS_QX"):
+tests/unit/test_e06_orderblock.py:755:        with pytest.raises(ValueError, match="E06_ADAPTER_AMBIGUOUS_QX"):
+tests/unit/test_e06_orderblock.py:760:        with pytest.raises(ValueError, match="E06_ADAPTER_VERSION_QX"):
+tests/unit/test_e06_orderblock.py:771:        assert E06_DEFAULTS["body_min"] == 0.55
+tests/unit/test_e06_orderblock.py:772:        assert E06_DEFAULTS["disp_min"] == 1.5
+tests/unit/test_e06_orderblock.py:773:        assert E06_DEFAULTS["disp_high"] == 1.8
+tests/unit/test_e06_orderblock.py:774:        assert E06_DEFAULTS["zone_tol"] == 0.15
+tests/unit/test_e06_orderblock.py:775:        assert E06_DEFAULTS["vol_min"] == 1.3
+tests/unit/test_e06_orderblock.py:776:        assert E06_DEFAULTS["max_age_bars"] == 144
+tests/unit/test_e06_orderblock.py:777:        assert E06_DEFAULTS["mit_activate"] == 0.5
+tests/unit/test_e06_orderblock.py:778:        assert E06_DEFAULTS["min_width_atr"] == 0.15
+tests/unit/test_e06_orderblock.py:779:        assert E06_DEFAULTS["inv_tol"] == 0.2
+tests/unit/test_e06_orderblock.py:780:        assert E06_DEFAULTS["iou_thresh"] == 0.7
+tests/unit/test_e06_orderblock.py:781:        assert E06_DEFAULTS["merge_bars"] == 20
+tests/unit/test_e06_orderblock.py:782:        assert E06_DEFAULTS["disp_max_k"] == 5
+tests/unit/test_e06_orderblock.py:783:        assert E06_DEFAULTS["atr_period"] == 14
+tests/unit/test_e06_orderblock.py:784:        assert E06_DEFAULTS["vol_sma_period"] == 20
+tests/unit/test_e06_orderblock.py:785:        assert E06_DEFAULTS["salience_weights"] == (0.35, 0.25, 0.25, 0.15)
+tests/unit/test_e06_orderblock.py:790:        with pytest.raises(ValueError, match="UNKNOWN_E06_PARAM_QX"):
+tests/unit/test_e06_orderblock.py:792:        with pytest.raises(ValueError, match="E06_SALIENCE_WEIGHTS_SUM_QX"):
+tests/unit/test_e06_orderblock.py:815:            E06OrderBlockEngine().compute("BTCUSDT", "1h",
+tests/unit/test_e06_orderblock.py:821:            E06OrderBlockEngine().compute(
+tests/unit/test_e06_orderblock.py:828:        evs = E06OrderBlockEngine().compute(
+tests/unit/test_e06_orderblock.py:838:            assert ev.engine_id == "E06"
+tests/unit/test_e06_orderblock.py:845:# T-DR-001 (E06 re-run)
+tests/integration/test_cp3_engines.py:1:"""CP-3 cross-engine integration battery (E04/E05/E06).
+tests/integration/test_cp3_engines.py:4:  - E04 → E05/E06 evidence chain: E04's governed ATR series is consumed
+tests/integration/test_cp3_engines.py:5:    by E05 (Gate_D) and E06 (I_Volatility_v4) — never recomputed.
+tests/integration/test_cp3_engines.py:6:  - E05 → E06 chain: a live E05 FVG zone feeds E06's I_FVG_v4 Context
+tests/integration/test_cp3_engines.py:8:  - E01 → E06 chain: structural BOS events feed E06's structural gate
+tests/integration/test_cp3_engines.py:10:  - §8.6 redundancy guard: an E05 zone and an E06 zone with IoU > 0.6
+tests/integration/test_cp3_engines.py:24:from apex.engines.e04_volatility import ATR_FLOOR, E04VolatilityEngine
+tests/integration/test_cp3_engines.py:29:    """E04-governed ATR, left-padded with the §2.2 ATR floor for the
+tests/integration/test_cp3_engines.py:31:    the same pad rule as E04VolatilityEngine.atr_series_for."""
+tests/integration/test_cp3_engines.py:37:from apex.engines.e05_fvg import E05FVGEngine
+tests/integration/test_cp3_engines.py:39:from apex.engines.e06_orderblock import E06OrderBlockEngine
+tests/integration/test_cp3_engines.py:85:# E04 → E05 / E06 evidence chain
+tests/integration/test_cp3_engines.py:87:class TestE04FeedsDownstream:
+tests/integration/test_cp3_engines.py:88:    def test_e04_atr_series_drives_e05_gate_d(self):
+tests/integration/test_cp3_engines.py:93:        # E05 consumes the E04 ATR pathway (atr_by_idx) — zones whose
+tests/integration/test_cp3_engines.py:94:        # width clears 0.2·ATR(E04) are created; none below it
+tests/integration/test_cp3_engines.py:102:    def test_e04_atr_as_e06_volatility_evidence(self):
+tests/integration/test_cp3_engines.py:107:                         "tr_method": "E04_I_Volatility_v4"}
+tests/integration/test_cp3_engines.py:116:        # E06 ran to completion on E04-supplied ATR (no internal
+tests/integration/test_cp3_engines.py:122:# E05 → E06 chain: FVG evidence lifts the OB Context term
+tests/integration/test_cp3_engines.py:140:class TestE05FeedsE06:
+tests/integration/test_cp3_engines.py:149:                 "atr_n": atr, "tr_method": "E04"} for i in range(len(bars))]
+tests/integration/test_cp3_engines.py:159:        # a live E05-style FVG next to the origin supplies the OR-term
+tests/integration/test_cp3_engines.py:171:        # E05 run on the shared window; every active zone maps cleanly
+tests/integration/test_cp3_engines.py:172:        # into the I_FVG_v4 consumption shape used by E06
+tests/integration/test_cp3_engines.py:186:# §8.6 cross-engine redundancy guard (E05 zone vs E06 zone)
+tests/integration/test_cp3_engines.py:191:        fvg_lo, fvg_hi = 100.0, 102.0           # E05 zone
+tests/integration/test_cp3_engines.py:192:        ob_lo, ob_hi = 100.2, 102.2             # E06 zone
+tests/integration/test_cp3_engines.py:205:    def test_e04_e05_e06_events_insert(self):
+tests/integration/test_cp3_engines.py:214:                 "atr_n": atr_series[i], "tr_method": "E04"}
+tests/integration/test_cp3_engines.py:217:        evs += E04VolatilityEngine().compute(
+tests/integration/test_cp3_engines.py:219:        evs += E05FVGEngine().compute(
+tests/integration/test_cp3_engines.py:223:        evs += E06OrderBlockEngine().compute(
+tests/integration/test_cp3_engines.py:232:        assert {"E04", "E05", "E06"} <= engine_ids
+tests/integration/test_cp3_engines.py:255:        assert set(engines) <= {"E04", "E05", "E06"} and engines
+tests/integration/test_cp3_engines.py:276:                     "atr_n": atr_series[i], "tr_method": "E04"}
+tests/integration/test_cp3_engines.py:286:        # E04: canonical state series identical
+tests/integration/test_cp3_engines.py:290:        # E05: fid + snapshot identical
+tests/integration/test_cp3_engines.py:296:        # E06: canonical OB list identical
+tests/integration/test_cp3_engines.py:301:    def test_e06_fail_closed_without_upstream_evidence(self):
+tests/integration/test_cp3_engines.py:306:            E06OrderBlockEngine().compute(
