@@ -1,0 +1,423 @@
+Baseline recursive consumers of persisted engine evidence/context and store insertion:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:312:    "engine_id",            #  2 E01..E12 — producer
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:343:    engine_id: str
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:368:        """Contract conformance: required non-null fields, engine_id ∈
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:373:        if self.engine_id not in tuple(f"E{i:02d}" for i in range(1, 13)):
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:374:            raise ValueError(f"engine_id {self.engine_id!r} not E01..E12")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/contracts.py:395:            "engine_id": self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:91:CREATE TABLE evidence_event (
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:96:    engine_id TEXT CHECK(engine_id IN ('E01','E02','E03','E04','E05','E06','E07','E08','E09','E10','E11','E12')),
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:588:            "INSERT INTO evidence_event (evidence_id, timestamp_utc, symbol, "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:589:            " timeframe, engine_id, event_type, price_level, strength, "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/data_catalog/store/sqlite_store.py:596:             row["timeframe"], row["engine_id"], row["event_type"], "",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:19:  validate_24_fields() before bus publication; engine_id ∈ E01..E12;
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:75:    engine_id: str = ""                 # E01..E12
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:81:        if self.engine_id not in ENGINE_IDS:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:83:                f"engine_id {self.engine_id!r} not in E01..E12 "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:108:        if self.engine_id == "E01":
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:115:            return eps_for_engine(self.engine_id, tick, closes)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:116:        return eps_for_engine(self.engine_id)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:147:            f"{new_state.value} for {self.engine_id} (T-MON-002)"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:211:        if event.engine_id != self.engine_id:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:213:                f"emission engine_id {event.engine_id!r} != producer "
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:214:                f"{self.engine_id} (AI.11: no cross-engine mutation)")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/base.py:219:                priority, f"evidence.{self.engine_id}.{event.condition_state}",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1300:    engine_id = "E01"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e01_structure/engine.py:1428:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1552:    engine_id = "E02"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e02_liquidity/engine.py:1628:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:968:    engine_id = "E03"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e03_volume/engine.py:1093:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:1204:    engine_id = "E04"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e04_volatility/engine.py:1308:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:775:    engine_id = "E05"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e05_fvg/engine.py:844:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:819:    engine_id = "E06"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e06_orderblock/engine.py:891:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:1218:    engine_id = "E07"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e07_rtm/engine.py:1288:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:1214:    engine_id = "E08"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e08_wyckoff/engine.py:1285:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e09_trend/engine.py:1102:    engine_id = "E09"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e09_trend/engine.py:1173:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e10_momentum/engine.py:1432:    engine_id = "E10"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e10_momentum/engine.py:1517:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e11_regime/engine.py:1469:    engine_id = "E11"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e11_regime/engine.py:1590:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e12_temporal/engine.py:1401:    engine_id = ENGINE_ID
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/engines/e12_temporal/engine.py:1500:            engine_id=self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/fabric/context.py:237:        by_engine.setdefault(m.engine_id, []).append(m)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/fabric/context.py:615:                   if any(m.engine_id == eng for m in fabric.members)}
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/fabric/evidence.py:190:def engine_group_of(engine_id: str) -> str:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/fabric/evidence.py:193:        return _GROUP_OF_ENGINE[engine_id]
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/fabric/evidence.py:196:            f"UNKNOWN_ENGINE_ID_QX: {engine_id!r} is not E01..E12"
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/fabric/evidence.py:215:    engine_id: str
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/fabric/evidence.py:268:            "engine_id": self.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/fabric/evidence.py:284:        d["engine_group"] = engine_group_of(self.engine_id)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/fabric/evidence.py:423:            out[engine_group_of(ref.engine_id)].append(ref)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/fabric/evidence.py:455:            engine_id=ev.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:384:        group = [r for r in refs if r.engine_id == engine]
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:403:        if row.get("engine_id") not in ("E01", "E02", "E03", "E05") or not row.get("evidence_id"):
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1670:            matched = [ev for ev in events if ev.engine_id == engine
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1680:                    quality_contributors.append({"engine_id": engine, "evidence_id": ev.evidence_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1701:                              f"{event.engine_id} resolution_class={event.resolution_class}: {exc}") from exc
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1703:            raise BridgeError("BRIDGE_PIT_VIOLATION", event.engine_id)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1785:             "source_state NOT IN ('CP14_BRIDGE_CONTEXT','CP14_UNCERTAINTY','CP14_COMPONENTS','CP14_SL14_ADMISSION') ORDER BY snapshot_id",(as_of,)),
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1811:            saved = await read_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,exact=True)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1814:                context["events"] = await read_complete_evidence(self.store,context["events"])
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1817:                await append_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1872:            if ref.state == "ACTIVE" and event.engine_id == "E05":
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1995:            div_events = [e for e in bundle["events"] if e.engine_id == "E10" and
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:2000:        temporal_event = next(e for e in reversed(bundle["events"]) if e.engine_id == "E12")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:2329:        bundle["events"] = await persist_complete_evidence(self.store, events)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3468:async def read_complete_evidence(store: Any, evidence_ids: list[str]) -> list[Any]:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3473:            "SELECT raw,engine_id,snapshot_id FROM evidence_event WHERE evidence_id=?",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3478:        if (event.evidence_id, event.engine_id, event.snapshot_id) != (identity, row[1], row[2]):
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3484:async def persist_complete_evidence(store: Any, events: list[Any]) -> list[Any]:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3488:            "SELECT raw FROM evidence_event WHERE evidence_id=?",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3495:    result = await read_complete_evidence(store, [e.evidence_id for e in events])
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/paper_loop.py:682:            "SELECT COUNT(*) FROM evidence_event WHERE symbol=? AND timeframe=?",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:29:``REQUIRED_CONTEXT_KEYS``; reduced ``evidence_event`` SQL rows are rejected
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:233:        raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE", key)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:261:    if "evidence_events" in source and "events" not in out:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:262:        out["events"] = source["evidence_events"]
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:285:    raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE", "events must be a sequence")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:334:            evidence_id=event.evidence_id, engine_id=event.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:343:    required = ("evidence_id", "engine_id", "direction", "quality",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:348:        # A row returned directly from evidence_event is deliberately refused:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:368:        evidence_id=str(event["evidence_id"]), engine_id=str(event["engine_id"]),
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:381:        raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE", "bars must be a sequence")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:433:        raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE", name)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:620:            raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE",
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:663:                    elif ref.engine_id != "E05" or change["to"] not in ("EXPIRED","INVALIDATED","MITIGATED"):
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:765:            raise BridgeError("BRIDGE_CONTEXT_INVALID", "forecast_uncertainty")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/plan_bridge.py:891:            raise BridgeError("BRIDGE_CONTEXT_INVALID", "arbitration")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/quality/numerical.py:61:def eps_for_engine(engine_id: str,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/quality/numerical.py:68:    guessed inputs). Unknown engine_id → KeyError (fail-closed).
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/quality/numerical.py:70:    form = ENGINE_EPS[engine_id]
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:59:def _load_adapter(engine_id: str) -> Callable[[Mapping[str, Any]], Any]:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:60:    target = ENGINE_ADAPTERS.get(engine_id)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:62:        raise AdapterConformanceError("ENGINE_ADAPTER_ABSENT", engine_id)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:68:def translate_legacy(*, engine_id: str, payload: Mapping[str, Any],
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:77:    adapter = _load_adapter(engine_id)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:83:    return {"engine_id": engine_id, "version": version,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:113:        {"engine_id": "E05", "version": "v3", "payload": e05,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:115:        {"engine_id": "E05", "version": "v3", "payload": e05_doji,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:117:        {"engine_id": "E06", "version": "v3", "payload": e06,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:119:        {"engine_id": "E06", "version": "v3", "payload": e06_hl,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:134:        translated = translate_legacy(engine_id=case["engine_id"],
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:137:        obj = _load_adapter(case["engine_id"])(dict(case["payload"]))
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:151:            failures.append(f"{case['engine_id']}:{json.dumps(checks, sort_keys=True)}")
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:152:        results.append({"engine_id": case["engine_id"], "version": case["version"],
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:183:            engine_id = str(record.get("engine_id", ""))
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:186:                # harness synthetic case: engine_id/version + nested payload
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:190:                           if k not in ("engine_id", "version", "expect")}
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/research/adapter_conformance.py:191:            translate_legacy(engine_id=engine_id, payload=payload,
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/setup/family_sf_fvg_sweep_rev.py:391:        by_dir[m.direction].append(m.engine_id)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/setup/family_sf_fvg_sweep_rev.py:392:        per_engine[m.engine_id] = m.direction
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_context_to_trade_paper.py:186:            evidence_id=ev.evidence_id, engine_id=ev.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_context_to_trade_paper.py:203:            evidence_id=f"synth-{eng}", engine_id=eng, symbol=SYMBOL,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_context_to_trade_paper.py:412:        assert "E08" in [m.engine_id for m in by_group["structure"]] or \
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_context_to_trade_paper.py:413:            any(m.engine_id == "E08" for m in chain["fabric"].members)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp14_producer.py:168:        restored=await E.read_complete_evidence(store,[e.evidence_id for e in context['events']])
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp14_producer.py:169:        assert {e.engine_id for e in restored}=={e.engine_id for e in context['events']}
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp14_producer.py:170:        assert {e.engine_id for e in restored}=={'E01','E02','E03','E04','E05','E09','E11','E12'}
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp2_engines.py:9:    insert through the frozen SQLiteStore.insert_evidence (the evidence_event
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp2_engines.py:238:                    "SELECT COUNT(*) FROM evidence_event")
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp2_engines.py:241:                    "SELECT engine_id, event_type, snapshot_id, "
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp2_engines.py:242:                    "strength, confidence FROM evidence_event "
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp2_engines.py:258:        """to_ddl_row() produces the frozen evidence_event column set."""
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp2_engines.py:266:        # the frozen evidence_event DDL column set (CP-1, consumed)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp2_engines.py:267:        for col in ("evidence_id", "engine_id", "timestamp_utc", "symbol",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp3_engines.py:231:        engine_ids = {ev.engine_id for ev in evs}
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp3_engines.py:232:        assert {"E04", "E05", "E06"} <= engine_ids
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp3_engines.py:243:                    "SELECT COUNT(*) FROM evidence_event")
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp3_engines.py:246:                    "SELECT DISTINCT engine_id FROM evidence_event "
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp3_engines.py:247:                    "ORDER BY engine_id")
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:213:            assert ev.engine_id == "E07"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:367:        assert {ev.engine_id for ev in evs} == {"E07", "E08", "E09"}
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:378:                    "SELECT COUNT(*) FROM evidence_event")
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:381:                    "SELECT DISTINCT engine_id FROM evidence_event "
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:382:                    "ORDER BY engine_id")
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:427:            runs.append([(ev.engine_id, ev.snapshot_id, ev.condition_state,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:337:        assert {ev.engine_id for ev in evs} == {"E10", "E11", "E12"}
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:341:            if ev.engine_id in ("E11", "E12"):
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:351:                    "SELECT COUNT(*) FROM evidence_event")
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:354:                    "SELECT DISTINCT engine_id FROM evidence_event "
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:355:                    "ORDER BY engine_id")
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp8_adapters.py:165:            {"engine_id": "E05", "version": "v3", "ftype": "NOPE"},
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp8_adapters.py:166:            {"engine_id": "E99", "version": "v2", "ftype": "BULLISH_FVG"}]))
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_ops_paper_loop.py:291:            evidence_id=ref.evidence_id, engine_id=ref.engine_id,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_store_integration.py:63:            "evidence_event": {"evidence_id", "timestamp_utc", "symbol",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_store_integration.py:64:                               "timeframe", "engine_id", "event_type",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_store_integration.py:266:            evidence_id=uuid_v7(), engine_id="E01",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_store_integration.py:279:            evidence_id=uuid_v7(), engine_id="E13",  # not E01..E12
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_base_contract.py:34:    engine_id = "E05"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_base_contract.py:44:        evidence_id=uuid_v7(), engine_id="E05",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_base_contract.py:65:    def test_engine_ids(self):
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_base_contract.py:68:    def test_invalid_engine_id_rejected(self):
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_base_contract.py:70:            engine_id = "E13"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_base_contract.py:138:    def test_invalid_engine_id_rejected(self):
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_base_contract.py:141:            run(eng.emit(ev(engine_id="E01")))
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_base_contract.py:188:            engine_id = "E01"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_cp146.py:69:            evidence_id=evidence_id, engine_id="E01", symbol="BTCUSDT",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e01_structure.py:287:    def test_tdr_001_fresh_engine_identical_minus_operational_ids(self):
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e01_structure.py:452:            assert ev.engine_id == "E01"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e01_structure.py:460:        assert eng.engine_id == "E01"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e02_liquidity.py:277:    def test_tdr_001_fresh_engine_identical_minus_operational_ids(self):
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e02_liquidity.py:614:            assert ev.engine_id == "E02"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e02_liquidity.py:623:        assert eng.engine_id == "E02"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e03_volume.py:222:    def test_tdr_001_fresh_engine_identical(self):
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e03_volume.py:583:            assert ev.engine_id == "E03"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e03_volume.py:590:        assert eng.engine_id == "E03"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e04_volatility.py:752:            assert ev.engine_id == "E04"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e05_fvg.py:770:            assert ev.engine_id == "E05"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e06_orderblock.py:838:            assert ev.engine_id == "E06"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e07_rtm.py:974:        assert ev.engine_id == "E07"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e08_wyckoff.py:862:            assert ev.engine_id == "E08"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e09_trend.py:728:            assert ev.engine_id == "E09"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e10_momentum.py:717:            assert ev.engine_id == "E10"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e11_regime.py:857:            assert ev.engine_id == "E11"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e12_temporal.py:1145:        assert ev.engine_id == "E12"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_e12_temporal.py:1200:        assert events and events[0].engine_id == "E12"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:512:        evidence_id="cp14-round-trip", engine_id="E01", analyst_version="4.0.0",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:529:            assert await EC.persist_complete_evidence(store, [event]) == [event]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:530:            assert await EC.persist_complete_evidence(store, [event]) == [event]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:533:                await EC.persist_complete_evidence(store, [replace(event, age=3)])
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:535:                await EC.read_complete_evidence(store, ["absent"])
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:538:                await EC.read_complete_evidence(store, ["legacy-reduced"])
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1372:            restored = await EC.read_complete_evidence(store, [event.evidence_id for event in bundle["events"]])
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1385:            expired = [event for event in later["events"] if event.engine_id == "E05"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1388:            assert await EC.read_complete_evidence(store, [event.evidence_id for event in later["events"]]) == later["events"]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1429:            assert await EC.read_complete_evidence(store, [event.evidence_id]) == [event]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1430:            assert await EC.persist_complete_evidence(store, [event]) == [event]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1432:                "SELECT raw FROM evidence_event WHERE evidence_id=?", (event.evidence_id,))).fetchone())[0]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1449:            assert (await (await store.db.execute("SELECT COUNT(*) FROM evidence_event")).fetchone())[0] == 0
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1580:    refs = [SimpleNamespace(engine_id=e, state="ACTIVE", direction=1, quality=.8) for e in REQUIRED_EVIDENCE]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1581:    refs += [SimpleNamespace(engine_id="E01", state="ACTIVE", direction=-1, quality=.6),
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1582:             SimpleNamespace(engine_id="E04", state="ACTIVE", direction=0, quality=.7)]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1602:    contributors = [{"engine_id": "E01", "evidence_id": "ev1", "quality": .4},
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1603:                    {"engine_id": "E05", "evidence_id": "ev2", "quality": .8}]
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1605:    for bad in ([], [{"engine_id": "E07", "evidence_id": "circular", "quality": .9}],
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context.py:1606:                [{"engine_id": "E01", "evidence_id": "ev", "quality": None}]):
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context_store_sources.py:233:            assert set(e.engine_id for e in events).issubset(EC.ENGINE_ORDER)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context_store_sources.py:235:                assert {e.evidence_id for e in emitted} == {e.evidence_id for e in events if e.engine_id == code}
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context_store_sources.py:238:            restored = await EC.read_complete_evidence(store,[e.evidence_id for e in events])
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_engine_context_store_sources.py:241:            assert any(e.engine_id == "E05" and e.resolution_class == "QX" for e in restored)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_fabric_context.py:80:        evidence_id=eid, engine_id=engine, symbol="BTCUSDT", timeframe=TF,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_fabric_context.py:445:    def test_redundancy_tie_keeps_the_higher_engine_id(self):
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_fabric_evidence.py:42:        evidence_id=eid, engine_id=engine, symbol=symbol, timeframe=tf,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_fabric_evidence.py:247:            FabricEvidenceRef(evidence_id="e", engine_id="E01", symbol="S",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_fabric_evidence.py:267:            engine_id = "E05"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_fabric_evidence.py:287:            engine_id = "E01"
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_plan_bridge.py:99:    # This resembles the frozen evidence_event DDL row but intentionally lacks
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_plan_bridge.py:103:        "evidence_id": "ev-reduced", "engine_id": "E01",
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/unit/test_setup_family_sf_fvg_sweep_rev.py:69:            evidence_id=f"ev_{i}", engine_id=eng, symbol=symbol,
+
+Baseline bridge and PAPER scheduler source excerpts:
+
+===== apex/ops/plan_bridge.py:541-635 (baseline) =====
+   541	    async def __call__(self, symbol: str, timeframe: str, as_of: str
+   542	                       ) -> Optional[Mapping[str, Any]]:
+   543	        key = f"{symbol}:{timeframe}"
+   544	        try:
+   545	            if self.environment != "PAPER":
+   546	                raise BridgeError("PAPER_ONLY_EXECUTION", self.environment)
+   547	            if symbol not in CORE10_SYMBOLS or timeframe not in TIMEFRAMES_14:
+   548	                raise BridgeError("CELL_OUT_OF_UNIVERSE", key)
+   549	            source = await self._source_context(symbol, timeframe, as_of)
+   550	            if source is None:
+   551	                raise BridgeError(
+   552	                    "ENGINE_CONTEXT_UNAVAILABLE",
+   553	                    "no governed engine context or complete persisted evidence reader",
+   554	                )
+   555	            plan = await self._build(source, symbol=symbol, timeframe=timeframe,
+   556	                                     as_of=as_of)
+   557	            self.refusals.pop(key, None)
+   558	            self.plans[key] = dict(plan)
+   559	            return plan
+   560	        except BridgeError as exc:
+   561	            self.refusals[key] = {"reason": exc.reason, "detail": exc.detail}
+   562	            return None
+   563	        except FamilyError as exc:
+   564	            self.refusals[key] = {"reason": exc.reason, "detail": exc.detail}
+   565	            return None
+   566	        except Exception as exc:
+   567	            # A provider exception must not become a guessed plan.  Keep a
+   568	            # stable machine reason while retaining the type/detail for audit.
+   569	            self.refusals[key] = {
+   570	                "reason": "BRIDGE_FAIL_CLOSED",
+   571	                "detail": f"{type(exc).__name__}: {exc}",
+   572	            }
+   573	            return None
+   574
+   575	    async def _source_context(self, symbol: str, timeframe: str,
+   576	                              as_of: str) -> Optional[Mapping[str, Any]]:
+   577	        if self.context_source is not None:
+   578	            value = self.context_source(symbol, timeframe, as_of)
+   579	            return await _maybe_await(value)
+   580	        for name in ("get_bridge_context", "get_engine_context",
+   581	                     "read_bridge_context", "read_engine_context"):
+   582	            reader = getattr(self.store, name, None)
+   583	            if reader is None:
+   584	                continue
+   585	            return await _maybe_await(reader(symbol, timeframe, as_of))
+   586	        contexts = getattr(self.store, "bridge_contexts", None)
+   587	        if isinstance(contexts, Mapping):
+   588	            return contexts.get((symbol, timeframe)) or contexts.get(
+   589	                f"{symbol}:{timeframe}")
+   590	        return None
+   591
+   592	    async def _window(self, context: Mapping[str, Any], *, symbol: str,
+   593	                      timeframe: str, as_of: str) -> List[Dict[str, float]]:
+   594	        supplied = context.get("bars")
+   595	        if supplied is None:
+   596	            window_bars = context.get("window_bars", self.max_bars)
+   597	            try:
+   598	                window = await _maybe_await(
+   599	                    self.store.get_window(symbol, timeframe, as_of, int(window_bars)))
+   600	            except AttributeError as exc:
+   601	                raise BridgeError("NO_MARKET_DATA", "store has no PIT window reader") from exc
+   602	            supplied = window
+   603	        bars = _normalise_bars(supplied)
+   604	        for index, bar in enumerate(bars):
+   605	            timestamp = bar.get("timestamp", bar.get("as_of"))
+   606	            if timestamp is not None:
+   607	                stamp_ms = _event_time_ms(timestamp, fallback=None)
+   608	                if stamp_ms is not None and stamp_ms > _as_of_ms(as_of):
+   609	                    raise BridgeError("BRIDGE_PIT_VIOLATION", f"bar index={index}")
+   610	            if bar.get("status") not in (None, "CLOSED"):
+   611	                raise BridgeError("DATA_QUALITY_QX", f"bar index={index}")
+   612	        return bars
+   613
+   614	    async def _build(self, raw_context: Mapping[str, Any], *, symbol: str,
+   615	                     timeframe: str, as_of: str) -> Mapping[str, Any]:
+   616	        context = _flatten_context(raw_context)
+   617	        missing_context = [key for key in REQUIRED_CONTEXT_KEYS
+   618	                           if key not in context or context[key] is None]
+   619	        if missing_context:
+   620	            raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE",
+   621	                              ",".join(missing_context))
+   622	        _validate_e11_context(context["e11_context"])
+   623	        transport = context["e11_context"].get("bridge_inputs")
+   624	        if transport is not None:
+   625	            if not isinstance(transport, Mapping) or set(transport) & set(REQUIRED_CONTEXT_KEYS):
+   626	                raise BridgeError("PRODUCER_TRANSPORT_INVALID", "optional inputs overwrite required context")
+   627	            context.update(transport)
+   628	        regime_label = _regime_label(context["regime_state"])
+   629	        # ``events`` is the only evidence path.  A reduced SQL row fails in
+   630	        # _fabric_ref rather than being silently upgraded to ACTIVE.
+   631	        events = _event_list(_required(context, "events"))
+   632	        as_of_ms = _as_of_ms(as_of)
+   633	        refs = [_fabric_ref(event, symbol=symbol, timeframe=timeframe,
+   634	                            as_of_ms=as_of_ms) for event in events]
+   635	        ages = context.get("evidence_age_bars")
+
+===== apex/ops/paper_loop.py:614-675 (baseline) =====
+   614	    async def _stage_decision(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   615	        plan = normalize_plan(self._state(payload).get("plan") or {})
+   616	        self._state(payload)["plan_obj"] = plan
+   617	        return {"detail": f"trade_plan={plan.proposal_id} qty={plan.sized_quantity} "
+   618	                          f"stop={plan.stop_price} target={plan.target_price}"}
+   619
+   620	    async def _stage_execution(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+   621	        state = self._state(payload)
+   622	        plan: F.TradePlan = state["plan_obj"]
+   623	        if not self.trading_enabled:
+   624	            raise CellRefusal("BOOT_NOT_READY",
+   625	                              f"boot_state={self.boot_verdict.get('boot_state')} "
+   626	                              f"new_trades_allowed=False")
+   627	        if str(plan.decision) not in ("ALLOW", "REDUCE"):
+   628	            raise CellRefusal("DECISION_NO_TRADE", str(plan.decision))
+   629	        price = await last_closed_price(self.store, plan.symbol, plan.timeframe,
+   630	                                        payload["as_of"])
+   631	        if price is None:
+   632	            raise CellRefusal("NO_PRICE_FOR_CELL", "no closed bar to price against")
+   633	        # D51: reserve only when a valid trade plan exists, immediately before
+   634	        # admission. The increment is synchronous (atomic under semaphore 4).
+   635	        if not self._take_budget():
+   636	            raise CellRefusal("TRADE_BUDGET_REACHED",
+   637	                              f"max_trades_per_cycle={self.max_trades_per_cycle}")
+   638	        record = await self.execute_plan(
+   639	            plan, price=price, timestamp_utc=payload["as_of"],
+   640	            close_ms=int(payload["close_ms"]))
+   641	        if not record.get("submitted"):
+   642	            self._release_budget()
+   643	        state["trade"] = record
+   644	        return {"detail": f"intent={record['intent_id']} state={record['state']} "
+   645	                          f"fill={record.get('fill')} protected="
+   646	                          f"{record.get('protected')}"}
+   647
+   648	    async def _resolve_plan(self, payload: Mapping[str, Any]
+   649	                            ) -> Mapping[str, Any]:
+   650	        """Ask the decision bridge for this cell's plan (the frozen SL-5 → SL-6
+   651	        seam). No provider ⇒ a NAMED refusal, never a fabricated plan."""
+   652	        if self.plan_provider is None:
+   653	            raise CellRefusal(
+   654	                "NO_PLAN_PROVIDER",
+   655	                "no plan provider is wired: the engine → fabric → setup → "
+   656	                "forecast → risk → plan bridge is a separate increment "
+   657	                "(PHASE2_HANDOFF_WIRING §REMAINING WORK)")
+   658	        provided = self.plan_provider(payload["symbol"], payload["timeframe"],
+   659	                                      payload["as_of"])
+   660	        plan = await provided if hasattr(provided, "__await__") else provided
+   661	        if plan is None:
+   662	            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+   663	            if self.environment == "PAPER" and refusal:
+   664	                raise CellRefusal(refusal["reason"],refusal.get("detail",""))
+   665	            raise CellRefusal("NO_PLAN_FOR_CELL",
+   666	                              f"{payload['cell_id']} has no governed plan at "
+   667	                              f"{payload['as_of']}")
+   668	        if not isinstance(plan, Mapping):
+   669	            raise CellRefusal("PLAN_TYPE_QX", type(plan).__name__)
+   670	        return dict(plan)
+   671
+   672	    async def _setup_exists(self, setup_id: str) -> bool:
+   673	        if not setup_id:
+   674	            return False
+   675	        cursor = await self.store.db.execute(
+
+===== apex/ops/engine_context.py:1829-1842 (baseline) =====
+  1829	    async def get_bridge_context(self, symbol: str, timeframe: str, as_of: str) -> dict:
+  1830	        """Exactly 38 context fields / 23 risk fields; no fixture fallback.
+  1831
+  1832	        PAPER serve binds prepare separately so this accessor is a cheap copy
+  1833	        inside the scheduler budget. A standalone caller may prepare lazily.
+  1834	        """
+  1835	        import copy
+  1836	        key = (symbol,timeframe,as_of)
+  1837	        if key in self._failed:
+  1838	            raise self._failed[key]
+  1839	        if key not in self._ready:
+  1840	            await self.prepare(symbol,timeframe,as_of)
+  1841	        return copy.deepcopy(self._ready[key])
+  1842
+
+===== apex/ops/engine_context.py:2310-2336 (baseline) =====
+  2310	            expected = [(o.timestamp, o.content_hash()) for o in last["frame"]["raw_window"]]
+  2311	            actual = [(o.timestamp, o.content_hash()) for o in measured["window"]]
+  2312	            if actual != expected:
+  2313	                raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", "engine/quality window mismatch")
+  2314	            last["frame"]["raw_window"] = measured["window"]
+  2315	            history_candles = [E12.observation_to_candle(o) for o in closed_engine_window(window[:-1],timeframe)]
+  2316	            last["temporal_profile"] = E12.compute_temporal_profile(
+  2317	                E12.returns_by_tod_from_candles(history_candles),as_of=int(history_candles[-1]["ts"]))
+  2318	        bundle = complete_engine_bundle(last, symbol, timeframe, artifact, rtm_context=rtm_context)
+  2319	        bundle["volatility_history"] = [e.state for e in last["volatility_stream"]["evidence"]]
+  2320	        if measured is not None:
+  2321	            bundle["measured_quality"] = measured
+  2322	            bundle["measured_mtf"] = {k: v for k, v in mtf.items() if k != "frames"}
+  2323	        lineage = tuple(self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())]["observation_id"]
+  2324	                        for obs in bundle["raw_window"])
+  2325	        available = max([_iso_to_ms(bundle["window"][-1].timestamp)] + [_iso_to_ms(obs.availability_time) for obs in bundle["raw_window"]])
+  2326	        events = [replace(event, lineage=tuple(dict.fromkeys((*event.lineage, *lineage))),
+  2327	                          availability_time=_ms_to_iso(max(_iso_to_ms(event.availability_time), available)))
+  2328	                  for event in bundle["events"]]
+  2329	        bundle["events"] = await persist_complete_evidence(self.store, events)
+  2330	        bundle["raw_observation_ids"] = lineage
+  2331	        bundle["classifier_artifact_sha256"] = artifact["artifact_sha256"]
+  2332	        self.diagnostics[f"{symbol}:{timeframe}"] = {"status": "ENGINE_BUNDLE_PREPARED",
+  2333	            "engine_order": list(bundle["engine_order"]), "evidence_count": len(events),
+  2334	            "as_of": last["as_of"], "classifier_artifact_sha256": artifact["artifact_sha256"]}
+  2335	        return bundle
+  2336

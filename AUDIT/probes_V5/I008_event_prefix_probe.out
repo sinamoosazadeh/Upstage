@@ -1,0 +1,7 @@
+exact fixture event counts: {'E04': 119, 'E05': 7, 'E06': 10}
+exact first-30 counts: {'E04': 30}
+first non-E04 event index: 119
+full event IDs: ['E04', 'E05', 'E06']
+test's first 30 inserted rows by engine: [('E04', 30)]
+all concatenated events inserted rows by engine: [('E04', 119), ('E05', 7), ('E06', 10)]
+probe=PASS; exact test composition; SQLite :memory: only; no data/ or network

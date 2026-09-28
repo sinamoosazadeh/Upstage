@@ -1,0 +1,34 @@
+apex/data_catalog/store/sqlite_store.py:577:    async def insert_evidence(self, event: EvidenceEvent) -> None:
+apex/ops/engine_context.py:1557:def complete_engine_bundle(item: Mapping[str, Any], symbol: str, timeframe: str,
+apex/ops/engine_context.py:1622:    events.extend(E06.E06OrderBlockEngine().compute(symbol, timeframe, end, ob_context))
+apex/ops/engine_context.py:2318:        bundle = complete_engine_bundle(last, symbol, timeframe, artifact, rtm_context=rtm_context)
+apex/ops/engine_context.py:2329:        bundle["events"] = await persist_complete_evidence(self.store, events)
+apex/ops/engine_context.py:3484:async def persist_complete_evidence(store: Any, events: list[Any]) -> list[Any]:
+apex/ops/engine_context.py:3494:            await store.insert_evidence(evidence_storage_copy(event))
+tests/integration/test_cp2_engines.py:236:                    await store.insert_evidence(ev)
+tests/integration/test_cp3_engines.py:217:        evs += E04VolatilityEngine().compute(
+tests/integration/test_cp3_engines.py:219:        evs += E05FVGEngine().compute(
+tests/integration/test_cp3_engines.py:223:        evs += E06OrderBlockEngine().compute(
+tests/integration/test_cp3_engines.py:241:                    await store.insert_evidence(ev)
+tests/integration/test_cp3_engines.py:306:            E06OrderBlockEngine().compute(
+tests/integration/test_cp4_engines.py:376:                    await store.insert_evidence(ev)
+tests/integration/test_cp4_engines.py:399:                await store.insert_evidence(ev)
+tests/integration/test_cp4_engines.py:401:                    await store.insert_evidence(ev)
+tests/integration/test_cp5_engines.py:349:                    await store.insert_evidence(ev)
+tests/integration/test_cp5_engines.py:371:                await store.insert_evidence(ev)
+tests/integration/test_cp5_engines.py:373:                    await store.insert_evidence(ev)
+tests/integration/test_store_integration.py:277:        run(store.insert_evidence(good))
+tests/integration/test_store_integration.py:291:            run(store.insert_evidence(bad))
+tests/unit/test_e05_fvg.py:759:            E05FVGEngine().compute("BNBUSDT", "6h",
+tests/unit/test_e05_fvg.py:763:        evs = E05FVGEngine().compute(
+tests/unit/test_e06_orderblock.py:815:            E06OrderBlockEngine().compute("BTCUSDT", "1h",
+tests/unit/test_e06_orderblock.py:821:            E06OrderBlockEngine().compute(
+tests/unit/test_e06_orderblock.py:828:        evs = E06OrderBlockEngine().compute(
+tests/unit/test_engine_context.py:529:            assert await EC.persist_complete_evidence(store, [event]) == [event]
+tests/unit/test_engine_context.py:530:            assert await EC.persist_complete_evidence(store, [event]) == [event]
+tests/unit/test_engine_context.py:533:                await EC.persist_complete_evidence(store, [replace(event, age=3)])
+tests/unit/test_engine_context.py:536:            await store.insert_evidence(replace(event, evidence_id="legacy-reduced"))
+tests/unit/test_engine_context.py:1400:        EC.complete_engine_bundle({}, "BTCUSDT", "1h", artifact, rtm_context=context)
+tests/unit/test_engine_context.py:1428:            await store.insert_evidence(replace(event, explanation=raw))
+tests/unit/test_engine_context.py:1430:            assert await EC.persist_complete_evidence(store, [event]) == [event]
+tests/unit/test_engine_context.py:1448:                await store.insert_evidence(replace(_d31_terminal_e05_event(), resolution_class=invalid))

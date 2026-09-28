@@ -1,0 +1,364 @@
+   614	    async def _build(self, raw_context: Mapping[str, Any], *, symbol: str,
+   615	                     timeframe: str, as_of: str) -> Mapping[str, Any]:
+   616	        context = _flatten_context(raw_context)
+   617	        missing_context = [key for key in REQUIRED_CONTEXT_KEYS
+   618	                           if key not in context or context[key] is None]
+   619	        if missing_context:
+   620	            raise BridgeError("BRIDGE_CONTEXT_INCOMPLETE",
+   621	                              ",".join(missing_context))
+   622	        _validate_e11_context(context["e11_context"])
+   623	        transport = context["e11_context"].get("bridge_inputs")
+   624	        if transport is not None:
+   625	            if not isinstance(transport, Mapping) or set(transport) & set(REQUIRED_CONTEXT_KEYS):
+   626	                raise BridgeError("PRODUCER_TRANSPORT_INVALID", "optional inputs overwrite required context")
+   627	            context.update(transport)
+   628	        regime_label = _regime_label(context["regime_state"])
+   629	        # ``events`` is the only evidence path.  A reduced SQL row fails in
+   630	        # _fabric_ref rather than being silently upgraded to ACTIVE.
+   631	        events = _event_list(_required(context, "events"))
+   632	        as_of_ms = _as_of_ms(as_of)
+   633	        refs = [_fabric_ref(event, symbol=symbol, timeframe=timeframe,
+   634	                            as_of_ms=as_of_ms) for event in events]
+   635	        ages = context.get("evidence_age_bars")
+   636	        if ages is not None:
+   637	            from apex.ops.engine_context import decision_evidence_age
+   638	            if not isinstance(ages,Mapping) or set(ages) != {r.evidence_id for r in refs}:
+   639	                raise BridgeError("EVIDENCE_AGE_UNAVAILABLE", "identity mismatch")
+   640	            for i,(event,ref) in enumerate(zip(events,refs)):
+   641	                stamp = event.event_time if isinstance(event,EvidenceEvent) else event["event_time"]
+   642	                measured = decision_evidence_age(stamp,timeframe,as_of_ms)
+   643	                if (isinstance(ages[ref.evidence_id],bool) or
+   644	                        not isinstance(ages[ref.evidence_id],(int,float)) or ages[ref.evidence_id] != measured):
+   645	                    raise BridgeError("EVIDENCE_AGE_UNAVAILABLE", ref.evidence_id)
+   646	                refs[i] = dataclasses.replace(ref,age_bars=measured)
+   647	        admission = context.get("sl14_admission", {})
+   648	        if admission:
+   649	            from apex.fabric.evidence import advance_lifecycle
+   650	            if not isinstance(admission, Mapping) or set(admission)-{r.evidence_id for r in refs}:
+   651	                raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", "admission identity mismatch")
+   652	            for i, ref in enumerate(refs):
+   653	                change = admission.get(ref.evidence_id)
+   654	                if change is not None:
+   655	                    if (not isinstance(change,Mapping) or set(change) != {"from","to","reason"}
+   656	                            or change["from"] != ref.state or change["reason"] != "NATIVE_EMISSION_OR_ZONE_FATE"):
+   657	                        raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", ref.evidence_id)
+   658	                    event = events[i]
+   659	                    valid = event.validity if isinstance(event,EvidenceEvent) else event.get("validity")
+   660	                    if change["to"] == "ACTIVE":
+   661	                        if ref.state != "CONFIRMED" or valid != "VALID" or ref.resolution_class == "QX":
+   662	                            raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", ref.evidence_id)
+   663	                    elif ref.engine_id != "E05" or change["to"] not in ("EXPIRED","INVALIDATED","MITIGATED"):
+   664	                        raise BridgeError("EVIDENCE_LIFECYCLE_INVALID", ref.evidence_id)
+   665	                    refs[i] = dataclasses.replace(ref,state=advance_lifecycle(ref.state,change["to"]))
+   666	        if not refs:
+   667	            raise BridgeError("FABRIC_NO_ACTIVE_EVIDENCE", "events is empty")
+   668	        data_trust = _finite_float(_required(context, "data_trust"), "data_trust")
+   669	        q_raw = _finite_float(_required(context, "q_raw"), "q_raw")
+   670	        bars = await self._window(context, symbol=symbol, timeframe=timeframe,
+   671	                                  as_of=as_of)
+   672	        direction = _direction(_required(context, "direction"))
+   673	        package = _required(context, "package")
+   674	        if not isinstance(package, Mapping) or not package:
+   675	            raise BridgeError("PARAMETER_PACKAGE_INVALID", "package")
+   676	        package = dict(package)
+   677	        for key in ("package_version", "parameter_package_id"):
+   678	            if not package.get(key):
+   679	                raise BridgeError("PARAMETER_PACKAGE_INVALID", key)
+   680
+   681	        # SL-14 admission and conflict policy are both frozen authorities; the
+   682	        # bridge only supplies their measured inputs.
+   683	        raw_ids = context.get("raw_observation_ids")
+   684	        fabric0 = EvidenceFabric.assemble(
+   685	            symbol=symbol, timeframe=timeframe, as_of=as_of_ms, evidence=refs,
+   686	            data_trust=data_trust, raw_observation_ids=raw_ids)
+   687	        if fabric0.is_empty():
+   688	            raise BridgeError("FABRIC_NO_ACTIVE_EVIDENCE",
+   689	                              str(fabric0.excluded))
+   690	        ages = [float(member.age_bars) for member in fabric0.members]
+   691	        disagreement = disagreement_of(fabric0.members)
+   692	        quality_asymmetry = quality_asymmetry_of(
+   693	            [float(member.quality) for member in fabric0.members])
+   694	        stale_fraction = stale_fraction_of(
+   695	            ages, expiry_age_bars(timeframe))
+   696	        package_id = str(package["parameter_package_id"])
+   697	        conflict = resolve(
+   698	            disagreement=disagreement, data_trust=data_trust, q_raw=q_raw,
+   699	            timeframe=timeframe,
+   700	            mtf_conflict=str(_required(context, "mtf_state")),
+   701	            hard_flags=tuple(context.get("hard_flags", ())),
+   702	            uncertainty=_finite_float(context.get("uncertainty", 0.0), "uncertainty"),
+   703	            stale_fraction=stale_fraction, redundancy=_finite_float(
+   704	                context.get("redundancy", 0.0), "redundancy"),
+   705	            quality_asymmetry=quality_asymmetry,
+   706	            redundancy_rho=(None if context.get("redundancy_rho") is None else
+   707	                            _finite_float(context["redundancy_rho"], "redundancy_rho")),
+   708	            regime_state=regime_label,
+   709	            conflict_id=str(context.get("conflict_id", "bridge-conflict")),
+   710	            package_id=package_id, snapshot_id=fabric0.hash,
+   711	            lineage=_lineage(fabric0.members),
+   712	        )
+   713	        fabric = EvidenceFabric.assemble(
+   714	            symbol=symbol, timeframe=timeframe, as_of=as_of_ms,
+   715	            evidence=list(fabric0.members), data_trust=data_trust,
+   716	            conflict_state=str(conflict["output"]),
+   717	            redundancy_state=dict(fabric0.redundancy_state),
+   718	            raw_observation_ids=raw_ids)
+   719
+   720	        # Context confidence is recomputed from the fabric.  A supplied
+   721	        # context_confidence is intentionally ignored; confidence is produced,
+   722	        # never injected.
+   723	        ctx = build_context(
+   724	            fabric,
+   725	            market_regime=str(_required(context, "market_regime")),
+   726	            mtf_state=str(_required(context, "mtf_state")),
+   727	            utc_window_state=str(_required(context, "utc_window_state")),
+   728	            is_overlap=bool(_required(context, "is_overlap")),
+   729	            volatility_state=str(_required(context, "volatility_state")),
+   730	            structure_state=str(_required(context, "structure_state")),
+   731	            regime_confidence=_finite_float(
+   732	                _required(context, "regime_confidence"), "regime_confidence"),
+   733	            regime_uncertainty=_finite_float(
+   734	                _required(context, "regime_uncertainty"), "regime_uncertainty"),
+   735	            divergence_magnitude=_finite_float(
+   736	                _required(context, "divergence_magnitude"), "divergence_magnitude"),
+   737	            temporal_window_validity=_finite_float(
+   738	                _required(context, "temporal_window_validity"),
+   739	                "temporal_window_validity"),
+   740	            q_raw=q_raw,
+   741	            correlation_state=dict(context.get("correlation_state", {})),
+   742	            divergence_state=dict(context.get("divergence_state", {})),
+   743	            liquidity_state=dict(context.get("liquidity_state", {})),
+   744	            portfolio_context=dict(context.get("portfolio_context", {})),
+   745	        )
+   746	        context_confidence = float(ctx["context_confidence"])
+   747	        if not ctx["solvency"]["ok"]:
+   748	            raise BridgeError("CONTEXT_SOLVENCY_FAILED", str(ctx["solvency"]))
+   749
+   750	        entity = _pattern_entity(
+   751	            _required(context, "pattern_id"), context.get("pattern_entity"))
+   752	        pattern_hit = context.get("pattern_hit")
+   753	        if isinstance(pattern_hit, Mapping):
+   754	            hit_direction = pattern_hit.get("direction")
+   755	            if hit_direction is not None and _direction(hit_direction) != direction:
+   756	                raise BridgeError("PATTERN_DIRECTION_MISMATCH", str(hit_direction))
+   757	        elif context.get("pattern_detected") is False:
+   758	            raise BridgeError("PATTERN_NOT_DETECTED", str(entity.pattern_id))
+   759
+   760	        # The bootstrap forecast is lawful in PAPER, but its full feature
+   761	        # vector and quality inputs still have to come from the producer.
+   762	        x = _component_map(_required(context, "x"), "x")
+   763	        forecast_uncertainty = context.get("forecast_uncertainty", {})
+   764	        if not isinstance(forecast_uncertainty, Mapping):
+   765	            raise BridgeError("BRIDGE_CONTEXT_INVALID", "forecast_uncertainty")
+   766	        forecast_event = ForecastEvent(
+   767	            target_condition=str(context.get(
+   768	                "target_condition", f"{PLAYBOOK_ID}:TARGET_3R")),
+   769	            stop_condition=str(context.get(
+   770	                "stop_condition", f"{ENTRY_LOGIC_REF}:SWEEP_LOW_INVALIDATION")),
+   771	            horizon=HORIZON_BARS, entry_ref=ENTRY_LOGIC_REF,
+   772	            symbol=symbol, timeframe=timeframe, timestamp=as_of_ms)
+   773	        try:
+   774	            forecast = build_forecast(
+   775	                forecast_event, x=x,
+   776	                p_hat=context.get("p_hat"),
+   777	                uncertainty=forecast_uncertainty,
+   778	                q_forecast=context.get("q_forecast"),
+   779	                rr=_finite_float(_required(context, "forecast_rr"), "forecast_rr"),
+   780	                cost_r=_finite_float(_required(context, "forecast_cost_r"), "forecast_cost_r"),
+   781	                risk_state=str(_required(context, "risk_state")),
+   782	                spread_available=bool(context.get("spread_available", True)),
+   783	                package=context.get("forecast_package"), environment=self.environment,
+   784	                age_bars=_finite_float(context.get("forecast_age_bars", 0.0),
+   785	                                       "forecast_age_bars"))
+   786	        except ForecastError as exc:
+   787	            if exc.reason == "FORECAST_PACKAGE_INVALID":
+   788	                raise BridgeError("FORECAST_PACKAGE_INVALID", exc.detail) from exc
+   789	            raise
+   790
+   791	        # Pattern/setup family and the thirteen gates.  Inputs such as ATR,
+   792	        # E01 BOS and E05 zones are consumed from the engine context; the
+   793	        # bridge never recomputes them from OHLCV.
+   794	        evaluation = evaluate_cell(
+   795	            symbol=symbol, timeframe=timeframe, as_of=as_of_ms, fabric=fabric,
+   796	            bars=bars, atr=_finite_float(_required(context, "atr"), "atr"),
+   797	            direction=direction,
+   798	            fvg_zones=_required(context, "fvg_zones"),
+   799	            bos=_required(context, "bos"),
+   800	            regime_state=regime_label,
+   801	            mtf_state=str(_required(context, "mtf_state")),
+   802	            available_closes=context.get("available_closes"),
+   803	            window_qualities=_required(context, "window_qualities"),
+   804	            temporal_quality=_required(context, "temporal_quality"),
+   805	            volatility_quality=_required(context, "volatility_quality"),
+   806	            forecast={"quality": _required(context, "forecast_quality"),
+   807	                      "bootstrap_prior": forecast.bootstrap_prior,
+   808	                      "h_norm": _finite_float(_required(context, "h_norm"), "h_norm")},
+   809	            q_forecast=forecast.q_forecast,
+   810	            package=package,
+   811	            payload=context.get("setup_payload"),
+   812	            lineage=_lineage(fabric.members),
+   813	            context_confidence=context_confidence,
+   814	            component_series=context.get("component_series"),
+   815	            s_i=_component_map(_required(context, "s_i"), "s_i"),
+   816	            q_i=_component_map(_required(context, "q_i"), "q_i"),
+   817	            environment=self.environment)
+   818	        if evaluation.status != EMITTED or not evaluation.gate_block.get("all_pass"):
+   819	            raise BridgeError("SETUP_NOT_EMITTED", evaluation.reason)
+   820
+   821	        # The instantiated playbook owns stop/target construction.  The
+   822	        # numeric FVG boundary is an engine-owned context value, not a value
+   823	        # inferred from a zone label.
+   824	        sweep = evaluation.entry_logic_steps.get("2_3_sweep_reclaim", {})
+   825	        sweep_extreme = _finite_float(_required(sweep, "extreme"), "sweep_extreme")
+   826	        zones = list(_required(context, "fvg_zones"))
+   827	        recent_zone = next((z for z in reversed(zones)
+   828	                            if not bool(z.get("filled", False))), None)
+   829	        if not isinstance(recent_zone, Mapping):
+   830	            raise BridgeError("NO_UNFILLED_FVG", "the family already passed but no zone is numeric")
+   831	        fvg_low = recent_zone.get("low", recent_zone.get("lo"))
+   832	        fvg_high = recent_zone.get("high", recent_zone.get("hi"))
+   833	        if (direction > 0 and fvg_low is None) or (direction < 0 and fvg_high is None):
+   834	            raise BridgeError("FVG_PRICE_CONTEXT_UNAVAILABLE", "low/high")
+   835	        # D63: the window is the governed YAML list on the playbook, never the
+   836	        # current regime substituted in as a one-element window.
+   837	        playbook = instantiate_playbook(lifecycle="VALIDATING")
+   838	        stops = build_stops(
+   839	            direction=direction, entry=float(evaluation.entry),
+   840	            atr=_finite_float(_required(context, "atr"), "atr"),
+   841	            sweep_extreme=sweep_extreme,
+   842	            fvg_low=None if fvg_low is None else _finite_float(fvg_low, "fvg_low"),
+   843	            fvg_high=None if fvg_high is None else _finite_float(fvg_high, "fvg_high"))
+   844
+   845	        # Eligibility is the frozen eight-condition conjunction.  Gate 10 is
+   846	        # also projected here; the decision layer does not replace gates.
+   847	        gate_results = evaluation.gate_block["results"]
+   848	        gate10_ok = bool(gate_results[10]["passed"])
+   849	        # D59 و۴: the setup verdict, not the literal True.
+   850	        q_min = float(evaluation.q_min_setup)
+   851	        setup_valid = (evaluation.status == "EMITTED"
+   852	                       and bool(evaluation.gate_block.get("all_pass"))
+   853	                       and float(evaluation.final_score) >= q_min)
+   854	        elig = eligibility({
+   855	            "setup_valid": setup_valid, "forecast_quality_ok": gate10_ok,
+   856	            "conflict_state": fabric.conflict_state, "q_raw": q_raw,
+   857	            "timeframe": timeframe, "freshness_ok": bool(_required(context, "freshness_ok")),
+   858	            "data_trust": data_trust, "p": forecast.p_hat,
+   859	            "p_min_tf": _finite_float(_required(context, "p_min_tf"), "p_min_tf"),
+   860	            "c": forecast.c,
+   861	            "c_min": _finite_float(_required(context, "c_min"), "c_min"),
+   862	        })
+   863	        if not elig["eligible"]:
+   864	            raise BridgeError("DECISION_INELIGIBLE", ",".join(elig["failed"]))
+   865
+   866	        setup_id = evaluation.to_setup_event()["setup_id"]
+   867	        setup_for_decision = {
+   868	            "setup_id": setup_id, "entry": evaluation.entry,
+   869	            "stop": stops["stop"], "target": stops["target"],
+   870	            "P": forecast.p_hat, "C": forecast.c, "U_sum": forecast.u,
+   871	            "cost_unit": forecast.cost_r, "r_penalty": forecast.r_penalty,
+   872	            "is_risk_increase": bool(_required(context, "is_risk_increase")),
+   873	            "uncertainty_is_rising": bool(_required(context, "uncertainty_is_rising")),
+   874	        }
+   875	        try:
+   876	            candidates = generate_candidates([setup_for_decision])
+   877	        except DecisionError as exc:
+   878	            if exc.reason == "DECISION_NO_TRADE":
+   879	                raise BridgeError("DECISION_NO_TRADE", exc.detail or "RR_BELOW_MIN") from exc
+   880	            raise
+   881	        ranked = rank(candidates)
+   882	        selected = select(candidates, environment=self.environment)
+   883	        intended = "LONG" if direction > 0 else "SHORT"
+   884	        # Candidate generation deliberately evaluates both sides; the family
+   885	        # direction is the engine-produced side the arbitration may select.
+   886	        candidate = next((row for row in ranked if row["side"] == intended), None)
+   887	        if candidate is None:
+   888	            raise BridgeError("DECISION_NO_CANDIDATE", intended)
+   889	        arb_input = dict(context.get("arbitration", {}))
+   890	        if not isinstance(arb_input, Mapping):
+   891	            raise BridgeError("BRIDGE_CONTEXT_INVALID", "arbitration")
+   892	        weights = arb_input.get("composite_weights")
+   893	        if not isinstance(weights, Mapping):
+   894	            raise BridgeError("ARBITRATION_CONTEXT_UNAVAILABLE", "composite_weights")
+   895	        arb_candidate = {
+   896	            "playbook_id": PLAYBOOK_ID, "family_id": FAMILY_ID,
+   897	            "direction": intended,
+   898	            "regime_window": tuple(playbook.regime_window),
+   899	            "composite_weights": dict(weights),
+   900	            "quality": _finite_float(arb_input.get("quality", evaluation.final_score),
+   901	                                     "arbitration.quality"),
+   902	            "alignment": _arbitration_measurement(arb_input, weights, "alignment"),
+   903	            "recency": _arbitration_measurement(arb_input, weights, "recency"),
+   904	        }
+   905	        family_status = str(_required(context, "family_status"))
+   906	        arb = arbitrate([arb_candidate],
+   907	                        regime=regime_label,
+   908	                        family_statuses={FAMILY_ID: family_status})
+   909	        if arb["proposal"] is None or arb["reason"].get("decision") != "TRADE":
+   910	            excluded = (arb.get("reason") or {}).get("excluded") or {}
+   911	            if excluded.get("regime_window"):
+   912	                raise BridgeError("DECISION_NO_TRADE", "REGIME_WINDOW")
+   913	            raise BridgeError("DECISION_NO_TRADE", str(arb["reason"]))
+   914	        proposal = build_proposal(
+   915	            setup_id=setup_id, direction=intended,
+   916	            entry_logic_ref=ENTRY_LOGIC_REF, stop=stops["stop"],
+   917	            targets=(stops["target"],), p_hat=forecast.p_hat, u=forecast.u,
+   918	            c=forecast.c, conflict_state=fabric.conflict_state,
+   919	            snapshot_id=evaluation.fabric_hash, r_penalty=forecast.r_penalty,
+   920	            cost_unit=forecast.cost_r, entry=evaluation.entry,
+   921	            arbitration_reason=arb["reason"])
+   922
+   923	        risk = dict(_required(context, "risk"))
+   924	        missing_risk = [key for key in REQUIRED_RISK_KEYS if key not in risk]
+   925	        if missing_risk:
+   926	            raise BridgeError("RISK_CONTEXT_INCOMPLETE", ",".join(missing_risk))
+   927	        risk.update({
+   928	            "snapshot_id": evaluation.fabric_hash,
+   929	            "timeframe": timeframe,
+   930	            "q_raw": q_raw,
+   931	            "failed_setup_gate": False,
+   932	            "pit_violation": any(ref.as_of > as_of_ms for ref in refs),
+   933	            "conflict_state": fabric.conflict_state,
+   934	            "stop_distance": stops["R"],
+   935	            "package": package,
+   936	            "risk_state": str(risk["risk_state"]),
+   937	            "environment": risk.get("environment", self.environment),
+   938	        })
+   939	        transport_risk = context.get("risk_transport", {})
+   940	        if not isinstance(transport_risk,Mapping):
+   941	            raise BridgeError("PRODUCER_TRANSPORT_INVALID", "risk transport mapping")
+   942	        if transport_risk and (set(transport_risk) != {"environment","margin_model","atr_cap"}
+   943	                or self.environment != "PAPER" or transport_risk["environment"] != "PAPER"
+   944	                or transport_risk["margin_model"] != "PAPER_RESERVATION_PROXY_D29"
+   945	                or isinstance(transport_risk["atr_cap"],bool)
+   946	                or transport_risk["atr_cap"] != 1 / _finite_float(context["atr"],"atr")):
+   947	            raise BridgeError("PRODUCER_TRANSPORT_INVALID", "PAPER-only verified risk transport")
+   948	        risk.update(transport_risk)
+   949	        risk_result = adjudicate(risk)
+   950	        plan = build_trade_plan(
+   951	            proposal=proposal, adjudication=risk_result,
+   952	            symbol=symbol, timeframe=timeframe, environment=self.environment,
+   953	            as_of=as_of, capital=_finite_float(risk["capital"], "capital"),
+   954	            contract_multiplier=_finite_float(risk["contract_multiplier"],
+   955	                                              "contract_multiplier"),
+   956	            risk_state=risk_result.get("sizing", {}).get(
+   957	                "risk_state", risk.get("risk_state")),
+   958	            package_version=str(package.get("package_version")),
+   959	            created_utc=as_of,
+   960	            lineage=str(context.get(
+   961	                "plan_lineage", f"setup:{setup_id}|fabric:{evaluation.fabric_hash}")),
+   962	        )
+   963	        await self._materialize_setup(evaluation.to_setup_event(),
+   964	                                       pattern_id=entity.pattern_id,
+   965	                                       regime=regime_label)
+   966
+   967	        trace = {
+   968	            "fabric": fabric.to_dict(), "conflict": conflict,
+   969	            "context": ctx, "pattern_id": entity.pattern_id,
+   970	            "forecast": forecast.to_dict(), "evaluation": evaluation,
+   971	            "playbook": playbook.to_dict(), "stops": stops,
+   972	            "eligibility": elig, "ranked": ranked, "selected": selected,
+   973	            "arbitration": arb, "risk": risk_result, "plan": plan.to_dict(),
+   974	        }
+   975	        self.traces[f"{symbol}:{timeframe}"] = trace
+   976	        return plan.to_dict()
+   977
