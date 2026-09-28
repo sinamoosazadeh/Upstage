@@ -1,0 +1,91 @@
+=== Required recursive caller/consumer search ===
+apex/execution/toobit_adapter.py:387:    def _credentials(self) -> Tuple[str, str]:
+apex/execution/toobit_adapter.py:632:        api_key, api_secret = self._credentials()
+apex/execution/toobit_adapter.py:658:            request = signed_request(method, path, params, api_key=api_key,
+apex/execution/toobit_map.py:514:def sign_query(secret: str, query_string: str) -> str:
+apex/execution/toobit_map.py:534:def signed_request(method: str, path: str, params: Mapping[str, Any], *,
+apex/execution/toobit_map.py:545:    signature = sign_query(api_secret, query)
+scripts/run_adapter_conformance.py:94:    from fake_toobit_responder import FakeToobitResponder
+scripts/run_adapter_conformance.py:106:    responder = FakeToobitResponder(api_key=HARNESS_ENV["TOOBIT_API_KEY"],
+scripts/run_adapter_conformance.py:145:        violations = len(responder.signature_violations())
+scripts/run_adapter_conformance.py:209:    from fake_toobit_responder import FakeToobitResponder
+scripts/run_adapter_conformance.py:211:    responder = FakeToobitResponder(api_key=HARNESS_ENV["TOOBIT_API_KEY"],
+scripts/run_apex.py:288:    from fake_toobit_responder import FakeToobitResponder   # test double only
+scripts/run_apex.py:296:        responder = FakeToobitResponder(
+scripts/run_apex.py:375:             f"{len(responder.signature_violations())}")
+scripts/run_nfr_harness.py:148:    from fake_toobit_responder import FakeToobitResponder
+scripts/run_nfr_harness.py:150:    responder = FakeToobitResponder(api_key=HARNESS_ENV["TOOBIT_API_KEY"],
+tests/fake_toobit_responder.py:55:class FakeToobitResponder:
+tests/fake_toobit_responder.py:135:        signature_ok = self._verify_signature(params, query)
+tests/fake_toobit_responder.py:172:    def _verify_signature(self, params: Dict[str, str],
+tests/fake_toobit_responder.py:190:        expected = sign_query(self.api_secret, query)
+tests/fake_toobit_responder.py:379:    def signature_violations(self) -> List[RecordedCall]:
+tests/fake_toobit_responder.py:409:__all__ = ["FakeToobitResponder", "RecordedCall", "TEST_API_KEY",
+tests/integration/test_cp7_paper_loop.py:161:        from fake_toobit_responder import FakeToobitResponder
+tests/integration/test_cp7_paper_loop.py:168:            self.responder = FakeToobitResponder(
+tests/integration/test_cp7_paper_loop.py:538:            return calls, p.responder.signature_violations()
+tests/integration/test_cp8_adapters.py:39:    from fake_toobit_responder import FakeToobitResponder
+tests/integration/test_cp8_adapters.py:41:    responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET,
+tests/integration/test_cp8_adapters.py:80:        assert responder.signature_violations() == []
+tests/unit/test_engine_context.py:124:        from tests.fake_toobit_responder import FakeToobitResponder
+tests/unit/test_engine_context.py:126:        class Venue(FakeToobitResponder):
+tests/unit/test_engine_context.py:824:        from tests.fake_toobit_responder import FakeToobitResponder
+tests/unit/test_engine_context.py:832:        class Venue(FakeToobitResponder):
+tests/unit/test_execution_fsm.py:135:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_execution_fsm.py:141:            self.responder = FakeToobitResponder(api_key=TEST_KEY,
+tests/unit/test_toobit_adapter.py:53:    from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:54:    assert isinstance(responder, FakeToobitResponder)
+tests/unit/test_toobit_adapter.py:60:    from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:61:    assert isinstance(responder, FakeToobitResponder)
+tests/unit/test_toobit_adapter.py:109:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:110:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:138:                assert len(responder.signature_violations()) == \
+tests/unit/test_toobit_adapter.py:187:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:188:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:204:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:205:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:220:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:221:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:232:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:233:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:244:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:245:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:263:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:264:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:270:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:271:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:287:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:288:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:315:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:316:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:328:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:329:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:337:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:338:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:354:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:355:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:363:        assert responder.signature_violations() == []
+tests/unit/test_toobit_adapter.py:383:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:384:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:411:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:412:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:430:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:431:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:441:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:442:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:452:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:453:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:462:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:463:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:471:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:472:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:479:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:480:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:487:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:488:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:555:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:556:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_map.py:340:        signature = M.sign_query("secret", query)
+tests/unit/test_toobit_map.py:342:        assert signature == M.sign_query("secret", query)   # deterministic
+tests/unit/test_toobit_map.py:343:        assert signature != M.sign_query("other", query)
+tests/unit/test_toobit_map.py:346:        request = M.signed_request("POST", "/api/v1/futures/order",

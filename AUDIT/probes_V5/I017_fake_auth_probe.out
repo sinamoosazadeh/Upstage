@@ -1,0 +1,13 @@
+fake_uses_same_sign_query=True
+sut_uses_same_signed_request=True
+unsigned_private_http=200
+unsigned_private_order_status=NEW
+unsigned_private_signature_flag=True
+unsigned_private_api_key_present=True
+unsigned_private_violations=0
+unsigned_private_order_created=True
+invalid_signature_http=200
+invalid_signature_order_status=NEW
+invalid_signature_flag=False
+invalid_signature_violations=1
+invalid_signature_order_created=True

@@ -1,0 +1,958 @@
+=== Baseline fake responder complete auth/transport implementation ===
+     1	"""Fake Toobit responder — a TEST DOUBLE only (G9: mocks/fakes are lawful only
+     2	behind test code; they never ship in ``apex/**``).
+     3
+     4	It implements the adapter's transport seam
+     5	``Transport(method, url, query, headers) -> {"http_status": int, "body": dict}``
+     6	and keeps a tiny in-memory venue state (orders, fills, positions, balances) so
+     7	the CP-7 tests can exercise:
+     8
+     9	* ``T_ADAPTER_SUBMIT``   — a signed submit that the venue acknowledges;
+    10	* ``T_ADAPTER_DUPLICATE``— the same ``clientOrderId`` twice;
+    11	* ``T_ADAPTER_LOST_ACK`` — the venue RECORDS the order but the response is lost
+    12	  (timeout) ⇒ UNKNOWN + reconcile-required + NO resubmit;
+    13	* ``−1003`` backoff-and-retry, ``−1022`` abort, ``−1120`` interval unsupported,
+    14	  and the unmapped ``−1021`` / ``−2026`` fail-closed paths;
+    15	* the reconciliation queries (``positions``, ``openOrders``, ``userTrades``,
+    16	  ``balance``) with an injectable divergence.
+    17
+    18	It also VERIFIES every signed request (HMAC-SHA256 over the query string,
+    19	``X-BB-APIKEY`` header, ``recvWindow``) so a signing regression fails loudly.
+    20	No network is ever touched.
+    21	"""
+    22
+    23	from __future__ import annotations
+    24
+    25	import hashlib
+    26	import hmac
+    27	import json
+    28	import re
+    29	from dataclasses import dataclass, field
+    30	from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+    31	from urllib.parse import parse_qsl, urlsplit
+    32
+    33	from apex.execution.toobit_adapter import AdapterTimeout
+    34	from apex.execution.toobit_map import (BASE_URL, HEADER_API_KEY,
+    35	                                       RECV_WINDOW_MS, sign_query)
+    36
+    37	TEST_API_KEY = "TEST_KEY_CP7"
+    38	TEST_API_SECRET = "TEST_SECRET_CP7"
+    39
+    40
+    41	@dataclass
+    42	class RecordedCall:
+    43	    seq: int
+    44	    method: str
+    45	    path: str
+    46	    params: Dict[str, str]
+    47	    headers: Dict[str, str]
+    48	    signature_ok: bool
+    49	    recv_window_ok: bool
+    50	    api_key_present: bool
+    51	    responded: bool
+    52	    note: str = ""
+    53
+    54
+    55	class FakeToobitResponder:
+    56	    """Deterministic in-memory Toobit futures responder."""
+    57
+    58	    def __init__(self, *, api_key: str = TEST_API_KEY,
+    59	                 api_secret: str = TEST_API_SECRET,
+    60	                 server_time_ms: int = 1767225600000,
+    61	                 balance: str = "10000.00000000",
+    62	                 clock: Optional[Callable[[], int]] = None) -> None:
+    63	        self.api_key = api_key
+    64	        self.api_secret = api_secret
+    65	        self.server_time_ms = int(server_time_ms)
+    66	        self._clock = clock if clock is not None else (lambda: self.server_time_ms)
+    67	        self.calls: List[RecordedCall] = []
+    68	        self.orders: Dict[str, Dict[str, Any]] = {}     # by clientOrderId
+    69	        self.orders_by_id: Dict[str, Dict[str, Any]] = {}
+    70	        self.fills: List[Dict[str, Any]] = []
+    71	        self.positions: Dict[str, Dict[str, Any]] = {}
+    72	        self.balance = balance
+    73	        self.margin_type: Dict[str, str] = {}
+    74	        self.leverage: Dict[str, str] = {}
+    75	        self.commission_rate: Dict[str, str] = {
+    76	            "symbol": "BTCUSDT", "makerCommissionRate": "0.0002",
+    77	            "takerCommissionRate": "0.0005"}
+    78	        # scenario knobs
+    79	        self.timeouts_remaining = 0          # lost-ack / transport fault
+    80	        self.record_before_timeout = True    # lost ack ⇒ the order IS recorded
+    81	        self.fail_with: Optional[int] = None  # business code to return
+    82	        self.fail_times = 0
+    83	        self.fill_mode: str = "none"          # none | immediate | partial
+    84	        self.fill_price: Optional[str] = None
+    85	        self.divergence: Optional[str] = None  # inject a reconcile divergence
+    86	        self._seq = 0
+    87	        self._order_seq = 0
+    88	        self._fill_seq = 0
+    89
+    90	    # -- scenario helpers ---------------------------------------------------
+    91	    def lose_next_ack(self, count: int = 1, *, record: bool = True) -> None:
+    92	        self.timeouts_remaining = int(count)
+    93	        self.record_before_timeout = bool(record)
+    94
+    95	    def fail_next(self, business_code: int, times: int = 1) -> None:
+    96	        self.fail_with = int(business_code)
+    97	        self.fail_times = int(times)
+    98
+    99	    def set_fill_mode(self, mode: str, *, price: Optional[str] = None) -> None:
+   100	        if mode not in ("none", "immediate", "partial"):
+   101	            raise ValueError(mode)
+   102	        self.fill_mode = mode
+   103	        self.fill_price = price
+   104
+   105	    def seed_order(self, *, intent_id: str, symbol: str, timeframe: str,
+   106	                   direction: str, quantity: str, price: str) -> Dict[str, Any]:
+   107	        """Place a working order directly in venue state (no adapter call)."""
+   108	        from apex.execution.toobit_map import side_for, to_wire_symbol
+   109	        return self._accept_order({
+   110	            "clientOrderId": intent_id, "symbol": to_wire_symbol(symbol),
+   111	            "side": side_for(direction, "entry"), "positionSide": "BOTH",
+   112	            "type": "LIMIT", "timeInForce": "IOC", "price": price,
+   113	            "quantity": quantity, "reduceOnly": "false"})
+   114
+   115	    def seed_position(self, symbol: str, side: str, quantity: str,
+   116	                      entry_price: str = "100.0") -> None:
+   117	        self.positions[symbol] = {"symbol": symbol, "positionSide": side.upper(),
+   118	                                  "positionAmt": quantity,
+   119	                                  "entryPrice": entry_price,
+   120	                                  "unRealizedProfit": "0.00000000",
+   121	                                  "leverage": self.leverage.get(symbol, "5")}
+   122
+   123	    # -- transport seam -----------------------------------------------------
+   124	    async def __call__(self, method: str, url: str, query: str,
+   125	                       headers: Dict[str, str]) -> Dict[str, Any]:
+   126	        self._seq += 1
+   127	        split = urlsplit(url)
+   128	        path = split.path
+   129	        if not url.startswith(BASE_URL):
+   130	            return self._record_and_return(method, path, {}, headers, False,
+   131	                                           {"http_status": 404,
+   132	                                            "body": {"code": -1003,
+   133	                                                     "msg": "unknown host"}})
+   134	        params = dict(parse_qsl(query, keep_blank_values=True))
+   135	        signature_ok = self._verify_signature(params, query)
+   136	        recv_ok = params.get("recvWindow") in (None, str(RECV_WINDOW_MS))
+   137	        api_key_present = bool(headers.get(HEADER_API_KEY))
+   138	        call = RecordedCall(seq=self._seq, method=method.upper(), path=path,
+   139	                            params=params, headers=dict(headers),
+   140	                            signature_ok=signature_ok, recv_window_ok=recv_ok,
+   141	                            api_key_present=api_key_present, responded=False)
+   142	        self.calls.append(call)
+   143	        self.server_time_ms = int(self._clock())
+   144	        if self.timeouts_remaining > 0:
+   145	            self.timeouts_remaining -= 1
+   146	            if self.record_before_timeout and path == "/api/v1/futures/order" \
+   147	                    and method.upper() == "POST":
+   148	                # The venue accepted the order; only the RESPONSE was lost.
+   149	                self._accept_order(params, note="ACK_LOST")
+   150	            call.responded = False
+   151	            call.note = "TIMEOUT_INJECTED"
+   152	            raise AdapterTimeout(f"{method} {path}")
+   153	        if self.fail_with is not None and self.fail_times > 0:
+   154	            self.fail_times -= 1
+   155	            code = self.fail_with
+   156	            if self.fail_times == 0:
+   157	                self.fail_with = None
+   158	            call.responded = True
+   159	            call.note = f"BUSINESS_CODE_{code}"
+   160	            return {"http_status": 400 if code < 0 else 200,
+   161	                    "body": {"code": code, "msg": f"injected {code}"}}
+   162	        return self._route(call, method.upper(), path, params)
+   163
+   164	    def _record_and_return(self, method: str, path: str, params: Dict[str, str],
+   165	                           headers: Dict[str, str], signature_ok: bool,
+   166	                           response: Dict[str, Any]) -> Dict[str, Any]:
+   167	        self.calls.append(RecordedCall(self._seq, method.upper(), path, params,
+   168	                                       headers, signature_ok, True,
+   169	                                       bool(headers.get(HEADER_API_KEY)), True))
+   170	        return response
+   171
+   172	    def _verify_signature(self, params: Dict[str, str],
+   173	                          raw_query: str = "") -> bool:
+   174	        """Recompute the HMAC over the query EXACTLY as it was sent.
+   175
+   176	        A real venue signs the raw query string; re-encoding the parsed values
+   177	        would silently change any percent-encoded character (a ``:`` in a
+   178	        clientOrderId, for instance) and report a false signature violation.
+   179	        """
+   180	        signature = params.get("signature")
+   181	        if signature is None:
+   182	            return True            # public (unsigned) path
+   183	        if raw_query:
+   184	            parts = [p for p in raw_query.split("&")
+   185	                     if p and not p.startswith("signature=")]
+   186	            query = "&".join(parts)
+   187	        else:
+   188	            body = {k: v for k, v in params.items() if k != "signature"}
+   189	            query = "&".join(f"{k}={v}" for k, v in body.items())
+   190	        expected = sign_query(self.api_secret, query)
+   191	        return hmac.compare_digest(expected, signature)
+   192
+   193	    # -- routes -------------------------------------------------------------
+   194	    def _route(self, call: RecordedCall, method: str, path: str,
+   195	               params: Dict[str, str]) -> Dict[str, Any]:
+   196	        call.responded = True
+   197	        if path == "/api/v1/time" and method == "GET":
+   198	            return {"http_status": 200, "body": {"code": 0, "msg": "success",
+   199	                                                 "data": {"serverTime":
+   200	                                                          self.server_time_ms}}}
+   201	        if path == "/api/v1/futures/order" and method == "POST":
+   202	            order = self._accept_order(params)
+   203	            return {"http_status": 200, "body": {"code": 0, "msg": "success",
+   204	                                                 "data": order}}
+   205	        if path == "/api/v1/futures/order" and method == "GET":
+   206	            key = params.get("clientOrderId") or params.get("orderId")
+   207	            order = (self.orders.get(key) or self.orders_by_id.get(key))
+   208	            if order is None:
+   209	                return {"http_status": 400,
+   210	                        "body": {"code": -2013, "msg": "Order does not exist"}}
+   373	    # -- assertions helpers -------------------------------------------------
+   374	    def calls_to(self, path: str, method: Optional[str] = None
+   375	                 ) -> List[RecordedCall]:
+   376	        return [c for c in self.calls if c.path == path
+   377	                and (method is None or c.method == method.upper())]
+   378
+   379	    def signature_violations(self) -> List[RecordedCall]:
+   380	        return [c for c in self.calls if not c.signature_ok
+   381	                or not c.recv_window_ok or not c.api_key_present]
+   382
+   383	    def open_order_count(self) -> int:
+   384	        return len([o for o in self.orders.values()
+   385	                    if o["status"] in ("NEW", "PARTIALLY_FILLED")])
+   386
+=== Baseline wire-map signing implementation ===
+   510	# ---------------------------------------------------------------------------
+   511	# Signing + idempotency (Ch.16 L16873, L16786–16798; AI.8 L18753)
+   512	# ---------------------------------------------------------------------------
+   513
+   514	def sign_query(secret: str, query_string: str) -> str:
+   515	    """HMAC-SHA256 over the query string (Ch.16 L16873). The secret never
+   516	    leaves this function's scope and is never logged (G16/§9.5-13)."""
+   517	    if not secret:
+   518	        raise ToobitMapError("SIGNING_SECRET_MISSING",
+   519	                             "TOOBIT_API_SECRET is empty (env only, §9.5-12)")
+   520	    return hmac.new(secret.encode("utf-8"), query_string.encode("utf-8"),
+   521	                    hashlib.sha256).hexdigest()
+   522
+   523
+   524	def build_signed_query(params: Mapping[str, Any], *, timestamp_ms: int,
+   525	                       recv_window: int = RECV_WINDOW_MS) -> str:
+   526	    """Deterministic query string: the caller's parameters plus ``timestamp``
+   527	    and ``recvWindow`` (5000), URL-encoded in insertion order."""
+   528	    items: List[Tuple[str, Any]] = [(k, v) for k, v in params.items()]
+   529	    items.append(("timestamp", int(timestamp_ms)))
+   530	    items.append(("recvWindow", int(recv_window)))
+   531	    return urlencode(items)
+   532
+   533
+   534	def signed_request(method: str, path: str, params: Mapping[str, Any], *,
+   535	                   api_key: str, api_secret: str,
+   536	                   timestamp_ms: int) -> Dict[str, Any]:
+   537	    """Build one signed request descriptor (no I/O here).
+   538
+   539	    Header ``X-BB-APIKEY``; ``recvWindow`` 5000; HMAC-SHA256 over the query
+   540	    string, appended as ``signature`` (Ch.16 L16873). The descriptor never
+   541	    contains the secret (G16: secrets never in exception strings or logs).
+   542	    """
+   543	    assert_path_permitted(method, path)
+   544	    query = build_signed_query(params, timestamp_ms=timestamp_ms)
+   545	    signature = sign_query(api_secret, query)
+   546	    return {
+   547	        "method": method.upper(),
+   548	        "url": f"{BASE_URL}{path}",
+   549	        "query": f"{query}&signature={signature}",
+   550	        "headers": {HEADER_API_KEY: api_key, "Content-Type":
+   551	                    "application/x-www-form-urlencoded"},
+   552	        "signature": signature,
+   553	        "recv_window_ms": RECV_WINDOW_MS,
+   554	        "auth_scheme": AUTH_SCHEME,
+   555	    }
+=== Baseline SUT signed gate and transport path ===
+   316	class ToobitAdapter:
+   317	    """Exactly five operations; no silent retries; duplicate/lost-ack
+   318	    semantics per AI.3/AI.8; adapter-owned state immutable to callers."""
+   319
+   320	    OPERATIONS: Tuple[str, ...] = FIVE_OPERATIONS
+   321
+   322	    def __init__(self, *, config: Optional[Config] = None,
+   323	                 transport: Optional[Transport] = None,
+   324	                 session: Any = None,
+   325	                 clock: Optional[Callable[[], float]] = None,
+   326	                 utc_now: Optional[Callable[[], str]] = None,
+   327	                 actor: str = "EXECUTION_ADAPTER") -> None:
+   328	        object.__setattr__(self, "_initialized", False)
+   329	        self._config = config if config is not None else Config()
+   330	        self._clock = clock if clock is not None else time.time
+   331	        self._utc_now = utc_now if utc_now is not None else system_utc_ms
+   332	        self._actor = actor
+   333	        if transport is not None:
+   334	            self._transport: Transport = transport
+   335	        else:
+   336	            self._transport = aiohttp_transport(session)
+   337	        self._buckets: Dict[str, _TokenBucket] = {}
+   338	        self._audit: List[AttemptRecord] = []
+   339	        self._duplicates: Dict[str, AdapterResult] = {}
+   340	        self._disabled: Dict[str, List[str]] = {}
+   341	        object.__setattr__(self, "_initialized", True)
+   342
+   343	    # -- state protection ---------------------------------------------------
+   344	    def __setattr__(self, name: str, value: Any) -> None:
+   345	        if getattr(self, "_initialized", False) and name in _STATE_ATTRS:
+   346	            raise AdapterStateMutationError(
+   347	                "ADAPTER_STATE_IMMUTABLE",
+   348	                f"{name} is adapter-owned state — callers may read it through "
+   349	                "the frozen views, never mutate it (Ch.16 L16846: the execution "
+   350	                "state machine is the only path to Toobit)")
+   351	        object.__setattr__(self, name, value)
+   352
+   353	    @property
+   354	    def state(self) -> AdapterState:
+   355	        return AdapterState(
+   356	            buckets={k: b.snapshot() for k, b in self._buckets.items()},
+   357	            disabled_intervals={k: tuple(v) for k, v in self._disabled.items()},
+   358	            known_client_order_ids=tuple(self._duplicates),
+   359	            audit_entries=len(self._audit),
+   360	            signed_allowed=bool(self._config.allow_signed),
+   361	            environment=self._config.apex_env,
+   362	        )
+   363
+   364	    def audit_trail(self) -> Tuple[AttemptRecord, ...]:
+   365	        """Immutable audit trail (AI.8 L18806–18810)."""
+   366	        return tuple(self._audit)
+   367
+   368	    def disabled_intervals(self) -> Mapping[str, Tuple[str, ...]]:
+   369	        return MappingProxyType({k: tuple(v) for k, v in self._disabled.items()})
+   370
+   371	    def is_interval_disabled(self, symbol: str, timeframe: str) -> bool:
+   372	        """Ch.16 L16877: −1120 disables that TF for that symbol ONLY."""
+   373	        return timeframe in tuple(self._disabled.get(symbol, ()))
+   374
+   375	    def rate_bucket_state(self, endpoint: str) -> TokenBucketState:
+   376	        return self._bucket(endpoint).snapshot()
+   377
+   378	    # -- rate limiting ------------------------------------------------------
+   379	    def _bucket(self, endpoint: str) -> _TokenBucket:
+   380	        if endpoint not in self._buckets:
+   381	            self._buckets[endpoint] = _TokenBucket(
+   382	                endpoint, TOOBIT_BUCKET_CAPACITY,
+   383	                TOOBIT_BUCKET_REFILL_PER_SECOND, self._clock)
+   384	        return self._buckets[endpoint]
+   385
+   386	    # -- signed gating ------------------------------------------------------
+   387	    def _credentials(self) -> Tuple[str, str]:
+   388	        key = self._config.toobit_api_key
+   389	        secret = self._config.toobit_api_secret
+   390	        if not self._config.allow_signed:
+   391	            raise AdapterError(
+   392	                "SIGNED_NOT_ALLOWED",
+   393	                "APEX_ALLOW_SIGNED=0 — signed endpoints are refused fail-closed "
+   394	                "(§9.5-12); never silently downgraded")
+   395	        if not key or not secret:
+   396	            raise AdapterError(
+   397	                "TOOBIT_CREDENTIALS_MISSING",
+   398	                "TOOBIT_API_KEY / TOOBIT_API_SECRET are env-only (§9.5-12/13)")
+   399	        return key, secret
+   400
+   630	                        else endpoint_for(operation))
+   631	        endpoint = f"{method} {path}"
+   632	        api_key, api_secret = self._credentials()
+   633	        attempts: List[AttemptRecord] = []
+   634	        last: Dict[str, Any] = {}
+   635	        for attempt_no in range(1, RETRY_ATTEMPTS + 1):
+   636	            ts_utc = timestamp_utc or self._utc_now()
+   637	            # a UNIQUE key per attempt (Ch.16 L16806) — never a silent retry
+   638	            attempt_nonce = f"{nonce or 'n'}:{attempt_no}"
+   639	            idem = execution_idempotency_key(
+   640	                client_order_id or operation, last.get("order_id"), ts_utc,
+   641	                attempt_nonce)
+   642	            acquired = await self._bucket(endpoint).acquire()
+   643	            if not acquired["acquired"]:
+   644	                attempts.append(AttemptRecord(
+   645	                    attempt_no=attempt_no, operation=operation,
+   646	                    endpoint=endpoint, idempotency_key=idem,
+   647	                    timestamp_utc=ts_utc, classification=CODE_UNKNOWN,
+   648	                    business_code=None, http_status=None,
+   649	                    result_source="RATE_LIMIT", actor=self._actor,
+   650	                    outcome="UNKNOWN", error=acquired.get("reason")))
+   651	                last = {"classification": CODE_UNKNOWN, "outcome": "UNKNOWN",
+   652	                        "reconcile_required": True, "idem": idem, "error":
+   653	                        acquired.get("reason"),
+   654	                        "rule": "AI.8 L18775 queue on exhaustion; the bounded "
+   655	                                "wait expired → UNKNOWN + reconcile, never "
+   656	                                "dropped and never sent without a token"}
+   657	                break
+   658	            request = signed_request(method, path, params, api_key=api_key,
+   659	                                     api_secret=api_secret,
+   660	                                     timestamp_ms=ms_from_iso(ts_utc))
+   661	            classification = CODE_UNMAPPED
+   662	            business_code: Optional[int] = None
+   663	            http_status: Optional[int] = None
+   664	            body: Dict[str, Any] = {}
+   665	            error: Optional[str] = None
+   666	            verdict: Dict[str, Any] = classify_business_code(None)
+   667	            try:
+   668	                response = await self._transport(method, request["url"],
+   669	                                                 request["query"],
+   670	                                                 request["headers"])
+   671	                http_status = int(response.get("http_status") or 0) or None
+   672	                body = dict(response.get("body") or {})
+   673	                business_code = _business_code_of(body)
+   674	                verdict = classify_business_code(business_code,
+   675	                                                 http_status=http_status)
+   676	                classification = verdict["classification"]
+   677	            except AdapterTimeout as exc:
+   678	                verdict = classify_business_code(None, timeout=True)
+   679	                classification, error = verdict["classification"], exc.reason
+   680	            except (ToobitMapError, AdapterError) as exc:
+   681	                classification, error = CODE_UNMAPPED, exc.reason
+   682	                verdict = classify_business_code(None)
+   683	            except WaveOutError:
+   684	                raise
+   685	            except Exception as exc:                       # transport fault
+   686	                verdict = classify_business_code(None, timeout=True)
+   687	                classification = verdict["classification"]
+   688	                error = type(exc).__name__
+   689	            outcome = _outcome_for(classification, body)
+   690	            attempts.append(AttemptRecord(
+=== Adapter tests: fixture, signed gating, signature assertion ===
+     1	"""CP-7 venue adapter tests — T_ADAPTER_SUBMIT / T_ADAPTER_DUPLICATE /
+     2	T_ADAPTER_LOST_ACK, the five-operations law, "no silent retries", the wire-map
+     3	conformance fixture, adapter-owned state immutability, signed-endpoint
+     4	fail-closed gating and the AI.8 rate bucket.
+     5
+     6	The venue is a TEST DOUBLE (``tests/fake_toobit_responder.py``): no network, no
+     7	real credentials, nothing outside the sandbox (G9).
+     8	"""
+     9	from __future__ import annotations
+    10
+    11	import asyncio
+    12	import dataclasses
+    13	import hashlib
+    14	import json
+    15	from pathlib import Path
+    16
+    17	import pytest
+    18
+    19	from apex.errors import WaveOutError
+    20	from apex.execution import toobit_adapter as A
+    21	from apex.execution import toobit_map as M
+    22	from apex.identity.canonical_json import canonical_json
+    23
+    24	FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / \
+    25	    "toobit_adapter_conformance.json"
+    26
+    27	TEST_KEY = "TEST_KEY_CP7"
+    28	TEST_SECRET = "TEST_SECRET_CP7"
+    29	UTC = lambda: "2026-01-01T00:00:00.000Z"          # noqa: E731 (fixture clock)
+    30
+    31
+    32	def run(coro):
+    33	    return asyncio.run(coro)
+    34
+    35
+    36	def load_fixture():
+    37	    return json.loads(FIXTURE.read_text())
+    38
+    39
+    40	def make_adapter(monkeypatch, responder, *, allow_signed=True, key=TEST_KEY,
+    41	                 secret=TEST_SECRET, clock=None):
+    42	    monkeypatch.setenv("APEX_ENV", "PAPER")
+    43	    monkeypatch.setenv("APEX_ALLOW_SIGNED", "1" if allow_signed else "0")
+    44	    if key:
+    45	        monkeypatch.setenv("TOOBIT_API_KEY", key)
+    46	    else:
+    47	        monkeypatch.delenv("TOOBIT_API_KEY", raising=False)
+    48	    if secret:
+    49	        monkeypatch.setenv("TOOBIT_API_SECRET", secret)
+    50	    else:
+    51	        monkeypatch.delenv("TOOBIT_API_SECRET", raising=False)
+    52	    from apex.config import Config
+    53	    from fake_toobit_responder import FakeToobitResponder
+    54	    assert isinstance(responder, FakeToobitResponder)
+    55	    return A.ToobitAdapter(config=Config(), transport=responder, utc_now=UTC,
+    56	                           clock=clock if clock is not None else (lambda: 1000.0))
+    57
+    58
+    59	def apply_scenario(responder, scenario):
+    60	    from fake_toobit_responder import FakeToobitResponder
+    61	    assert isinstance(responder, FakeToobitResponder)
+    62	    if "fill_mode" in scenario:
+    63	        responder.set_fill_mode(scenario["fill_mode"],
+    64	                                price=scenario.get("fill_price"))
+    65	    if scenario.get("timeouts"):
+    66	        responder.lose_next_ack(scenario["timeouts"],
+    67	                                record=scenario.get("record_before_timeout",
+    68	                                                   True))
+    69	    if scenario.get("fail_with") is not None:
+    70	        responder.fail_next(scenario["fail_with"], scenario.get("fail_times", 1))
+    71	    for order in scenario.get("seed_orders", []):
+    72	        responder.seed_order(**order)
+    73	    if scenario.get("seed_position"):
+    74	        responder.seed_position(**scenario["seed_position"])
+    75
+    76
+    77	OPERATION_CALLS = {
+    78	    "submit_order": lambda adapter, call: adapter.submit_order(**call),
+    79	    "cancel_order": lambda adapter, call: adapter.cancel_order(**call),
+    80	    "query_order_state": lambda adapter, call: adapter.query_order_state(**call),
+    81	    "query_open_positions": lambda adapter, call:
+    82	        adapter.query_open_positions(**call),
+    83	    "query_account_margin_health": lambda adapter, call:
+    84	        adapter.query_account_margin_health(**call),
+    85	}
+    86
+    87
+    88	# ---------------------------------------------------------------------------
+    89	# Golden conformance fixture
+    90	# ---------------------------------------------------------------------------
+    91
+    92	class TestConformanceFixture:
+    93	    def test_fixture_is_hash_sealed(self):
+    94	        """The golden file is tamper-evident: its ``cases`` array must hash to
+    95	        the recorded SHA-256 (Ch.4/Ch.16 hash-chain law applied to fixtures)."""
+    96	        payload = load_fixture()
+    97	        digest = hashlib.sha256(
+    98	            canonical_json(payload["cases"]).encode("utf-8")).hexdigest()
+    99	        assert digest == payload["_meta"]["cases_sha256"]
+   100	        assert payload["_meta"]["case_count"] == len(payload["cases"])
+   101
+   102	    def test_fixture_covers_every_operation(self):
+   103	        operations = {c["operation"] for c in load_fixture()["cases"]}
+   104	        assert operations == set(M.FIVE_OPERATIONS)
+   105
+   106	    @pytest.mark.parametrize("case", load_fixture()["cases"],
+   107	                             ids=[c["id"] for c in load_fixture()["cases"]])
+   108	    def test_case(self, case, monkeypatch):
+   109	        from fake_toobit_responder import FakeToobitResponder
+   110	        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+   111	        adapter = make_adapter(monkeypatch, responder)
+   112	        apply_scenario(responder, case.get("scenario", {}))
+   113	        calls = case.get("calls") or [case["call"]]
+   114	        posts_before = len(responder.calls_to("/api/v1/futures/order", "POST"))
+   115	        result = None
+   116	        for call in calls:
+   117	            result = run(OPERATION_CALLS[case["operation"]](adapter, call))
+   118	        observed = result.to_dict()
+   119	        for key, expected in case["expect"].items():
+   120	            if key == "attempts":
+   121	                assert len(result.attempts) == expected, case["id"]
+   122	            elif key == "attempt_sources":
+   123	                assert [a.result_source for a in result.attempts] == expected, \
+   124	                    case["id"]
+   125	            elif key == "unique_idempotency_keys":
+   126	                keys = [a.idempotency_key for a in result.attempts]
+   127	                assert expected is (len(set(keys)) == len(keys)), case["id"]
+   128	            elif key == "interval_disabled":
+   129	                assert dict(result.interval_disabled or {}) == expected, case["id"]
+   130	            else:
+   131	                assert observed[key] == expected, f"{case['id']}.{key}"
+   132	        venue = case.get("expect_venue")
+   133	        if venue:
+   134	            if "posts_to_order_endpoint" in venue:
+   135	                assert len(responder.calls_to("/api/v1/futures/order", "POST")) \
+   136	                    - posts_before == venue["posts_to_order_endpoint"], case["id"]
+   137	            if "signature_violations" in venue:
+   138	                assert len(responder.signature_violations()) == \
+   139	                    venue["signature_violations"], case["id"]
+   140	            if "request_params" in venue:
+   141	                sent = responder.calls_to("/api/v1/futures/order", "POST")[-1].params
+   142	                for key, value in venue["request_params"].items():
+   143	                    assert sent.get(key) == value, f"{case['id']}.{key}"
+   144	            if "venue_recorded_client_order_id" in venue:
+   145	                assert venue["venue_recorded_client_order_id"] in responder.orders
+   146	            if "leverage_sent_for_BTCUSDT" in venue:
+   147	                assert responder.leverage["BTC-SWAP-USDT"] == \
+   148	                    venue["leverage_sent_for_BTCUSDT"], case["id"]
+   149	        state = case.get("expect_state")
+   150	        if state and "disabled_intervals" in state:
+   151	            assert {k: list(v) for k, v in
+   152	                    adapter.disabled_intervals().items()} == \
+   153	                state["disabled_intervals"], case["id"]
+   154
+   155
+   309	# ---------------------------------------------------------------------------
+   310	# Signed-endpoint gating (fail-closed) + secrets
+   311	# ---------------------------------------------------------------------------
+   312
+   313	class TestSignedGating:
+   314	    def test_allow_signed_off_refuses_every_signed_call(self, monkeypatch):
+   315	        from fake_toobit_responder import FakeToobitResponder
+   316	        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+   317	        adapter = make_adapter(monkeypatch, responder, allow_signed=False)
+   318	        with pytest.raises(A.AdapterError) as exc:
+   319	            run(adapter.submit_order(intent_id="i-1", symbol="BTCUSDT",
+   320	                                     timeframe="1h", direction="LONG",
+   321	                                     quantity="0.1", price="100"))
+   322	        assert exc.value.reason == "SIGNED_NOT_ALLOWED"
+   323	        assert responder.calls == []          # nothing left the process
+   324
+   325	    @pytest.mark.parametrize("key,secret", [(None, TEST_SECRET),
+   326	                                            (TEST_KEY, None), (None, None)])
+   327	    def test_missing_credentials_fail_closed(self, monkeypatch, key, secret):
+   328	        from fake_toobit_responder import FakeToobitResponder
+   329	        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+   330	        adapter = make_adapter(monkeypatch, responder, key=key, secret=secret)
+   331	        with pytest.raises(A.AdapterError) as exc:
+   332	            run(adapter.query_open_positions())
+   333	        assert exc.value.reason == "TOOBIT_CREDENTIALS_MISSING"
+   334	        assert responder.calls == []
+   335
+   336	    def test_secrets_never_appear_in_results_or_errors(self, monkeypatch):
+   337	        from fake_toobit_responder import FakeToobitResponder
+   338	        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+   339	        adapter = make_adapter(monkeypatch, responder)
+   340	        result = run(adapter.submit_order(intent_id="i-secret", symbol="BTCUSDT",
+   341	                                          timeframe="1h", direction="LONG",
+   342	                                          quantity="0.1", price="100"))
+   343	        for blob in (json.dumps(result.to_dict(), default=str),
+   344	                     str(adapter.audit_trail()), str(adapter.state)):
+   345	            assert TEST_SECRET not in blob
+   346	            assert TEST_KEY not in blob
+   347	        closed = make_adapter(monkeypatch, responder, allow_signed=False)
+   348	        with pytest.raises(A.AdapterError) as exc:
+   349	            run(closed.query_open_positions())
+   350	        assert TEST_SECRET not in str(exc.value)
+   351	        assert TEST_KEY not in str(exc.value)
+   352
+   353	    def test_every_signed_request_is_correctly_signed(self, monkeypatch):
+   354	        from fake_toobit_responder import FakeToobitResponder
+   355	        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+   356	        adapter = make_adapter(monkeypatch, responder)
+   357	        run(adapter.submit_order(intent_id="i-sign", symbol="BTCUSDT",
+   358	                                 timeframe="1h", direction="LONG",
+   359	                                 quantity="0.1", price="100"))
+   360	        run(adapter.query_open_positions())
+   361	        run(adapter.query_account_margin_health())
+   362	        assert responder.calls
+   363	        assert responder.signature_violations() == []
+   364	        for call in responder.calls:
+   365	            assert call.params.get("recvWindow") == str(M.RECV_WINDOW_MS)
+   366	            assert call.headers[M.HEADER_API_KEY] == TEST_KEY
+   367	            assert len(call.params["signature"]) == 64
+   368
+   369
+   370	# ---------------------------------------------------------------------------
+=== CP-7 signed-call assertions ===
+   532	    def test_the_wire_received_exactly_the_five_operations(self, store,
+   533	                                                           tmp_path):
+   534	        async def body(p):
+   535	            await p.boot()
+   536	            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+   537	            calls = [(c.method, c.path) for c in p.responder.calls]
+   538	            return calls, p.responder.signature_violations()
+   539
+   540	        calls, violations = scenario(store, tmp_path, body, fill_mode="none")
+   541	        assert violations == []                # every signed call verified
+   542	        used = {path for _, path in calls}
+   543	        # the five operations' endpoints (op 3 covers the order state AND the
+   544	        # RECONCILING fills query), plus the unsigned server-time read.
+   545	        assert used <= {"/api/v1/time", "/api/v1/futures/order",
+   546	                        "/api/v1/futures/positions", "/api/v1/futures/openOrders",
+   547	                        "/api/v1/futures/userTrades", "/api/v1/futures/balance",
+   548	                        "/api/v1/futures/marginType", "/api/v1/futures/leverage",
+   549	                        "/api/v1/futures/batchOrders"}
+   550	        # the execution surface never fetches MARKET DATA — that is the ingest
+   551	        # stage's job, and reaching for it here would be an unowned call.
+   552	        assert not used & {"/api/v1/futures/klines", "/api/v1/futures/exchangeInfo",
+   553	                           "/api/v1/futures/commissionRate"}
+   554	        posts = [c for c in calls if c == ("POST", "/api/v1/futures/order")]
+   555	        assert len(posts) == 3                 # entry + stop + target
+=== Binding wire/auth contract ===
+ 16866	## 16. Execution, Venue Adapter, and Ledger
+ 16867
+ 16868	**Session-CP-14 (2026-09-18; D34 / ISSUE-044):** ADV is mean daily base-asset volume from CLOSED 1h bars over the previous 30 complete UTC days, costs use actual round-trip fees and side-specific nonnegative funding across publicly verified settlement intervals within the governed holding horizon, endpoint/schedule failure yields FUNDING_UNAVAILABLE for retry, and unavailable spread retains cost_R >= 0.05.
+ 16869
+ 16870	The execution state machine is the only path to Toobit. Identity is `intent_id` (UUIDv7) as `clientOrderId`. Unknown venue outcomes are reconciled, never blindly retried. The ledger is append-only.
+ 16871
+ 16872	### 16.1 State machine and adapter
+ 16873
+ 16874	- The execution FSM is exactly the frozen state list of the System Overview:
+ 16875	  `READY → SUBMITTING → ACKNOWLEDGED → PARTIAL → FILLED → PROTECTED →
+ 16876	  MANAGED → CLOSED → RECONCILED`, with `RECOVERY_REQUIRED` on fill timeout
+ 16877	  (Error Codes E-EXEC-001).
+ 16878	- **Reconciliation is a first-class invariant, not a background task:** no
+ 16879	  downstream state may advance to `RECONCILED` while ledger and exchange
+ 16880	  state disagree; divergence forces `RECOVERY_REQUIRED`.
+ 16881	- **Ledger is immutable and hash-chained** (the Data Plane `ledger` table:
+ 16882	  `payload_hash`, `parent_ids`, `until`); silent rewriting is forbidden —
+ 16883	  corrections append a revision.
+ 16884	- Idempotency: `intent_id / order_id / fill_id / cancel_id` identity per the
+ 16885	  ledger DDL; every submission carries a SHA-256-based idempotency key
+ 16886	  (pattern per Chapter 6 System Contract: `SHA-256(signal_id + timestamp_UTC
+ 16887	  + chat_id)` at the Telegram layer; execution-layer key formula is a design
+ 16888	  deliverable and MUST follow the same SHA-256 + TTL discipline).
+ 16970	  query open positions, query account/margin health — each to exactly one
+ 16971	  exchange endpoint with a documented request/response schema; no other
+ 16972	  exchange endpoint is used by the runtime. Endpoint paths, parameter
+ 16973	  names, and response fields are recorded in the adapter's conformance
+ 16974	  fixtures (golden request/response pairs).
+ 16975	- **State mapping:** exchange acceptance → ACKNOWLEDGED; every terminal or
+ 16976	  unexpected exchange response maps to exactly one of REJECTED /
+ 16977	  CANCELLED / UNKNOWN; UNKNOWN always leads to reconcile-before-action,
+ 16978	  never to blind retry.
+ 16979	- **Error mapping:** each exchange error code maps to a single FSM
+ 16980	  transition and an Error Codes code; unmapped codes map to UNKNOWN +
+ 16981	  RECOVERY_REQUIRED.
+ 16982	- **Rate limits:** a token bucket per endpoint (governed defaults; initial
+ 16983	  values set from the exchange's published limits) with queueing and the
+ 16984	  same 3-attempt exponential backoff discipline as the Telegram plane.
+ 16985	- **Timeouts:** submission timeout and fill timeout are governed
+ 17000	- POST `/api/v1/futures/order` place
+ 17001	- DELETE `/api/v1/futures/order` cancel (`clientOrderId=intent_id`)
+ 17002	- DELETE `/api/v1/futures/batchOrders` cancel-all protective
+ 17003	- GET `/api/v1/futures/order` query
+ 17004	- GET `/api/v1/futures/openOrders`
+ 17005	- GET `/api/v1/futures/positions`
+ 17006	- GET `/api/v1/futures/balance`
+ 17007	- POST `/api/v1/futures/leverage`
+ 17008	- POST `/api/v1/futures/marginType` value `ISOLATED`
+ 17009	- GET `/api/v1/futures/userTrades`
+ 17010	- GET `/api/v1/futures/commissionRate` (store; do not invent a fee)
+ 17011
+ 17012	Forbidden: withdraw, transfer, flashClose, reversePosition, auto_add_margin, any unlisted path, `type=MARKET`.
+ 17013
+ 17014	Side map (ONE_WAY): LONG entry `BUY_OPEN`; SHORT entry `SELL_OPEN`; LONG flatten `SELL_CLOSE`; SHORT flatten `BUY_CLOSE`. Entry LIMIT IOC priceType=INPUT. Stop type=STOP priceType=MARKET. Aggressive flatten after IOC 0: LIMIT + priceType=MARKET only.
+ 17015
+ 17016	Success HTTP 200 and business code in {0,200}. Timeout/−1006/−1007/−1146/−1147 → UNKNOWN, reconcile, **no resubmit**. −1022 abort. −1003 backoff 1/2/4s.
+ 17017
+ 17018	Account: ISOLATED, ONE_WAY. Leverage `min(Y.2 TF cap, owner cap, exchange max)`. Never send 125x.
+=== Production run_apex / PaperRuntime composition ===
+   695	async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
+   696	                 interval: float = 60.0, report_every: int = 1) -> int:
+   697	    if cfg.apex_env == "LIVE" and not cfg.economic_gate_signed:
+   698	        code = "LIVE_CAPITAL_LOCKED"
+   699	        _say(f"REFUSED: {code} — APEX_ENV=LIVE is not a capital switch; LIVE "
+   700	             "capital stays locked until APEX_ECONOMIC_GATE_SIGNED=1 (Y.1 "
+   701	             "L17093) and the owner's written approval. Run PAPER first.")
+   702	        return EXIT_DEGRADED
+   703	    if not cfg.allow_signed:
+   704	        _say("REFUSED: SIGNED_NOT_ALLOWED — PAPER orders require "
+   705	             "APEX_ALLOW_SIGNED=1 (Y.1 L17093). Re-run exactly:")
+   706	        _say("  APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 TOOBIT_API_KEY=... "
+   707	             "TOOBIT_API_SECRET=... TELEGRAM_BOT_TOKEN=... "
+   708	             "TELEGRAM_OWNER_CHAT_ID=... python scripts/run_apex.py serve")
+   709	        return EXIT_DEGRADED
+   710
+   711	    runtime = await Runtime(cfg).start()
+   712	    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
+   713	    await service.open()
+   714	    gateway = None
+   715	    try:
+   716	        ledger, bus = runtime.ledger, runtime.bus
+   717	        clock = C.SystemClock()
+   718	        adapter = runtime.adapter()
+   719	        notifier = await _notifier_for(cfg)
+   720	        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+   721	                                       owner_chat_id=cfg.telegram_owner_chat_id
+   722	                                       or None)
+   723	                     if cfg.telegram_bot_token else None)
+   724	        control = CP.ControlPlane(
+   725	            signaling=signaling, config=cfg, clock=clock.monotonic,
+   726	            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+   727	            paper_balance=(await EC.paper_balance(ledger)
+   728	                           if cfg.apex_env == "PAPER" else "0"))
+   729	        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+   730	        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+   731	                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+   732	                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+   733	            control.register(name, _noop_handler(name))
+   734	        if cfg.telegram_bot_token:
+   735	            gateway = GW.TelegramGateway(
+   736	                control=control, source=GW.AiogramUpdateSource(config=cfg),
+   737	                notifier=_telegram_reply(signaling),
+   738	                bootstrap=service, clock=clock.monotonic,
+   739	                utc_now=clock.utc_now, poll_timeout=5.0)
+   740	        watchdog = WD.Watchdog(telegram_plane=signaling,
+   741	                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+   742	                               now=time.time)
+   743	        # CP-9 bridge: the provider is registered at the composition root, so
+   744	        # every PAPER cell now asks the governed store/context → pattern/setup
+   745	        # → gates → forecast → risk/decision chain for a real plan.  Missing
+   746	        # persisted engine context remains a named fail-closed refusal; the
+   747	        # provider never falls back to a hand-built plan.
+   748	        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+   749	                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+   750	        plan_bridge = PB.PaperPlanBridge(
+   751	            store=runtime.store, environment=cfg.apex_env,
+   752	            context_source=producer.get_bridge_context if producer is not None else None,
+   753	            context_preparer=producer.prepare if producer is not None else None)
+   754	        async def catch_up(now_ms: int) -> Dict[str, Any]:
+   755	            result = await service.catch_up(now_ms)
+   756	            if cfg.apex_env == "PAPER":
+   757	                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+   758	            return result
+   759
+   760	        driver = PL.PaperRuntime(
+   761	            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+   762	            adapter=adapter, signaling=signaling, control=control,
+   763	            gateway=gateway, watchdog=watchdog, clock=clock,
+   764	            environment=cfg.apex_env, notifier=notifier,
+   765	            plan_provider=plan_bridge, catch_up=catch_up)
+   766	        _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
+   767	             "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
+   768	        drift = await C.measure_drift(
+   769	            _venue_server_time if adapter is not None else _no_venue_time, clock)
+   770	        boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+   771	        try:
+   772	            EC.load_classifier()
+   773	            artifact_name = "E11_ARTIFACT"
+   774	        except EC.BridgeError as exc:
+   775	            artifact_name = exc.reason
+   776	        _say(f"  boot_state={boot['boot_state']} "
+   777	             f"new_trades_allowed={boot['new_trades_allowed']} "
+   778	             f"drift={drift['state']} ({drift.get('reason') or 'measured'}) "
+   779	             f"artifact={artifact_name}")
+   780	        if driver.plan_provider is None:
+   781	            _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
+   782	                 "refusal NO_PLAN_PROVIDER")
+   783	        else:
+   784	            _say("  plan seam: WIRED — governed PAPER store bridge "
+   785	                 "(missing context refuses by name; no synthetic plan)")
+   786	        _say(f"  signal_source={driver.signal_source} · cells=140 · "
+   787	             f"max_trades_per_cycle={driver.max_trades_per_cycle} · "
+   788	             f"telegram={'WIRED' if gateway is not None else 'DISABLED (no token)'}")
+   789	        _say("  (Ctrl-C stops the loop; the ledger chain and the durable "
+   790	             "cursors stay consistent)")
+   791	        outcome = await driver.run(cycles=cycles, interval=interval)
+   792	        for cycle in driver.cycles[-3:]:
+   793	            _say(f"  cycle {cycle['cycle']}: cells={cycle['cells_due']} "
+   794	                 f"complete={cycle['cells_complete']} "
+   795	                 f"halted={cycle['cells_halted']} blocked={cycle['cells_blocked']} "
+   796	                 f"trades={len(cycle['trades'])} open={len(cycle['open_intents'])}")
+   797	            if cycle.get("halt_reasons"):
+   798	                _say(f"    named refusals: "
+   799	                     f"{json.dumps(cycle['halt_reasons'], sort_keys=True)}")
+   800	        _say(f"  cycles={outcome['cycles']} trades={outcome['trades']} "
+   801	             f"open={outcome['open_intents']} refusals={outcome['refusals']} "
+   802	             f"ledger_chain_intact={outcome['ledger_chain_intact']}")
+   803	        if as_json:
+   804	            _say(json.dumps({"boot": boot, "outcome": outcome,
+   805	                             "cycles": driver.cycles}, default=str, indent=2,
+   806	                            sort_keys=True))
+   807	        return EXIT_READY if boot["boot_state"] == "READY" else EXIT_DEGRADED
+   808	    finally:
+   809	        if gateway is not None:
+   810	            await gateway.aclose()
+   811	        await service.close()
+   812	        await runtime.stop()
+   813
+   691	    # -- one plan, end to end ------------------------------------------------
+   692	    async def execute_plan(self, plan: F.TradePlan, *, price: Any,
+   693	                           timestamp_utc: Optional[str] = None,
+   694	                           close_ms: Optional[int] = None
+   695	                           ) -> Dict[str, Any]:
+   696	        """submit → observe → record fill → protect → manage (one plan)."""
+   697	        if close_ms is None:
+   698	            raise CellRefusal("INTENT_CLOSE_MISSING",
+   699	                              "intent_id requires the cell close_ms (D50)")
+   700	        machine = F.ExecutionFSM(
+   701	            intent_id=intent_id_for(plan, int(close_ms)), ledger=self.ledger,
+   702	            adapter=self.adapter, bus=self.bus, clock=self.clock.monotonic,
+   703	            utc_now=self.clock.utc_now, environment=self.environment)
+   704	        submitted = await machine.submit(plan, price=price,
+   705	                                         timestamp_utc=timestamp_utc)
+   706	        # The FSM returns a venue answer whenever the adapter round-trip
+   707	        # happened (``apply_adapter_result``), and a validation refusal when it
+   708	        # never left READY (``submit``). A REFUSED classification means the
+   709	        # adapter's own guard stopped the order before the exchange saw it —
+   710	        # that is NOT a submission either (fail-closed record).
+   711	        accepted = ("outcome" in submitted
+   712	                    and submitted.get("classification") != "REFUSED")
+   713	        record: Dict[str, Any] = {
+   714	            "proposal_id": plan.proposal_id, "intent_id": machine.intent_id,
+   715	            "symbol": plan.symbol, "timeframe": plan.timeframe,
+   716	            "direction": plan.direction, "price_source": "LAST_CLOSED_BAR",
+   717	            "price": str(price), "submitted": accepted,
+   718	            "outcome": submitted.get("outcome"), "state": machine.state,
+   719	            "fill": None, "protected": False,
+   720	            "reason": submitted.get("reason") or (
+   721	                "REFUSED_BEFORE_SUBMISSION"
+   722	                if submitted.get("classification") == "REFUSED" else None)}
+   723	        if not accepted:
+   724	            self.refusals.append({"cell": f"{plan.symbol}:{plan.timeframe}",
+   725	                                  **record})
+   726	            self.trades.append(record)
+   727	            return record
+   728	        if machine.state == "FILLED":
+   729	            # The venue answered the SUBMISSION itself with a fill: the numbers
+   730	            # come from that response — no second FSM transition (the frozen
+   731	            # matrix has none from FILLED) and no re-query.
+   732	            observed = await self._record_submission_fill(machine, plan)
+   733	        else:
+   734	            observed = await self._observe_fill(machine, plan)
+   735	        record["fill"] = observed
+   736	        if observed.get("filled"):
+   737	            protection = await machine.place_protection(
+   738	                stop_price=plan.stop_price, target_price=plan.target_price)
+   739	            record["protected"] = bool(protection.get("protected"))
+   740	            if record["protected"]:
+   741	                await machine.activate_management()
+   742	            self.working[machine.intent_id] = machine
+   743	        record["state"] = machine.state
+   744	        self.trades.append(record)
+   745	        return record
+   746
+   747	    async def _record_submission_fill(self, machine: F.ExecutionFSM,
+   748	                                      plan: F.TradePlan) -> Dict[str, Any]:
+   749	        """Record the fill the SUBMISSION response reported (source
+   750	        SUBMIT_RESULT) — or refuse to record incomplete venue numbers."""
+   751	        result = machine.last_adapter_result
+   752	        fill = fill_from_result(result, plan) if result is not None else None
+   753	        if fill is None:
+   754	            return {"filled": False, "outcome": "FILLED", "attempt": 1,
+   755	                    "source": "SUBMIT_RESULT", "reason": "FILL_DATA_INCOMPLETE"}
+   756	        await machine.record_fill(fill_id=fill["fill_id"], price=fill["price"],
+   757	                                  quantity=fill["quantity"], symbol=plan.symbol)
+   758	        return {"filled": True, "outcome": "FILLED", "attempt": 1,
+   759	                "source": "SUBMIT_RESULT", "fill_id": fill["fill_id"],
+   760	                "price": fill["price"], "quantity": fill["quantity"]}
+   761
+   762	    async def _observe_fill(self, machine: F.ExecutionFSM,
+   763	                            plan: F.TradePlan) -> Dict[str, Any]:
+   764	        """Ask the venue (never the ledger, never a guess) whether the order
+   765	        filled. ``scope='single'`` is the Ch.16 keyed query."""
+   766	        if self.adapter is None:
+   767	            return {"filled": False, "reason": "NO_ADAPTER"}
+   768	        for attempt in range(max(1, self.fill_poll_attempts)):
+   769	            result = await self.adapter.query_order_state(
+   770	                symbol=plan.symbol, client_order_id=machine.intent_id,
+   771	                scope="single")
+   772	            if result.outcome == "ACKNOWLEDGED" and \
+   773	                    machine.state in ("ACKNOWLEDGED", "PARTIAL"):
+   774	                # a repeated ACK is not a second transition (Ch.16: exactly one
+   775	                # transition per adapter outcome) — poll again instead.
+   776	                applied = {"outcome": machine.state, "state": machine.state,
+   777	                           "classification": result.classification}
+   778	            else:
+   779	                applied = await machine.apply_adapter_result(result)
+   780	            if applied.get("outcome") in ("FILLED", "PARTIAL"):
+   781	                fill = fill_from_result(result, plan)
+   782	                if fill is None:
+   783	                    # The FSM knows it filled; the venue did not report the
+   784	                    # numbers, so nothing is recorded — protect, never invent.
+   785	                    return {"filled": False, "outcome": applied["outcome"],
+   786	                            "attempt": attempt + 1, "source": "VENUE_QUERY",
+   787	                            "reason": "FILL_DATA_INCOMPLETE"}
+   788	                await machine.record_fill(
+   789	                    fill_id=fill["fill_id"], price=fill["price"],
+   790	                    quantity=fill["quantity"], symbol=plan.symbol)
+   791	                return {"filled": True, "outcome": applied["outcome"],
+   792	                        "attempt": attempt + 1, "source": "VENUE_QUERY",
+   793	                        "fill_id": fill["fill_id"], "price": fill["price"],
+   794	                        "quantity": fill["quantity"]}
+   795	            if applied.get("outcome") in ("REJECTED", "CANCELLED"):
+   796	                return {"filled": False, "outcome": applied["outcome"],
+   797	                        "attempt": attempt + 1, "source": "VENUE_QUERY"}
+   798	            if self.fill_poll_delay:
+   799	                await asyncio.sleep(self.fill_poll_delay)
+   800	        return {"filled": False, "outcome": "ACKNOWLEDGED",
+   801	                "source": "VENUE_QUERY", "reason": "FILL_NOT_OBSERVED_YET"}
+=== Relevant traceability assertions ===
+    33	| apex/execution/{fsm,toobit_adapter,toobit_map}.py | CP-7 | FSM matrix+E-EXEC-001 · adapter 5-ops+reconcile-first+T_ADAPTER_* · wire map exact (−1120/−1021/−1022/−1003/−2026, 1mo→1M) | PASS(2026-09-14, tests/unit/test_toobit_map.py (84) + test_toobit_adapter.py (73) + test_execution_fsm.py (135) + tests/integration/test_cp7_paper_loop.py — FSM matrix incl. Ch.1 aliases + T-MON-002; E-EXEC-001 submission/fill timeouts; T_ADAPTER_SUBMIT/DUPLICATE/LOST_ACK on the hash-locked 19-case conformance fixture; −1021/−2026 UNMAPPED→UNKNOWN+RECOVERY_REQUIRED per ISSUE-CP7-001) |
+    34	| apex/ledger/store.py · apex/scheduler/clock.py | CP-7 | T-LR-001..003 + T_LEDGER + single-writer grep · scheduler order+semaphore4+drift-block+T_MONOTONE | PASS(2026-09-14, tests/unit/test_ledger_store.py (64: TestSingleWriter, TestTLR001/002/003, TestTLedger chain+covert-write detection, TestPositionsFromLedger VWAP over opening fills, TestMoneyBoundary TEXT Decimal) + tests/unit/test_scheduler_clock.py (73: TestPipelineOrder nine stages, TestSemaphore peak ≤4 over 140 cells, TestDrift/TestDriftBlock, TestTMonotone min-over-all-caps, TestHtfLastClosed E-PIT-001)) |
+    35	| apex/telegram/{control_plane,signaling}.py + alerts (Ch.23) | CP-7 | screens+callbacks+busy-guard · rate buckets+dedup+idempotent · E-TELE-001..007 · Agg-only charting grep | PASS(2026-09-14, tests/unit/test_telegram_signaling.py (71: §10 parameter table, token bucket 20<30 ceiling, SHA256 idempotency key + 24 h TTL, retry 3× 1/2/4 s, E-TELE-001..007, §8 emission formula, §11 state machine, Ch.23 five policy rows + dedup exemptions, Agg-only/zero-display repo scan) + tests/unit/test_telegram_control_plane.py (102: screens §5.1–§5.8, OWNER/USER with no ADMIN, Busy Guard E-VAL-020, 90 s nonce, Emergency L1–L5 ratchet + RSK-ERR-506, Panic Lock, update_id replay)) |
+   333	| X-12 | PHASE2_CHECKPOINTS §CP-7 RULES/EXIT | the FULL PAPER loop on a fixture clock against the fake Toobit responder (test double only): clean boot READY with zero orders before READY → one cell through TRADE_PLAN/submit/FILL/PROTECTED/MANAGED/exit FILL/CLOSED+OUTCOME/RECONCILED with the chain intact → the five-operation wire surface with zero signature violations → 140-cell burst under semaphore 4 → drift-blocked loop → lost-ack recovery with a P0 alert and ONE submission → control-plane guardrails pausing the loop → signaling with an in-memory chart → two independent runs project identically and no secret reaches the ledger or a message | tests/integration/test_cp7_paper_loop.py (33 tests: TestCleanLoop, TestSchedulerInLoop, TestDriftBlocksTheLoop, TestRecoveryInLoop, TestControlPlaneInLoop, TestSignalingInLoop, TestLoopDeterminism) | PASS(2026-09-14) |
+   334	| X-13 | PHASE2_CHECKPOINTS §CP-7 EXIT (README final) | README run section FINAL and copy-paste verified: `scripts/run_apex.py` exposes boot / grid / demo / alerts with the nine env names, documented exit codes (0 READY · 2 DEGRADED/refused · 3 RECOVERY_REQUIRED · 1 error) and no secret ever printed; the offline demo runs the whole loop and exits 0 | manual verification (this session): `grid` exit 0 · `demo` exit 0 with APEX_ALLOW_SIGNED=1 and exit 2 without · `boot` exit 2 DEGRADED with no credentials · `alerts` exit 2 with no bot token · `./scripts/run_all_tests.sh -q` green; CP-8 re-verifies from a clean clone: **PASS(2026-09-14)** — fresh clone of `arena/01a09fcd-upstage` (41deb78) + `python3 -m venv` + `pip install -r requirements.lock`: `scripts/run_all_tests.sh -q` ⇒ 2553 passed; `grid` exit 0 (140 cells, T_MONOTONE ceilings, HTF LAST_CLOSED_ONLY, semaphore 4); `demo` (PAPER + DEMO keys) exit 0 (READY, 11-record ledger chain intact, 0 signature violations); `boot` without credentials exit 2 DEGRADED; `alerts` without a token exit 2 with `E-TELE-001`; CP-8 harnesses from the clone: conformance 19/19 exit 0, NFR MEASURED_IN_BOUNDS | PASS(2026-09-14) |
