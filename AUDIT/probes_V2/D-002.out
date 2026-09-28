@@ -1,0 +1,37 @@
+{
+  "L3": {
+    "batches": 1,
+    "ok": true,
+    "orders": 3,
+    "results": [
+      {
+        "action": "EMERGENCY_CANCEL_ALL",
+        "detail": "control-plane effect recorded by the runtime; the protective path is the FSM/AI.9 recovery",
+        "effect": "EMERGENCY_CANCEL_ALL",
+        "ok": true,
+        "reason": null,
+        "recorded": true
+      }
+    ]
+  },
+  "L5": {
+    "action": "EMERGENCY_SAFE_MODE",
+    "closes_all_positions": true,
+    "detail": "control-plane effect recorded by the runtime; the protective path is the FSM/AI.9 recovery",
+    "effect": "EMERGENCY_SAFE_MODE",
+    "halts_trading": true,
+    "ok": true,
+    "preserves_evidence": true,
+    "read_only": true,
+    "reason": null,
+    "recorded": true,
+    "safe_mode": true,
+    "sends_notifications": true
+  },
+  "flags": {
+    "new_positions_disabled": true,
+    "paused": true,
+    "safe_mode": true
+  },
+  "handler": "_noop_handler"
+}

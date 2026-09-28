@@ -1,0 +1,10 @@
+{
+  "control_state": {
+    "new_positions_disabled": true,
+    "paused": true
+  },
+  "observation": "_stage_execution did not consult control flags",
+  "stage_result": {
+    "detail": "intent=i-1 state=SUBMITTED fill=None protected=False"
+  }
+}

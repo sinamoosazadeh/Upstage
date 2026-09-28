@@ -1,0 +1,5 @@
+{
+  "_control_paused": true,
+  "control_state": "new_positions_disabled=True",
+  "run_loop_branch": "run() sleeps and increments rounds without run_cycle when true"
+}

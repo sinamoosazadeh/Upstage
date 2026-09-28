@@ -1,0 +1,12 @@
+{
+  "native_producer_risk_correlation_field": "not supplied by EngineContextProducer risk mapping",
+  "size_with_rho_095": {
+    "R_allowed": 50.0,
+    "decision": "REJECT",
+    "note": "Q == 0 \u21d2 REJECT (Ch.15 sizing machine)",
+    "q_before_floor": 40.0,
+    "reason": "PORTFOLIO_CAPACITY",
+    "risk_state": "LowRisk",
+    "sized_quantity": 0.0
+  }
+}

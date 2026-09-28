@@ -1,0 +1,21 @@
+{
+  "runtime_order": "run_cycle calls catch_up before _storage_guard",
+  "storage_guard_10_percent": {
+    "action": "PAUSE",
+    "alert_name": "STORAGE",
+    "floor": 0.15,
+    "free_fraction": 0.1,
+    "pause_below_floor": true,
+    "storage_alert": true,
+    "used_fraction": 0.9
+  },
+  "storage_guard_20_percent": {
+    "action": "PROCEED",
+    "alert_name": null,
+    "floor": 0.15,
+    "free_fraction": 0.2,
+    "pause_below_floor": false,
+    "storage_alert": false,
+    "used_fraction": 0.8
+  }
+}

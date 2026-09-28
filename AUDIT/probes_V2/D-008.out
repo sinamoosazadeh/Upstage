@@ -1,0 +1,71 @@
+{
+  "adjudicate": {
+    "decision": "REJECT",
+    "reason": "HARD_VETO",
+    "selected_parameter_package": null,
+    "sized_after_all_vetoes": false,
+    "sized_quantity": 0.0,
+    "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "veto_detail": [
+      {
+        "error_code": null,
+        "measured": 6500.0,
+        "name": "VETO_CAPITAL_LIMIT",
+        "number": 3
+      }
+    ],
+    "veto_evaluation_order": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14
+    ],
+    "vetoes_applied": [
+      3
+    ]
+  },
+  "observation": "one plan is evaluated from the supplied snapshot; no atomic multi-plan reservation is created",
+  "risk_input": {
+    "availability_time": 1,
+    "capital": 10000.0,
+    "capital_hard_cap": 6000.0,
+    "circuit_breaker_engaged": false,
+    "conflict_state": "CONSENSUS",
+    "consecutive_losses": 0,
+    "emergency_state": "NORMAL",
+    "failed_setup_gate": false,
+    "freshness_sla_seconds": 30.0,
+    "is_risk_increase": false,
+    "margin_health_fraction": 0.5,
+    "min_quantity": 0.001,
+    "oi_lag_seconds": 5.0,
+    "oi_lag_threshold_seconds": 60.0,
+    "per_symbol_exposure": 100.0,
+    "pit_violation": false,
+    "portfolio_cap": 1000000.0,
+    "portfolio_exposure": 5000.0,
+    "proposed_notional": 1500.0,
+    "q_raw": 0.9,
+    "qx_state": false,
+    "realized_daily_loss_fraction": 0.0,
+    "realized_weekly_loss_fraction": 0.0,
+    "risk_state": "LowRisk",
+    "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "staleness_seconds": 1.0,
+    "stop_distance": 20.0,
+    "symbol_cap": 1000.0,
+    "time_to_expiry_days": 40.0,
+    "timeframe": "1h",
+    "uncertainty_is_rising": false
+  }
+}

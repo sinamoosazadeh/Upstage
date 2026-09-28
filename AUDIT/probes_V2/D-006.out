@@ -1,0 +1,23 @@
+{
+  "boot_measurement_not_argument": true,
+  "drift_verdict_0_05": {
+    "blocks_new_trades": false,
+    "drift_seconds": 0.05,
+    "e12_degraded": false,
+    "ntp_within_target": true,
+    "reason": null,
+    "rule": "AI.7 L18722 \u2014 clock synchronized within \u00b1100 ms of UTC",
+    "state": "SYNCED",
+    "tolerance": 5.0
+  },
+  "drift_verdict_0_6": {
+    "blocks_new_trades": true,
+    "drift_seconds": 0.6,
+    "e12_degraded": true,
+    "reason": "E12_CLOCK_DRIFT_DEGRADED",
+    "rule": "AI.7 L18724 \u2014 drift > 500 ms \u21d2 E12 DEGRADED, trading pauses, time-based gates become QX",
+    "state": "DEGRADED",
+    "tolerance": 0.5
+  },
+  "scheduler_default_drift_seconds": 0.0
+}

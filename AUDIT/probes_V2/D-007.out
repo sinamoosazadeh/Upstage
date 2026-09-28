@@ -1,0 +1,14 @@
+{
+  "check_without_heartbeat": {
+    "contract_version": "4.0.0",
+    "escalation": {
+      "alert": null,
+      "limit": 3,
+      "missed": 0
+    },
+    "host_down": false,
+    "missed": 0,
+    "state": "NORMAL"
+  },
+  "heartbeat_baseline": null
+}
