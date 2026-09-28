@@ -1,0 +1,13 @@
+{
+  "apex_scripts_matches": [
+    "apex/research/backtest.py"
+  ],
+  "consumer_call_count": 0,
+  "helper_module": "apex.research.backtest",
+  "helper_result": {
+    "cvar": -0.007200000000000001,
+    "level": 0.95,
+    "paths": 100,
+    "seed": 7
+  }
+}
