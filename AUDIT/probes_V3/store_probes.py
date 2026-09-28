@@ -432,8 +432,42 @@ async def k007() -> dict:
             await store.close()
 
 
+async def k008() -> dict:
+    from apex.ops.engine_context import EngineContextProducer, CELL_QUERY, BridgeError
+    old_open = "2024-01-15T00:00:00.000Z"
+    old_availability = "2024-01-15T01:00:00.000Z"
+    with tempfile.TemporaryDirectory(prefix="v3-k008-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        try:
+            obs = MarketObservation(symbol="BTCUSDT", timeframe="1h", open=Decimal("100"),
+                high=Decimal("105"), low=Decimal("95"), close=Decimal("101"), volume=Decimal("10"),
+                oi=None, timestamp=old_open, sequence=1, status="CLOSED", source="V3-PROBE",
+                availability_time=old_availability, oi_timestamp=None)
+            event_id = await store.ingest_raw(obs, "MISSING")
+            purged = await store.retention_purge(actor="V3-PROBE")
+            raw_count = (await (await store.db.execute("SELECT COUNT(*) FROM raw_observation")).fetchone())[0]
+            market_count = (await (await store.db.execute("SELECT COUNT(*) FROM market_observation")).fetchone())[0]
+            window = await store.get_window("BTCUSDT", "1h", "2026-09-28T01:00:00.000Z", 10)
+            cell_discovery = [list(r) for r in await (await store.db.execute(CELL_QUERY)).fetchall()]
+            producer = EngineContextProducer(store, environment="PAPER")
+            producer_error = None
+            try:
+                await producer.window("BTCUSDT", "1h", "2026-09-28T01:00:00.000Z", 10)
+            except BridgeError as exc:
+                producer_error = {"reason": exc.reason, "detail": exc.detail}
+            purge_events = [list(r) for r in await (await store.db.execute(
+                "SELECT event_kind,detail FROM retention_event WHERE event_kind='PURGE_RAW'")).fetchall()]
+            return {"purged_event_ids": purged, "original_event_id": event_id,
+                "raw_count_after_purge": raw_count, "market_count_after_purge": market_count,
+                "legacy_get_window_rows": len(window), "legacy_get_window_status": window[0].status if window else None,
+                "producer_window_refusal": producer_error, "training_cell_discovery": cell_discovery,
+                "purge_events": purge_events}
+        finally:
+            await store.close()
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007}
+    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007, "K-008": k008}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}

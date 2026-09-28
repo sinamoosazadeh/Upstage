@@ -1,0 +1,32 @@
+{
+  "id": "K-008",
+  "probe": "k008",
+  "result": {
+    "legacy_get_window_rows": 1,
+    "legacy_get_window_status": "CLOSED",
+    "market_count_after_purge": 1,
+    "original_event_id": "01a0e97b-3a81-7a52-9a66-2c4423f29f91",
+    "producer_window_refusal": {
+      "detail": "observation/raw content binding missing",
+      "reason": "RAW_LINEAGE_INVALID"
+    },
+    "purge_events": [
+      [
+        "PURGE_RAW",
+        "event_id=01a0e97b-3a81-7a52-9a66-2c4423f29f91"
+      ]
+    ],
+    "purged_event_ids": [
+      "01a0e97b-3a81-7a52-9a66-2c4423f29f91"
+    ],
+    "raw_count_after_purge": 0,
+    "training_cell_discovery": [
+      [
+        "BTCUSDT",
+        "1h",
+        "2024-01-15T00:00:00.000Z",
+        1
+      ]
+    ]
+  }
+}

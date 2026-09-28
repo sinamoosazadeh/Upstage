@@ -9,7 +9,7 @@
 | K-005 | CONFIRMED | S1 | S1 | Yes — SQLiteStore is frozen; non-frozen atomic writer is a fallback | ISSUE-076 (commit boundary) | B with owner approval; until then gate writes or route through tested atomic writer |
 | K-006 | PARTIAL | S1 | S1 | Yes — core catalog/store frozen; non-frozen checked projection exists in producer | — | A — route every consumer through one lineage-checked final-observation projection |
 | K-007 | CONFIRMED | S2 | S2 | Yes — purge and raw_revision DDL are in frozen SQLiteStore | — | Single safe path: preflight/hold referenced rows with explicit owner-approved archival/retention policy; never disable FK |
-| K-008 | PENDING | S2 | — | — | — | — |
+| K-008 | CONFIRMED | S2 | S2 | Yes — store frozen; non-frozen readers/training discovery can contain orphans | — | Single safe path: lineage-filter all non-frozen readers/discovery and refuse orphans consistently |
 | K-009 | PENDING | S1 | — | — | — | — |
 | K-010 | PENDING | S2 | — | — | — | — |
 | K-011 | PENDING | S1 | — | — | — | — |
@@ -320,3 +320,41 @@ Treat referenced corrections as an explicit legal hold and stop the retention jo
 
 #### Acceptance and regression tests
 With FK enabled, test single corrections and multi-step correction chains across and inside the cutoff. The approved behavior must atomically either (1) archive and verify every endpoint/revision/audit before purging under a documented reference policy, or (2) refuse with exact held event IDs and a durable audit. Re-running must be deterministic; no partial deletion, dangling reference, hidden hold, or false-success count is allowed.
+
+### K-008
+
+#### Auditor claim (short quote)
+> “raw قدیمیِ بدون revision در purge حذف می‌شود ولی `market_observation` فعال می‌ماند؛ `get_window` هنوز بار را برمی‌گرداند اما join هویت raw در producer صفر ردیف داشت و به `RAW_LINEAGE_INVALID` می‌رسد. cell discovery آموزش market orphan را می‌شمارد.” — “An old raw row without a revision is purged while `market_observation` remains active; `get_window` still returns the bar but the producer’s raw-identity join returns no row and raises `RAW_LINEAGE_INVALID`. Training cell discovery counts the market orphan.”
+
+#### What I read (files, line ranges, functions, callers)
+Read `retention_purge` and `get_window` (`apex/data_catalog/store/sqlite_store.py:497–522,627–660`), `EngineContextProducer.window`’s raw identity join and checks (`apex/ops/engine_context.py:2367–2406`), `CELL_QUERY` (`:1713–1727`), and `train_classifier` (`:3111–3160`). The market query includes `CLOSED`/`CORRECTED` rows but does not require a raw row. The training loop obtains its cell count from this market-only query and calls the producer with that count; the producer raises on missing lineage before feature generation. `PaperRuntime._stage_ingest` also calls the legacy store window directly (`apex/ops/paper_loop.py:479–486`), so that path initially sees the orphan rather than a lineage-checked refusal.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONDONTWRITEBYTECODE=1 python3 -B AUDIT/probes_V3/store_probes.py K-008`. Probe: `store_probes.py::k008`; raw result: `AUDIT/probes_V3/K-008.json`. In a temporary store I ingested one old, uncorrected BTCUSDT row and ran the actual `retention_purge`; it deleted the raw row and wrote `PURGE_RAW`. Afterward `raw_observation` count was 0, `market_observation` count was 1, and `SQLiteStore.get_window` returned one CLOSED row. The actual producer join refused with `RAW_LINEAGE_INVALID: observation/raw content binding missing`. Executing the repository’s actual `CELL_QUERY` returned the market-only cell with count 1. This is synthetic SQLite evidence; the training loop itself was not run.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The physical delete leaves an active market projection with no immutable raw support. The legacy window and training discovery see it, while the lineage-aware producer rejects it. No trained artifact or device store was used.
+
+#### Root cause
+The purge deletes from `raw_observation` only and has no corresponding market-projection cleanup/tombstone. `market_observation` has no FK to raw `observation_id`; `get_window` reads it independently. Conversely, the producer requires an `observation_id`/raw content binding and detects the missing raw row. Training discovery is also driven from `market_observation` alone.
+
+#### Direct impact
+After the retention cutoff, different readers disagree: the store window exposes a CLOSED bar, but the producer refuses it. A training run counts the cell as nonempty and then fails at `producer.window` (that exception is not caught in the loop shown); it does not silently train on the orphan in this path. Any consumer that bypasses the lineage-aware producer can still use the stale market row.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, retention is the trigger for unreferenced raw observations; unlike K-007 there is no revision FK blocking deletion. Downstream, paper ingestion and catalog/legacy readers may see a row whose authoritative raw evidence is gone; producer, cache, or trainer can refuse or terminate on the same cell. `CELL_QUERY` changes would change the training protocol identity (`TRAINING_QUERY` contains the query), invalidating cell cache/artifact assumptions. No replay/training completion or device data was observed.
+
+#### Contract and decisions
+`APEX_GEN5.md:18725–18735` governs the raw store and 12-month rolling raw retention; `:18302` defines PIT consumption and append-only corrections, and Ch.5 requires catalog-mediated reading. The reviewed contract does not specify retention behavior for the denormalized `market_observation` projection or a tombstone/archive rule. No PHASE2 ruling found in the relevant passages authorizes serving an active projection after its raw identity has been purged. Precedence: a consumer requiring raw lineage must refuse an orphan; a legacy reader must not present one as a verified authoritative candle.
+
+#### Frozen status and non-frozen alternative
+**Frozen:** `SQLiteStore.retention_purge/get_window` and their DDL are in frozen `apex/data_catalog/**`. Non-frozen consumers can use a shared lineage-checked provider; make `PaperRuntime`, Catalog provider wiring, and training discovery consult raw existence/content binding before admitting a market row. Training discovery can use an `EXISTS` join and preserve the matching input in `TRAINING_QUERY`. This prevents an orphan from being consumed or counted but does not remove the orphan from the frozen store; the physical projection-retention mismatch still needs owner approval.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — non-frozen containment:** filter rawless rows from all consumers and training discovery, and return a named lineage-retention refusal to direct readers. Side effects: the training SQL/query hash changes, invalidating existing per-cell cache and model artifacts; orphan cells disappear from effective coverage and must be reported. **B — owner-approved physical retention fix:** atomically delete/archive both the raw source and market projection (plus any dependent quality/feature rows) or retain a tombstone that makes the projection explicitly unavailable. Side effects: frozen schema/retention behavior changes, dependent foreign keys and audit semantics need migration, and any old snapshots/artifacts relying on the rows may become unreconstructable. No safe deletion workaround is established in this probe.
+
+#### My recommendation
+Apply A as a fail-closed consumer guard and request an owner decision for B. Do not silently repair an orphan by reconstructing raw fields from `market_observation`; the store’s own lineage contract says that projection is not a replacement for the immutable raw event.
+
+#### Acceptance and regression tests
+Purge one unreferenced old raw row and assert every read path either returns a lineage-valid row or the same named refusal; no PaperRuntime/catalog path may expose it as verified. Training discovery must not count it, and `CELL_QUERY`/protocol hash/cache invalidation must be explicit. Also test a retained/revision-linked row (K-007), cutoff boundary, restart, and old market rows with missing/wrong raw hashes; preserve a durable report of coverage excluded by retention.
