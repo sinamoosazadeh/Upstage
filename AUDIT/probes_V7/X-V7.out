@@ -1,0 +1,74 @@
+==============================================================================
+X-V7-001  PatternEntity.to_pattern_evidence_row exists but is
+           never called: AC.5 #2 is unreachable in production
+==============================================================================
+apex/pattern/detect.py:169:    def to_pattern_evidence_row(self) -> Dict[str, Any]:
+
+  -> the ONLY producer of a pattern_evidence row is never called by any
+     production code; combined with M-009 the table has no writer at all.
+
+==============================================================================
+X-V7-002  feed_touches documents key `type`; the code reads `ltype`
+==============================================================================
+  after feed_touches with the DOCUMENTED key `type`: pending=[(102.0, 0, 'SWING_EXTREME')]
+  the level created from it carries ltype='SWING_EXTREME' (the caller's `type='HIGH'` was dropped and the default used)
+    ['"""SwingInput.v1 external touches: {price, bar_index, type, confirmed}."""', 't.get("ltype", "SWING_EXTREME"))']
+  a producer sending {"type": "RANGE_EDGE"} or any other type gets
+  SWING_EXTREME salience/type_scores (0.8 vs RANGE_EDGE 0.6) silently.
+
+==============================================================================
+X-V7-003  E02 level expiry: `age > level_expiry_bars` uses the LEVEL's
+           last_touch, but the Q3 short-sample rule needs 14 candles;
+           with level_expiry_bars=0 every level expires on the next bar
+==============================================================================
+  level_expiry_bars=0: 30 levels formed, fates=Counter({'EXPIRED': 30})
+  events by type: Counter({'EV_LIQ_001': 30, 'EV_LIQ_011': 30})
+  -> a single level is formed and expired on the SAME bar, so the engine
+     emits EV_LIQ_001 and EV_LIQ_011 for a level that never existed as a
+     tradeable object.  `level_expiry_bars` has no lower bound in the
+     constructor and no validation.
+  negative theta_eq accepted without error: theta_eq=-1.0 -> tol=-2.0 (every touch merges into the nearest level)
+
+==============================================================================
+X-V7-004  `run_all` never sees a NaN/Inf, because gate10's own default
+           and `_finite_float` are the only finite checks; gate11 is
+           the only NaN/Inf guard and it is not reachable from run_all
+==============================================================================
+  run_all signature: (context: 'Mapping[str, Any]') -> 'Dict[str, Any]'
+  does run_all call gate11_snapshot_lineage? True
+  gate10 with a NaN quality:
+    GateResult(number=10, name='FORECAST_QUALITY', passed=False, measured=nan, threshold='finite quality', reason='GATE10_FORECAST_QUALITY_FAIL')
+  gate12 with a NaN q_forecast: GateResult(number=12, name='Q_FORECAST_MIN', passed=False, measured=nan, threshold=0.5, reason='GATE12_Q_FORECAST_UNAVAILABLE')
+  -> a NaN quality string compares False against the integer minimum, so
+     gate10 FAILS closed on NaN; that is correct, but it does so by
+     accident of comparison, not by an explicit finite check.
+
+==============================================================================
+X-V7-005  the CP-2 DDL contains `outcome` with a FK to setup_candidate,
+           but plan_bridge never inserts an outcome and SQLite FKs are
+           OFF by default -> the DDL integrity is not enforced at all
+==============================================================================
+  foreign_keys pragma default = 0
+  sqlite version 3.40.1
+  IntegrityError: CHECK constraint failed: typeof(pnl)='text'
+  store construction path: does it enable foreign_keys?
+apex/data_catalog/store/sqlite_store.py:8:synchronous=FULL, foreign_keys=ON, busy_timeout=5000), G16 (SQLite only —
+apex/data_catalog/store/sqlite_store.py:348:        await self._db.execute("PRAGMA foreign_keys=ON;")
+apex/research/checkpoints.py:120:        await self._db.execute("PRAGMA foreign_keys=ON")
+
+DONE X-V7
+
+==============================================================================
+X-V7-005 CORRECTION: the store DOES enable foreign_keys=ON, so the FK IS
+           enforced on the real path; my raw-connection claim was WRONG
+==============================================================================
+$ sed -n '340,352p' apex/data_catalog/store/sqlite_store.py
+  348:        await self._db.execute("PRAGMA foreign_keys=ON;")
+  8:  synchronous=FULL, foreign_keys=ON, busy_timeout=5000), G16 (SQLite only ...
+  -> the connection factory enables it; a bare sqlite3.connect does not,
+     which is why the probe above failed.  RETRACTED as a finding.
+$ python3 -c "re-verify with the pragma ON"
+  valid outcome insert OK
+  FK enforced -> FOREIGN KEY constraint failed
+  outcome DDL FK clause:
+    ['FOREIGN KEY(setup_id) REFERENCES setup_candidate(setup_id)']
