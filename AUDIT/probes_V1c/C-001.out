@@ -1,0 +1,30 @@
+== malformed .env ==
+argv=['boot', '--env-file', '/tmp/c001-v1p6v19t/malformed.env']
+exit_code=1
+stdout_head=[]
+stderr_tail=['  File "/home/user/Upstage/apex/config.py", line 105, in parse_dotenv', '    raise ValueError(', 'ValueError: malformed .env line 1: expected NAME=VALUE']
+
+== unknown name in .env ==
+argv=['boot', '--env-file', '/tmp/c001-v1p6v19t/unknown.env']
+exit_code=1
+stdout_head=[]
+stderr_tail=['  File "/home/user/Upstage/apex/config.py", line 114, in parse_dotenv', '    raise ValueError(', "ValueError: unknown runtime env name 'NOT_A_KNOWN_NAME' in .env (line 1); the only lawful names are ['APEX_ENV', 'APEX_ALLOW_SIGNED', 'APEX_ECONOMIC_GATE_SIGNED', 'TOOBIT_API_KEY', 'TOOBIT_API_SECRET', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_OWNER_CHAT_ID', 'TELEGRAM_WATCHDOG_CHAT_ID', 'APEX_SQLITE_PATH']"]
+
+== non-UTF8 .env ==
+argv=['status', '--env-file', '/tmp/c001-v1p6v19t/binary.env']
+exit_code=1
+stdout_head=[]
+stderr_tail=['    for lineno, raw in enumerate(fh, start=1):', '  File "<frozen codecs>", line 322, in decode', "UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"]
+
+== control: bad --cells (inside try) ==
+argv=['bootstrap', '--cells', 'bogus', '--env-file', '/tmp/c001-v1p6v19t/none.env']
+exit_code=1
+stdout_head=['APEX_GEN5 — W.6 Phase 1: the FIRST LONG RUN (data acquisition)', '  environment surface: {"APEX_ALLOW_SIGNED": false, "APEX_ECONOMIC_GATE_SIGNED": false, "APEX_ENV": "RESEARCH", "APEX_SQLITE_PATH": "data/apex.sqlite3", "TELEGRAM_BOT_TOKEN": "UNSET", "TELEGRAM_OWNER_CHAT_ID": "UNSET", "TELEGRAM_WATCHDOG_CHAT_ID": "UNSET", "TOOBIT_API_KEY": "UNSET", "TOOBIT_API_SECRET": "UNSET"}']
+stderr_tail=['']
+
+== missing --env-file (falls back, exists() guard) ==
+argv=['status', '--env-file', '/tmp/c001-v1p6v19t/does-not-exist.env']
+exit_code=2
+stdout_head=['APEX_GEN5 — bootstrap status (offline; no venue call)', '  cells=140 completed=0 remaining=140 checkpointed=0']
+stderr_tail=['']
+
