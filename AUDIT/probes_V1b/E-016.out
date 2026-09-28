@@ -1,0 +1,4 @@
+proposal_id= plan-000000000001
+d50_intent= i-db49c28b87dd3e69a00dd15a
+legacy_candidate= i-000000000001
+BridgeError PAPER_ORDER_STATE_UNAVAILABLE: materialized plan lacks order state

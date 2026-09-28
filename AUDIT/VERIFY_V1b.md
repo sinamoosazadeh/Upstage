@@ -6,6 +6,7 @@ Baseline: `85b2c155d7b054a468379ddfd802eb239d0801f9`. Verification date: 2026-09
 
 | ID | Verdict | Auditor severity | Independent severity | Frozen? | Cross-ref (D/ISSUE) | Recommended option |
 |---|---|---:|---:|---|---|---|
+| E-016 | CONFIRMED | S0 | S0 | Mixed | D50 | A: durable proposal→intent mapping |
 | E-003 | CONFIRMED | S0 | S0 | Yes (`apex/execution/fsm.py`) | none | A: invoke a real fail-closed emergency-close coordinator |
 
 
@@ -47,3 +48,41 @@ Choose A with explicit owner approval, and use B only as an interim PAPER admiss
 
 ### Acceptance and regression tests
 Add stop `-1022`, target rejection, UNKNOWN/lost ACK, and partial-leg scenarios. Assert: `protected=false`; no “protected” projection; exactly one idempotent emergency exit; accepted status `NEW` is followed by query/reconcile; surviving target/stop is cancelled; venue and ledger become flat; P0 delivery is acknowledged; restart resumes the saga without duplicate exit; new entries remain blocked. Run against fake and temporary SQLite DDL, then require separate read-only device evidence—order/fill/position/ledger traces—before claiming operational success.
+
+## E-016
+
+### Auditor claim (short quote)
+“D50 intent identity is not joined to the plan identity in the PAPER account projection.”
+
+### What I read (files, line ranges, functions, callers)
+I read the full row, `paper_loop.py:180–230,680–710` (`intent_id_for`, `execute_plan`), `engine_context.py:662–833,2186–2280` (`paper_account_state` and its producer), `fsm.py:530–596`, ledger plan/transition readers and writers, and the cited tests. Consumer search `grep -RIn 'paper_account_state|PAPER_ORDER_STATE_UNAVAILABLE|intent_id_for' apex tests scripts` shows native execution uses D50 while projection recognizes only proposal ID and `i-` plus its last 12 characters.
+
+### Reproduction (command, probe file, actual result)
+`python3 AUDIT/probes_V1b/E-016.py` used real repository SQLite DDL, `LedgerWriter`, D50 `intent_id_for`, and `paper_account_state` in a temporary DB. `E-016.out` records D50 `i-db49c28b87dd3e69a00dd15a`, legacy candidate `i-000000000001`, then `PAPER_ORDER_STATE_UNAVAILABLE: materialized plan lacks order state` despite a valid transition under the D50 ID.
+
+### Verdict and reasoning
+**CONFIRMED, S0.** The first native allowed plan can make subsequent account projection fail closed. This blocks basic PAPER progression; synthetic success does not prove device state.
+
+### Root cause
+No durable proposal→intent key is stored/read. Projection retains the superseded 12-character naming convention while D50 deliberately hashes five content fields.
+
+### Direct impact
+Valid materialized PAPER plans become unjoinable to their FSM transitions and fills, preventing account/risk context generation.
+
+### Secondary effects and interactions (upstream/downstream)
+Upstream identity includes close time unavailable in the stored plan row. Downstream marks, reserved notional, margin vetoes, decisions, replay, and training/outcome lineage fail or become unavailable. A heuristic relaxation could misattribute fills.
+
+### Contract and decisions
+`PHASE2_DECISION_LOG.md:1159` D50 explicitly requires `i-` plus 24 hex characters of the canonical content hash and “never the tail of proposal_id.” It is later and more specific than older contract identity prose, so D50 prevails. The execution FSM remains the sole venue path under Ch.16; this does not authorize guessed joins.
+
+### Frozen status and non-frozen alternative
+The defect spans non-frozen producers/projection plus frozen `fsm.py` and ledger storage code. A non-frozen adapter/projection table can durably bind proposal, close, and intent without changing FSM; changing ledger schema APIs needs owner review appropriate to frozen `apex/ledger/store.py`.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A:** additive durable proposal→intent mapping written before submission and consumed by projection. Requires migration/backfill policy; identity hashes stay unchanged; account/cache outputs change; tests using legacy IDs need dual-read coverage; no model retraining, though derived account artifacts should be invalidated. **B:** add `intent_id`/`close_ms` to the trade-plan schema (cleaner but frozen ledger change and migration). **C:** recompute only when all exact D50 inputs are durably present; current plan lacks `close_ms`, so guessing is forbidden.
+
+### My recommendation
+A now, with collision rejection and explicit legacy dual-read; B at the next owner-approved ledger revision.
+
+### Acceptance and regression tests
+Use native `intent_id_for` through plan→FSM→fill→projection before/after restart; assert exact one-to-one joins, pending/fill values, orphan and ambiguous refusal, legacy read compatibility, and no 12-tail inference for new records. Run temporary SQLite migration/replay tests and separately inspect a read-only device copy before any operational claim.
