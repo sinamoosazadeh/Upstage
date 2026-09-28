@@ -1,0 +1,70 @@
+Baseline recursive test/production caller search, no device or external endpoint:
+\n-- EngineContextProducer|PaperRuntime|run_apex --
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1759:class EngineContextProducer:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:3148:    producer = EngineContextProducer(store, now=now)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/paper_loop.py:3:CP-7 shipped `scripts/run_apex.py demo`: the whole PAPER chain, once, on a
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/paper_loop.py:351:class PaperRuntime:
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/paper_loop.py:1187:    "PaperRuntime", "PlanQueue", "SIGNAL_SOURCE_DECISION_BRIDGE",
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:6:    python scripts/run_apex.py boot     # environment init → dependency load →
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:8:    python scripts/run_apex.py grid     # the 140-cell universe + min-cap
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:10:    python scripts/run_apex.py demo     # the WHOLE PAPER loop on a fixture
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:13:    python scripts/run_apex.py alerts   # the Ch.23 alert-policy self-check
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:18:    python scripts/run_apex.py bootstrap  # W.6 Phase 1: the FIRST LONG RUN —
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:22:    python scripts/run_apex.py serve      # the 24/7 runtime: reconcile-first
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:28:    python scripts/run_apex.py status     # offline: bootstrap progress from the
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:30:    python scripts/run_apex.py repair-partial  # CP-13: governed repair of
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:285:             "python scripts/run_apex.py demo")
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:343:            lineage="demo:scripts/run_apex.py")
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:708:             "TELEGRAM_OWNER_CHAT_ID=... python scripts/run_apex.py serve")
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:748:        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:760:        driver = PL.PaperRuntime(
+85b2c155d7b054a468379ddfd802eb239d0801f9:scripts/run_apex.py:1079:        prog="run_apex.py", description=__doc__.splitlines()[0],
+\n-- E07RTMEngine|E08WyckoffEngine|E09TrendEngine|E10MomentumEngine|E11RegimeEngine|E12TemporalEngine --
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1456:    collect("E12", E12.E12TemporalEngine, {**base, "profile": temporal_profile})
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1512:        emitter = E10.E10MomentumEngine()
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1520:    collect("E09", E09.E09TrendEngine, trend_context)
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1631:    regime_engine = E11.E11RegimeEngine()
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1685:    events.extend(E07.E07RTMEngine().compute(symbol, timeframe, end, {
+85b2c155d7b054a468379ddfd802eb239d0801f9:apex/ops/engine_context.py:1690:    events.extend(E08.E08WyckoffEngine().compute(symbol, timeframe, end, {"window": window,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:30:    E07RTMEngine,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:41:    E08WyckoffEngine,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:51:    E09TrendEngine,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:206:        evs = E07RTMEngine().compute(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:352:        evs += E07RTMEngine().compute(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:356:        evs += E08WyckoffEngine().compute(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:361:        evs += E09TrendEngine().compute(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:424:            batch += E07RTMEngine().compute("BTCUSDT", "1h", AS_OF, ctx_e07)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:425:            batch += E08WyckoffEngine().compute("BTCUSDT", "1h", AS_OF, ctx_e08)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:426:            batch += E09TrendEngine().compute("BTCUSDT", "1h", AS_OF, ctx_e09)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:39:from apex.engines.e10_momentum import E10MomentumEngine
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:41:from apex.engines.e11_regime import E11RegimeEngine
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:45:    E12TemporalEngine,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:281:            E11RegimeEngine().compute(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:304:            (E10MomentumEngine(), {"window": window}),
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:305:            (E11RegimeEngine(), {"candles": e11c, "W": np.zeros((9, 8)),
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:307:            (E12TemporalEngine(), {"candles": e12c, "econ_calendar": set()}),
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:324:        evs += E10MomentumEngine().compute("BTCUSDT", "1h", AS_OF,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:326:        evs += E11RegimeEngine().compute(
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:330:        evs += E12TemporalEngine().compute(
+\n-- run_e07|run_e08|run_e09|run_e10|run_e11|run_e12 --
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:56:    run_engine as run_e09,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:260:        res = run_e09(bars, atr=ATR,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:287:        short = run_e09(lcg_window(8), atr=ATR, swings=short_swings)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:288:        warm = run_e09(lcg_window(60), atr=ATR, swings=warm_swings)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:298:        aligned = run_e09(lcg_window(60, span=1.0), atr=ATR)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:309:        a = run_e09(bars, atr=atr_val)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:310:        b = run_e09(bars, atr=atr_val * 2)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:321:        with_swings = run_e09(bars, atr=ATR, swings=swings)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:322:        without = run_e09(bars, atr=ATR, swings=None)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:329:            run_e09(bars, atr=ATR, swings=leak)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:336:        res = run_e09(bars, atr=ATR, swings=swings,
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:447:        a = run_e09(bars, atr=ATR, swings=swings)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp4_engines.py:448:        b = run_e09(bars, atr=ATR, swings=swings)
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:40:from apex.engines.e10_momentum import run_engine as run_e10
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:43:from apex.engines.e11_regime import run_engine as run_e11
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:49:from apex.engines.e12_temporal import run_engine as run_e12
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:260:        return run_e11(e11_candles(BARS), W=np.zeros((9, 8)),
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:295:            lambda: run_e10(BARS, symbol="BTCUSDT", interval="1h"),
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:296:            lambda: run_e11(e11c, W=np.zeros((9, 8)), b=np.zeros(9),
+85b2c155d7b054a468379ddfd802eb239d0801f9:tests/integration/test_cp5_engines.py:298:            lambda: run_e12(e12c, econ_calendar=set()),
+\n-- context\["window"\]|context\["candles"\] --

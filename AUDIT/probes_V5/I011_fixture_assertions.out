@@ -1,0 +1,10 @@
+CP4: full_events=6 engines={'E07': 1, 'E08': 1, 'E09': 4}
+  prefix40=6 engines={'E07': 1, 'E08': 1, 'E09': 4}
+  all_event_ids_validated_by_target=True
+  full_engine_id_set=['E07', 'E08', 'E09']
+  target call-path: test helper constructors -> EngineBase.compute/real run_engine -> SQLiteStore.insert_evidence; no run_apex, PaperRuntime or EngineContextProducer call
+CP5: full_events=6 engines={'E10': 2, 'E11': 3, 'E12': 1}
+  prefix40=6 engines={'E10': 2, 'E11': 3, 'E12': 1}
+  all_event_ids_validated_by_target=True
+  full_engine_id_set=['E10', 'E11', 'E12']
+  target call-path: test helper constructors -> EngineBase.compute/real run_engine -> SQLiteStore.insert_evidence; no run_apex, PaperRuntime or EngineContextProducer call

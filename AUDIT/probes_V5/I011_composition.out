@@ -1,0 +1,1037 @@
+I-011 integration test behavior compared with native engine and PAPER composition
+Baseline commit 85b2c155d7b054a468379ddfd802eb239d0801f9; exact full test-module excerpts are in I009_composition.out.
+
+===== PHASE2_TRACEABILITY_MATRIX.md:136-137 (baseline) =====
+   136	| X-4 | E07/E08/E09 §8 + CP-4 stage prompt | cross-engine: E04 governed ATR → E07 range gate ∧ E08 Q0 gate ∧ E09 pos; E01 swings/BOS → E09 seq + EV_TRD_001 under PIT; E07 bundle integrity identical across both temporal modes | tests/integration/test_cp4_engines.py::TestE09StackAndADLine + TestE07TemporalBranches::test_both_branches_agree_on_integrity | PASS(2026-09-12) |
+   137	| X-5 | PHASE2_CHECKPOINTS §CP-4 EXIT | emission rows insert through the frozen store DDL (E07+E08+E09) + duplicate-snapshot rejection; T-DR-001 shared-window double run byte-identical for all three engines | tests/integration/test_cp4_engines.py::TestCP4EmissionsInsertIntoStore + TestTDR001CP4 | PASS(2026-09-12) |
+
+===== PHASE2_TRACEABILITY_MATRIX.md:168-170 (baseline) =====
+   168	| X-7 | E07 §3.6 + E12 §3.5 + CP-5 stage prompt | E07↔E12 integration BOTH modes: RESOLVED — real E12TemporalProvider ⇒ source E12_Temporal_Context.Contract v4.0.0, degraded=False, config_version v2024a, which=[primary]+derived-overlap-label, Q5 reachable only on the authoritative overlap (real E12 non-overlap caps Q4 non-degraded); DEGRADED — absent/raising provider ⇒ E07_LOCAL_NON_AUTHORITATIVE + E12_UNAVAILABLE_DEGRADED_QX + Q4 cap; registry agreement at 8 boundary hours; §3.1 sequence math identical across modes; §8.8 stability end-to-end through E07 | tests/integration/test_cp5_engines.py::TestE07E12BothModes (8 tests) | PASS(2026-09-12) |
+   169	| X-8 | PHASE2_CHECKPOINTS §CP-5 EXIT | emission rows E10+E11+E12 insert through the frozen store DDL + duplicate-snapshot rejection; T-DR-001 shared-window double run byte-identical for all three engines (run_engine AND EngineBase surfaces); E11 live-gate default-OFF + Wave-Out raises; E11/E12 direction=0 context engines (NG1) | TestCP5EmissionsInsertIntoStore + TestTDR001CP5 + TestE11GateAndWaveOut | PASS(2026-09-12) |
+   170	| X-9 | §9.5 directives (L20128–20247) | chapter-order engine files (§2→§8); ε tiers (E10/E11 1e-8, E12 1e-12 via eps_for_engine); fixtures re-derived never copied, per-fixture sha256 computed AFTER the fixture exists (§9.5-3); Wave-Out raises with deterministic reasons; no TODO/FIXME/NotImplementedError/pass-stub in Wave-In code; foundation consumed never patched (no CP-1 file in the CP-5 diff); ADR-P2-015 from-zero | scripts/run_all_tests.sh — full suite 1048 passed / 0 failed | PASS(2026-09-12) |
+
+===== APEX_GEN5.md:8297-8345 (baseline) =====
+  8297	# E07 — RTM/ICT: Combined Reading-the-Market Methodology
+  8298
+  8299	**Module code:** E07_RTM_ICT · **Version:** V4.0.0 · **Date:** 2026-05-13
+  8300	**Dependencies:** E01_Structure v4.x, E02_Liquidity v4.x, E03_Volume v4.x, E04_Volatility v4.x, E05_FVG v4.x, E06_OrderBlock v4.x, E12_Temporal_Context v4.x
+  8301	**Inter-engine contract:** APEX-InterMotor-Contract v2.1 (versioned, semver)
+  8302
+  8303	---
+  8304
+  8305	## 0. Executive Summary
+  8306
+  8307	Engine E07_RTM_ICT is the combination (meta-layer) of the APEX GEN5 package. Unlike the base engines, which produce atomic evidence (e.g. BOS/CHoCH from E01, Sweep from E02, Volume Spike from E03, FVG from E05, OrderBlock from E06), this engine builds no new indicator from raw price; instead it constructs a **Bundle** — an auditable package of existing evidence arranged into a valid time-and-concept sequence (a Conceptual Chain). RTM's underlying premise is that the market breaks down not through a single event but through a sequence: liquidity accumulation, manipulation (a deliberate fake-out), and distribution. This is the "Power of Three" pattern that recurs throughout the ICT/SMC/RTM family of methodologies.
+  8308
+  8309	Seven design points anchor this version:
+  8310	1. **order_map** — every component carries a PIT-confirmed timestamp `t_confirm`, a sequential index `seq_idx`, and an `order_ok` flag, computed under the InterMotor contract.
+  8311	2. **Po3 range detection** — the range-detection algorithm requires two simultaneous conditions, `ATR_short/ATR_long < 0.75` and `N_range >= 8`, plus volume compression.
+  8312	3. **MSS proximity** — precisely quantified as `|p_sweep - p_CHoCH| <= 0.5*ATR`.
+  8313	4. **OTE (62–79%)** — justified on two grounds: the Fibonacci ratios (0.618 Golden Ratio and 0.786 = sqrt(0.618)) and empirical market-retracement statistics (retracement-distribution peak at 68–72%, per Wilson CI).
+  8314	5. **Judas Swing (180° reversal)** — precisely defined as a reversal of at least 100% of the Judas move's length within `<=3` candles, with a directional flip.
+  8315	6. **UTC activity windows** — a versioned `UTCActivityWindowConfig v2` governed by the canonical E12 UTC temporal_window-window registry, integration of the configured high-impact economic calendar, and the UTC_W1/UTC_W2 overlap window of `12:30-16:00 UTC`; the canonical UTC window never changes with local-time conventions.
+  8316	7. **Integrity penalty** — a partial penalty of 0.5 for out-of-order components rather than zeroing them out entirely, to avoid discarding information over a minor ordering error.
+  8317
+  8318	Each chapter's encyclopedic coverage includes three real numeric examples and a step-by-step case study. The quality-label system spans six levels (Q0 Invalid through Q5 Diamond), scored against Integrity, average component quality, MTF alignment, and Killzone/temporal alignment. PIT handling: every formula reads only from `data[t' <= t]`, verified by a No-Future-Leak test. `snapshot_id` follows a deterministic SHA-256 identity, for determinism. Parameter proliferation is governed by a table specifying, per parameter, its determination method (Governance / OOS / Statistical), its Sobol sensitivity, and its change process.
+  8319
+  8320	The engine's output is never a direct capital-allocation signal. The output is only an `RTMBundle` carrying `confidence`, `sequence_integrity`, a `resolution_class` (QX), a `components_present/missing` list, and a `fate` lifecycle. Downstream responsibility is separated by canonical layer: L13 Decision/BDI interprets context; L14 Risk applies vetoes and risk policy; L15 Execution alone handles execution. No engine-number alias is normative.
+  8321
+  8322	Statistically, the engine makes no claim of institutional certainty; it reports each Bundle type's success rate under walk-forward optimization (WFO) with Wilson-interval calibration. For example, in a BNBUSDT 15M test over the trailing 6 months, `PO3_COMPLETE` bundles with Integrity>=0.9 showed a 63% success rate (26/41) with Wilson CI [48%, 76%] — better than the 50% random baseline at p-value=0.08, but not decisive.
+  8323
+  8324	The architecture is event-driven: all `EV_RTM_xxx` state changes are versioned and recorded with `as_of` and `valid_from` timestamps. Finally, the engine manages conflicting Bundles: if two Bundles form simultaneously with opposite direction and >70% time overlap, the older one is invalidated and the newer one is kept with a `conflict_resolved` flag.
+  8325
+  8326	---
+  8327
+  8328	## 1. Mission, Scope, Boundaries, Non-Goals
+  8329
+  8330	**Mission:**
+  8331	1. Consume the event stream from the base engines (Structure events, Liquidity Sweep, Volume Confirm, FVG, OrderBlock, TemporalWindow) under the APEX-InterMotor-Contract v2.1.
+  8332	2. Construct reference sequence chains: `PO3 [Accumulation→Manipulation→Distribution]`, `Liquidity Grab Chain [sweep→CHoCH/BOS→FVG→retest→volume]`, `MSS Chain [sweep + CHoCH proximate]`, `OTE Chain [impulse → OTE 62-79% + mitigation]`, `Judas Chain [judas → 180° reversal]`.
+  8333	3. Compute `sequence_integrity` using a timestamped, weighted `order_map` with a 0.5 penalty for ordering irregularities.
+  8334	4. Compute `confidence = f(Integrity, avg_quality, MTF_align, utc_window_align)` and emit an `RTMBundle` only if `Integrity >= theta_int` and `SumWeight >= theta_weight`.
+  8335	5. Emit versioned, PIT-safe events and manage the `fate` lifecycle: `active → completed | invalidated | expired | superseded`.
+  8336
+  8337	**Scope:**
+  8338	- Combines evidence; does not generate OHLCV.
+  8339	- Supported timeframes only: 1M, 5M, 15M, 1H, 4H, D (WIP).
+  8340	- Toobit USDT-M crypto futures instruments only (Perpetual + Quarterly) with ATR>0.
+  8341	- PIT: every formula uses a confirmed candle close with a 1-candle delay.
+  8342
+  8343	**Boundaries:**
+  8344	- No order matching or execution occurs in this engine.
+  8345	- No point price prediction — only Bundle classification.
+
+===== APEX_GEN5.md:9108-9115 (baseline) =====
+  9108	The engine never grants capital authorization; its output is context for the Regime and Setup layers. All computation is PIT-safe: pre-close scores use candles closed through `t-1`; when the canonical `as_of` is the close of candle `t`, closed candle `t` may be included. Events are confirmed only after their required confirmation bars are closed (`confirmed_at = t + k_confirm`, k=1 for SC/Spring).
+  9109
+  9110	---
+  9111
+  9112	## 1. Mission, Scope, and Boundaries
+  9113
+  9114	**Mission:** produce `PhaseHypotheses` + `CycleState` + Wyckoff events, under a complete PIT contract with explicit uncertainty.
+  9115
+
+===== APEX_GEN5.md:9490-9505 (baseline) =====
+  9490	---
+  9491
+  9492	## 0. Executive Summary
+  9493
+  9494	The Trend engine is the heart of APEX's Context system. Its fundamental distinction from the Momentum and Structure engines: Structure asks *where did the high/low break?*; Momentum asks *at what acceleration?*; but Trend asks *does this accelerated, structured move have statistical persistence across multiple time scales?* In many amateur systems, "trend" is simply defined as the slope of a moving average, which leads to whipsaw and false signals inside ranges. In APEX GEN5 V4, Trend is a multi-scale entity with 4 formal scales: MICRO (5 candles), SHORT (20 candles), INTERMEDIATE (60 candles), MACRO (240 candles). Each scale carries a full state vector: direction, strength, quality, seq_score, slope_z, pos, adx, hurst, mk_z, r2_ols, plus supporting evidence.
+  9495
+  9496	The design rests on seven points. First, `seq_score` is defined precisely as `seq_score_s = (N_HH + N_HL - N_LH - N_LL) / N_total` — a count of confirmed swing patterns within the scale's window, fully PIT-safe since it uses only closed swings. Second, the OLS slope estimate is corrected with the robust Newey-West HAC estimator, using an automatic lag `L = floor(4*(n/100)^(2/9))`, to account for the autocorrelation and heteroskedasticity typical of financial series (as opposed to an assumption of homoskedastic errors). Third, the Mann-Kendall test is implemented with an exact tie-correction formula, `Var(S)= [n(n-1)(2n+5) - sum t(t-1)(2t+5)]/18`. Fourth, the Hurst exponent uses the Anis-Lloyd correction `E[R/S]_n` to remove the small-sample bias inherent in raw R/S estimation. Fifth, ADX is computed with the full Wilder's RMA method — TR, +DM, -DM, DI+, DI-, DX, ADX — rather than an SMA approximation. Sixth, TrendStack weighting is fixed and governed: `w = [0.1, 0.2, 0.3, 0.4]` for MICRO/SHORT/INTER/MACRO, so MACRO dominates the final bias. Seventh, Exhaustion is linked to an explicit price-momentum divergence (shared implementation with E10): if price makes a new HH but momentum (RSI or momentum slope_z) makes an LH, a `bearish_divergence_score` is computed.
+  9497
+  9498	Trend Quality — the final composite metric used to filter tradeable trends from noise — is defined as `Q_trend = R^2_OLS * (ADX/100) * min(Hurst,1.0)`: R² represents linear explanatory power, ADX/100 represents directionless trend strength, and Hurst represents long-memory persistence. This value is normalized to `[0,1.5]` and mapped to the Q0–Q5 quality-label system.
+  9499
+  9500	From a systems perspective, this engine never issues a buy/sell signal. Its output is `TrendState`, `TrendStack`, and events `EV_TRD_001` through `EV_TRD_008`, consumed by higher-level engines such as Regime and Execution. The PIT guarantee is essential: all computations for `slope_z`, `pos`, ADX, Hurst, and MK are applied to closed bars with a one-candle lag; for the currently forming bar, only a non-tradeable preview is produced. Each output's `snapshot_id` is the deterministic SHA-256 identity of its canonical snapshot payload; runtime UUIDv7 is reserved for operational event/object uniqueness.
+  9501
+  9502	Statistically, trend length, Initiation success rate, and calibration are evaluated with Wilson confidence intervals. Architecturally, parameters are classified under three-tier governance (Governed/fixed, OOS walk-forward optimized, Statistical/adaptive), and parameter proliferation is controlled by the formal APR (Approved Parameter Request) process.
+  9503
+  9504	---
+  9505
+
+===== APEX_GEN5.md:10305-10320 (baseline) =====
+ 10305	- **Complete MACD:** classic EMA with α = 2/(n+1). MACD_line = EMA12(C) - EMA26(C), Signal = EMA9(MACD_line), Hist = MACD_line - Signal. All EMAs use an SMA seed with streaming state.
+ 10306	- **MvZ with correlation:** MvZ_t = MomentumZ_t * min(VolumeRatio_t / 2, 1) * clip(ρ(MomentumZ, VolumeZ, w_corr), -1, 1), using a 20-period rolling Pearson correlation to detect participation.
+ 10307	- **Complete divergence code storing both pivots:** the Python implementation includes fractal pivot detection with a `pivot_min_bars` confirmation window, storage of index/price/indicator value/time, and detection of all 4 divergence types plus convergence and failure modes.
+ 10308
+ 10309	Architecturally, this engine is:
+ 10310	- **Self-sufficient:** it makes no direct calls into E09_Trend or E04_Volatility. If trend context is needed, it is received through a versioned `TrendContext {version: "2.x.y", trend_fate, ...}` input contract, and the engine downgrades its own Q-tag if that input is absent.
+ 10311	- Governed by a complete **Q0-Q5 quality-tag system** (Section 5).
+ 10312	- Governed by explicit **PIT and snapshot_id management:** every formula carries a PIT rule; every state carries snapshot_id = SHA256(canonical_json(canonical_snapshot_payload)). All times use as_of = close_time of the last closed candle.
+ 10313	- Governed by **controlled parameter surface:** all 14 primary parameters are documented in a governance table with range, sensitivity, and OOS approval process.
+ 10314	- Backed by **complete, uninterrupted algorithms**, with error handling, a streaming interface, an idempotency key, and time/memory complexity analysis.
+ 10315	- Validated through **Fixture testing:** 12 Golden Fixture JSON cases plus tests for Deterministic Replay, No-Future-Leak, Ablation, Wilson-CI Calibration, Redundancy threshold, and Serialization Compatibility.
+ 10316
+ 10317	This engine's consumers are the Decision layer, which uses it to filter structure/liquidity signals by participation, and the Regime layer, which uses it to detect momentum regime changes. Per backtest literature [Jegadeesh & Titman 1993, Moskowitz 2012], momentum alone yields a Sharpe ratio of roughly 0.4-0.6, but combined with a volume filter and structure confirmation, the Information Ratio reaches 1.0+. This engine is designed for exactly that combination.
+ 10318
+ 10319	---
+ 10320
+
+===== APEX_GEN5.md:11704-11728 (baseline) =====
+ 11704	The engine also defines a $Q0$–$Q5$ quality label system: $Q0$ = invalid data, $Q1$ = DEGRADED (incompatible dependency version, or $V=0$), $Q2$ = noisy (entropy > 0.8), $Q3$ = acceptable, $Q4$ = stable, $Q5$ = golden (all dependencies healthy plus a 3-candle confirmation). PIT is enforced through `as_of` and the deterministic `snapshot_id`: the snapshot identity is derived only from canonical snapshot inputs and SHA-256; runtime UUIDs are not part of deterministic snapshot identity.
+ 11705
+ 11706	Finally, this engine never authorizes entries — it only provides context and a risk input. In CRISIS and TRANSITION/AMBIGUOUS regimes, the risk core has veto rights. All formulas are PIT-safe, all algorithms are idempotent and streaming, and the engine is validated against 10 golden fixtures.
+ 11707
+ 11708	## 1. Mission, Scope, Boundaries, and Explicit Non-Goals
+ 11709
+ 11710	### 1.1 Mission
+ 11711	Produce a transparent, explainable, PIT-safe classification of market behavioral state, with explicit uncertainty, outputting: the state vector $X_t$, the distribution $P(r|X)$, the entropy $H_t$, the label $r^*$, the transition matrix $T$, $Turbulence_t$, $BaseRate$, and transition events.
+ 11712
+ 11713	### 1.2 Scope
+ 11714	- Base timeframes: 1h and 4h (extendable to 15m/1d by changing the rolling-window parameter).
+ 11715	- Symbols: all Core-10 symbols (Appendix B), symmetric — every symbol runs the same regime pipeline in every cycle (owner decree: no per-symbol tiering); the order-book depth > 500k USD criterion is the universe-entry filter applied in Appendix B selection, not a runtime gate.
+ 11716	- Inputs, via versioned contracts:
+ 11717	  - `E09 TrendStack v4.0.0` → `trendiness_raw, bias_per_TF, structure_score`
+ 11718	  - `E10 Momentum v4.0.0` → `momentum_state_raw (enum {IMPULSIVE, NEUTRAL, EXHAUSTED}), impulse_score`
+ 11719	  - `E04 Volatility v4.0.0` → `vol_short, vol_long, vol_ratio, ATR_z`
+ 11720	    - Session-CP-14 (2026-09-17): D26-A maps the frozen E04 `VolatilityState.atr14_wilder` to `atr_z_t=(atr14_t−μ_{t−1,W})/(σ_{t−1,W}+ε)` using E11 Method B's same prior same-cell rolling reference, existing 180-day window capped by available history, lag 1, minimum-prior-samples rule and E11 ε in both training and the G1 producer, with insufficient history following `INVALID_E11_HISTORY` and no ATR20 or new window constant.
+ 11721	  - `E03 Volume v4.0.0` → `volume_z, OI_z, participation_raw`
+ 11722	  - `E02 Liquidity v4.0.0` → `level_density, sweep_rate, age_score` via the canonical v4.0.0 consumer projection.
+ 11723	    - Session-CP-14 (2026-09-17): D26-B uses live E02 ACTIVE/STRENGTHENED levels, `density=count/(max_price−min_price)` and `age=MAX(t−last_touch)`, with density=age=0 below two live levels; `sweep_rate` is five-prerequisite §3.6 confirmed sweeps (not WickOnly) divided by CLOSED bars in E02's existing retained window, including when fewer than two levels remain; train-e11 and G1 both normalize `raw_liq=density*age/(1+sweep_rate)` by existing Method A, whose degenerate-reference result remains 0.5.
+ 11724	- Outputs: context only, consumed through the canonical L13 Decision/BDI and L14 Risk layer contracts; E12 never authorizes execution and does not directly grant capital permission.
+ 11725
+ 11726	### 1.3 Boundaries and Self-Sufficiency Guarantee
+ 11727	- This engine never reads raw OHLCV data directly — it only reads from interface contracts. On a contract version mismatch, it returns $Q1$ with $regime=AMBIGUOUS$.
+ 11728	- All rolling statistics are computed with a lag of 1 before use: $\text{stat}_t = f(\text{data}_{t-W:t-1})$, so future leakage is structurally excluded.
+
+===== APEX_GEN5.md:12827-12833 (baseline) =====
+ 12827	The engine's output is never a directional signal. Its output is a `TemporalContextState` and a `TemporalProfile`, each carrying a Quality Tag Q0–Q4: Q0 means INVALID (e.g., H<L), Q1 is RAW (only the temporal_window has been computed), Q2 is CALIBRATED (a historical profile exists with n≥30), Q3 is CROSS-VALIDATED (Spearman stability > 0.6 and Kruskal–Wallis p < 0.05), and Q4 is ROBUST (PIT-safe verified, deterministic replay passed).
+ 12828
+ 12829	For every input candle, this engine produces a `snapshot_id = SHA256(canonical_json(canonical_snapshot_payload))`. The governed `as_of` is the required artifact `availability_time`; no local one-millisecond subtraction rule is introduced. Missing availability metadata is configuration-invalid/fail-closed.
+ 12830
+ 12831	Downstream use: upstream engines (e.g., E01 Structure, E09 Trend, E06 OrderBlock) can use `historical_behavior` for weighting — for example, if the BOS rate in OVERLAP is 0.62 with Wilson CI [0.55, 0.69], the weight of a BOS setup in that window can be increased by a factor of 1.2.
+ 12832
+ 12833	This document contains 16 encyclopedic dimensions for each key concept, more than 14 PIT-safe LaTeX-style formulas, complete Python pseudocode with streaming, idempotency, error handling and time complexity, a full JSON Schema, a 12-parameter table with governance, 10 Golden Fixtures, and a 12-candle BTCUSDT case study with real numbers.
+
+===== tests/integration/test_cp4_engines.py:148-219 (baseline) =====
+   148	class TestE07TemporalBranches:
+   149	    def test_e12_absent_is_degraded_and_never_canonical(self):
+   150	        info = utc_activity_window_check(AS_OF_MS)
+   151	        assert info["degraded"] is True
+   152	        assert info["degraded_reason"] == E12_UNAVAILABLE_REASON
+   153	        assert info["source"] == "E07_LOCAL_NON_AUTHORITATIVE"
+   154	        assert info["source"] != E12_CONTRACT
+   155
+   156	    def test_stub_e12_clears_the_degradation(self):
+   157	        stub = StubE12(is_overlap=True)
+   158	        info = utc_activity_window_check(AS_OF_MS, temporal_provider=stub)
+   159	        assert info["degraded"] is False and info["degraded_reason"] is None
+   160	        assert info["source"] == E12_CONTRACT
+   161	        assert info["config_version"] == stub.config_version
+   162	        assert info["is_overlap"] is True
+   163	        assert stub.calls == [AS_OF_MS]          # E12 is the one consulted
+   164
+   165	    def test_a_failing_provider_fails_closed(self):
+   166	        info = utc_activity_window_check(AS_OF_MS,
+   167	                                        temporal_provider=StubE12(raise_=True))
+   168	        assert info["degraded"] is True
+   169	        assert info["degraded_reason"] == E12_UNAVAILABLE_REASON
+   170
+   171	    def test_degradation_caps_the_quality_class_at_q4(self):
+   172	        """§3.7's Q5 gate needs the overlap flag; at CP-4 (E12 absent, a
+   173	        non-overlap timestamp) the cascade is capped and Q5 is unreachable."""
+   174	        conf = po3_confirmations(t0=1768485600000 + 9 * 3600000)   # 09:00Z
+   175	        degraded_bundle = bundle_from(conf)
+   176	        assert degraded_bundle is not None
+   177	        assert degraded_bundle.resolution_class == "Q4"
+   178	        # Same evidence, authoritative overlap window ⇒ Q5 is reachable.
+   179	        overlap = bundle_from(conf, temporal_provider=StubE12(is_overlap=True))
+   180	        assert overlap.resolution_class == "Q5"
+   181	        assert Q_CLASSES.index(overlap.resolution_class) == \
+   182	            Q_CLASSES.index("Q5")
+   183
+   184	    def test_both_branches_agree_on_integrity(self):
+   185	        """The degradation changes provenance and the Q gate, never the
+   186	        §3.1 sequence arithmetic."""
+   187	        conf = po3_confirmations()
+   188	        a = bundle_from(conf)
+   189	        b = bundle_from(conf, temporal_provider=StubE12(is_overlap=True))
+   190	        from apex.engines.e07_rtm import evaluate_order_ok
+   191	        exp = expected_components("RTM.PO3.v1")
+   192	        order = [c["cid"] for c in conf]
+   193	        om_a = build_order_map(exp, conf)
+   194	        evaluate_order_ok(exp, order, om_a)      # same pipeline as bundle_from
+   195	        integrity, coverage, _missing = sequence_integrity_v4(exp, order, om_a)
+   196	        assert a.integrity == pytest.approx(integrity)
+   197	        assert b.integrity == pytest.approx(integrity)
+   198	        assert a.weight_coverage == pytest.approx(coverage)
+   199	        # Only the provenance differs between the two branches.
+   200	        assert a.degraded is True and b.degraded is False
+   201	        assert a.temporal_authority != b.temporal_authority
+   202	        assert b.temporal_authority == E12_CONTRACT
+   203
+   204	    def test_engine_emits_valid_evidence_without_e12(self):
+   205	        bars = lcg_window(30)
+   206	        evs = E07RTMEngine().compute(
+   207	            "BNBUSDT", "15m", AS_OF,
+   208	            {"window": obs_window(bars), "events": po3_confirmations(),
+   209	             "direction": "UP"})
+   210	        assert evs
+   211	        for ev in evs:
+   212	            ev.validate_24_fields()
+   213	            assert ev.engine_id == "E07"
+   214	            assert "E12_UNAVAILABLE_DEGRADED_QX" in ev.explanation
+   215
+   216
+   217	# ---------------------------------------------------------------------------
+   218	# E08 — encyclopedia chapter 1 normative, chapters 2–4 Wave-Out
+   219	# ---------------------------------------------------------------------------
+
+===== tests/integration/test_cp4_engines.py:257-389 (baseline) =====
+   257	class TestE09StackAndADLine:
+   258	    def test_four_scales_with_the_full_schema(self):
+   259	        bars = lcg_window(60)
+   260	        res = run_e09(bars, atr=ATR,
+   261	                      swings=[{"type": "HH", "idx": 10, "confirmed_at_idx": 11},
+   262	                              {"type": "HL", "idx": 20, "confirmed_at_idx": 21},
+   263	                              {"type": "HH", "idx": 30, "confirmed_at_idx": 31}])
+   264	        assert set(res["scales"]) == set(SCALES)
+   265	        for scale, data in res["scales"].items():
+   266	            assert data["scale"] == scale
+   267	            missing = [k for k in TREND_SCALE_REQUIRED if k not in data]
+   268	            assert missing == []
+   269	            assert data["direction"] in (-1, 0, 1)
+   270	            assert data["quality_label"] in QUALITY_LABELS
+   271	            assert len(data["snapshot_id"]) == 64
+   272	        missing = [k for k in TREND_STACK_REQUIRED if k not in res]
+   273	        assert missing == []
+   274	        assert res["alignment"] in ALIGNMENTS
+   275
+   276	    def test_ad_line_is_the_wilder_chain(self):
+   277	        """DI+/DI−/DX/ADX are published per scale; a warm-up window degrades
+   278	        instead of presenting an untrustworthy ADX (§3.5)."""
+   279	        # Each window gets swings inside its own MICRO window (PIT-legal):
+   280	        # the 8-bar run evaluates idx 7, the 60-bar run evaluates idx 59.
+   281	        short_swings = [{"type": "HH", "idx": 3, "confirmed_at_idx": 4},
+   282	                        {"type": "HL", "idx": 4, "confirmed_at_idx": 5},
+   283	                        {"type": "HH", "idx": 5, "confirmed_at_idx": 6}]
+   284	        warm_swings = [{"type": "HH", "idx": 55, "confirmed_at_idx": 56},
+   285	                       {"type": "HL", "idx": 56, "confirmed_at_idx": 57},
+   286	                       {"type": "HH", "idx": 57, "confirmed_at_idx": 58}]
+   287	        short = run_e09(lcg_window(8), atr=ATR, swings=short_swings)
+   288	        warm = run_e09(lcg_window(60), atr=ATR, swings=warm_swings)
+   289	        assert short["scales"]["MICRO"]["degraded_reason"] == "ADX_WARMUP_QX"
+   290	        assert warm["scales"]["MICRO"]["degraded_reason"] is None
+   291	        micro = warm["scales"]["MICRO"]
+   292	        assert 0.0 <= micro["adx"] <= 100.0
+   293	        assert 0.0 <= micro["di_plus"] <= 100.0
+   294	        assert 0.0 <= micro["di_minus"] <= 100.0
+   295	        assert micro["adx"] >= 0.0
+   296
+   297	    def test_alignment_follows_the_governed_bias_bands(self):
+   298	        aligned = run_e09(lcg_window(60, span=1.0), atr=ATR)
+   299	        assert -1.0 <= aligned["bias"] <= 1.0
+   300	        if abs(aligned["bias"]) > 0.7 and aligned["alignment"] == "ALIGNED_BULL":
+   301	            assert all(aligned["scales"][s]["direction"] == 1 for s in SCALES)
+   302
+   303	    def test_e04_governed_atr_is_consumed_not_recomputed(self):
+   304	        """The pos term is ATR-normalised; E09 uses the supplied E04 ATR and
+   305	        never derives one of its own."""
+   306	        bars = lcg_window(40)
+   307	        atr_val = float(run_e04(bars)["atr_series"][-1])
+   308	        assert atr_val > 0.0
+   309	        a = run_e09(bars, atr=atr_val)
+   310	        b = run_e09(bars, atr=atr_val * 2)
+   311	        assert a["scales"]["MICRO"]["pos"] != b["scales"]["MICRO"]["pos"]
+   312	        assert a["scales"]["MICRO"]["pos"] == pytest.approx(
+   313	            2 * b["scales"]["MICRO"]["pos"], rel=1e-9)
+   314
+   315	    def test_e01_swings_drive_the_sequence_term_under_pit(self):
+   316	        bars = lcg_window(40)
+   317	        # The swings sit inside the MICRO window (last 5 bars of 40).
+   318	        swings = [{"type": "HH", "idx": 35, "confirmed_at_idx": 36},
+   319	                  {"type": "HL", "idx": 36, "confirmed_at_idx": 37},
+   320	                  {"type": "HH", "idx": 37, "confirmed_at_idx": 38}]
+   321	        with_swings = run_e09(bars, atr=ATR, swings=swings)
+   322	        without = run_e09(bars, atr=ATR, swings=None)
+   323	        assert with_swings["scales"]["MICRO"]["seq_score"] == pytest.approx(1.0)
+   324	        assert without["scales"]["MICRO"]["seq_score"] == pytest.approx(0.0)
+   325	        assert without["degraded"] is True
+   326	        # A look-ahead swing is refused, not silently ignored.
+   327	        leak = [{"type": "HH", "idx": 35, "confirmed_at_idx": 999}]
+   328	        with pytest.raises(ValueError, match="PIT_SWING_VIOLATION_QX"):
+   329	            run_e09(bars, atr=ATR, swings=leak)
+   330
+   331	    def test_bos_confirmation_can_initiate_a_trend(self):
+   332	        bars = lcg_window(60, span=6.0)
+   333	        swings = [{"type": "HH", "idx": 40, "confirmed_at_idx": 41},
+   334	                  {"type": "HL", "idx": 45, "confirmed_at_idx": 46},
+   335	                  {"type": "HH", "idx": 50, "confirmed_at_idx": 51}]
+   336	        res = run_e09(bars, atr=ATR, swings=swings,
+   337	                      bos_event={"kind": "BOS", "direction": "UP",
+   338	                                 "valid_at_idx": 55})
+   339	        codes = [e["code"] for e in res["events"]]
+   340	        assert codes                                  # at least a stack event
+   341	        assert all(c.startswith("EV_TRD_") for c in codes)
+   342
+   343
+   344	# ---------------------------------------------------------------------------
+   345	# Consumed foundation + store DDL
+   346	# ---------------------------------------------------------------------------
+   347	class TestCP4EmissionsInsertIntoStore:
+   348	    def _events(self):
+   349	        bars = lcg_window(30)
+   350	        window = obs_window(bars)
+   351	        evs = []
+   352	        evs += E07RTMEngine().compute(
+   353	            "BTCUSDT", "1h", AS_OF,
+   354	            {"window": window, "events": po3_confirmations(),
+   355	             "direction": "UP"})
+   356	        evs += E08WyckoffEngine().compute(
+   357	            "BTCUSDT", "1h", AS_OF,
+   358	            {"window": window, "atr_by_idx": {i: ATR for i in range(len(bars))},
+   359	             "vol_ratio_by_idx": {i: 1.0 for i in range(len(bars))},
+   360	             "evr_by_idx": {i: 0.5 for i in range(len(bars))}})
+   361	        evs += E09TrendEngine().compute(
+   362	            "BTCUSDT", "1h", AS_OF, {"window": window, "atr": ATR})
+   363	        return evs
+   364
+   365	    def test_all_three_engines_insert(self):
+   366	        evs = self._events()
+   367	        assert {ev.engine_id for ev in evs} == {"E07", "E08", "E09"}
+   368	        for ev in evs:
+   369	            ev.validate_24_fields()
+   370
+   371	        async def scenario():
+   372	            store = SQLiteStore(path=":memory:")
+   373	            await store.open()
+   374	            try:
+   375	                for ev in evs[:40]:
+   376	                    await store.insert_evidence(ev)
+   377	                cur = await store.db.execute(
+   378	                    "SELECT COUNT(*) FROM evidence_event")
+   379	                count = (await cur.fetchone())[0]
+   380	                cur = await store.db.execute(
+   381	                    "SELECT DISTINCT engine_id FROM evidence_event "
+   382	                    "ORDER BY engine_id")
+   383	                return count, [r[0] for r in await cur.fetchall()]
+   384	            finally:
+   385	                await store.close()
+   386
+   387	        count, engines = asyncio.run(scenario())
+   388	        assert count == min(40, len(evs))
+   389	        assert set(engines) <= {"E07", "E08", "E09"} and engines
+
+===== tests/integration/test_cp4_engines.py:411-431 (baseline) =====
+   411	class TestTDR001CP4:
+   412	    def test_double_run_byte_identical_all_engines(self):
+   413	        bars = lcg_window(30)
+   414	        ctx_e07 = {"window": obs_window(bars), "events": po3_confirmations(),
+   415	                   "direction": "UP"}
+   416	        ctx_e08 = {"window": obs_window(bars),
+   417	                   "atr_by_idx": {i: ATR for i in range(len(bars))},
+   418	                   "vol_ratio_by_idx": {i: 1.0 for i in range(len(bars))},
+   419	                   "evr_by_idx": {i: 0.5 for i in range(len(bars))}}
+   420	        ctx_e09 = {"window": obs_window(bars), "atr": ATR}
+   421	        runs = []
+   422	        for _ in range(2):
+   423	            batch = []
+   424	            batch += E07RTMEngine().compute("BTCUSDT", "1h", AS_OF, ctx_e07)
+   425	            batch += E08WyckoffEngine().compute("BTCUSDT", "1h", AS_OF, ctx_e08)
+   426	            batch += E09TrendEngine().compute("BTCUSDT", "1h", AS_OF, ctx_e09)
+   427	            runs.append([(ev.engine_id, ev.snapshot_id, ev.condition_state,
+   428	                          ev.direction, ev.strength, ev.resolution_class)
+   429	                         for ev in batch])
+   430	        assert runs[0] == runs[1]
+   431	        assert len(runs[0]) >= 5
+
+===== tests/integration/test_cp5_engines.py:150-255 (baseline) =====
+   150	class TestE07E12BothModes:
+   151	    def test_real_e12_resolves_the_degradation(self):
+   152	        prov = E12TemporalProvider()
+   153	        info = utc_activity_window_check(AS_OF_MS, temporal_provider=prov)
+   154	        assert info["degraded"] is False and info["degraded_reason"] is None
+   155	        assert info["source"] == E12_CONTRACT == \
+   156	            "E12_Temporal_Context.Contract v4.0.0"
+   157	        assert info["config_version"] == "v2024a"
+   158	        assert info["which"] == ["UTC_W2", "UTC_W1_W2_OVERLAP"]
+   159	        assert info["utc_activity_window"] == "UTC_W2"
+   160	        assert info["is_overlap"] is True and info["in_kz"] is True
+   161
+   162	    def test_degraded_mode_unchanged_without_provider(self):
+   163	        info = utc_activity_window_check(AS_OF_MS)
+   164	        assert info["degraded"] is True
+   165	        assert info["degraded_reason"] == E12_UNAVAILABLE_REASON
+   166	        assert info["source"] == "E07_LOCAL_NON_AUTHORITATIVE"
+   167
+   168	    def test_failing_real_provider_fails_closed(self):
+   169	        info = utc_activity_window_check(AS_OF_MS,
+   170	                                         temporal_provider=RaisingE12())
+   171	        assert info["degraded"] is True
+   172	        assert info["degraded_reason"] == E12_UNAVAILABLE_REASON
+   173	        assert info["source"] == "E07_LOCAL_NON_AUTHORITATIVE"
+   174
+   175	    def test_q5_reachable_only_on_authoritative_overlap(self):
+   176	        """§3.7's Q5 gate needs the overlap flag — with the REAL E12 the
+   177	        provenance is authoritative and the cascade reaches Q5 inside
+   178	        [12:30, 16:00); outside it, the real E12 caps the bundle at Q4 even
+   179	        though the branch is non-degraded (E12 said 'no overlap')."""
+   180	        conf14 = po3_confirmations()                     # confirms ≤ 15:15Z
+   181	        resolved = bundle_from(conf14,
+   182	                               temporal_provider=E12TemporalProvider())
+   183	        assert resolved.resolution_class == "Q5"
+   184	        assert resolved.degraded is False
+   185	        conf09 = po3_confirmations(t0=MORNING_MS)        # confirms ≤ 10:15Z
+   186	        morning = bundle_from(conf09,
+   187	                              temporal_provider=E12TemporalProvider())
+   188	        assert morning.resolution_class == "Q4"          # W1, no overlap
+   189	        assert morning.degraded is False
+   190	        degraded = bundle_from(conf09)                   # CP-4 branch
+   191	        assert degraded.resolution_class == "Q4" and degraded.degraded is True
+   192	        assert Q_CLASSES.index(resolved.resolution_class) == \
+   193	            Q_CLASSES.index("Q5")
+   194
+   195	    def test_both_modes_agree_on_registry_and_sequence_math(self):
+   196	        """The degradation changes provenance and the Q gate, never the §3.5
+   197	        window arithmetic (E07's local duplicate mirrors the E12 registry)
+   198	        nor the §3.1 sequence integrity."""
+   199	        prov = E12TemporalProvider()
+   200	        for iso in ("2026-01-15T06:59:59Z", "2026-01-15T07:00:00Z",
+   201	                    "2026-01-15T12:29:59Z", "2026-01-15T12:30:00Z",
+   202	                    "2026-01-15T15:59:59Z", "2026-01-15T16:00:00Z",
+   203	                    "2026-01-15T20:59:59Z", "2026-01-15T21:00:00Z"):
+   204	            t = int(datetime.datetime.fromisoformat(
+   205	                iso.replace("Z", "+00:00")).timestamp() * 1000)
+   206	            a = utc_activity_window_check(t, temporal_provider=prov)
+   207	            b = utc_activity_window_check(t)
+   208	            assert a["degraded"] is False and b["degraded"] is True
+   209	            assert a["is_overlap"] == b["is_overlap"]
+   210	            assert a["utc_activity_window"] == b["utc_activity_window"]
+   211	            assert set(a["which"]) == set(b["which"])
+   212	        conf = po3_confirmations()
+   213	        x = bundle_from(conf)
+   214	        y = bundle_from(conf, temporal_provider=prov)
+   215	        exp = expected_components("RTM.PO3.v1")
+   216	        om = build_order_map(exp, conf)
+   217	        order = [c["cid"] for c in conf]
+   218	        evaluate_order_ok(exp, order, om)      # same pipeline as bundle_from
+   219	        integrity, coverage, _ = sequence_integrity_v4(exp, order, om)
+   220	        assert x.integrity == pytest.approx(integrity)
+   221	        assert y.integrity == pytest.approx(integrity)
+   222	        assert x.weight_coverage == pytest.approx(coverage)
+   223	        assert x.degraded is True and y.degraded is False
+   224
+   225	    @pytest.mark.parametrize("day", ["2024-03-09", "2024-03-10", "2024-03-11"])
+   226	    def test_8_8_utc_boundary_stability_through_e07(self, day):
+   227	        """§8.8: the 2024-03-10 US local-time transition cannot move the
+   228	        OVERLAP window — proven end-to-end through the E07 consumer."""
+   229	        prov = E12TemporalProvider()
+   230	        t_in = int(datetime.datetime.fromisoformat(
+   231	            f"{day}T12:45:00+00:00").timestamp() * 1000)
+   232	        t_out = int(datetime.datetime.fromisoformat(
+   233	            f"{day}T16:00:00+00:00").timestamp() * 1000)
+   234	        a = utc_activity_window_check(t_in, temporal_provider=prov)
+   235	        b = utc_activity_window_check(t_out, temporal_provider=prov)
+   236	        assert a["is_overlap"] is True and b["is_overlap"] is False
+   237	        assert a["degraded"] is False and b["degraded"] is False
+   238	        # E12 direct surface agrees
+   239	        assert utc_activity_window_of(datetime.datetime.fromtimestamp(
+   240	            t_in / 1000, tz=datetime.timezone.utc))["is_overlap"] is True
+   241
+   242	    def test_provider_consumed_for_every_confirm_in_a_bundle(self):
+   243	        seen = []
+   244
+   245	        class Counting(E12TemporalProvider):
+   246	            def temporal_window(self, ts_ms):
+   247	                seen.append(ts_ms)
+   248	                return super().temporal_window(ts_ms)
+   249
+   250	        conf = po3_confirmations()
+   251	        bundle_from(conf, temporal_provider=Counting())
+   252	        assert seen == [conf[-1]["t_confirm_ms"]]   # E12 is the one consulted
+   253
+   254
+   255	# ---------------------------------------------------------------------------
+
+===== tests/integration/test_cp5_engines.py:258-362 (baseline) =====
+   258	class TestE11GateAndWaveOut:
+   259	    def _res(self, **kw):
+   260	        return run_e11(e11_candles(BARS), W=np.zeros((9, 8)),
+   261	                       b=np.zeros(9), symbol="BTCUSDT", timeframe="1h", **kw)
+   262
+   263	    def test_gate_off_by_default(self):
+   264	        res = self._res()
+   265	        assert res["live_regime_gate"]["enabled"] is False
+   266	        assert res["live_regime_gate"]["reason"] == LIVE_GATE_OFF_REASON
+   267	        # §5.1 additionalProperties:false — the flag lives in the wrapper ONLY
+   268	        assert "live_regime_gate" not in res["regime_state"]
+   269
+   270	    def test_gate_only_caller_enabled(self):
+   271	        res = self._res(live_regime_gate=True)
+   272	        assert res["live_regime_gate"]["enabled"] is True
+   273	        assert "Phase-7" in res["live_regime_gate"]["reason"]
+   274
+   275	    def test_forecast_is_wave_out(self):
+   276	        with pytest.raises(WaveOutError):
+   277	            forecast_next_regime()
+   278
+   279	    def test_binding_refuses_forecast_context(self):
+   280	        with pytest.raises(WaveOutError):
+   281	            E11RegimeEngine().compute(
+   282	                "BTCUSDT", "1h", AS_OF,
+   283	                context={"candles": e11_candles(BARS), "forecast": True})
+   284
+   285
+   286	# ---------------------------------------------------------------------------
+   287	# T-DR-001 — all three CP-5 engines over one shared window
+   288	# ---------------------------------------------------------------------------
+   289	class TestTDR001CP5:
+   290	    def test_double_run_byte_identical_all_engines(self):
+   291	        window = obs_window(BARS)
+   292	        e12c = e12_candles(BARS)
+   293	        e11c = e11_candles(BARS)
+   294	        for build in (
+   295	            lambda: run_e10(BARS, symbol="BTCUSDT", interval="1h"),
+   296	            lambda: run_e11(e11c, W=np.zeros((9, 8)), b=np.zeros(9),
+   297	                            symbol="BTCUSDT", timeframe="1h"),
+   298	            lambda: run_e12(e12c, econ_calendar=set()),
+   299	        ):
+   300	            a, b = build(), build()
+   301	            assert canonical_json(a) == canonical_json(b)
+   302	        # EngineBase surfaces are deterministic too
+   303	        for eng, ctx in (
+   304	            (E10MomentumEngine(), {"window": window}),
+   305	            (E11RegimeEngine(), {"candles": e11c, "W": np.zeros((9, 8)),
+   306	                                 "b": np.zeros(9)}),
+   307	            (E12TemporalEngine(), {"candles": e12c, "econ_calendar": set()}),
+   308	        ):
+   309	            ev_a = eng.compute("BTCUSDT", "1h", AS_OF, context=ctx)
+   310	            ev_b = eng.compute("BTCUSDT", "1h", AS_OF, context=ctx)
+   311	            assert [e.snapshot_id for e in ev_a] == \
+   312	                [e.snapshot_id for e in ev_b]
+   313	            assert [e.condition_state for e in ev_a] == \
+   314	                [e.condition_state for e in ev_b]
+   315
+   316
+   317	# ---------------------------------------------------------------------------
+   318	# Consumed foundation + store DDL
+   319	# ---------------------------------------------------------------------------
+   320	class TestCP5EmissionsInsertIntoStore:
+   321	    def _events(self):
+   322	        window = obs_window(BARS)
+   323	        evs = []
+   324	        evs += E10MomentumEngine().compute("BTCUSDT", "1h", AS_OF,
+   325	                                           {"window": window})
+   326	        evs += E11RegimeEngine().compute(
+   327	            "BTCUSDT", "1h", AS_OF,
+   328	            {"candles": e11_candles(BARS), "W": np.zeros((9, 8)),
+   329	             "b": np.zeros(9)})
+   330	        evs += E12TemporalEngine().compute(
+   331	            "BTCUSDT", "1h", AS_OF,
+   332	            {"candles": e12_candles(BARS), "econ_calendar": set()})
+   333	        return evs
+   334
+   335	    def test_all_three_engines_insert(self):
+   336	        evs = self._events()
+   337	        assert {ev.engine_id for ev in evs} == {"E10", "E11", "E12"}
+   338	        for ev in evs:
+   339	            ev.validate_24_fields()
+   340	            assert ev.direction in (-1, 0, 1)
+   341	            if ev.engine_id in ("E11", "E12"):
+   342	                assert ev.direction == 0        # context engines (NG1)
+   343
+   344	        async def scenario():
+   345	            store = SQLiteStore(path=":memory:")
+   346	            await store.open()
+   347	            try:
+   348	                for ev in evs[:40]:
+   349	                    await store.insert_evidence(ev)
+   350	                cur = await store.db.execute(
+   351	                    "SELECT COUNT(*) FROM evidence_event")
+   352	                count = (await cur.fetchone())[0]
+   353	                cur = await store.db.execute(
+   354	                    "SELECT DISTINCT engine_id FROM evidence_event "
+   355	                    "ORDER BY engine_id")
+   356	                return count, [r[0] for r in await cur.fetchall()]
+   357	            finally:
+   358	                await store.close()
+   359
+   360	        count, engines = asyncio.run(scenario())
+   361	        assert count == min(40, len(evs))
+   362	        assert set(engines) <= {"E10", "E11", "E12"} and engines
+
+===== apex/ops/engine_context.py:1557-1710 (baseline) =====
+  1557	def complete_engine_bundle(item: Mapping[str, Any], symbol: str, timeframe: str,
+  1558	                           artifact: Mapping[str, Any], *, rtm_context: Mapping[str, Any]) -> dict:
+  1559	    """Native twelve-engine assembly from the shared PIT feature timeline.
+  1560
+  1561	    No fixture defaults, replacement indicator or incomplete EvidenceEvent.
+  1562	    Native warmup is represented by missing optional evidence, not invented
+  1563	    volume/ATR scalars. E06 starts at the actual joint dependency frontier.
+  1564	    """
+  1565	    from dataclasses import asdict
+  1566	    artifact = validate_classifier(artifact)
+  1567	    derive_quality = rtm_context.get("derive_avg_quality") is True
+  1568	    for key in ("avg_quality", "mtf_align"):
+  1569	        if key == "avg_quality" and derive_quality:
+  1570	            continue
+  1571	        value = rtm_context.get(key)
+  1572	        if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or not 0 <= value <= 1:
+  1573	            raise BridgeError("E07_CONTEXT_UNAVAILABLE", key)
+  1574	    if "vector" not in item:
+  1575	        raise BridgeError("E11_CONTEXT_UNAVAILABLE", str(item.get("reason", "missing vector")))
+  1576	    original = item["frame"]
+  1577	    prior_atr = [state.atr14_wilder for state in original["volatility"]["states"][:-1]]
+  1578	    frame = upstream_frame(original["raw_window"], symbol, timeframe, emit=True,
+  1579	        atr14_history=prior_atr, structure_result=original["structure"],
+  1580	        volatility_stream=item["volatility_stream"], temporal_profile=item.get("temporal_profile"))
+  1581	    # The timeline's IC/history is authoritative, including the full prior
+  1582	    # ATR reference; emission preparation must not replace it with a slice.
+  1583	    frame["ic"] = dict(item["ic"])
+  1584	    events, order = frame["events"], frame["engine_order"]
+  1585	    window, end = frame["window"], item["as_of"]
+  1586	    atr_by_idx = {i: value for i, value in enumerate(frame["atr14"]) if value is not None}
+  1587	    by_time = {_iso_to_ms(obs.timestamp): i for i, obs in enumerate(window)}
+  1588	    struct = {}
+  1589	    for event in frame["structural_events"]:
+  1590	        i = event["candle_index"]
+  1591	        direction = "UP" if "BULLISH" in event["event_type"] else "DOWN"
+  1592	        struct.setdefault(i, []).append({"idx": i, "dir": direction, "direction": direction,
+  1593	            "kind": "BOS" if event["event_type"].startswith(("EV_STR_007", "EV_STR_008")) else "CHoCH",
+  1594	            "valid_at_idx": i, "confirmed_at_idx": i, "source": event})
+  1595	    order.append("E05")
+  1596	    fvg = E05.run_engine([E05.observation_to_bar(o) for o in window], symbol=symbol,
+  1597	        tick_size=E01.resolve_tick_size(symbol), atr_by_idx=atr_by_idx, bos_by_idx=struct)
+  1598	    fvg_emitter = E05.E05FVGEngine()
+  1599	    objects = sorted(fvg["active"] + fvg["history"], key=lambda obj: obj.created_at_idx)
+  1600	    events.extend(fvg_emitter._to_evidence(obj, symbol, timeframe, fvg_emitter._window_quality(window)) for obj in objects)
+  1601	    fvg_by_idx = {}
+  1602	    for obj in objects:
+  1603	        fvg_by_idx.setdefault(obj.created_at_idx, []).append(asdict(obj))
+  1604	    volume_by_idx = {}
+  1605	    for evidence in frame["volume"].emitted:
+  1606	        source_index = evidence.pit_meta["history_len"]
+  1607	        source_time = frame["volume"].history_bars[source_index]["ts"]
+  1608	        volume_by_idx[by_time[source_time]] = dict(vars(evidence))
+  1609	    volatility_by_idx = {by_time[state.as_of]: {"atr_n": state.atr14_wilder,
+  1610	        "tr_method": "WILDER", "as_of": state.as_of, "snapshot_id": state.snapshot_id}
+  1611	        for state in frame["volatility"]["states"] if state.as_of in by_time}
+  1612	    order.append("E06")
+  1613	    joint = sorted(set(volume_by_idx) & set(volatility_by_idx))
+  1614	    if not joint or joint != list(range(joint[0], len(window))):
+  1615	        raise BridgeError("E06_DEPENDENCY_UNAVAILABLE", "no contiguous mature volume/volatility suffix")
+  1616	    first = joint[0]
+  1617	    ob_context = {"window": window[first:],
+  1618	        "volume_evidence": [volume_by_idx[i] for i in joint],
+  1619	        "volatility_evidence": [volatility_by_idx[i] for i in joint],
+  1620	        "struct_events_by_idx": {i-first: [{**e, "valid_at_idx": i-first} for e in es] for i, es in struct.items() if i >= first},
+  1621	        "fvg_by_idx": {i-first: es for i, es in fvg_by_idx.items() if i >= first}}
+  1622	    events.extend(E06.E06OrderBlockEngine().compute(symbol, timeframe, end, ob_context))
+  1623	    order.append("E11")
+  1624	    candle = E11.observation_to_candle(window[-1], dict(item["ic"]))
+  1625	    candle.update(prev_close=float(window[-2].close), atr_prev=frame["atr14"][-2],
+  1626	        timeframe_seconds=(close_time_ms(_iso_to_ms(original["raw_window"][-1].timestamp), timeframe)
+  1627	                           - _iso_to_ms(original["raw_window"][-1].timestamp)) // 1000)
+  1628	    regime_context = {"candles": [candle], "W": artifact["W"], "b": artifact["b"],
+  1629	        "classifier_artifact_sha256": artifact["artifact_sha256"], "history": item["history"],
+  1630	        "mu0": item["mu"], "Sigma0": item["Sigma"], "prev_mom": item["prev_mom"]}
+  1631	    regime_engine = E11.E11RegimeEngine()
+  1632	    events.extend(regime_engine.compute(symbol, timeframe, end, regime_context))
+  1633	    result = regime_engine._last_result
+  1634	    state = result["regime_state"]
+  1635	    if "snapshot_id" not in state:
+  1636	        raise BridgeError("E11_CONTEXT_UNAVAILABLE", str(state.get("reason", state.get("error", "invalid state"))))
+  1637	    order.append("E07")
+  1638	    direction = "UP" if frame["trend"]["bias"] >= 0 else "DOWN"
+  1639	    confirmations = []
+  1640	    def confirm(cid, stamp):
+  1641	        if stamp not in by_time:
+  1642	            raise BridgeError("E07_CONTEXT_UNAVAILABLE", "confirmation outside retained window")
+  1643	        confirmations.append({"cid": cid, "t_confirm_ms": stamp,
+  1644	                              "p_confirm": float(window[by_time[stamp]].close)})
+  1645	    for i, sources in struct.items():
+  1646	        for source in sources:
+  1647	            if source["direction"] == direction:
+  1648	                confirm(source["kind"].lower(), _iso_to_ms(window[i].timestamp))
+  1649	    for source in frame["liquidity"].events:
+  1650	        prerequisites = source.get("payload", {}).get("prereq", {})
+  1651	        if (source.get("event_type") in CONFIRMED_SWEEP_EVENT_TYPES
+  1652	                and SWEEP_PREREQUISITES.issubset(prerequisites)
+  1653	                and all(prerequisites[key] is True for key in SWEEP_PREREQUISITES)):
+  1654	            i = source["at_bar"]
+  1655	            if 0 <= i < len(window):
+  1656	                confirm("sweep", _iso_to_ms(window[i].timestamp))
+  1657	    for obj in objects:
+  1658	        if obj.direction == direction:
+  1659	            confirm("fvg", obj.created_at_ts)
+  1660	    for i, evidence in volume_by_idx.items():
+  1661	        if any(str(code).startswith("EV_VOL_001") for code in evidence["events"]):
+  1662	            confirm("vol_confirm", _iso_to_ms(window[i].timestamp))
+  1663	    quality_contributors = []
+  1664	    if derive_quality:
+  1665	        used = set()
+  1666	        for confirmation in confirmations:
+  1667	            cid, stamp = confirmation["cid"], confirmation["t_confirm_ms"]
+  1668	            engine = {"bos": "E01", "choch": "E01", "sweep": "E02",
+  1669	                      "vol_confirm": "E03", "fvg": "E05"}[cid]
+  1670	            matched = [ev for ev in events if ev.engine_id == engine
+  1671	                       and _iso_to_ms(ev.event_time) == stamp
+  1672	                       and (cid not in ("bos", "choch") or str(ev.condition_state).startswith(
+  1673	                            ("EV_STR_007", "EV_STR_008") if cid == "bos" else ("EV_STR_009", "EV_STR_010")))
+  1674	                       and (cid != "sweep" or ev.condition_state in CONFIRMED_SWEEP_EVENT_TYPES)]
+  1675	            if not matched:
+  1676	                raise BridgeError("E07_CONFIRMATION_QUALITY_UNAVAILABLE", f"{engine}:{cid}:{stamp}")
+  1677	            for ev in matched:
+  1678	                if ev.evidence_id not in used:
+  1679	                    used.add(ev.evidence_id)
+  1680	                    quality_contributors.append({"engine_id": engine, "evidence_id": ev.evidence_id,
+  1681	                        "snapshot_id": ev.snapshot_id, "confirmation_ms": stamp, "quality": ev.quality})
+  1682	        avg_quality = confirmation_quality(quality_contributors)
+  1683	    else:
+  1684	        avg_quality = rtm_context["avg_quality"]
+  1685	    events.extend(E07.E07RTMEngine().compute(symbol, timeframe, end, {
+  1686	        "window": window, "events": confirmations, "direction": direction,
+  1687	        "avg_quality": avg_quality, "mtf_align": rtm_context["mtf_align"],
+  1688	        "as_of_ms": _iso_to_ms(end), "temporal_provider": E12.E12TemporalProvider()}))
+  1689	    order.append("E08")
+  1690	    events.extend(E08.E08WyckoffEngine().compute(symbol, timeframe, end, {"window": window,
+  1691	        "atr_by_idx": atr_by_idx,
+  1692	        "vol_ratio_by_idx": {i: ev["volume_ratio"] for i, ev in volume_by_idx.items()},
+  1693	        "evr_by_idx": {i: ev["evr"] for i, ev in volume_by_idx.items()},
+  1694	        "structure_by_idx": {i: ("BULL" if es[-1]["direction"] == "UP" else "BEAR") for i, es in struct.items()},
+  1695	        "bos_by_idx": {i: {"confirmed_at_idx": i, "direction": es[-1]["direction"]} for i, es in struct.items()}}))
+  1696	    for event in events:
+  1697	        try:
+  1698	            event.validate_24_fields()
+  1699	        except ValueError as exc:
+  1700	            raise BridgeError("EVIDENCE_CONTEXT_INVALID",
+  1701	                              f"{event.engine_id} resolution_class={event.resolution_class}: {exc}") from exc
+  1702	        if _iso_to_ms(event.availability_time) > _iso_to_ms(end):
+  1703	            raise BridgeError("BRIDGE_PIT_VIOLATION", event.engine_id)
+  1704	    return {**frame, "feature_vector": item["vector"], "rtm_confirmations": confirmations,
+  1705	        "rtm_avg_quality": avg_quality, "rtm_quality_contributors": quality_contributors, "regime_state": state, "e11_result": result,
+  1706	        "e11_context": {"ic_inputs": dict(item["ic"]), "history_windows": item["history"],
+  1707	                        "classifier_W": artifact["W"], "classifier_b": artifact["b"],
+  1708	                        "classifier_artifact_sha256": artifact["artifact_sha256"], "regime_state": state},
+  1709	        "fvg_objects": objects, "struct_by_idx": struct,
+  1710	        "volume_by_idx": volume_by_idx, "volatility_by_idx": volatility_by_idx}
+
+===== apex/ops/engine_context.py:2283-2335 (baseline) =====
+  2283	    async def prepare_engine_bundle(self, symbol: str, timeframe: str, as_of: str,
+  2284	                                    *, rtm_context: Mapping[str, Any] | None = None) -> dict:
+  2285	        """Compute and persist a complete native bundle before plan admission.
+  2286
+  2287	        Final bridge/risk projection is separate; this method never presents
+  2288	        an engine-only bundle as all REQUIRED_CONTEXT_KEYS/REQUIRED_RISK_KEYS.
+  2289	        """
+  2290	        from dataclasses import replace
+  2291	        artifact = load_classifier(self.classifier_path)
+  2292	        measured = mtf = None
+  2293	        if rtm_context is None:
+  2294	            measured = await self.quality_window(symbol, timeframe, as_of)
+  2295	            mtf = await self.mtf_inputs(symbol, timeframe, as_of)
+  2296	            rtm_context = {"derive_avg_quality": True, "mtf_align": mtf["mtf_align"]}
+  2297	        rows = await (await self.store.db.execute(
+  2298	            "SELECT COUNT(*) FROM market_observation WHERE symbol=? AND timeframe=? "
+  2299	            "AND candle_status IN ('CLOSED','CORRECTED') AND open_time<=?",
+  2300	            (symbol, timeframe, as_of))).fetchone()
+  2301	        window = await self.window(symbol, timeframe, as_of, int(rows[0]))
+  2302	        if not window:
+  2303	            raise BridgeError("NO_MARKET_DATA", f"{symbol}:{timeframe}")
+  2304	        last = None
+  2305	        async for item in self.feature_timeline(symbol, timeframe, window, incremental=True):
+  2306	            last = item
+  2307	        if last is None or "vector" not in last:
+  2308	            raise BridgeError("E11_CONTEXT_UNAVAILABLE", str((last or {}).get("reason", "empty timeline")))
+  2309	        if measured is not None:
+  2310	            expected = [(o.timestamp, o.content_hash()) for o in last["frame"]["raw_window"]]
+  2311	            actual = [(o.timestamp, o.content_hash()) for o in measured["window"]]
+  2312	            if actual != expected:
+  2313	                raise BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", "engine/quality window mismatch")
+  2314	            last["frame"]["raw_window"] = measured["window"]
+  2315	            history_candles = [E12.observation_to_candle(o) for o in closed_engine_window(window[:-1],timeframe)]
+  2316	            last["temporal_profile"] = E12.compute_temporal_profile(
+  2317	                E12.returns_by_tod_from_candles(history_candles),as_of=int(history_candles[-1]["ts"]))
+  2318	        bundle = complete_engine_bundle(last, symbol, timeframe, artifact, rtm_context=rtm_context)
+  2319	        bundle["volatility_history"] = [e.state for e in last["volatility_stream"]["evidence"]]
+  2320	        if measured is not None:
+  2321	            bundle["measured_quality"] = measured
+  2322	            bundle["measured_mtf"] = {k: v for k, v in mtf.items() if k != "frames"}
+  2323	        lineage = tuple(self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())]["observation_id"]
+  2324	                        for obs in bundle["raw_window"])
+  2325	        available = max([_iso_to_ms(bundle["window"][-1].timestamp)] + [_iso_to_ms(obs.availability_time) for obs in bundle["raw_window"]])
+  2326	        events = [replace(event, lineage=tuple(dict.fromkeys((*event.lineage, *lineage))),
+  2327	                          availability_time=_ms_to_iso(max(_iso_to_ms(event.availability_time), available)))
+  2328	                  for event in bundle["events"]]
+  2329	        bundle["events"] = await persist_complete_evidence(self.store, events)
+  2330	        bundle["raw_observation_ids"] = lineage
+  2331	        bundle["classifier_artifact_sha256"] = artifact["artifact_sha256"]
+  2332	        self.diagnostics[f"{symbol}:{timeframe}"] = {"status": "ENGINE_BUNDLE_PREPARED",
+  2333	            "engine_order": list(bundle["engine_order"]), "evidence_count": len(events),
+  2334	            "as_of": last["as_of"], "classifier_artifact_sha256": artifact["artifact_sha256"]}
+  2335	        return bundle
+
+===== scripts/run_apex.py:695-813 (baseline) =====
+   695	async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
+   696	                 interval: float = 60.0, report_every: int = 1) -> int:
+   697	    if cfg.apex_env == "LIVE" and not cfg.economic_gate_signed:
+   698	        code = "LIVE_CAPITAL_LOCKED"
+   699	        _say(f"REFUSED: {code} — APEX_ENV=LIVE is not a capital switch; LIVE "
+   700	             "capital stays locked until APEX_ECONOMIC_GATE_SIGNED=1 (Y.1 "
+   701	             "L17093) and the owner's written approval. Run PAPER first.")
+   702	        return EXIT_DEGRADED
+   703	    if not cfg.allow_signed:
+   704	        _say("REFUSED: SIGNED_NOT_ALLOWED — PAPER orders require "
+   705	             "APEX_ALLOW_SIGNED=1 (Y.1 L17093). Re-run exactly:")
+   706	        _say("  APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 TOOBIT_API_KEY=... "
+   707	             "TOOBIT_API_SECRET=... TELEGRAM_BOT_TOKEN=... "
+   708	             "TELEGRAM_OWNER_CHAT_ID=... python scripts/run_apex.py serve")
+   709	        return EXIT_DEGRADED
+   710
+   711	    runtime = await Runtime(cfg).start()
+   712	    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
+   713	    await service.open()
+   714	    gateway = None
+   715	    try:
+   716	        ledger, bus = runtime.ledger, runtime.bus
+   717	        clock = C.SystemClock()
+   718	        adapter = runtime.adapter()
+   719	        notifier = await _notifier_for(cfg)
+   720	        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+   721	                                       owner_chat_id=cfg.telegram_owner_chat_id
+   722	                                       or None)
+   723	                     if cfg.telegram_bot_token else None)
+   724	        control = CP.ControlPlane(
+   725	            signaling=signaling, config=cfg, clock=clock.monotonic,
+   726	            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+   727	            paper_balance=(await EC.paper_balance(ledger)
+   728	                           if cfg.apex_env == "PAPER" else "0"))
+   729	        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+   730	        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+   731	                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+   732	                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+   733	            control.register(name, _noop_handler(name))
+   734	        if cfg.telegram_bot_token:
+   735	            gateway = GW.TelegramGateway(
+   736	                control=control, source=GW.AiogramUpdateSource(config=cfg),
+   737	                notifier=_telegram_reply(signaling),
+   738	                bootstrap=service, clock=clock.monotonic,
+   739	                utc_now=clock.utc_now, poll_timeout=5.0)
+   740	        watchdog = WD.Watchdog(telegram_plane=signaling,
+   741	                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+   742	                               now=time.time)
+   743	        # CP-9 bridge: the provider is registered at the composition root, so
+   744	        # every PAPER cell now asks the governed store/context → pattern/setup
+   745	        # → gates → forecast → risk/decision chain for a real plan.  Missing
+   746	        # persisted engine context remains a named fail-closed refusal; the
+   747	        # provider never falls back to a hand-built plan.
+   748	        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+   749	                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+   750	        plan_bridge = PB.PaperPlanBridge(
+   751	            store=runtime.store, environment=cfg.apex_env,
+   752	            context_source=producer.get_bridge_context if producer is not None else None,
+   753	            context_preparer=producer.prepare if producer is not None else None)
+   754	        async def catch_up(now_ms: int) -> Dict[str, Any]:
+   755	            result = await service.catch_up(now_ms)
+   756	            if cfg.apex_env == "PAPER":
+   757	                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+   758	            return result
+   759
+   760	        driver = PL.PaperRuntime(
+   761	            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+   762	            adapter=adapter, signaling=signaling, control=control,
+   763	            gateway=gateway, watchdog=watchdog, clock=clock,
+   764	            environment=cfg.apex_env, notifier=notifier,
+   765	            plan_provider=plan_bridge, catch_up=catch_up)
+   766	        _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
+   767	             "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
+   768	        drift = await C.measure_drift(
+   769	            _venue_server_time if adapter is not None else _no_venue_time, clock)
+   770	        boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+   771	        try:
+   772	            EC.load_classifier()
+   773	            artifact_name = "E11_ARTIFACT"
+   774	        except EC.BridgeError as exc:
+   775	            artifact_name = exc.reason
+   776	        _say(f"  boot_state={boot['boot_state']} "
+   777	             f"new_trades_allowed={boot['new_trades_allowed']} "
+   778	             f"drift={drift['state']} ({drift.get('reason') or 'measured'}) "
+   779	             f"artifact={artifact_name}")
+   780	        if driver.plan_provider is None:
+   781	            _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
+   782	                 "refusal NO_PLAN_PROVIDER")
+   783	        else:
+   784	            _say("  plan seam: WIRED — governed PAPER store bridge "
+   785	                 "(missing context refuses by name; no synthetic plan)")
+   786	        _say(f"  signal_source={driver.signal_source} · cells=140 · "
+   787	             f"max_trades_per_cycle={driver.max_trades_per_cycle} · "
+   788	             f"telegram={'WIRED' if gateway is not None else 'DISABLED (no token)'}")
+   789	        _say("  (Ctrl-C stops the loop; the ledger chain and the durable "
+   790	             "cursors stay consistent)")
+   791	        outcome = await driver.run(cycles=cycles, interval=interval)
+   792	        for cycle in driver.cycles[-3:]:
+   793	            _say(f"  cycle {cycle['cycle']}: cells={cycle['cells_due']} "
+   794	                 f"complete={cycle['cells_complete']} "
+   795	                 f"halted={cycle['cells_halted']} blocked={cycle['cells_blocked']} "
+   796	                 f"trades={len(cycle['trades'])} open={len(cycle['open_intents'])}")
+   797	            if cycle.get("halt_reasons"):
+   798	                _say(f"    named refusals: "
+   799	                     f"{json.dumps(cycle['halt_reasons'], sort_keys=True)}")
+   800	        _say(f"  cycles={outcome['cycles']} trades={outcome['trades']} "
+   801	             f"open={outcome['open_intents']} refusals={outcome['refusals']} "
+   802	             f"ledger_chain_intact={outcome['ledger_chain_intact']}")
+   803	        if as_json:
+   804	            _say(json.dumps({"boot": boot, "outcome": outcome,
+   805	                             "cycles": driver.cycles}, default=str, indent=2,
+   806	                            sort_keys=True))
+   807	        return EXIT_READY if boot["boot_state"] == "READY" else EXIT_DEGRADED
+   808	    finally:
+   809	        if gateway is not None:
+   810	            await gateway.aclose()
+   811	        await service.close()
+   812	        await runtime.stop()
+   813
+
+===== apex/ops/paper_loop.py:648-670 (baseline) =====
+   648	    async def _resolve_plan(self, payload: Mapping[str, Any]
+   649	                            ) -> Mapping[str, Any]:
+   650	        """Ask the decision bridge for this cell's plan (the frozen SL-5 → SL-6
+   651	        seam). No provider ⇒ a NAMED refusal, never a fabricated plan."""
+   652	        if self.plan_provider is None:
+   653	            raise CellRefusal(
+   654	                "NO_PLAN_PROVIDER",
+   655	                "no plan provider is wired: the engine → fabric → setup → "
+   656	                "forecast → risk → plan bridge is a separate increment "
+   657	                "(PHASE2_HANDOFF_WIRING §REMAINING WORK)")
+   658	        provided = self.plan_provider(payload["symbol"], payload["timeframe"],
+   659	                                      payload["as_of"])
+   660	        plan = await provided if hasattr(provided, "__await__") else provided
+   661	        if plan is None:
+   662	            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+   663	            if self.environment == "PAPER" and refusal:
+   664	                raise CellRefusal(refusal["reason"],refusal.get("detail",""))
+   665	            raise CellRefusal("NO_PLAN_FOR_CELL",
+   666	                              f"{payload['cell_id']} has no governed plan at "
+   667	                              f"{payload['as_of']}")
+   668	        if not isinstance(plan, Mapping):
+   669	            raise CellRefusal("PLAN_TYPE_QX", type(plan).__name__)
+   670	        return dict(plan)
+
+===== apex/ops/paper_loop.py:956-1027 (baseline) =====
+   956	    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+   957	        moment = self.clock.now_ms() if now_ms is None else int(now_ms)
+   958	        as_of = _ms_to_iso(moment)
+   959	        self._budget_taken = 0
+   960	        self._cycle_proposals = {}
+   961	        if not self._cursor_loaded:
+   962	            await self._load_cursor()
+   963	        cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
+   964	                                 "signal_source": self.signal_source,
+   965	                                 "trading_enabled": self.trading_enabled,
+   966	                                 "budget_limit": self.max_trades_per_cycle}
+   967	        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+   968	                             {"cells_checked": 0, "cells_updated": 0,
+   969	                              "bars_ingested": 0, "failures": []})
+   970	        self._catch_up_failed = {row["cell"]: row
+   971	                                 for row in cycle["catch_up"]["failures"]}
+   972	        if self.watchdog is not None:
+   973	            cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
+   974	        cycle["storage"] = await self._storage_guard()
+   975	        if self.gateway is not None:
+   976	            cycle["telegram"] = await self.gateway.run_once()
+   977	        # The scheduler's law is "on each TF close run the stages for THAT
+   978	        # cell": a cell runs once per close, and a cell whose close has not
+   979	        # advanced since the previous cycle is not run again.
+   980	        already = []
+   981	        due = []
+   982	        for item in self.scheduler.due_cells(now_ms=moment):
+   983	            recorded = self._last_close.get(item[0].cell_id)
+   984	            if recorded is not None and int(item[1]) <= int(recorded):
+   985	                already.append(item)
+   986	                continue
+   987	            due.append(item)
+   988	        cycle["cells_skipped_already_decided"] = len(already)
+   989	        if self.max_cells_per_cycle is not None:
+   990	            due = due[:self.max_cells_per_cycle]
+   991	        # G1: all expensive source preparation completes before run_cell
+   992	        # starts its latency clock. D22 failures never enter preparation;
+   993	        # a failed source must not fall back to its previous cached success.
+   994	        self._context_preparation_failed = {}
+   995	        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+   996	        receipt_ms = max(moment,self.clock.now_ms())
+   997	        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+   998	                                for cell,close in due} if self.environment == "PAPER" else {})
+   999	        cycle["decision_as_of"] = dict(self._decision_as_of)
+  1000	        cycle["publishers"] = await self._refresh_publishers(due)
+  1001	        published = (cycle.get("catch_up") or {}).get("quality_publish") or {}
+  1002	        cycle["publishers"]["quality_facts_written"] = int(
+  1003	            cycle["publishers"].get("quality_facts_written") or 0) + int(
+  1004	                published.get("written") or 0)
+  1005	        cycle["publishers"]["failures"] = list(
+  1006	            cycle["publishers"].get("failures") or [])
+  1007	        cycle["publishers"]["failures"].extend(list(published.get("failures") or []))
+  1008	        prepare = getattr(self.plan_provider, "prepare", None)
+  1009	        if callable(prepare):
+  1010	            for cell, close in due:
+  1011	                if cell.cell_id in self._catch_up_failed:
+  1012	                    continue
+  1013	                preparation["cells_checked"] += 1
+  1014	                try:
+  1015	                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+  1016	                    preparation["cells_prepared"] += 1
+  1017	                except Exception as exc:
+  1018	                    failed = {"cell": cell.cell_id,
+  1019	                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+  1020	                              "detail": getattr(exc, "detail", type(exc).__name__)}
+  1021	                    self._context_preparation_failed[cell.cell_id] = failed
+  1022	                    preparation["failures"].append(failed)
+  1023	        cycle["context_preparation"] = preparation
+  1024	        tasks = [asyncio.create_task(self.scheduler.run_cell(
+  1025	                    cell, close_ms=close, context={"cell_state": {}}))
+  1026	                 for cell, close in due]
+  1027	        runs = list(await asyncio.gather(*tasks)) if tasks else []
+
+===== tests/integration/test_cp14_producer.py:166-178 (baseline) =====
+   166	def test_g1_full_24_field_public_store_readback_every_emitter(real_context):
+   167	    async def check(store,source,context):
+   168	        restored=await E.read_complete_evidence(store,[e.evidence_id for e in context['events']])
+   169	        assert {e.engine_id for e in restored}=={e.engine_id for e in context['events']}
+   170	        assert {e.engine_id for e in restored}=={'E01','E02','E03','E04','E05','E09','E11','E12'}
+   171	        # Native E06/E07/E08/E10 emit no event for these observations; they
+   172	        # still execute in the measured order. No placeholder members.
+   173	        assert len(fields(EvidenceEvent))==24
+   174	        for before,after in zip(context['events'],restored):
+   175	            for field in fields(EvidenceEvent):
+   176	                assert getattr(before,field.name)==getattr(after,field.name)
+   177	    asyncio.run(reopened(real_context,check))
+   178
