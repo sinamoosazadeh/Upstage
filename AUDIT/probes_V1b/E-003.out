@@ -1,0 +1,28 @@
+{
+  "post_count": 3,
+  "post_kinds": [
+    "LIMIT",
+    "STOP",
+    "LIMIT"
+  ],
+  "protection": {
+    "alert": "EXEC_RECOVERY",
+    "emergency_path": "PLAYBOOK_EMERGENCY_CLOSE_AT_MARKET",
+    "escalation": "OWNER",
+    "priority": "P0",
+    "protected": false,
+    "state": "RECOVERY_REQUIRED"
+  },
+  "state": "RECOVERY_REQUIRED",
+  "submit": {
+    "classification": "OK",
+    "idempotency_key": "5948689d1cddc100cceb367ba528fe795f7a585ef12532f5f05b4b71bac2da71",
+    "order_id": "900001",
+    "outcome": "ACKNOWLEDGED",
+    "reconcile_required": false,
+    "resubmitted": false,
+    "state": "ACKNOWLEDGED"
+  },
+  "venue_open_orders": 2,
+  "venue_position": {}
+}
