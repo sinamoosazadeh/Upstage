@@ -4,7 +4,7 @@ ID | Verdict | Auditor severity | Independent severity | Frozen? | Cross-ref (D/
 --- | --- | --- | --- | --- | --- | ---
 C-002 | CONFIRMED | S0 | S0 | No (factory/adapter/FSM); additive migration needed for fix | = ISSUE-075; = user-provided D58; D1/D2; related ISSUE-077/078 | A: governed simulator factory; never private network transport in PAPER
 C-001 | NOT VERIFIED | S3 (index only) | Not assigned | Not assessed | Not assessed | Verify full row
-C-003 | NOT VERIFIED | S1 (index only) | Not assigned | Not assessed | Not assessed | Verify and measure
+C-003 | CONFIRMED | S1 | S1 | No for runtime/producer retention; catalog frozen | ISSUE-076/077/079 interactions; D50 | A: durable history + bounded views and cache generations
 C-004 | NOT VERIFIED | S1 (index only) | Not assigned | Not assessed | Not assessed | Verify and measure
 C-005 | NOT VERIFIED | S2 (index only) | Not assigned | Not assessed | Not assessed | Verify full row
 C-006 | CONFIRMED | S1 | S1 | Runtime/producer non-frozen; catalog frozen | = ISSUE-079; overlaps ISSUE-076/077 | A: isolate control/protection + bounded preparation; exact-parity SQL repair
@@ -20,7 +20,7 @@ C-015 | NOT VERIFIED | S2 (index only) | Not assigned | Not assessed | Not asses
 O-006 | NOT VERIFIED | Not extracted | Not assigned | Not assessed | Not assessed | Verify full row
 V-003 | NOT VERIFIED | S4 | Not assigned | Not assessed | Not assessed | Verify full row
 
-**Current status: C-002 CONFIRMED/S0 and C-006 CONFIRMED/S1; 6 retained performance rows remain unverified; 9 rows are reassigned to V1c.** The appended C-002 formal-verdict section supersedes its retained initial evidence section. The full V1a scope is not complete; there is no real-data/device readiness claim.
+**Current status: C-002 CONFIRMED/S0; C-006 and C-003 CONFIRMED/S1; 5 retained performance rows remain unverified; 9 rows are reassigned to V1c.** The appended C-002 formal-verdict section supersedes its retained initial evidence section. The full V1a scope is not complete; there is no real-data/device readiness claim.
 
 Source baseline remains `85b2c155d7b054a468379ddfd802eb239d0801f9`. On continuation the sandbox had reconstructed baseline HEAD with the six prior AUDIT files untracked. I fetched this session's branch, staged only those AUDIT files, verified the entire staged tree was identical to remote checkpoint `7affafc5654027fc3a5c1a8bef0e8a9e39beb75f`, then restored this branch pointer with `git reset --soft origin/arena/01a0e911-upstage`. No source/worktree reset occurred, and no other branch was used. Report input was fetched again using the supplied SHA. All following source line numbers refer to the unchanged baseline.
 
@@ -185,7 +185,7 @@ Complete mandatory verification before accepting or rejecting the claim.
 
 Not defined or run for this row; required performance probes, where applicable, remain outstanding.
 
-## C-003 — not verified
+## C-003 — initial placeholder (superseded below)
 
 ### Auditor claim (short quote)
 
@@ -1120,13 +1120,93 @@ A with B, and treat C as the separately linked ISSUE-077 work. Do not weaken dat
 
 Retain 200k fixture with both index sets and record all full scans; assert identical ordered rows, fingerprints and lineage for any SQL rewrite (including invalid identity and correction cases). Inject bounded, failing, cancelled and indefinitely pending prep and synchronous CPU work while measuring independent control/protection service. Assert no orders from timed-out/stale generations, no duplicated closes or budget reservations, D22 retry preserved, and durable completed-cell publication under one stalled sibling. Run both read integration regressions under network denial and record guard refusals explicitly. Device evidence still required for actual p95/RSS/throughput and real model/data outcomes; synthetic results prove mechanism only.
 
+## C-003 — formal verdict
+
+### Auditor claim (short quote)
+
+“events، cycles با همهٔ cell_runs، scheduler._runs، trades/refusals و audit آداپتر بدون retention انباشته می‌شوند.” Histories accumulate without retention; the same full row also identifies unbounded producer `_ready`, `_failed`, `_raw_lineage`, **and correctly excludes bounded `_frames` (32) and `_content_hashes` (4096)**. It explicitly does not claim measured device OOM. Full expanded row was read from `/tmp/AUDIT.md`. Auditor S1.
+
+### What I read (files, line ranges, functions, callers)
+
+The complete referenced runtime factory and adapter were read under C-002; the complete paper-loop accumulation/consumption paths were read under C-006. C-003 rechecks Runtime collector 155–171 and serve's producer lifetime 748–770; PaperRuntime constructor 401–405, execute_plan 692–745, publisher refusals 917/938, run_cycle 956–1067, `_plain` 1169–1182 and final run totals 1127–1133; Scheduler constructor and both append branches in run_cell/inner 442–606; adapter constructor, audit views, `_execute`, `_cached_result`, `_refused`, and interval registry 322–840. Producer constructor/prepare/get_bridge_context 1759–1841, raw content hash/window/frame 2350–2441 and full feature_timeline 2444–2549 were read, including the actual prune/pop conditions.
+
+Mandatory consumers/retention grep over these files is saved as `C-003-retention.out`; C-006's wider consumer search covers callers. It shows every listed insertion, read and removal in these owners. `_ready.pop` and `_failed.pop` clear **only the exact next preparation key**, not old as_of keys. `_raw_lineage` has insertion and consumers but no deletion. `_frames` explicitly evicts >32; `_content_hashes` evicts at 4096. `_timelines` has bounded cell keys but variable-length signatures/evidence; no separate verdict on that additional retention surface is assigned here.
+
+SQL callees use the real store DDL/get_window/row conversion and native content hash reviewed for C-006. Governing memory/retention/idempotency clauses and decision-log bounded memo/D50 records below were read. No source/config/frozen file is modified.
+
+### Reproduction (command, probe file, actual result)
+
+`PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V1a/C-003.py`, raw `C-003.out`, exit 0. Native fixture: **200,000 market + 200,000 raw rows**, 1,000 PIT facts, 100 ledger records in a temporary repository-DDL SQLite store; same native content hashing as C-006. The idle bus was stopped **only during seeding**, then restarted before the runtime soak. No network/model/order was used; guard attempts were zero.
+
+Native lineage-window read of 5,000 bars: **0.873325 s** without device indexes, retaining **5,000 raw-lineage entries but only 4,096 content-hash entries**. With both indexes, native metadata join interrupted at **2.000630 s** (lower bound). Both actual SELECTs were EXPLAINed: ordinary market reader changes SCAN to indexed SEARCH; raw identity join changes SCAN r + PK SEARCH m into range SEARCH m + SCAN r. The bounded outer subquery scan is distinguished from a full-table scan. This is the same ISSUE-079 SQL hazard as C-006, not a new issue count.
+
+Next, 40 actual cycles, each advancing the fixture clock to a new monthly boundary so **all 140 scheduler cells** are due. Real run_cycle, Scheduler, cursor writes, event bus/collector and cycle copy paths run. Analytical/order stages are explicit no-order fixtures, public publishers are disabled, and actual producer.prepare receives a named missing-model exception at its classifier loader seam; this exercises native failure retention without building a fictitious model/context. Ten real sessionless adapter **queries** per cycle grow audit records; execute_plan's native pre-submission-refusal branch is exercised with only FSM.submit replaced by a local refusal, never a venue submission.
+
+After explicit `gc.collect()` at each sample:
+
+| Cycles | Scheduler runs / collected events / failed-context keys (each) | Adapter audit | Trades / refusals (each) | Retained traced heap delta |
+| --- | --- | --- | --- | --- |
+| 10 | 1,400 | 100 | 10 | 12,850,293 bytes |
+| 20 | 2,800 | 200 | 20 | 25,602,176 bytes |
+| 40 | 5,600 | 400 | 40 | 51,071,454 bytes |
+
+Soak elapsed at 40 cycles: **70.168949 s**. `_raw_lineage` remains 5,000 (only one historical window was loaded); bounded content hashes remain 4,096. `_ready` remains zero in the failure-only experiment: **success-context retention is established by its read code, not falsely claimed as measured native success**. Tracemalloc is Python allocation evidence, not RSS, Android memory, or a real-time slope. Forty accelerated month boundaries are not forty months of continuous market activity.
+
+### Verdict and reasoning
+
+**CONFIRMED / S1, same severity as auditor.** Actual persistent runtime containers and surviving traced heap increase with new cycles/as_of values; garbage collection cannot free reachable history. The producer failure path alone suffices even with no accepted plan. The full row already acknowledges bounded caches and unmeasured phone OOM, so PARTIAL is not warranted merely because those limitations remain true.
+
+No claim is made that every container is unbounded, every refusal increments PaperRuntime.refusals, or an exact 400-MB breach/Android kill time follows from this fixture. Producer failures live in `_failed`, whereas runtime.refusals uses particular publisher/execution branches; the experiment distinguishes them.
+
+### Root cause
+
+Long-lived collector, scheduler, driver and adapter histories are list appends without pruning. Cycle dictionaries additionally copy dataclass run records into JSON-like views, keeping a second historical representation. Producer keys include as_of, so replacing/removing only a same-key success/failure does not release earlier timestamps. Raw lineage is keyed per observed content identity and kept indefinitely in that producer. These objects stay referenced by serve throughout the run.
+
+### Direct impact
+
+Growing retained heap and increasing histories/views; no hardware-specific OOM threshold is needed to prove the retention defect. The memory target is finite while the number of fresh keys/events is not. Full tuple views (scheduler.runs, adapter.audit_trail) also allocate copies when inspected. Actual loss of a process/position is a possible secondary consequence, not an observed trading event.
+
+### Secondary effects and interactions (upstream/downstream)
+
+Upstream source changes/new as_of values generate new keys. The D50 trade budget correctly uses `_budget_taken`, not history length; bounding history must not accidentally change admission accounting or cycle numbering (`len(cycles)+1`). Failed-context entries must still prevent stale source resurrection. Downstream status/serve prints, tests and exports currently read whole histories or lengths; naïvely truncating them loses totals and diagnostics. Persistent event/ledger identities and dedup cannot be forgotten merely to reduce RAM.
+
+**ISSUE-076:** better indexes/per-row commit batching address throughput, not retained Python objects; increased throughput may reach a memory problem sooner. **ISSUE-077:** delayed cycle publication does not mean no memory is retained: Scheduler.runs/events can survive while gather blocks; restart recovery becomes more important if resource pressure kills the process. **ISSUE-079:** producer history reads and raw-lineage retention share the window path; index changes do not prune caches. The new benchmark reproduces the same join hazard. No separate device-performance/kill claim is added.
+
+Training/replay: discarding only redundant runtime caches should reproduce the same native results from authoritative store state. Truncating actual engine normalization/signature/history inputs would change state, hashes and possibly training labels; that is not an authorized cache fix. D30 remains 20 default training cells.
+
+### Contract and decisions
+
+APEX_GEN5.md:18883–18885 declares memory target “< 400 MB sustained heap” including feature vectors, recent candles, registry and model cache; 18444–18451 requires target-device capacity validation. 18479–18481 requires minimum 90-day on-device log retention/archive; 18734 says ledger “never purged (permanent audit trail)”. None requires unlimited RAM mirrors. Durable retention and bounded in-memory views must coexist.
+
+PHASE2_DECISION_LOG.md:1025–1027 approves bounded consumer-local timestamp/native hash memo while preserving values/errors; specifically 4096 entries and exact typed hash payload. D50 at 1159 rejects duplicate client order IDs without resending, preserving recorded outcomes and durable close locks. These later decisions take precedence over any older TTL-only reading that would allow a forgotten intent to submit twice. No owner decision found here authorizes losing permanent audit evidence or engine-history semantics to meet a memory target.
+
+### Frozen status and non-frozen alternative
+
+All reported retention owners are non-frozen (ops producer/loop, scheduler, adapter, composition root). Use non-frozen durable journal/index/migration plus bounded read views rather than altering frozen catalog methods or engine internals. If an optimization proposes trimming native engine state/history or changing frozen backtest logic, explicit owner ruling is required. No such edit is necessary to bound redundant observer histories.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+**A — durable histories plus bounded views and cache generations.** Persist full required audit, keep bounded recent cycles/events/trades/refusals, independent monotone counters, and evict obsolete success/failure as_of entries only after no in-flight consumer references them. Reload lineage and contexts with unchanged PIT/content binding; keep typed native hash memo bounded as already implemented. This adds write load and possibly an additive journal migration; need disk-floor/backpressure policy, restart evidence and graceful shutdown. Existing tests that assert all cycles/audit items remain in memory must instead inspect durable history or a configured test-sized view. Short tests inspecting the latest cycle and bounded hash parity must still pass. Do not call this schema-free if a new durable table is selected.
+
+**B — bounded caches plus explicit bounded-session operation pending durable history.** Could reduce producer failure/lineage retention without touching frozen files; eviction may increase SQL work and trigger ISSUE-079 more frequently. Session restarts alone lose in-memory diagnostic and dedup state, so this is not safe unattended operation or a complete fix. Cold/warm/recovery parity must be established before deployment.
+
+Both: no model retraining or identity/hash change is required for a pure cache/view fix. Persisted source corrections must invalidate cached successes exactly as now. A cache format/version change invalidates cache entries, not historical ledger hashes. **Never simply drop `_duplicates`**: durable query/reconcile/no-resend semantics must replace it. Do not bound native model history by guessing a recent window or silently change D30 scope.
+
+### My recommendation
+
+A, with producer failure/lineage retention and duplicate-safe durable audit treated separately from UI history. Keep 32/4096 bounds as evidence of existing controls, not targets for unnecessary replacement. Co-verify with C-006 and the known SQL issues, since cache eviction can expose repeated expensive reads.
+
+### Acceptance and regression tests
+
+Use this 140-cell soak with growing as_of and explicit GC; after the retention policy's warmup, require a stable bounded heap and container-size envelope while durable counts continue increasing. Test success and failure generations, active readers during eviction, exact-context reload after correction, bounded typed-hash precision/error parity, full ledger/audit retrieval after rotation, and duplicate client IDs after process restart. Budget/cycle totals must not reset when a deque rotates. SQL plans must be measured with both device indexes at ≥200k market rows. Native failure/observer retention was measured here; full-model context size, phone RSS and OOM remain device evidence, not extrapolated numbers.
+
 ## New findings not in the audit
 
 None established at mandatory depth. No X-V1a IDs assigned. The limited ledger SCAN observation and decision-label caveat above are retained as follow-up notes, not promoted to completed new findings. Full audit duplication checks have not been performed.
 
 ## Rows not verified or incomplete
 
-Retained, unverified: **C-003, C-004, C-008, C-010, C-012, C-013**.
+Retained, unverified: **C-004, C-008, C-010, C-012, C-013**.
 
 **Reassigned to V1c:** C-001, C-005, C-007, C-009, C-011, C-014, C-015, O-006, V-003. No V1a verdict or further verification is claimed for these nine IDs.
 
@@ -1134,10 +1214,10 @@ Retained order: C-006, C-003, C-004, C-008, C-010, C-012, C-013. Some shared run
 
 ## Final counts
 
-- CONFIRMED: **2** (C-002 S0; C-006 S1)
+- CONFIRMED: **3** (C-002 S0; C-006 and C-003 S1)
 - PARTIAL: **0**
 - REJECTED: **0**
 - DEVICE-EVIDENCE-NEEDED: **0**
-- Retained unverified: **6**
+- Retained unverified: **5**
 - Reassigned to V1c: **9**
 - Established new findings: **0**

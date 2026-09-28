@@ -1,0 +1,63 @@
+apex/ops/paper_loop.py:401:        self.cycles: List[Dict[str, Any]] = []
+apex/ops/paper_loop.py:403:        self.trades: List[Dict[str, Any]] = []
+apex/ops/paper_loop.py:405:        self.refusals: List[Dict[str, Any]] = []
+apex/ops/paper_loop.py:532:        atomic under that concurrency. ``self.trades`` is history only and
+apex/ops/paper_loop.py:724:            self.refusals.append({"cell": f"{plan.symbol}:{plan.timeframe}",
+apex/ops/paper_loop.py:726:            self.trades.append(record)
+apex/ops/paper_loop.py:744:        self.trades.append(record)
+apex/ops/paper_loop.py:917:                self.refusals.append({"cell": symbol, "reason": reason})
+apex/ops/paper_loop.py:938:                self.refusals.append({"cell": symbol, "reason": reason})
+apex/ops/paper_loop.py:963:        cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
+apex/ops/paper_loop.py:1063:        self.cycles.append(_plain(cycle))
+apex/ops/paper_loop.py:1127:        return {"cycles": rounds, "trades": len(self.trades),
+apex/ops/paper_loop.py:1129:                "refusals": len(self.refusals),
+apex/ops/engine_context.py:1768:        self._frames: dict[tuple, dict] = {}
+apex/ops/engine_context.py:1769:        self._raw_lineage: dict[tuple, dict] = {}
+apex/ops/engine_context.py:1770:        self._content_hashes: dict[tuple, str] = {}
+apex/ops/engine_context.py:1771:        self._ready: dict[tuple, dict] = {}
+apex/ops/engine_context.py:1772:        self._failed: dict[tuple, BridgeError] = {}
+apex/ops/engine_context.py:1773:        self._timelines: dict[tuple, dict] = {}
+apex/ops/engine_context.py:1801:        self._ready.pop(key,None)
+apex/ops/engine_context.py:1802:        self._failed.pop(key,None)
+apex/ops/engine_context.py:1820:            self._ready[key] = context
+apex/ops/engine_context.py:1822:            self._failed[key] = exc
+apex/ops/engine_context.py:1826:            self._failed[key] = refusal
+apex/ops/engine_context.py:1837:        if key in self._failed:
+apex/ops/engine_context.py:1838:            raise self._failed[key]
+apex/ops/engine_context.py:1839:        if key not in self._ready:
+apex/ops/engine_context.py:1841:        return copy.deepcopy(self._ready[key])
+apex/ops/engine_context.py:2045:            identity = self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())]["observation_id"]
+apex/ops/engine_context.py:2160:                "observation_ids":[self._raw_lineage[(symbol,"1h",obs.timestamp,obs.content_hash())]["observation_id"]
+apex/ops/engine_context.py:2323:        lineage = tuple(self._raw_lineage[(symbol, timeframe, obs.timestamp, obs.content_hash())]["observation_id"]
+apex/ops/engine_context.py:2360:        if key not in self._content_hashes:
+apex/ops/engine_context.py:2362:            if len(self._content_hashes) >= 4096:
+apex/ops/engine_context.py:2363:                del self._content_hashes[next(iter(self._content_hashes))]
+apex/ops/engine_context.py:2364:            self._content_hashes[key] = digest
+apex/ops/engine_context.py:2365:        return self._content_hashes[key]
+apex/ops/engine_context.py:2404:            self._raw_lineage[(symbol, timeframe, obs.timestamp, content_hash)] = {
+apex/ops/engine_context.py:2437:        if key not in self._frames:
+apex/ops/engine_context.py:2438:            self._frames[key] = upstream_frame(window, symbol, timeframe, engine_profile=engine_profile)
+apex/ops/engine_context.py:2439:            if len(self._frames) > 32:
+apex/ops/engine_context.py:2440:                del self._frames[next(iter(self._frames))]
+apex/ops/engine_context.py:2441:        return {**self._frames[key], "raw_window":window,
+apex/ops/engine_context.py:2462:        cached = self._timelines.get((symbol,timeframe)) if incremental else None
+apex/ops/engine_context.py:2546:            self._timelines[(symbol,timeframe)] = {"signatures":signatures,"history":history,"atr14_history":atr14_history,
+apex/ops/engine_context.py:2549:            self._timelines.pop((symbol,timeframe),None)
+apex/scheduler/clock.py:470:        self._runs: List[CellRun] = []
+apex/scheduler/clock.py:488:        return tuple(self._runs)
+apex/scheduler/clock.py:551:            self._runs.append(blocked)
+apex/scheduler/clock.py:597:        self._runs.append(run)
+apex/execution/toobit_adapter.py:338:        self._audit: List[AttemptRecord] = []
+apex/execution/toobit_adapter.py:339:        self._duplicates: Dict[str, AdapterResult] = {}
+apex/execution/toobit_adapter.py:358:            known_client_order_ids=tuple(self._duplicates),
+apex/execution/toobit_adapter.py:359:            audit_entries=len(self._audit),
+apex/execution/toobit_adapter.py:366:        return tuple(self._audit)
+apex/execution/toobit_adapter.py:427:        cached = self._duplicates.get(intent_id)
+apex/execution/toobit_adapter.py:707:        self._audit.extend(attempts)
+apex/execution/toobit_adapter.py:725:            self._duplicates[client_order_id] = result
+apex/execution/toobit_adapter.py:760:        self._audit.append(AttemptRecord(
+apex/execution/toobit_adapter.py:782:        self._audit.append(AttemptRecord(
+apex/execution/toobit_adapter.py:802:        self._audit.append(record)
+apex/execution/toobit_adapter.py:832:        self._audit.append(record)
+scripts/run_apex.py:155:        self.events: List[Any] = []
+scripts/run_apex.py:167:            self.events.append(event)
