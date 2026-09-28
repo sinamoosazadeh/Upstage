@@ -1,0 +1,6 @@
+=== pytest TestRedLine ===
+...........                                                              [100%]
+11 passed, 39 deselected in 0.04s
+=== pytest TestDraftPackage ===
+....                                                                     [100%]
+4 passed, 42 deselected in 0.07s

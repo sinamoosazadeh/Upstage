@@ -1,0 +1,59 @@
+=== Required recursive caller/consumer search ===
+apex/decision/pipeline.py:430:    FORBIDDEN_FIELDS: Tuple[str, ...] = ("order", "order_type", "client_order_id",
+apex/decision/pipeline.py:447:        for f in self.FORBIDDEN_FIELDS:
+apex/fabric/conflict.py:355:    FORBIDDEN_FIELDS: Tuple[str, ...] = ("must_revert", "reversion_target")
+apex/fabric/conflict.py:364:    if keys & set(SMTRecord.FORBIDDEN_FIELDS):
+apex/research/governance.py:307:def validate_change_proposal(proposal: Mapping[str, Any]) -> Dict[str, Any]:
+apex/research/governance.py:432:VETO_FIELD_NAMES: Tuple[str, ...] = tuple(
+apex/research/governance.py:436:FORBIDDEN_FIELDS: Tuple[str, ...] = (
+apex/research/governance.py:444:) + VETO_FIELD_NAMES
+apex/research/governance.py:494:def validate_package(package: ParameterPackage, *,
+apex/research/governance.py:500:        if key in FORBIDDEN_FIELDS:
+apex/research/governance.py:524:            verdict = validate_change_proposal(proposal)
+apex/research/governance.py:622:        "red_line_forbidden_fields": len(FORBIDDEN_FIELDS),
+apex/research/governance.py:623:        "veto_names_registered": len(VETO_FIELD_NAMES),
+apex/research/optimizer.py:431:        guard = ParameterPackage(
+apex/research/optimizer.py:446:            validation = validate_package(package)
+apex/research/promotion.py:552:    package = ParameterPackage(
+apex/research/promotion.py:557:    validation = validate_package(package, proposals=proposals)
+tests/unit/test_research_governance.py:20:    return gov.ParameterPackage(**base)
+tests/unit/test_research_governance.py:129:        verdict = gov.validate_change_proposal(_complete_proposal())
+tests/unit/test_research_governance.py:137:        verdict = gov.validate_change_proposal(proposal)
+tests/unit/test_research_governance.py:145:        assert "pit_backtest_180d<180d" in gov.validate_change_proposal(
+tests/unit/test_research_governance.py:151:        assert "forward_observation_30d<30d" in gov.validate_change_proposal(
+tests/unit/test_research_governance.py:216:        verdict = gov.validate_package(_package())
+tests/unit/test_research_governance.py:221:        assert len(gov.VETO_FIELD_NAMES) == 14
+tests/unit/test_research_governance.py:222:        for name in gov.VETO_FIELD_NAMES:
+tests/unit/test_research_governance.py:223:            verdict = gov.validate_package(_package(values={name: 1}))
+tests/unit/test_research_governance.py:230:            verdict = gov.validate_package(_package(values={field: 1}))
+tests/unit/test_research_governance.py:234:        verdict = gov.validate_package(_package(values={"margin_action": 0.9}))
+tests/unit/test_research_governance.py:238:        verdict = gov.validate_package(_package(values={"k_attn": 5.0}))
+tests/unit/test_research_governance.py:242:        verdict = gov.validate_package(
+tests/unit/test_research_governance.py:249:        verdict = gov.validate_package(
+tests/unit/test_research_governance.py:255:        verdict = gov.validate_package(_package(), proposals={})
+tests/unit/test_research_governance.py:352:        ledger = gov.InjectionLedger(path=tmp_path / "injection_log.json",
+tests/unit/test_research_governance.py:362:        ledger = gov.InjectionLedger(path=tmp_path / "injection_log.json",
+tests/unit/test_research_governance.py:372:        ledger = gov.InjectionLedger(path=tmp_path / "injection_log.json",
+tests/unit/test_research_governance.py:379:        gov.InjectionLedger(path=path, research_root=tmp_path).inject(
+tests/unit/test_research_governance.py:381:        reloaded = gov.InjectionLedger(path=path, research_root=tmp_path)
+tests/unit/test_research_promotion.py:387:        from apex.research.governance import FORBIDDEN_FIELDS
+tests/unit/test_research_promotion.py:388:        assert set(names) <= set(FORBIDDEN_FIELDS)
+=== Research validation/write/draft call sites ===
+apex/research/governance.py:535:def assert_live_params_untouched(package: ParameterPackage, target: Path,
+apex/research/governance.py:585:        assert_live_params_untouched(package, package_dir,
+apex/research/governance.py:596:        assert_live_params_untouched(package, target,
+apex/research/optimizer.py:424:    def write_suggestion(self, *, run_id: str, cell_id: str,
+apex/research/optimizer.py:435:        assert_live_params_untouched(guard, target_dir,
+apex/research/optimizer.py:450:        assert_live_params_untouched(guard, path,
+apex/research/promotion.py:535:def draft_package(*, candidate: PromotionCandidate, values: Mapping[str, Any],
+tests/unit/test_research_governance.py:279:            gov.assert_live_params_untouched(_package(), target,
+tests/unit/test_research_governance.py:291:            gov.assert_live_params_untouched(_package(), sneaky)
+tests/unit/test_research_governance.py:296:            gov.assert_live_params_untouched(
+tests/unit/test_research_governance.py:302:            gov.assert_live_params_untouched(
+tests/unit/test_research_optimizer.py:373:        out = optimizer.write_suggestion(
+tests/unit/test_research_optimizer.py:387:            optimizer.write_suggestion(
+tests/unit/test_research_optimizer.py:393:        out1 = opt.DualOptimizer(suggestions_dir=tmp_path / "a").write_suggestion(
+tests/unit/test_research_optimizer.py:396:        out2 = opt.DualOptimizer(suggestions_dir=tmp_path / "b").write_suggestion(
+tests/unit/test_research_promotion.py:356:        out = pr.draft_package(candidate=_candidate(wfo={"decision": "NOT_PROMOTED"}),
+tests/unit/test_research_promotion.py:365:        out = pr.draft_package(candidate=_candidate(),
+tests/unit/test_research_promotion.py:375:        out = pr.draft_package(candidate=_candidate(),

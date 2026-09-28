@@ -1,0 +1,742 @@
+=== Baseline governance proposal validator and RED LINE ===
+   302	PROPOSAL_REQUIRED_ITEMS: Tuple[str, ...] = (
+   303	    "reason", "pit_backtest_180d", "forward_observation_30d",
+   304	    "out_of_sample_evaluation", "parameter_board_approval")
+   305
+   306
+   307	def validate_change_proposal(proposal: Mapping[str, Any]) -> Dict[str, Any]:
+   308	    """The five mandatory items of a change proposal, checked item by item.
+   309
+   310	    A missing/empty item fails the proposal closed: it may not be promoted and
+   311	    its dependents keep the current value.
+   312	    """
+   313	    missing: List[str] = []
+   314	    for item in PROPOSAL_REQUIRED_ITEMS:
+   315	        value = proposal.get(item)
+   316	        if value is None or value == "" or value == {} or value == []:
+   317	            missing.append(item)
+   318	    if "pit_backtest_180d" in proposal and proposal.get("pit_backtest_180d"):
+   319	        window = proposal["pit_backtest_180d"]
+   320	        if isinstance(window, (int, float)) and float(window) < 180.0:
+   321	            missing.append("pit_backtest_180d<180d")
+   322	    if "forward_observation_30d" in proposal and \
+   323	            proposal.get("forward_observation_30d"):
+   324	        window = proposal["forward_observation_30d"]
+   325	        if isinstance(window, (int, float)) and float(window) < 30.0:
+   326	            missing.append("forward_observation_30d<30d")
+   327	    decision = "APPROVED" if not missing else "REJECTED"
+   328	    return {"decision": decision, "missing": missing,
+   329	            "required": list(PROPOSAL_REQUIRED_ITEMS),
+   330	            "conservative_value_kept": bool(missing)}
+   331
+   429	# W.5 — RED LINE package validation
+   430	# --------------------------------------------------------------------------
+   431
+   432	VETO_FIELD_NAMES: Tuple[str, ...] = tuple(
+   433	    veto_definition(n)["name"] for n in range(1, 15))
+   434
+   435	#: W.5 — fields no package may ever carry (owner-static, X.7).
+   436	FORBIDDEN_FIELDS: Tuple[str, ...] = (
+   437	    "veto_registry", "veto_thresholds", "veto_count",
+   438	    "margin_warning", "margin_action", "margin_liquidation_approach",
+   439	    "capital_hard_cap", "symbol_exposure_cap", "portfolio_exposure_cap",
+   440	    "circuit_breaker", "circuit_breakers",
+   441	    "leverage_cap_by_tf", "system_leverage_cap_by_tf", "max_leverage",
+   442	    "max_loss_per_trade", "max_loss_per_day", "daily_loss_limit",
+   443	    "weekly_loss_limit", "risk_ladder_multiplier", "crisis_factor",
+   444	) + VETO_FIELD_NAMES
+   445
+   446	_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$")
+   447
+   448
+   449	@dataclass
+   450	class ParameterPackage:
+   451	    """A versioned, immutable candidate parameter package (SL-12)."""
+   452
+   453	    package_id: str
+   454	    version: str
+   455	    values: Mapping[str, Any]
+   456	    code_revision: str           # git40 (§18.1 CodeRevision)
+   457	    feature_version: str
+   458	    model_version: str
+   459	    seed: int
+   460	    created_at: str = ""
+   461	    reason: str = ""
+   462	    environment: str = "RESEARCH"
+   463
+   464	    def __post_init__(self) -> None:
+   465	        if not _VERSION_RE.match(self.version):
+   466	            raise GovernanceError("VERSION_FORMAT_QX", self.version)
+   467	        if len(self.code_revision) != 40 or not re.match(r"^[0-9a-f]{40}$",
+   468	                                                        self.code_revision):
+   469	            raise GovernanceError("CODE_REVISION_QX", self.code_revision)
+   470	        if self.environment not in ("RESEARCH", "BACKTEST", "PAPER"):
+   471	            raise GovernanceError("PACKAGE_ENVIRONMENT_QX", self.environment)
+   472	        if not self.created_at:
+   473	            self.created_at = datetime.now(timezone.utc).strftime(
+   474	                "%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+   475
+   476	    def content_hash(self) -> str:
+   477	        return sha256_hex(canonical_json({
+   478	            "package_id": self.package_id, "version": self.version,
+   479	            "values": dict(self.values), "code_revision": self.code_revision,
+   480	            "feature_version": self.feature_version,
+   481	            "model_version": self.model_version, "seed": int(self.seed)}))
+   482
+   483	    def to_dict(self) -> Dict[str, Any]:
+   484	        return {"package_id": self.package_id, "version": self.version,
+   485	                "values": dict(self.values), "code_revision": self.code_revision,
+   486	                "feature_version": self.feature_version,
+   487	                "model_version": self.model_version, "seed": int(self.seed),
+   488	                "created_at": self.created_at, "reason": self.reason,
+   489	                "environment": self.environment,
+   490	                "content_hash": self.content_hash(),
+   491	                "contract_version": CONTRACT_VERSION}
+   492
+   493
+   494	def validate_package(package: ParameterPackage, *,
+   495	                     proposals: Optional[Mapping[str, Mapping[str, Any]]] = None
+   496	                     ) -> Dict[str, Any]:
+   497	    """W.5 RED LINE + §17.1 bounds + EC/closure check, before paper trial."""
+   498	    violations: List[Dict[str, Any]] = []
+   499	    for key, value in package.values.items():
+   500	        if key in FORBIDDEN_FIELDS:
+   501	            violations.append({"kind": "RED_LINE_FIELD", "field": key,
+   502	                               "value": value,
+   503	                               "rule": "W.5 — vetoes / margin thresholds / "
+   504	                                       "capital caps / circuit breakers / "
+   505	                                       "owner ceilings are immutable"})
+   506	            continue
+   507	        if key in _PARAM_BY_NAME:
+   508	            row = _PARAM_BY_NAME[key]
+   509	            if row.low is None or row.high is None:
+   510	                continue
+   511	            if not (row.low <= float(value) <= row.high):
+   512	                violations.append({"kind": "OUT_OF_BOUNDS", "field": key,
+   513	                                   "value": value,
+   514	                                   "bounds": [row.low, row.high]})
+   515	            if row.param_class == "static/owner":
+   516	                violations.append({"kind": "OWNER_STATIC_FIELD", "field": key,
+   517	                                   "rule": "static/owner — owner-only change"})
+   518	    if proposals is not None:
+   519	        for name in package.values:
+   520	            proposal = proposals.get(name)
+   521	            if proposal is None:
+   522	                violations.append({"kind": "PROPOSAL_ABSENT", "field": name})
+   523	                continue
+   524	            verdict = validate_change_proposal(proposal)
+   525	            if verdict["decision"] != "APPROVED":
+   526	                violations.append({"kind": "PROPOSAL_INCOMPLETE",
+   527	                                   "field": name, "missing": verdict["missing"]})
+   528	    return {"package_id": package.package_id, "decision":
+   529	            "REJECTED" if violations else "VALIDATED",
+   530	            "violations": violations, "values_checked": len(package.values),
+   531	            "red_line_clean": not any(v["kind"] in (
+   532	                "RED_LINE_FIELD", "OWNER_STATIC_FIELD") for v in violations)}
+   533
+   534
+   535	def assert_live_params_untouched(package: ParameterPackage, target: Path,
+   536	                                 *, research_root: Optional[Path] = None) -> None:
+   537	    """The write target must live under ``apex/research/params_suggestions/``.
+   538
+   539	    Any attempt to write a live ``params/*.yaml`` raises
+   540	    :class:`ResearchRedLineError` — the Wave-Out item "optimizer writing live
+   541	    yaml" made executable (G6). ``research_root`` only relocates the *allowed*
+   542	    research directory (tests, alternate sandboxes); the live-params refusal is
+   543	    absolute and can never be relocated.
+   544	    """
+   545	    resolved = Path(target).resolve()
+   546	    allowed = Path(research_root).resolve() if research_root is not None \
+   547	        else SUGGESTIONS_DIR.resolve()
+   548	    live = LIVE_PARAMS_DIR.resolve()
+   549	    if live == resolved or live in resolved.parents:
+   550	        raise ResearchRedLineError(
+   551	            "LIVE_PARAMS_WRITE_FORBIDDEN",
+   552	            f"{resolved} is inside {live} — research may never write live "
+   553	            f"parameters (W.5 RED LINE / G6)")
+   554	    if allowed != resolved and allowed not in resolved.parents:
+   555	        raise ResearchRedLineError(
+   556	            "SUGGESTION_TARGET_OUTSIDE_RESEARCH",
+   557	            f"{resolved} is outside {allowed}")
+   558
+=== Baseline RED LINE tests and proposal helpers ===
+    14	def _package(**overrides):
+    15	    base = dict(package_id="pkg-test-1", version="1.0.0",
+    16	                values={"correlation_cap": 0.65}, code_revision="a" * 40,
+    17	                feature_version="4.0.0", model_version="4.0.0", seed=7,
+    18	                reason="unit test")
+    19	    base.update(overrides)
+    20	    return gov.ParameterPackage(**base)
+    21
+    22
+    23	def _complete_proposal():
+    24	    return {"reason": "sharper gate", "pit_backtest_180d": 180,
+    25	            "forward_observation_30d": 30, "out_of_sample_evaluation": "OOS-1",
+    26	            "parameter_board_approval": "board-2026-09"}
+    27
+    28
+   120	                                   delta=float("nan"))
+   121
+   122
+   123	# --------------------------------------------------------------------------
+   124	# §17.1 — change-proposal protocol
+   125	# --------------------------------------------------------------------------
+   126
+   127	class TestChangeProposal:
+   128	    def test_complete_proposal_is_approved(self):
+   129	        verdict = gov.validate_change_proposal(_complete_proposal())
+   130	        assert verdict["decision"] == "APPROVED"
+   131	        assert verdict["missing"] == []
+   132
+   133	    @pytest.mark.parametrize("missing", gov.PROPOSAL_REQUIRED_ITEMS)
+   134	    def test_every_item_is_mandatory(self, missing):
+   135	        proposal = _complete_proposal()
+   136	        proposal.pop(missing)
+   137	        verdict = gov.validate_change_proposal(proposal)
+   138	        assert verdict["decision"] == "REJECTED"
+   139	        assert missing in verdict["missing"]
+   140	        assert verdict["conservative_value_kept"] is True
+   141
+   142	    def test_short_backtest_window_is_rejected(self):
+   143	        proposal = _complete_proposal()
+   144	        proposal["pit_backtest_180d"] = 179
+   145	        assert "pit_backtest_180d<180d" in gov.validate_change_proposal(
+   146	            proposal)["missing"]
+   147
+   148	    def test_short_forward_observation_is_rejected(self):
+   149	        proposal = _complete_proposal()
+   150	        proposal["forward_observation_30d"] = 29
+   151	        assert "forward_observation_30d<30d" in gov.validate_change_proposal(
+   152	            proposal)["missing"]
+   153
+   154
+   155	# --------------------------------------------------------------------------
+   156	# §17.1 — EC register + sensitivity
+   157	# --------------------------------------------------------------------------
+   158
+   159	class TestECRegister:
+   160	    def _semantics(self, **extra):
+   210	# --------------------------------------------------------------------------
+   211	# W.5 — RED LINE
+   212	# --------------------------------------------------------------------------
+   213
+   214	class TestRedLine:
+   215	    def test_clean_package_validates(self):
+   216	        verdict = gov.validate_package(_package())
+   217	        assert verdict["decision"] == "VALIDATED"
+   218	        assert verdict["red_line_clean"] is True
+   219
+   220	    def test_all_fourteen_veto_names_are_forbidden(self):
+   221	        assert len(gov.VETO_FIELD_NAMES) == 14
+   222	        for name in gov.VETO_FIELD_NAMES:
+   223	            verdict = gov.validate_package(_package(values={name: 1}))
+   224	            assert verdict["decision"] == "REJECTED"
+   225	            assert verdict["violations"][0]["kind"] == "RED_LINE_FIELD"
+   226
+   227	    def test_owner_static_fields_are_rejected(self):
+   228	        for field in ("capital_hard_cap", "leverage_cap_by_tf",
+   229	                      "max_loss_per_day", "circuit_breaker"):
+   230	            verdict = gov.validate_package(_package(values={field: 1}))
+   231	            assert verdict["decision"] == "REJECTED", field
+   232
+   233	    def test_margin_thresholds_are_immutable(self):
+   234	        verdict = gov.validate_package(_package(values={"margin_action": 0.9}))
+   235	        assert verdict["decision"] == "REJECTED"
+   236
+   237	    def test_out_of_bounds_value_is_rejected(self):
+   238	        verdict = gov.validate_package(_package(values={"k_attn": 5.0}))
+   239	        assert any(v["kind"] == "OUT_OF_BOUNDS" for v in verdict["violations"])
+   240
+   241	    def test_incomplete_proposal_blocks_the_package(self):
+   242	        verdict = gov.validate_package(
+   243	            _package(values={"correlation_cap": 0.65}),
+   244	            proposals={"correlation_cap": {"reason": "no evidence"}})
+   245	        assert verdict["decision"] == "REJECTED"
+   246	        assert verdict["violations"][0]["kind"] == "PROPOSAL_INCOMPLETE"
+   247
+   248	    def test_complete_proposal_unblocks(self):
+   249	        verdict = gov.validate_package(
+   250	            _package(values={"correlation_cap": 0.65}),
+   251	            proposals={"correlation_cap": _complete_proposal()})
+   252	        assert verdict["decision"] == "VALIDATED"
+   253
+   254	    def test_absent_proposal_for_a_changed_value_is_rejected(self):
+   255	        verdict = gov.validate_package(_package(), proposals={})
+   256	        assert any(v["kind"] == "PROPOSAL_ABSENT" for v in verdict["violations"])
+   257
+   258	    def test_code_revision_must_be_git40(self):
+   259	        with pytest.raises(gov.GovernanceError):
+   260	            _package(code_revision="abc")
+   261
+   262	    def test_version_format_enforced(self):
+   263	        with pytest.raises(gov.GovernanceError):
+   264	            _package(version="v1")
+   265
+   266	    def test_package_environment_cannot_be_live(self):
+   267	        with pytest.raises(gov.GovernanceError):
+   268	            _package(environment="LIVE")
+   269
+   270
+=== Baseline optimizer write caller ===
+   400	                cell_id=cell_id, optimizer=optimizer,
+   401	                combinations_evaluated=len(combos),
+   402	                best_value=best_value, best_params=best_params,
+   403	                feasible_fraction=feasible / len(combos) if combos else 0.0,
+   404	                sru_hash=sha256_hex(canonical_json(
+   405	                    {"run_id": run_id, "cell": cell_id, "optimizer": optimizer,
+   406	                     "combos": len(combos)})))
+   407	            self.results.append(cell)
+   408	            if self.store is not None:
+   409	                await self.store.save_optimizer(
+   410	                    run_id=run_id, cell_id=cell_id, optimizer=optimizer,
+   411	                    status="COMPLETE", combination_index=len(combos),
+   412	                    best_value=(None if best_value == float("-inf")
+   413	                                else best_value),
+   414	                    best_params=best_params, sru_hash=cell.sru_hash)
+   415	            completed.append(cell_id)
+   416	        return {"run_id": run_id, "status": "COMPLETE",
+   417	                "completed_cells": completed, "pending_cells": pending,
+   418	                "results": [r.to_dict() for r in self.results
+   419	                            if r.optimizer == optimizer],
+   420	                "schedule": decision,
+   421	                "checkpointed": self.store is not None}
+   422
+   423	    # -- suggestion output (never a live parameter file) ------------------
+   424	    def write_suggestion(self, *, run_id: str, cell_id: str,
+   425	                         optimizer: str, params: Mapping[str, Any],
+   426	                         reason: str, package: Optional[ParameterPackage] = None
+   427	                         ) -> Dict[str, Any]:
+   428	        """Persist one suggestion. The write target is validated against the
+   429	        RED LINE before anything touches the disk (W.5 / G6)."""
+   430	        target_dir = self.suggestions_dir / run_id
+   431	        guard = ParameterPackage(
+   432	            package_id="suggestion-guard", version="0.0.0", values={},
+   433	            code_revision="0" * 40, feature_version="v4.0.0",
+   434	            model_version="v4.0.0", seed=0)
+   435	        assert_live_params_untouched(guard, target_dir,
+   436	                                     research_root=self.suggestions_dir)
+   437	        target_dir.mkdir(parents=True, exist_ok=True)
+   438	        payload: Dict[str, Any] = {
+   439	            "run_id": run_id, "cell_id": cell_id, "optimizer": optimizer,
+   440	            "params": dict(params), "reason": reason,
+   441	            "note": "SUGGESTION ONLY — never a live parameter value; "
+   442	                    "promotion requires W.5 validation + owner approval",
+   443	            "contract_version": CONTRACT_VERSION,
+   444	        }
+   445	        if package is not None:
+   446	            validation = validate_package(package)
+   447	            payload["package"] = package.to_dict()
+   448	            payload["validation"] = validation
+   449	        path = target_dir / f"{cell_id}-{optimizer.lower()}.json"
+   450	        assert_live_params_untouched(guard, path,
+   451	                                     research_root=self.suggestions_dir)
+   452	        path.write_text(json.dumps(payload, sort_keys=True, indent=2),
+   453	                        encoding="utf-8")
+   454	        try:
+   455	            written = str(path.relative_to(REPO_ROOT))
+   456	        except ValueError:                      # relocated research sandbox
+   457	            written = str(path)
+   458	        return {"written": written,
+   459	                "suggestion_hash": sha256_hex(canonical_json(payload))}
+   460
+   461
+   462	def optimizer_summary() -> Dict[str, Any]:
+=== Baseline promotion draft/refusal caller ===
+   495
+   496	@dataclass
+   497	class PromotionCandidate:
+   498	    """Everything the gate must see; a missing block fails the gate closed."""
+   499
+   500	    family_id: str
+   501	    pool: FamilyPool
+   502	    wfo: Mapping[str, Any]
+   503	    pbo: Mapping[str, Any]
+   504	    deflated_sharpe: Mapping[str, Any]
+   505	    benchmark: Optional[Mapping[str, Any]] = None
+   506	    breakeven: float = DEFAULT_BREAKEVEN
+   507
+   508	    def gates(self) -> Dict[str, Any]:
+   509	        pool_gate = family_pool_gate(self.pool, p_breakeven=self.breakeven)
+   510	        checks = {
+   511	            "family_pool": pool_gate["eligible"],
+   512	            "wfo": self.wfo.get("decision") == "PROMOTED",
+   513	            "pbo": not self.pbo.get("flagged_high", True),
+   514	            "deflated_sharpe": bool(self.deflated_sharpe.get("passes", False)),
+   515	            "benchmark": bool(self.benchmark is not None
+   516	                              and self.benchmark.get("outperforms", False)),
+   517	        }
+   518	        return {"family_id": self.family_id, "checks": checks,
+   519	                "pool_gate": pool_gate,
+   520	                "decision": "PROMOTE" if all(checks.values()) else "BLOCK",
+   521	                "failed": [k for k, v in checks.items() if not v],
+   522	                "contract_version": CONTRACT_VERSION}
+   523
+   524
+   525	def evaluate_promotion(candidate: PromotionCandidate) -> Dict[str, Any]:
+   526	    """W.5 validation gate → promotion decision (the pre-paper-trial stop)."""
+   527	    verdict = candidate.gates()
+   528	    verdict["paper_trial_required"] = verdict["decision"] == "PROMOTE"
+   529	    verdict["note"] = ("pre-promotion gates (Z.9) + family-pool protocol "
+   530	                       "(Z.3/Z.4) must ALL pass; the package still needs the "
+   531	                       "RED LINE validation and the owner's approval (W.5)")
+   532	    return verdict
+   533
+   534
+   535	def draft_package(*, candidate: PromotionCandidate, values: Mapping[str, Any],
+   536	                  version: str, code_revision: str, feature_version: str,
+   537	                  model_version: str, seed: int, reason: str,
+   538	                  proposals: Mapping[str, Mapping[str, Any]]
+   539	                  ) -> Dict[str, Any]:
+   540	    """Turn a TRULY promoted candidate into a parameter package.
+   541
+   542	    The package is refused unless the promotion gate passed, the RED LINE
+   543	    validation is clean and every changed value carries its complete change
+   544	    proposal (§17.1). Nothing here writes a file: injection is
+   545	    ``apex.research.governance.InjectionLedger`` into
+   546	    ``apex/research/params_suggestions/``.
+   547	    """
+   548	    verdict = evaluate_promotion(candidate)
+   549	    if verdict["decision"] != "PROMOTE":
+   550	        return {"decision": "REFUSED", "reason": "PROMOTION_GATE_BLOCKED",
+   551	                "failed": verdict["failed"]}
+   552	    package = ParameterPackage(
+   553	        package_id=f"pkg-{candidate.family_id}-{version}",
+   554	        version=version, values=dict(values), code_revision=code_revision,
+   555	        feature_version=feature_version, model_version=model_version,
+   556	        seed=int(seed), reason=reason, environment="RESEARCH")
+   557	    validation = validate_package(package, proposals=proposals)
+   558	    if validation["decision"] != "VALIDATED":
+   559	        return {"decision": "REFUSED", "reason": "PACKAGE_VALIDATION_FAILED",
+   560	                "validation": validation}
+   561	    return {"decision": "DRAFTED", "package": package,
+   562	            "validation": validation,
+   563	            "next_step": "paper trial → owner approval → versioned injection"}
+=== Baseline canonical risk veto registry ===
+    50
+    51	# ---------------------------------------------------------------------------
+    52	# The Canonical Risk Veto Registry (exactly fourteen)
+    53	# ---------------------------------------------------------------------------
+    54
+    55	VETO_REGISTRY: Tuple[Tuple[int, str, str, Optional[str]], ...] = (
+    56	    (1, "VETO_INVALID_QUARANTINED_INPUT", "Q_raw < Q_min(tf), QX state, "
+    57	        "failed setup gate", "QX_INVALID"),
+    58	    (2, "VETO_PIT_VIOLATION", "availability_time > as_of", "E-PIT-001"),
+    59	    (3, "VETO_CAPITAL_LIMIT", "portfolio_exposure + proposed > capital_hard_cap",
+    60	     None),
+    61	    (4, "VETO_CIRCUIT_BREAKER", "circuit_breaker_engaged; ratchet permits "
+    62	        "upgrades only", "RSK-ERR-506"),
+    63	    (5, "VETO_EXPOSURE_LIMIT", "per_symbol_exposure > symbol_cap or "
+    64	        "portfolio_exposure > portfolio_cap", None),
+    65	    (6, "VETO_HARD_CONFLICT", "conflict_state == HARD_CONFLICT (SL-2)", None),
+    66	    (7, "VETO_FRESHNESS_SLA", "staleness beyond the freshness SLA",
+    67	     "VETO_FRESHNESS_SLA"),
+    68	    (8, "VETO_OI_LAG", "oi_lag > threshold(tf)", "VETO_OI_LAG"),
+    69	    (9, "VETO_ANTI_MONOTONICITY", "request.is_risk_increase AND "
+    70	        "uncertainty_is_rising", None),
+    71	    # NOTE (ISSUE-CP6-004): the blueprint's registry column shows
+    72	    # "CIRCUIT_OPEN (Alert Policy)" for vetoes 10–12. That identifier is an
+    73	    # Alert-Policy label, not one of the frozen Ch.7 error codes, so it is not
+    74	    # registered as an error code here (the Ch.7 registry owns that namespace —
+    75	    # G6: codes are never invented).
+    76	    (10, "VETO_DAILY_LOSS_LIMIT", "realized day loss (marked-to-market, ledger) "
+    77	         "> governed threshold", None),
+    78	    (11, "VETO_WEEKLY_LOSS_LIMIT", "realized week loss (marked-to-market, "
+    79	         "ledger) > governed threshold", None),
+    80	    (12, "VETO_CONSECUTIVE_LOSSES", "consecutive losing trades > governed "
+    81	         "threshold", None),
+    82	    (13, "VETO_CONTRACT_EXPIRY", "time-to-expiry of a quarterly contract < "
+    83	         "governed rollover threshold", None),
+    84	    (14, "VETO_MARGIN_HEALTH", "margin health below governed action threshold",
+    85	     None),
+    86	)
+    87	VETO_NAMES: Tuple[str, ...] = tuple(v[1] for v in VETO_REGISTRY)
+    88	VETO_COUNT = 14
+    89	HARD_VETO_NUMBERS: Tuple[int, ...] = tuple(v[0] for v in VETO_REGISTRY)
+    90
+    91	# Ch.15 defaults, all governed (the loss caps come from the params file).
+    92	DEFAULT_CONTRACT_ROLLOVER_DAYS = 7
+    93	DEFAULT_MARGIN_HEALTH_WARN = 0.60
+    94	DEFAULT_MARGIN_HEALTH_ACTION = 0.40
+    95	DEFAULT_MARGIN_HEALTH_LIQUIDATION = 0.20
+    96	DEFAULT_CVAR_CAP_FRACTION = 0.04
+    97
+    98	RISK_LADDER_STATES: Tuple[str, ...] = ("NoRisk", "LowRisk", "MediumRisk",
+    99	                                      "HighRisk", "CriticalRisk")
+   100	RISK_LADDER_MULTIPLIER: Dict[str, float] = {
+   101	    "NoRisk": 1.0, "LowRisk": 1.0, "MediumRisk": 0.75, "HighRisk": 0.50,
+   102	    "CriticalRisk": 0.0}
+   103	# budget-state bands matching ladder_state_for exactly (D59 د۵).
+   104	# (name, low, high, low_inclusive, high_inclusive). NoRisk is the 0.00 point.
+   105	# LowRisk is the open interval (0.00, 0.25). Upper edges belong to the next band.
+   106	RISK_LADDER_BANDS: Tuple[Tuple[str, float, float, bool, bool], ...] = (
+   107	    ("NoRisk", 0.00, 0.00, True, True),
+   108	    ("LowRisk", 0.00, 0.25, False, False),
+   109	    ("MediumRisk", 0.25, 0.50, True, False),
+   110	    ("HighRisk", 0.50, 0.75, True, False),
+   160	        super().__init__(f"{reason}{('::' + detail) if detail else ''}")
+   161	        self.reason = reason
+   162	        self.detail = detail
+   163
+   164
+   165	def frozen_risk_params() -> Dict[str, Any]:
+   166	    """The FROZEN_BOOTSTRAP risk literals, read from the params YAML (never
+   167	    hardcoded here, §9.5-10)."""
+   168	    r = load_params()["risk_defaults"]
+   169	    return {k: r[k] for k in ("budget_per_trade", "k_attn", "daily_loss_cap",
+   170	                             "weekly_loss_cap", "consecutive_loss_halt",
+   171	                             "margin_mode", "position_mode", "cost_R_floor",
+   172	                             "max_candidates", "correlation_cap",
+   173	                             "system_leverage_cap_by_tf")}
+   174
+   175
+   176	def veto_definition(number: int) -> Dict[str, Any]:
+   177	    for n, name, carrier, code in VETO_REGISTRY:
+   178	        if n == number:
+   179	            return {"number": n, "name": name, "carrier": carrier,
+   180	                    "error_code": code,
+   181	                    "registry": None if code is None
+   182	                    else str(get_error_code(code))}
+   183	    raise RiskError("VETO_NUMBER_QX", f"{number} (exactly {VETO_COUNT} exist)")
+   184
+   185
+=== Binding W.5 contract / D7 clarifications ===
+ 16280	5. **Parameter governance** — all weights, thresholds, window lengths, and
+ 16281	   priors are **bounded governed ranges** in the SL-12 governance table,
+ 16282	   inside the **Signal Optimizer domain** (Optimizer and First-Run Bootstrap.1: engine thresholds,
+ 16283	   setup-scoring weights, gate-quality evidence parameters), injected and
+ 16284	   rolled back per W.5–W.7, with the **W.5 RED LINE** applying in full (no
+ 16285	   package may touch the 14 hard vetoes, margin-health thresholds, capital
+ 16286	   caps, circuit breakers, exit precedence, or owner-set ceilings).
+ 16287	   Calibration-drift monitoring with >10% auto-rollback applies (W.5, AB.2
+ 16288	   Condition 4).
+ 16289	6. **Status** — **OBLIGATION** (Layer-2 design obligation: must appear in the
+ 17237	#### W.5 Injection & Rollback Cycle with RED LINE
+ 17238
+ 17239	Process flow:
+ 17240	```
+ 17241	Generate (W.3) → Isolated Replay → Objective Ranking →
+ 17242	Candidate Package → Validation (walk-forward + stress + the Promotion Protocol tests) →
+ 17243	Paper Trial → Approval → Versioned Injection → Calibration-Drift Monitoring →
+ 17244	Auto-Rollback (if drift > 10%)
+ 17245	```
+ 17246
+ 17247	**RED LINE (non-negotiable):** No optimizer output may modify the 14 hard vetoes defined exclusively by the Canonical Risk Veto Registry in SL-5 (the fourteen registry names only — AJ / GC-D7: `VETO_CORR_IMBALANCE` is NOT a 15th veto, it is the REDUCE/veto-5 correlation path; `VETO_FORECAST_STALE` is NOT a 15th veto, it is Setup Gates 10/12 plus veto 1). Also immutable: margin-health thresholds, capital caps, circuit breakers, or owner-set ceilings (including leverage TF-cap, max-loss-per-trade, max-loss-per-day). Any parameter package that touches these forbidden fields is rejected immediately at validation (before paper trial).
+ 17248
+   342	| R-CP8\|4 | Ch.18 W.5 RED LINE · §9.5-9 Wave-Out | apex/research/governance.py + optimizer.py — live-params write refusal | tests/unit/test_research_governance.py::TestLiveParamsWriteForbidden (4 paths incl. `..` traversal) + test_research_optimizer.py::TestSuggestionOutput (suggestions land only under apex/research/params_suggestions/) | PASS(2026-09-14) |
+   343	| R-CP8\|5 | Ch.18 §18.1/§18.4 + AI.12 Phase 7 | apex/research/backtest.py — PIT replay, metrics, DSR, WFO 70/30, Monte-Carlo, 7-scenario stress battery, B&H benchmark | tests/unit/test_research_backtest.py (39): PIT window never exposes the future, next-bar-open fill, stop-first precedence, time stop, cost/slippage, DSR trial deflation, WFO OOS Sharpe>1.0 ∧ PF>1.2 ∧ MaxDD<15 %, SplitMix64 MC determinism, 7 scenarios, paired z-test | PASS(2026-09-14) |
+   344	| R-CP8\|6 | Ch.18 W.5 + Z.1–Z.9 | apex/research/promotion.py — family pool union, Wilson-95 LB gate, floor 30, shrinkage, SPRT, PBO, DSR band, Z.8 worked example | tests/unit/test_research_promotion.py (46): floor-before-rate, Wilson LB 0.49 for (27,42), λ=n/(n+var), SPRT halt+4 rollback actions, PBO 0.667 flagged, deflated-Sharpe band [0.5,1.0], `z8_scenarios` bounds+decisions consistent, 5-gate promotion verdict | PASS(2026-09-14) |
+=== Production run_apex / PaperRuntime roots ===
+   695	async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
+   696	                 interval: float = 60.0, report_every: int = 1) -> int:
+   697	    if cfg.apex_env == "LIVE" and not cfg.economic_gate_signed:
+   698	        code = "LIVE_CAPITAL_LOCKED"
+   699	        _say(f"REFUSED: {code} — APEX_ENV=LIVE is not a capital switch; LIVE "
+   700	             "capital stays locked until APEX_ECONOMIC_GATE_SIGNED=1 (Y.1 "
+   701	             "L17093) and the owner's written approval. Run PAPER first.")
+   702	        return EXIT_DEGRADED
+   703	    if not cfg.allow_signed:
+   704	        _say("REFUSED: SIGNED_NOT_ALLOWED — PAPER orders require "
+   705	             "APEX_ALLOW_SIGNED=1 (Y.1 L17093). Re-run exactly:")
+   706	        _say("  APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 TOOBIT_API_KEY=... "
+   707	             "TOOBIT_API_SECRET=... TELEGRAM_BOT_TOKEN=... "
+   708	             "TELEGRAM_OWNER_CHAT_ID=... python scripts/run_apex.py serve")
+   709	        return EXIT_DEGRADED
+   710
+   711	    runtime = await Runtime(cfg).start()
+   712	    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
+   713	    await service.open()
+   714	    gateway = None
+   715	    try:
+   716	        ledger, bus = runtime.ledger, runtime.bus
+   717	        clock = C.SystemClock()
+   718	        adapter = runtime.adapter()
+   719	        notifier = await _notifier_for(cfg)
+   720	        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+   721	                                       owner_chat_id=cfg.telegram_owner_chat_id
+   722	                                       or None)
+   723	                     if cfg.telegram_bot_token else None)
+   724	        control = CP.ControlPlane(
+   725	            signaling=signaling, config=cfg, clock=clock.monotonic,
+   726	            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+   727	            paper_balance=(await EC.paper_balance(ledger)
+   728	                           if cfg.apex_env == "PAPER" else "0"))
+   729	        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+   730	        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+   731	                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+   732	                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+   733	            control.register(name, _noop_handler(name))
+   734	        if cfg.telegram_bot_token:
+   735	            gateway = GW.TelegramGateway(
+   736	                control=control, source=GW.AiogramUpdateSource(config=cfg),
+   737	                notifier=_telegram_reply(signaling),
+   738	                bootstrap=service, clock=clock.monotonic,
+   739	                utc_now=clock.utc_now, poll_timeout=5.0)
+   740	        watchdog = WD.Watchdog(telegram_plane=signaling,
+   741	                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+   742	                               now=time.time)
+   743	        # CP-9 bridge: the provider is registered at the composition root, so
+   744	        # every PAPER cell now asks the governed store/context → pattern/setup
+   745	        # → gates → forecast → risk/decision chain for a real plan.  Missing
+   746	        # persisted engine context remains a named fail-closed refusal; the
+   747	        # provider never falls back to a hand-built plan.
+   748	        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+   749	                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+   750	        plan_bridge = PB.PaperPlanBridge(
+   751	            store=runtime.store, environment=cfg.apex_env,
+   752	            context_source=producer.get_bridge_context if producer is not None else None,
+   753	            context_preparer=producer.prepare if producer is not None else None)
+   754	        async def catch_up(now_ms: int) -> Dict[str, Any]:
+   755	            result = await service.catch_up(now_ms)
+   756	            if cfg.apex_env == "PAPER":
+   757	                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+   758	            return result
+   759
+   760	        driver = PL.PaperRuntime(
+   761	            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+   762	            adapter=adapter, signaling=signaling, control=control,
+   763	            gateway=gateway, watchdog=watchdog, clock=clock,
+   764	            environment=cfg.apex_env, notifier=notifier,
+   765	            plan_provider=plan_bridge, catch_up=catch_up)
+   766	        _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
+   767	             "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
+   768	        drift = await C.measure_drift(
+   769	            _venue_server_time if adapter is not None else _no_venue_time, clock)
+   770	        boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+   771	        try:
+   772	            EC.load_classifier()
+   773	            artifact_name = "E11_ARTIFACT"
+   774	        except EC.BridgeError as exc:
+   775	            artifact_name = exc.reason
+   776	        _say(f"  boot_state={boot['boot_state']} "
+   777	             f"new_trades_allowed={boot['new_trades_allowed']} "
+   778	             f"drift={drift['state']} ({drift.get('reason') or 'measured'}) "
+   779	             f"artifact={artifact_name}")
+   780	        if driver.plan_provider is None:
+   781	            _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
+   782	                 "refusal NO_PLAN_PROVIDER")
+   783	        else:
+   784	            _say("  plan seam: WIRED — governed PAPER store bridge "
+   785	                 "(missing context refuses by name; no synthetic plan)")
+   786	        _say(f"  signal_source={driver.signal_source} · cells=140 · "
+   787	             f"max_trades_per_cycle={driver.max_trades_per_cycle} · "
+   788	             f"telegram={'WIRED' if gateway is not None else 'DISABLED (no token)'}")
+   789	        _say("  (Ctrl-C stops the loop; the ledger chain and the durable "
+   790	             "cursors stay consistent)")
+   791	        outcome = await driver.run(cycles=cycles, interval=interval)
+   792	        for cycle in driver.cycles[-3:]:
+   793	            _say(f"  cycle {cycle['cycle']}: cells={cycle['cells_due']} "
+   794	                 f"complete={cycle['cells_complete']} "
+   795	                 f"halted={cycle['cells_halted']} blocked={cycle['cells_blocked']} "
+   796	                 f"trades={len(cycle['trades'])} open={len(cycle['open_intents'])}")
+   797	            if cycle.get("halt_reasons"):
+   798	                _say(f"    named refusals: "
+   799	                     f"{json.dumps(cycle['halt_reasons'], sort_keys=True)}")
+   800	        _say(f"  cycles={outcome['cycles']} trades={outcome['trades']} "
+   801	             f"open={outcome['open_intents']} refusals={outcome['refusals']} "
+   802	             f"ledger_chain_intact={outcome['ledger_chain_intact']}")
+   803	        if as_json:
+   804	            _say(json.dumps({"boot": boot, "outcome": outcome,
+   805	                             "cycles": driver.cycles}, default=str, indent=2,
+   806	                            sort_keys=True))
+   807	        return EXIT_READY if boot["boot_state"] == "READY" else EXIT_DEGRADED
+   808	    finally:
+   809	        if gateway is not None:
+   810	            await gateway.aclose()
+   811	        await service.close()
+   812	        await runtime.stop()
+   813
+   648	    async def _resolve_plan(self, payload: Mapping[str, Any]
+   649	                            ) -> Mapping[str, Any]:
+   650	        """Ask the decision bridge for this cell's plan (the frozen SL-5 → SL-6
+   651	        seam). No provider ⇒ a NAMED refusal, never a fabricated plan."""
+   652	        if self.plan_provider is None:
+   653	            raise CellRefusal(
+   654	                "NO_PLAN_PROVIDER",
+   655	                "no plan provider is wired: the engine → fabric → setup → "
+   656	                "forecast → risk → plan bridge is a separate increment "
+   657	                "(PHASE2_HANDOFF_WIRING §REMAINING WORK)")
+   658	        provided = self.plan_provider(payload["symbol"], payload["timeframe"],
+   659	                                      payload["as_of"])
+   660	        plan = await provided if hasattr(provided, "__await__") else provided
+   661	        if plan is None:
+   662	            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+   663	            if self.environment == "PAPER" and refusal:
+   664	                raise CellRefusal(refusal["reason"],refusal.get("detail",""))
+   665	            raise CellRefusal("NO_PLAN_FOR_CELL",
+   666	                              f"{payload['cell_id']} has no governed plan at "
+   667	                              f"{payload['as_of']}")
+   668	        if not isinstance(plan, Mapping):
+   669	            raise CellRefusal("PLAN_TYPE_QX", type(plan).__name__)
+   670	        return dict(plan)
+   956	    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+   957	        moment = self.clock.now_ms() if now_ms is None else int(now_ms)
+   958	        as_of = _ms_to_iso(moment)
+   959	        self._budget_taken = 0
+   960	        self._cycle_proposals = {}
+   961	        if not self._cursor_loaded:
+   962	            await self._load_cursor()
+   963	        cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
+   964	                                 "signal_source": self.signal_source,
+   965	                                 "trading_enabled": self.trading_enabled,
+   966	                                 "budget_limit": self.max_trades_per_cycle}
+   967	        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+   968	                             {"cells_checked": 0, "cells_updated": 0,
+   969	                              "bars_ingested": 0, "failures": []})
+   970	        self._catch_up_failed = {row["cell"]: row
+   971	                                 for row in cycle["catch_up"]["failures"]}
+   972	        if self.watchdog is not None:
+   973	            cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
+   974	        cycle["storage"] = await self._storage_guard()
+   975	        if self.gateway is not None:
+   976	            cycle["telegram"] = await self.gateway.run_once()
+   977	        # The scheduler's law is "on each TF close run the stages for THAT
+   978	        # cell": a cell runs once per close, and a cell whose close has not
+   979	        # advanced since the previous cycle is not run again.
+   980	        already = []
+   981	        due = []
+   982	        for item in self.scheduler.due_cells(now_ms=moment):
+   983	            recorded = self._last_close.get(item[0].cell_id)
+   984	            if recorded is not None and int(item[1]) <= int(recorded):
+   985	                already.append(item)
+   986	                continue
+   987	            due.append(item)
+   988	        cycle["cells_skipped_already_decided"] = len(already)
+   989	        if self.max_cells_per_cycle is not None:
+   990	            due = due[:self.max_cells_per_cycle]
+   991	        # G1: all expensive source preparation completes before run_cell
+   992	        # starts its latency clock. D22 failures never enter preparation;
+   993	        # a failed source must not fall back to its previous cached success.
+   994	        self._context_preparation_failed = {}
+   995	        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+   996	        receipt_ms = max(moment,self.clock.now_ms())
+   997	        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+   998	                                for cell,close in due} if self.environment == "PAPER" else {})
+   999	        cycle["decision_as_of"] = dict(self._decision_as_of)
+  1000	        cycle["publishers"] = await self._refresh_publishers(due)
+  1001	        published = (cycle.get("catch_up") or {}).get("quality_publish") or {}
+  1002	        cycle["publishers"]["quality_facts_written"] = int(
+  1003	            cycle["publishers"].get("quality_facts_written") or 0) + int(
+  1004	                published.get("written") or 0)
+  1005	        cycle["publishers"]["failures"] = list(
+  1006	            cycle["publishers"].get("failures") or [])
+  1007	        cycle["publishers"]["failures"].extend(list(published.get("failures") or []))
+  1008	        prepare = getattr(self.plan_provider, "prepare", None)
+  1009	        if callable(prepare):
+  1010	            for cell, close in due:
+  1011	                if cell.cell_id in self._catch_up_failed:
+  1012	                    continue
+  1013	                preparation["cells_checked"] += 1
+  1014	                try:
+  1015	                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+  1016	                    preparation["cells_prepared"] += 1
+  1017	                except Exception as exc:
+  1018	                    failed = {"cell": cell.cell_id,
+  1019	                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+  1020	                              "detail": getattr(exc, "detail", type(exc).__name__)}
+  1021	                    self._context_preparation_failed[cell.cell_id] = failed
+  1022	                    preparation["failures"].append(failed)
+  1023	        cycle["context_preparation"] = preparation
+  1024	        tasks = [asyncio.create_task(self.scheduler.run_cell(
+  1025	                    cell, close_ms=close, context={"cell_state": {}}))
+  1026	                 for cell, close in due]
+  1027	        runs = list(await asyncio.gather(*tasks)) if tasks else []

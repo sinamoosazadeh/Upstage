@@ -1,0 +1,21 @@
+proposal_validation=APPROVED
+registered_veto_names=14
+VETO_INVALID_QUARANTINED_INPUT: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_PIT_VIOLATION: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_CAPITAL_LIMIT: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_CIRCUIT_BREAKER: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_EXPOSURE_LIMIT: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_HARD_CONFLICT: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_FRESHNESS_SLA: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_OI_LAG: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_ANTI_MONOTONICITY: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_DAILY_LOSS_LIMIT: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_WEEKLY_LOSS_LIMIT: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_CONSECUTIVE_LOSSES: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_CONTRACT_EXPIRY: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+VETO_MARGIN_HEALTH: decision=REJECTED kinds=RED_LINE_FIELD complete_proposal_rejected=True
+complete_proposal_veto_rejections=14/14
+test_style_no_proposals=REJECTED:RED_LINE_FIELD
+VETO_STALE_DATA_in_registry=False
+VETO_STALE_DATA_in_forbidden_fields=False
+promotion_test_alias_empty_proposals=REJECTED:PROPOSAL_ABSENT
