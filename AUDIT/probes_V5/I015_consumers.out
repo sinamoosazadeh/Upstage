@@ -1,0 +1,50 @@
+=== Required recursive caller/consumer search ===
+scripts/run_adapter_conformance.py:173:def run_harness(*, legacy_export: str | None = None) -> Dict[str, Any]:
+scripts/run_adapter_conformance.py:235:    report = run_harness(legacy_export=args.legacy_export)
+scripts/run_nfr_harness.py:20:    python3 scripts/run_nfr_harness.py [--json] [--minutes 1] [--decisions 200]
+scripts/run_nfr_harness.py:72:async def _queue_bounds_probe() -> Dict[str, Any]:
+scripts/run_nfr_harness.py:168:def _resource_sample(minutes: float) -> Dict[str, Any]:
+scripts/run_nfr_harness.py:192:def run_harness(*, decisions: int = 200, orders: int = 100,
+scripts/run_nfr_harness.py:203:        "t_nfr_004": asyncio.run(_queue_bounds_probe()),
+scripts/run_nfr_harness.py:204:        "t_nfr_001": _analysis_latency(decisions),
+scripts/run_nfr_harness.py:205:        "t_nfr_002": _submission_latency(orders),
+scripts/run_nfr_harness.py:206:        "t_nfr_003": _resource_sample(minutes),
+scripts/run_nfr_harness.py:208:    measured_in_bounds = (report["t_nfr_004"]["all_p0_processed"]
+scripts/run_nfr_harness.py:209:                          and report["t_nfr_004"]["some_p2_evicted"]
+scripts/run_nfr_harness.py:210:                          and report["t_nfr_001"]["within_bound"]
+scripts/run_nfr_harness.py:211:                          and report["t_nfr_002"]["within_bound"])
+scripts/run_nfr_harness.py:212:    report["sandbox_verdict"] = "MEASURED_IN_BOUNDS" if measured_in_bounds \
+scripts/run_nfr_harness.py:214:    report["measured_in_bounds"] = measured_in_bounds
+scripts/run_nfr_harness.py:233:    report = run_harness(decisions=args.decisions, orders=args.orders,
+scripts/run_nfr_harness.py:238:        q = report["t_nfr_004"]
+scripts/run_nfr_harness.py:243:        a, s = report["t_nfr_001"], report["t_nfr_002"]
+scripts/run_nfr_harness.py:250:        r = report["t_nfr_003"]
+scripts/run_nfr_harness.py:254:        print(f"sandbox verdict: {report['sandbox_verdict']}; owner gates open: "
+scripts/run_nfr_harness.py:256:    return 0 if report["measured_in_bounds"] else 1
+tests/unit/test_ai10_harness.py:42:    return runner.run_harness()
+tests/unit/test_ai10_harness.py:65:        verdict = runner.run_harness()
+tests/unit/test_ai10_nfr_harness.py:1:"""CP-8 — AI.10 NFR harness (``scripts/run_nfr_harness.py``): T-NFR-004 is an
+tests/unit/test_ai10_nfr_harness.py:15:SCRIPT = REPO_ROOT / "scripts" / "run_nfr_harness.py"
+tests/unit/test_ai10_nfr_harness.py:35:        yield harness.run_harness(decisions=10, orders=5, minutes=0.0)
+tests/unit/test_ai10_nfr_harness.py:66:        queue = report["t_nfr_004"]
+tests/unit/test_ai10_nfr_harness.py:75:        queue = report["t_nfr_004"]
+tests/unit/test_ai10_nfr_harness.py:104:        assert report["t_nfr_001"]["label"] == "SANDBOX-PARTIAL"
+tests/unit/test_ai10_nfr_harness.py:105:        assert report["t_nfr_002"]["label"] == "SANDBOX-PARTIAL"
+tests/unit/test_ai10_nfr_harness.py:106:        assert "30 % headroom" in report["t_nfr_001"]["owner_gate"]
+tests/unit/test_ai10_nfr_harness.py:108:    def test_resource_sample_can_never_be_read_as_acceptance(self, report):
+tests/unit/test_ai10_nfr_harness.py:109:        assert report["t_nfr_003"]["label"] == "OWNER-VERIFY"
+tests/unit/test_ai10_nfr_harness.py:110:        assert "60-minute run" in report["t_nfr_003"]["owner_gate"]
+tests/unit/test_ai10_nfr_harness.py:112:            report["t_nfr_003"]["note"]
+tests/unit/test_ai10_nfr_harness.py:124:        for key in ("t_nfr_001", "t_nfr_002"):
+tests/unit/test_ai10_nfr_harness.py:134:                            lambda **kwargs: {"measured_in_bounds": True,
+tests/unit/test_ai10_nfr_harness.py:135:                                              "t_nfr_004": {
+tests/unit/test_ai10_nfr_harness.py:143:                                              "t_nfr_001": {"p95_ms": 1.0,
+tests/unit/test_ai10_nfr_harness.py:147:                                              "t_nfr_002": {"p95_ms": 1.0,
+tests/unit/test_ai10_nfr_harness.py:151:                                              "t_nfr_003": {"minutes": 0.0,
+tests/unit/test_ai10_nfr_harness.py:155:                                              "sandbox_verdict":
+tests/unit/test_ai10_nfr_harness.py:162:                            lambda **kwargs: {"measured_in_bounds": False,
+tests/unit/test_ai10_nfr_harness.py:163:                                              "sandbox_verdict": "BOUND_EXCEEDED",
+tests/unit/test_ai10_nfr_harness.py:164:                                              "t_nfr_004": {
+tests/unit/test_ai10_nfr_harness.py:171:                                              "t_nfr_001": {"p95_ms": 900.0,
+tests/unit/test_ai10_nfr_harness.py:175:                                              "t_nfr_002": {"p95_ms": 1.0,
+tests/unit/test_ai10_nfr_harness.py:179:                                              "t_nfr_003": {"minutes": 0.0,

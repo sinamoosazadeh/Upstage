@@ -1,0 +1,15 @@
+queue_bounded=False
+queue_lane_qsize=1001
+resource_within_bounds=False
+resource_label=OWNER-VERIFY
+measured_in_bounds=True
+sandbox_verdict=MEASURED_IN_BOUNDS
+owner_gates_open=5
+cli_exit_code=0
+cli_output_begin
+T-NFR-004 queue bounds: P0 2000/2000 delivered, P2 evicted 1, reason=QUEUE_OVERFLOW_DROP → PASS
+T-NFR-001 analysis p95 1.00 ms (bound 400.0 ms) → within [SANDBOX-PARTIAL]
+T-NFR-002 submission p95 1.00 ms (bound 200.0 ms) → within [SANDBOX-PARTIAL]
+T-NFR-003 resource sample 0.0 min: CPU 99.00 %, RSS 999.0 MB [OWNER-VERIFY]
+sandbox verdict: MEASURED_IN_BOUNDS; owner gates open: 5
+cli_output_end

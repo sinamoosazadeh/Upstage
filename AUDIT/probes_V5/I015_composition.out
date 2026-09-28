@@ -1,0 +1,1019 @@
+=== Baseline NFR harness complete source ===
+     1	#!/usr/bin/env python3
+     2	"""AI.10 NFR harness runner (T-NFR-001 … T-NFR-004) — CP-8 scope.
+     3
+     4	Honesty rules (AI.13 / ADR-P2-010) applied here:
+     5
+     6	* **T-NFR-004** (queue bounds & priorities) is an in-process law and is
+     7	  therefore measured and asserted exactly as AI.10 specifies.
+     8	* **T-NFR-001** (analysis p95 < 400 ms) and **T-NFR-002** (submission ACK
+     9	  p95 < 200 ms) are measured *in this environment* against in-repo fixtures
+    10	  and the fake responder (no network) and are labelled ``SANDBOX-PARTIAL``:
+    11	  AI.10 rule 5 requires the run on the actual target device with 30 % headroom
+    12	  before live deployment — that measurement is an OWNER procedure and is never
+    13	  claimed here.
+    14	* **T-NFR-003** (CPU < 20 %, memory < 400 MB over 60 min) is sampled for
+    15	  ``--minutes`` (default 1) and always labelled OWNER-VERIFY, because the
+    16	  60-minute on-device run is the acceptance condition.
+    17
+    18	Usage
+    19	-----
+    20	    python3 scripts/run_nfr_harness.py [--json] [--minutes 1] [--decisions 200]
+    21
+    22	Exit codes: 0 measured within AI.7 bounds (sandbox labels attached) · 1 a
+    23	bound was exceeded · 2 harness error.
+    24	"""
+    25
+    26	from __future__ import annotations
+    27
+    28	import argparse
+    29	import asyncio
+    30	import json
+    31	import math
+    32	import os
+    33	import sys
+    34	import time
+    35	from pathlib import Path
+    36	from statistics import quantiles
+    37	from typing import Any, Dict, List
+    38
+    39	REPO_ROOT = Path(__file__).resolve().parents[1]
+    40
+    41	#: AI.7 bounds (never re-tuned here).
+    42	ANALYSIS_P95_MS = 400.0
+    43	SUBMISSION_P95_MS = 200.0
+    44	CPU_PERCENT_MAX = 20.0
+    45	MEMORY_MB_MAX = 400.0
+    46
+    47	HARNESS_ENV = {
+    48	    "APEX_ENV": "PAPER",
+    49	    "APEX_ALLOW_SIGNED": "1",
+    50	    "TOOBIT_API_KEY": "TEST_KEY_CP8_NFR",
+    51	    "TOOBIT_API_SECRET": "TEST_SECRET_CP8_NFR",
+    52	}
+    53
+    54
+    55	def _prepare_imports() -> None:
+    56	    for extra in (str(REPO_ROOT), str(REPO_ROOT / "tests")):
+    57	        if extra not in sys.path:
+    58	            sys.path.insert(0, extra)
+    59
+    60
+    61	def percentile(values: List[float], fraction: float) -> float:
+    62	    """Nearest-rank percentile, ``rank = ceil(p·n)`` (no interpolation)."""
+    63	    if not values:
+    64	        raise ValueError("EMPTY_SAMPLE")
+    65	    if not 0.0 < float(fraction) <= 1.0:
+    66	        raise ValueError("FRACTION_QX")
+    67	    ordered = sorted(values)
+    68	    rank = max(1, min(len(ordered), math.ceil(float(fraction) * len(ordered))))
+    69	    return ordered[rank - 1]
+    70
+    71
+    72	async def _queue_bounds_probe() -> Dict[str, Any]:
+    73	    """T-NFR-004: 2000 P0 + 1000 P2 (+ P3 pressure) on the frozen bus."""
+    74	    from apex.bus import EventBus, Priority, make_event
+    75
+    76	    bus = EventBus()                      # dispatcher NOT started: nothing drains
+    77	    seen = {"P0": 0, "P1": 0, "P2": 0, "P3": 0}
+    78
+    79	    async def consumer(event):
+    80	        seen[f"P{int(event.priority)}"] += 1
+    81
+    82	    bus.subscribe("nfr", consumer)
+    83	    for _ in range(2000):
+    84	        await bus.publish(make_event(Priority.P0, "nfr", {"i": 1}))
+    85	    for _ in range(1000):
+    86	        await bus.publish(make_event(Priority.P2, "nfr", {"i": 2}))
+    87	    for _ in range(100):
+    88	        await bus.publish(make_event(Priority.P3, "nfr", {"i": 3}))
+    89	    evictions = bus.eviction_log
+    90	    return {"p0_delivered": bus.counts["p0_delivered"],
+    91	            "p0_expected": 2000,
+    92	            "all_p0_processed": bus.counts["p0_delivered"] == 2000,
+    93	            "p2_published": 1000,
+    94	            "p3_published": 100,
+    95	            "p2_evicted": sum(1 for e in evictions if int(e.priority) == 2),
+    96	            "p3_evicted": sum(1 for e in evictions if int(e.priority) == 3),
+    97	            "some_p2_evicted": any(int(e.priority) == 2 for e in evictions),
+    98	            "eviction_reason": evictions[0].reason if evictions else None,
+    99	            "bounded": bus._shared_lane.qsize() <= 1000,
+   100	            "lane_qsize": bus._shared_lane.qsize(),
+   101	            "counts": bus.counts}
+   102
+   103
+   104	def _analysis_latency(samples: int) -> Dict[str, Any]:
+   105	    """T-NFR-001: time the in-repo decision path on synthetic context input."""
+   106	    from apex.decision.pipeline import build_proposal
+   107	    from apex.risk.kernel import adjudicate
+   108
+   109	    proposal_input = {
+   110	        "setup_id": "SF_FVG_SWEEP_REV-0001", "direction": "LONG",
+   111	        "entry_logic_ref": "E-05/FVG", "stop": 99.0, "targets": (103.0,),
+   112	        "p_hat": 0.6, "u": 0.2, "c": 0.7, "conflict_state": "CONSENSUS",
+   113	        "snapshot_id": "sn-nfr-0001", "r_penalty": 0.10, "cost_unit": 0.05,
+   114	        "entry": 100.0}
+   115	    adjudication_input = {
+   116	        "snapshot_id": "sn-nfr-0001", "timeframe": "15m", "capital": 10_000.0,
+   117	        "q_raw": 0.9, "qx_state": False, "failed_setup_gate": False,
+   118	        "pit_violation": False, "availability_time": 1,
+   119	        "portfolio_exposure": 100.0, "proposed_notional": 50.0,
+   120	        "capital_hard_cap": 1_000_000.0, "circuit_breaker_engaged": False,
+   121	        "emergency_state": "NORMAL", "per_symbol_exposure": 100.0,
+   122	        "symbol_cap": 1_000.0, "portfolio_cap": 1_000_000.0,
+   123	        "conflict_state": "CONSENSUS", "staleness_seconds": 1.0,
+   124	        "freshness_sla_seconds": 30.0, "oi_lag_seconds": 5.0,
+   125	        "oi_lag_threshold_seconds": 60.0, "is_risk_increase": False,
+   126	        "uncertainty_is_rising": False, "realized_daily_loss_fraction": 0.0,
+   127	        "realized_weekly_loss_fraction": 0.0, "consecutive_losses": 0,
+   128	        "time_to_expiry_days": 40.0, "margin_health_fraction": 0.9,
+   129	        "stop_distance": 1.0, "min_quantity": 0.001, "risk_state": "LowRisk"}
+   130	    timings: List[float] = []
+   131	    for _ in range(int(samples)):
+   132	        start = time.perf_counter()
+   133	        build_proposal(**proposal_input)
+   134	        adjudicate(adjudication_input)
+   135	        timings.append((time.perf_counter() - start) * 1000.0)
+   136	    p95 = percentile(timings, 0.95)
+   137	    return {"samples": len(timings), "p95_ms": p95, "max_ms": max(timings),
+   138	            "median_ms": percentile(timings, 0.50),
+   139	            "bound_ms": ANALYSIS_P95_MS, "within_bound": p95 <= ANALYSIS_P95_MS,
+   140	            "label": "SANDBOX-PARTIAL",
+   141	            "owner_gate": "AI.10 rule 5 — target device, 30 % headroom"}
+   142
+   143
+   144	def _submission_latency(samples: int) -> Dict[str, Any]:
+   145	    """T-NFR-002: ACK latency against the in-repo fake responder."""
+   146	    from apex.config import Config
+   147	    from apex.execution.toobit_adapter import ToobitAdapter
+   148	    from fake_toobit_responder import FakeToobitResponder
+   149
+   150	    responder = FakeToobitResponder(api_key=HARNESS_ENV["TOOBIT_API_KEY"],
+   151	                                    api_secret=HARNESS_ENV["TOOBIT_API_SECRET"])
+   152	    adapter = ToobitAdapter(config=Config(), transport=responder)
+   153	    timings: List[float] = []
+   154	    for i in range(int(samples)):
+   155	        start = time.perf_counter()
+   156	        asyncio.run(adapter.submit_order(
+   157	            intent_id=f"intent-nfr-{i:05d}", symbol="BTCUSDT", timeframe="15m",
+   158	            direction="LONG", quantity=1, price=60000, order_type="LIMIT"))
+   159	        timings.append((time.perf_counter() - start) * 1000.0)
+   160	    p95 = percentile(timings, 0.95)
+   161	    return {"samples": len(timings), "p95_ms": p95, "max_ms": max(timings),
+   162	            "bound_ms": SUBMISSION_P95_MS, "within_bound": p95 <= SUBMISSION_P95_MS,
+   163	            "label": "SANDBOX-PARTIAL",
+   164	            "note": "in-process fake responder; the network leg is an owner "
+   165	                    "measurement on the target device"}
+   166
+   167
+   168	def _resource_sample(minutes: float) -> Dict[str, Any]:
+   169	    """T-NFR-003: CPU/memory sample for the requested window."""
+   170	    import resource
+   171
+   172	    start_wall = time.perf_counter()
+   173	    start_cpu = time.process_time()
+   174	    deadline = start_wall + max(0.0, float(minutes)) * 60.0
+   175	    while time.perf_counter() < deadline:
+   176	        time.sleep(0.05)
+   177	    wall = max(1e-9, time.perf_counter() - start_wall)
+   178	    cpu = time.process_time() - start_cpu
+   179	    peak_rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+   180	    memory_mb = peak_rss_kb / 1024.0
+   181	    cpu_percent = 100.0 * cpu / wall
+   182	    return {"minutes": float(minutes), "cpu_percent": cpu_percent,
+   183	            "cpu_bound": CPU_PERCENT_MAX,
+   184	            "memory_mb": memory_mb, "memory_bound_mb": MEMORY_MB_MAX,
+   185	            "within_bounds": cpu_percent <= CPU_PERCENT_MAX
+   186	            and memory_mb <= MEMORY_MB_MAX,
+   187	            "label": "OWNER-VERIFY",
+   188	            "owner_gate": "AI.10 rule 5 — 60-minute run on the target device",
+   189	            "note": "an idle sample is not the acceptance measurement"}
+   190
+   191
+   192	def run_harness(*, decisions: int = 200, orders: int = 100,
+   193	                minutes: float = 1.0) -> Dict[str, Any]:
+   194	    _prepare_imports()
+   195	    for name, value in HARNESS_ENV.items():
+   196	        os.environ.setdefault(name, value)
+   197	    report: Dict[str, Any] = {
+   198	        "harness": "AI.10 NFR harness (AI.7 bounds)",
+   199	        "bounds": {"analysis_p95_ms": ANALYSIS_P95_MS,
+   200	                   "submission_p95_ms": SUBMISSION_P95_MS,
+   201	                   "cpu_percent": CPU_PERCENT_MAX,
+   202	                   "memory_mb": MEMORY_MB_MAX},
+   203	        "t_nfr_004": asyncio.run(_queue_bounds_probe()),
+   204	        "t_nfr_001": _analysis_latency(decisions),
+   205	        "t_nfr_002": _submission_latency(orders),
+   206	        "t_nfr_003": _resource_sample(minutes),
+   207	    }
+   208	    measured_in_bounds = (report["t_nfr_004"]["all_p0_processed"]
+   209	                          and report["t_nfr_004"]["some_p2_evicted"]
+   210	                          and report["t_nfr_001"]["within_bound"]
+   211	                          and report["t_nfr_002"]["within_bound"])
+   212	    report["sandbox_verdict"] = "MEASURED_IN_BOUNDS" if measured_in_bounds \
+   213	        else "BOUND_EXCEEDED"
+   214	    report["measured_in_bounds"] = measured_in_bounds
+   215	    report["owner_gates_open"] = ["T-NFR-001 target device (30 % headroom)",
+   216	                                  "T-NFR-002 target device (30 % headroom)",
+   217	                                  "T-NFR-003 target device 60-minute run",
+   218	                                  "T-TOOBIT-001 depth > 500k USDT per symbol",
+   219	                                  "T-TOOBIT-002 venue rate ≤ 100 req/s"]
+   220	    report["note"] = ("sandbox numbers are measurements of this repository in "
+   221	                      "this environment; they are NOT target-device acceptance "
+   222	                      "results (AI.10 rule 5 / AI.13)")
+   223	    return report
+   224
+   225
+   226	def main(argv: List[str] | None = None) -> int:
+   227	    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+   228	    parser.add_argument("--json", action="store_true")
+   229	    parser.add_argument("--decisions", type=int, default=200)
+   230	    parser.add_argument("--orders", type=int, default=100)
+   231	    parser.add_argument("--minutes", type=float, default=1.0)
+   232	    args = parser.parse_args(argv)
+   233	    report = run_harness(decisions=args.decisions, orders=args.orders,
+   234	                         minutes=args.minutes)
+   235	    if args.json:
+   236	        print(json.dumps(report, indent=2, sort_keys=True))
+   237	    else:
+   238	        q = report["t_nfr_004"]
+   239	        print(f"T-NFR-004 queue bounds: P0 {q['p0_delivered']}/{q['p0_expected']} "
+   240	              f"delivered, P2 evicted {q['p2_evicted']}, "
+   241	              f"reason={q['eviction_reason']} "
+   242	              f"→ {'PASS' if q['all_p0_processed'] and q['some_p2_evicted'] else 'FAIL'}")
+   243	        a, s = report["t_nfr_001"], report["t_nfr_002"]
+   244	        print(f"T-NFR-001 analysis p95 {a['p95_ms']:.2f} ms "
+   245	              f"(bound {a['bound_ms']} ms) → "
+   246	              f"{'within' if a['within_bound'] else 'EXCEEDS'} [{a['label']}]")
+   247	        print(f"T-NFR-002 submission p95 {s['p95_ms']:.2f} ms "
+   248	              f"(bound {s['bound_ms']} ms) → "
+   249	              f"{'within' if s['within_bound'] else 'EXCEEDS'} [{s['label']}]")
+   250	        r = report["t_nfr_003"]
+   251	        print(f"T-NFR-003 resource sample {r['minutes']:.1f} min: "
+   252	              f"CPU {r['cpu_percent']:.2f} %, RSS {r['memory_mb']:.1f} MB "
+   253	              f"[{r['label']}]")
+   254	        print(f"sandbox verdict: {report['sandbox_verdict']}; owner gates open: "
+   255	              f"{len(report['owner_gates_open'])}")
+   256	    return 0 if report["measured_in_bounds"] else 1
+   257
+   258
+   259	if __name__ == "__main__":
+   260	    raise SystemExit(main())
+=== Baseline CP-8 NFR harness complete tests ===
+     1	"""CP-8 — AI.10 NFR harness (``scripts/run_nfr_harness.py``): T-NFR-004 is an
+     2	asserted in-process law (2000 P0 delivered, P2 evicted under lane pressure,
+     3	lane never exceeding the governed 1000); T-NFR-001..003 are measured and
+     4	labelled SANDBOX-PARTIAL / OWNER-VERIFY so no target-device result is ever
+     5	claimed (AI.10 rule 5 / AI.13)."""
+     6
+     7	from __future__ import annotations
+     8
+     9	import importlib.util
+    10	from pathlib import Path
+    11
+    12	import pytest
+    13
+    14	REPO_ROOT = Path(__file__).resolve().parents[2]
+    15	SCRIPT = REPO_ROOT / "scripts" / "run_nfr_harness.py"
+    16
+    17
+    18	def _load():
+    19	    spec = importlib.util.spec_from_file_location("cp8_nfr_harness", SCRIPT)
+    20	    module = importlib.util.module_from_spec(spec)
+    21	    spec.loader.exec_module(module)
+    22	    return module
+    23
+    24
+    25	@pytest.fixture(scope="module")
+    26	def harness():
+    27	    return _load()
+    28
+    29
+    30	@pytest.fixture(scope="module")
+    31	def report(harness):
+    32	    import os
+    33	    saved = {name: os.environ.get(name) for name in harness.HARNESS_ENV}
+    34	    try:
+    35	        yield harness.run_harness(decisions=10, orders=5, minutes=0.0)
+    36	    finally:
+    37	        # run_harness setdefault's APEX_ENV=PAPER. Restore so the rest of the
+    38	        # suite does not inherit that process environment.
+    39	        for name, previous in saved.items():
+    40	            if previous is None:
+    41	                os.environ.pop(name, None)
+    42	            else:
+    43	                os.environ[name] = previous
+    44
+    45
+    46	class TestBounds:
+    47	    def test_ai7_bounds_are_the_blueprint_values(self, harness):
+    48	        assert harness.ANALYSIS_P95_MS == 400.0
+    49	        assert harness.SUBMISSION_P95_MS == 200.0
+    50	        assert harness.CPU_PERCENT_MAX == 20.0
+    51	        assert harness.MEMORY_MB_MAX == 400.0
+    52
+    53	    def test_percentile_is_nearest_rank(self, harness):
+    54	        values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    55	        assert harness.percentile(values, 0.95) == 10.0
+    56	        assert harness.percentile(values, 0.50) == pytest.approx(5.0)
+    57	        assert harness.percentile([3.0], 0.95) == 3.0
+    58
+    59	    def test_empty_sample_is_refused(self, harness):
+    60	        with pytest.raises(ValueError):
+    61	            harness.percentile([], 0.95)
+    62
+    63
+    64	class TestTNFR004QueueBounds:
+    65	    def test_all_p0_delivered_and_p2_evicted(self, report):
+    66	        queue = report["t_nfr_004"]
+    67	        assert queue["p0_delivered"] == 2000
+    68	        assert queue["all_p0_processed"] is True
+    69	        assert queue["p2_published"] == 1000
+    70	        assert queue["some_p2_evicted"] is True
+    71	        assert queue["p2_evicted"] > 0
+    72	        assert queue["eviction_reason"] == "QUEUE_OVERFLOW_DROP"
+    73
+    74	    def test_the_shared_lane_never_exceeds_its_governed_bound(self, report):
+    75	        queue = report["t_nfr_004"]
+    76	        assert queue["bounded"] is True
+    77	        assert queue["lane_qsize"] <= 1000
+    78
+    79	    def test_p0_delivery_is_synchronous_not_buffered(self, harness):
+    80	        import asyncio
+    81
+    82	        from apex.bus import EventBus, Priority, make_event
+    83
+    84	        bus = EventBus()
+    85	        seen = []
+    86
+    87	        async def consumer(event):
+    88	            seen.append(event.payload["i"])
+    89
+    90	        bus.subscribe("t", consumer)
+    91
+    92	        async def _flow():
+    93	            for i in range(5):
+    94	                await bus.publish(make_event(Priority.P0, "t", {"i": i}))
+    95	            # no dispatcher was ever started: P0 must already be delivered
+    96	            return bus.counts["p0_delivered"]
+    97
+    98	        assert asyncio.run(_flow()) == 5
+    99	        assert seen == [0, 1, 2, 3, 4]
+   100
+   101
+   102	class TestHonestLabels:
+   103	    def test_latency_probes_are_labelled_sandbox_partial(self, report):
+   104	        assert report["t_nfr_001"]["label"] == "SANDBOX-PARTIAL"
+   105	        assert report["t_nfr_002"]["label"] == "SANDBOX-PARTIAL"
+   106	        assert "30 % headroom" in report["t_nfr_001"]["owner_gate"]
+   107
+   108	    def test_resource_sample_can_never_be_read_as_acceptance(self, report):
+   109	        assert report["t_nfr_003"]["label"] == "OWNER-VERIFY"
+   110	        assert "60-minute run" in report["t_nfr_003"]["owner_gate"]
+   111	        assert "idle sample is not the acceptance measurement" in \
+   112	            report["t_nfr_003"]["note"]
+   113
+   114	    def test_the_report_never_claims_a_target_device_result(self, report):
+   115	        assert "NOT target-device acceptance" in report["note"]
+   116	        assert report["owner_gates_open"] == [
+   117	            "T-NFR-001 target device (30 % headroom)",
+   118	            "T-NFR-002 target device (30 % headroom)",
+   119	            "T-NFR-003 target device 60-minute run",
+   120	            "T-TOOBIT-001 depth > 500k USDT per symbol",
+   121	            "T-TOOBIT-002 venue rate ≤ 100 req/s"]
+   122
+   123	    def test_measured_latencies_are_recorded_with_their_bounds(self, report):
+   124	        for key in ("t_nfr_001", "t_nfr_002"):
+   125	            probe = report[key]
+   126	            assert probe["samples"] > 0
+   127	            assert probe["p95_ms"] > 0.0
+   128	            assert probe["within_bound"] is (probe["p95_ms"] <= probe["bound_ms"])
+   129
+   130
+   131	class TestExitCodes:
+   132	    def test_zero_when_in_bounds(self, harness, monkeypatch):
+   133	        monkeypatch.setattr(harness, "run_harness",
+   134	                            lambda **kwargs: {"measured_in_bounds": True,
+   135	                                              "t_nfr_004": {
+   136	                                                  "p0_delivered": 2000,
+   137	                                                  "p0_expected": 2000,
+   138	                                                  "all_p0_processed": True,
+   139	                                                  "some_p2_evicted": True,
+   140	                                                  "p2_evicted": 1,
+   141	                                                  "eviction_reason":
+   142	                                                      "QUEUE_OVERFLOW_DROP"},
+   143	                                              "t_nfr_001": {"p95_ms": 1.0,
+   144	                                                            "bound_ms": 400.0,
+   145	                                                            "within_bound": True,
+   146	                                                            "label": "SANDBOX-PARTIAL"},
+   147	                                              "t_nfr_002": {"p95_ms": 1.0,
+   148	                                                            "bound_ms": 200.0,
+   149	                                                            "within_bound": True,
+   150	                                                            "label": "SANDBOX-PARTIAL"},
+   151	                                              "t_nfr_003": {"minutes": 0.0,
+   152	                                                            "cpu_percent": 0.1,
+   153	                                                            "memory_mb": 10.0,
+   154	                                                            "label": "OWNER-VERIFY"},
+   155	                                              "sandbox_verdict":
+   156	                                                  "MEASURED_IN_BOUNDS",
+   157	                                              "owner_gates_open": []})
+   158	        assert harness.main([]) == 0
+   159
+   160	    def test_one_when_a_bound_is_exceeded(self, harness, monkeypatch):
+   161	        monkeypatch.setattr(harness, "run_harness",
+   162	                            lambda **kwargs: {"measured_in_bounds": False,
+   163	                                              "sandbox_verdict": "BOUND_EXCEEDED",
+   164	                                              "t_nfr_004": {
+   165	                                                  "p0_delivered": 2000,
+   166	                                                  "p0_expected": 2000,
+   167	                                                  "all_p0_processed": True,
+   168	                                                  "some_p2_evicted": True,
+   169	                                                  "p2_evicted": 1,
+   170	                                                  "eviction_reason": "X"},
+   171	                                              "t_nfr_001": {"p95_ms": 900.0,
+   172	                                                            "bound_ms": 400.0,
+   173	                                                            "within_bound": False,
+   174	                                                            "label": "SANDBOX-PARTIAL"},
+   175	                                              "t_nfr_002": {"p95_ms": 1.0,
+   176	                                                            "bound_ms": 200.0,
+   177	                                                            "within_bound": True,
+   178	                                                            "label": "SANDBOX-PARTIAL"},
+   179	                                              "t_nfr_003": {"minutes": 0.0,
+   180	                                                            "cpu_percent": 0.1,
+   181	                                                            "memory_mb": 10.0,
+   182	                                                            "label": "OWNER-VERIFY"},
+   183	                                              "owner_gates_open": []})
+   184	        assert harness.main([]) == 1
+=== Baseline EventBus queue and eviction implementation ===
+     1	"""APEX_GEN5 in-process event bus.
+     2
+     3	Blueprint: §9.5-10 ("Event bus = in-process asyncio.Queue only"), AI.12 Phase
+     4	3 (evidence event bus: "Message ordering preserved; no event loss; P0/P1
+     5	priority honored; No buffering of critical events; P0 = synchronous"),
+     6	Ch.23/AI.8 alert priorities and queue behavior.
+     7
+     8	Law implemented here:
+     9	- In-process ``asyncio.Queue`` ONLY. A networked bus is Wave-Out (§9.5-9).
+    10	- Priorities P0..P3 (Ch.23): P0 capital/emergency alerts; P1 major setup,
+    11	  forecast update, risk escalation; P2 routine features/patterns; P3
+    12	  research/archived outcomes.
+    13	- P0 is SYNCHRONOUS: delivered inline by awaiting every subscriber in
+    14	  publish order — never queued, never dropped, never buffered.
+    15	- P1 has a dedicated FIFO lane; P2/P3 share one FIFO lane. Ordering is
+    16	  preserved per lane.
+    17	- P0/P1 are never dropped, even when lanes are full: the oldest P3/P2 item
+    18	  is evicted to make room (eviction logged with reason and timestamp).
+    19	- The inbound raw-candle queue holds 1000 items; on overflow there is NO
+    20	  backpressure — the oldest item is dropped and QUEUE_OVERFLOW_DROP is
+    21	  logged (AI.9).
+    22	- Ledger writes are synchronous (AI.8): the ledger writer consumes its
+    23	  callback inline; a write failure halts execution (CP-7 owns the writer).
+    24	"""
+    25
+    26	from __future__ import annotations
+    27
+    28	import asyncio
+    29	import itertools
+    30	import time
+    31	from dataclasses import dataclass, field
+    32	from enum import IntEnum
+    33	from typing import Any, Awaitable, Callable, Deque, Dict, List, Tuple
+    34
+    35	from apex.identity.uuid_v7 import uuid_v7
+    36
+    37	P0 = 0
+    38	P1 = 1
+    39	P2 = 2
+    40	P3 = 3
+    41
+    42	# Governed lane bounds (AI.7/AI.9): shared lane capacity; raw-candle queue.
+    43	DEFAULT_LANE_MAXSIZE = 1000
+    44	RAW_CANDLE_QUEUE_MAXSIZE = 1000  # Ch.23/AI.9: 1000 items, no backpressure
+    45
+    46
+    47	class Priority(IntEnum):
+    48	    P0 = 0
+    49	    P1 = 1
+    50	    P2 = 2
+    51	    P3 = 3
+    52
+    53
+    54	@dataclass(frozen=True)
+    55	class BusEvent:
+    56	    priority: int          # P0..P3
+    57	    topic: str             # routing label (e.g. 'evidence.E01.BOS')
+    58	    payload: Any           # event body (dict/object); not mutated by the bus
+    59	    event_id: str          # UUIDv7 operational identity (never in snapshots)
+    60	    created_at: float      # UTC epoch seconds (operational only)
+    61
+    62
+    63	Consumer = Callable[[BusEvent], Awaitable[None]]
+    64
+    65
+    66	def make_event(priority: int, topic: str, payload: Any) -> BusEvent:
+    67	    """Construct a BusEvent with a fresh UUIDv7 event_id."""
+    68	    return BusEvent(
+    69	        priority=Priority(priority),
+    70	        topic=topic,
+    71	        payload=payload,
+    72	        event_id=uuid_v7(),
+    73	        created_at=time.time(),
+    74	    )
+    75
+    76
+    77	@dataclass(frozen=True)
+    78	class EvictionRecord:
+    79	    reason: str
+    80	    timestamp: float
+    81	    event_id: str
+    82	    priority: int
+    83	    topic: str
+    84
+    85
+    86	class EventBus:
+    87	    """In-process priority bus. Created per process; no network surface.
+    88
+    89	    ``subscribe`` registers an async consumer for a topic; ``publish``
+    90	    routes by priority: P0 inline (synchronous), P1 dedicated lane, P2/P3
+    91	    shared lane. A background ``dispatch`` task drains lanes FIFO.
+    92	    """
+    93
+    94	    def __init__(self, lane_maxsize: int = DEFAULT_LANE_MAXSIZE) -> None:
+    95	        self._lane_maxsize = lane_maxsize
+    96	        # P1 lane: capacity-bounded ONLY by eviction pressure on the shared
+    97	        # lane (Ch.23: P0/P1 are never dropped even when the queue is full).
+    98	        self._p1_lane: asyncio.Queue[BusEvent] = asyncio.Queue()
+    99	        self._shared_lane: asyncio.Queue[BusEvent] = asyncio.Queue(maxsize=lane_maxsize)
+   100	        self._subscribers: Dict[str, List[Consumer]] = {}
+   101	        self._evictions: Deque[EvictionRecord] = __import__(
+   102	            "collections").deque(maxlen=4096)
+   103	        self._dispatcher: asyncio.Task | None = None
+   104	        self._counts: Dict[str, int] = {"p0_delivered": 0, "evicted": 0,
+   105	                                        "raw_dropped": 0}
+   106
+   107	    # -- subscription -------------------------------------------------------
+   108	    def subscribe(self, topic: str, consumer: Consumer) -> None:
+   109	        """Register an async consumer. Multiple consumers per topic are
+   110	        delivered in subscription order (ordering preserved)."""
+   111	        self._subscribers.setdefault(topic, []).append(consumer)
+   112
+   113	    def unsubscribe(self, topic: str, consumer: Consumer) -> None:
+   114	        subs = self._subscribers.get(topic, [])
+   115	        if consumer in subs:
+   116	            subs.remove(consumer)
+   117
+   118	    # -- publish ------------------------------------------------------------
+   119	    async def publish(self, event: BusEvent) -> None:
+   120	        """Route by priority.
+   121
+   122	        P0 (synchronous consumer law, AI.12): every subscriber is awaited
+   123	        inline, in subscription order — never buffered, never dropped.
+   124	        P1: dedicated lane. P2/P3: shared lane. Enqueue never raises when
+   125	        full: P0/P1 evict the oldest shared-lane item; P2/P3 drop the
+   126	        oldest item (QUEUE_OVERFLOW_DROP), all logged.
+   127	        """
+   128	        if event.priority == Priority.P0:
+   129	            for consumer in self._subscribers.get(event.topic, []):
+   130	                await consumer(event)  # synchronous, in publish order
+   131	            self._counts["p0_delivered"] += 1
+   132	            return
+   133	        if event.priority == Priority.P1:
+   134	            # P1 is never dropped and never blocks: when the lane is at the
+   135	            # governed bound, the oldest P3/P2 item yields to make room.
+   136	            if self._p1_lane.qsize() >= self._lane_maxsize:
+   137	                self._evict_shared_for_critical(event)
+   138	            await self._p1_lane.put(event)
+   139	            return
+   140	        # P2/P3 shared lane
+   141	        if self._shared_lane.full():
+   142	            dropped = self._shared_lane.get_nowait()
+   143	            self._record_eviction("QUEUE_OVERFLOW_DROP", dropped)
+   144	            self._counts["evicted"] += 1
+   145	        await self._shared_lane.put(event)
+   146
+   147	    def _evict_shared_for_critical(self, event: BusEvent) -> None:
+   148	        """P0/P1 are never dropped even when the lane is full: the oldest
+   149	        P3/P2 item is evicted to make room (Ch.23 critical-alert
+   150	        preservation). Eviction is logged with reason and timestamp."""
+   151	        try:
+   152	            victim = self._shared_lane.get_nowait()
+   153	        except asyncio.QueueEmpty:
+   154	            # shared lane is empty: reuse its slot by pulling nothing —
+   155	            # nothing to evict; put below will fail if lane still full.
+   156	            return
+   157	        self._record_eviction("EVICT_FOR_CRITICAL", victim)
+   158	        self._counts["evicted"] += 1
+   159
+   160	    def _record_eviction(self, reason: str, event: BusEvent) -> None:
+   161	        self._evictions.append(EvictionRecord(
+   162	            reason=reason,
+   163	            timestamp=time.time(),
+   164	            event_id=event.event_id,
+   165	            priority=int(event.priority),
+   166	            topic=event.topic,
+   167	        ))
+   168
+   169	    # -- delivery -----------------------------------------------------------
+   170	    async def dispatch(self) -> None:
+   171	        """Drain lanes FIFO forever. P1 lane is drained before the shared
+   172	        lane when both are non-empty; ordering within each lane is
+   173	        preserved. Stop via ``stop_dispatch``."""
+   174	        while True:
+   175	            try:
+   176	                if not self._p1_lane.empty():
+   177	                    event = self._p1_lane.get_nowait()
+   178	                else:
+   179	                    event = self._shared_lane.get_nowait()
+   180	            except asyncio.QueueEmpty:
+   181	                await asyncio.sleep(0)
+   182	                continue
+   183	            for consumer in self._subscribers.get(event.topic, []):
+   184	                await consumer(event)
+   185
+   186	    def start(self) -> asyncio.Task:
+   187	        """Start the background dispatch task (single event loop model)."""
+   188	        if self._dispatcher is None or self._dispatcher.done():
+   189	            self._dispatcher = asyncio.create_task(self.dispatch())
+   190	        return self._dispatcher
+   191
+   192	    async def stop(self) -> None:
+   193	        if self._dispatcher is not None and not self._dispatcher.done():
+   194	            self._dispatcher.cancel()
+   195	            try:
+   196	                await self._dispatcher
+   197	            except asyncio.CancelledError:
+   198	                pass
+   199	            self._dispatcher = None
+   200
+   201	    # -- observability ------------------------------------------------------
+   202	    @property
+   203	    def eviction_log(self) -> List[EvictionRecord]:
+   204	        return list(self._evictions)
+   205
+   206	    @property
+   207	    def counts(self) -> Dict[str, int]:
+   208	        return dict(self._counts)
+   209
+   210
+   211	class RawCandleQueue:
+   212	    """Inbound raw-candle queue (Ch.23/AI.9): 1000 items, NO overflow
+   213	    backpressure — on overflow the OLDEST item is dropped and
+   214	    QUEUE_OVERFLOW_DROP is logged. In-process asyncio.Queue only."""
+   215
+   216	    def __init__(self, maxsize: int = RAW_CANDLE_QUEUE_MAXSIZE) -> None:
+   217	        self._queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
+   218	        self._drops: Deque[EvictionRecord] = __import__(
+   219	            "collections").deque(maxlen=4096)
+   220
+   221	    async def put(self, candle: Any, event_id: str, topic: str) -> None:
+   222	        if self._queue.full():
+   223	            oldest = self._queue.get_nowait()
+   224	            self._drops.append(EvictionRecord(
+   225	                reason="QUEUE_OVERFLOW_DROP",
+   226	                timestamp=time.time(),
+   227	                event_id=getattr(oldest, "event_id", event_id),
+   228	                priority=P2,
+   229	                topic=topic,
+   230	            ))
+   231	        await self._queue.put(candle)
+   232
+   233	    async def get(self) -> Any:
+   234	        return await self._queue.get()
+   235
+   236	    def qsize(self) -> int:
+   237	        return self._queue.qsize()
+   238
+   239	    @property
+   240	    def drop_log(self) -> List[EvictionRecord]:
+   241	        return list(self._drops)
+=== NFR contract / target-device rule ===
+ 19125	| **Monotonicity** | T-MON-001 | SL-2 (monotonic evidence) | Feature quality never improves with fewer inputs | Features at bar 10 vs. bar 50; bar 50 quality ≥ bar 10 |
+ 19126	| | T-MON-002 | AI.4 (canonical state machine) | State never reverts; only forward or terminal | 100 state transitions; no backward transitions except to CANDIDATE (invalid entry) |
+ 19127	| **Fallback** | T-FB-001 | AI.9 (fail-closed entry) | Unrecoverable condition → FAIL_CLOSED state | Simulate data corruption; system enters FAIL_CLOSED; new entries blocked |
+ 19128	| | T-FB-002 | AI.9 (protective order preservation) | Stops/hedges not cancelled in fail-closed | 5 protective orders + entry order; entry cancelled; protective preserved |
+ 19129	| | T-FB-003 | AI.9 (startup reconciliation) | Reconciliation validates hash chain, ledger, broker | Run full startup sequence; all checks pass on valid state |
+ 19130	| **NFR/Capacity** | T-NFR-001 | AI.7 (analysis p95) | Analysis latency p95 < 400 ms on target device | 1000 decisions; measure p95; must be ≤ 400 ms |
+ 19131	| | T-NFR-002 | AI.7 (submission p95) | Submission ACK p95 < 200 ms | 500 orders; measure p95 ACK time; must be ≤ 200 ms |
+ 19132	| | T-NFR-003 | AI.7 (CPU/Memory) | CPU < 20%; Memory < 400 MB | Run 60 minutes; measure max CPU and max heap; must be in bounds |
+ 19133	| | T-NFR-004 | AI.7 (queue bounds) | No overflow; priorities respected | Send 2000 P0 + 1000 P2 events; all P0 processed; some P2 evicted |
+ 19134	| **Toobit Integration** | T-TOOBIT-001 | AI.13 (depth verification) | Verify Toobit Core-10 depth > 500k USDT per symbol | Query Toobit API; measure depth; log timestamp + hash |
+ 19135	| | T-TOOBIT-002 | AI.8 (rate limiting) | Toobit API calls stay within 100 req/sec average | 10 minute run; measure requests/sec; stay ≤ 100 avg |
+ 19136	| **Restore Drill** | T-RESTORE-001 | AI.5 + AI.13 (backup/restore) | Full state restore from backup; hash-chain validation | Backup at T0; restore at T0+30min; hash all records; all match; RTO ≤ 30 min |
+ 19137	| **Package Promotion** | T-PKG-001 | AI.8 / Idempotency Contract | Re-inject same package = no-op; version-locked | Inject package v1.2.3; re-inject; behavior unchanged |
+ 19138
+ 19139	**Fail-closed release rules:**
+ 19140
+ 19141	1. All T-DC, T-PIT, T-DR, T-ID, T-CL, T-OM tests must PASS before Layer-2 instantiation can proceed.
+ 19142	2. T-E01–T-E12 tests must PASS for all applicable engines before engine is used in live decision.
+ 19143	3. T-RS, T-LR, T-MON tests must PASS before any live trade is executed.
+ 19144	4. T-FB-001, T-FB-002, T-FB-003 must PASS before fallback mode is trusted.
+ 19145	5. T-NFR-001 through T-NFR-004 must PASS on actual target device (not emulated) with 30% headroom before live deployment.
+ 19146	6. T-TOOBIT-001, T-TOOBIT-002, T-RESTORE-001, T-PKG-001 must PASS within 2 weeks before go-live decision.
+ 19235	### AI.13 External Verification Gates
+ 19236
+ 19237	**Purpose:** document measurable, third-party verifiable conditions that must be met before live capital deployment.
+ 19238
+ 19239	**Canonical release-state separation:** `DOCUMENT_COMPLETE`, `CODING_READY`,
+ 19240	`PAPER_READY`, `LIVE_ELIGIBLE`, and `PUBLIC_RELEASE_READY` are distinct gates.
+ 19241	A `LIVE` runtime environment does not authorize capital deployment; `LIVE_ELIGIBLE`
+ 19242	requires all specified implementation, verification, Risk, reconciliation, and
+ 19243	Owner-approval gates to pass.
+ 19244
+ 19245	| Gate ID | Component | Measurement | Pass Threshold | Evidence Required | Status | Notes |
+=== ADR-P2-010 sandbox/device procedure ===
+   175	| T-E11-K9 / T-E12-Windows | CP-5 | `test_e11_regime.py::TestTE11K9` / `test_e12_temporal.py::TestTE12Windows` |
+   176	| T-AD-001 / T-AD-002 | **CP-8** | `tests/integration/test_cp8_adapters.py` (**body read**) + `scripts/run_adapter_conformance.py` |
+   177	| T-RS-001..003 | CP-1 | `tests/integration/test_store_integration.py` |
+   178	| T-LR-001..003 | CP-7 | `tests/unit/test_ledger_store.py::TestTLR001/002/003` |
+   179	| T-MON-001 / T-MON-002 | CP-1 / CP-7 | `test_catalog.py` (monotonic quality) / `test_execution_fsm.py::TestTMon002` |
+   180	| T-FB-001..003 | CP-7 + **CP-8** | `test_execution_fsm.py` (fail-closed, startup reconciliation) + `test_ops_watchdog.py::TestFailClosedDrive` (**body read**) |
+   181	| T-NFR-001..004 | **CP-8** | `scripts/run_nfr_harness.py` + `tests/unit/test_ai10_nfr_harness.py` (**body read**; 004 asserted, 001–003 labelled) |
+   182	| T-TOOBIT-001/002 | owner gates | harness = `scripts/run_nfr_harness.py` owner-gate list (venue measurements are **owner procedures**) |
+   183	| T-RESTORE-001 | **CP-8** | `tests/unit/test_ops_backup.py::TestRestoreDrillT001` (**body read**) |
+   184	| T-PKG-001 | **CP-8** | `tests/unit/test_research_governance.py::TestInjectionLedger` (**body read**) |
+   185
+   186	**AI.12 directive mapping (Phase 7 + Phase 2 rows that CP-8 owns).**
+   187	Research & Backtest (backtest engine / WFO / Monte-Carlo / stress tools; “no
+   188	synthetic data”, “all backtests cited with date+parameters”) →
+   189	`apex/research/backtest.py` + `tests/unit/test_research_backtest.py` (the
+   190	engine never invents a statistic: a caller must supply the signal function and
+   191	the fixture data). Parameter Package Promotion (T-PKG-001, idempotent packages,
+   192	no ad-hoc tweaks) → `apex/research/governance.py`
+   193	(`validate_package`, `InjectionLedger`). Adapters (read-only v2/v3→v4.0.0) →
+   194	`apex/research/adapter_conformance.py`. Backup/restore (Phase 2 dependency) →
+   195	`apex/ops/backup.py`. All four are executed in this session's suites.
+   196
+   197	**Honest-fail list:** none — no failing or skipped test exists at closeout.
+   198	**Harness-open list (owner measurements, not failures):** T-NFR-001/002/003 on
+   199	the target device, T-TOOBIT-001/002, G-ADAPTER-001 (0/100 legacy samples),
+   200	G-PAPER-*/G-CAPACITY-*/G-RISK-*/G-FALLBACK-*/G-LEDGER-*/G-TARGET-DEVICE-* —
+   201	see §7.
+   202
+   203	---
+   204
+   205	## 6. Deployment Report
+   206
+   207	**Required environment.** Termux-first Android device; Python 3.11; the nine
+   208	frozen SBOM pins installed from `requirements.lock` (12-line lock = pins +
+   209	header); **no `python-dotenv`, no Numba, no PostgreSQL, no networked bus** —
+   210	all Wave-Out items absent (verified by the module/import sweeps).
+   211
+   212	**Installation (README, verbatim):**
+   213	```bash
+   214	pip install -r requirements.lock
+   215	pip install -e ".[tests]"   # developers only
+   216	```
+   217
+   218	**Final run commands (README §Run).** Nine env names → `python scripts/run_apex.py
+   219	grid|demo|boot|alerts` → `./scripts/run_all_tests.sh -q`; CP-8 adds
+   220	`python scripts/run_adapter_conformance.py` and
+   221	`python scripts/run_nfr_harness.py [--minutes N]`.
+   222
+   223	**Clean-clone verification (this session, label SANDBOX).** Fresh clone of
+   224	`arena/01a09fcd-upstage` → `python3 -m venv .venv` → `pip install -r
+   225	requirements.lock` (pins import OK) → `bash scripts/run_all_tests.sh -q`
+   226	⇒ **2553 passed / 71.18 s**; `grid` exit 0; `demo` exit 0 (READY, chain intact,
+   227	0 signature violations); `boot` (no credentials) exit **2 DEGRADED**; `alerts`
+   228	(no token) exit **2 `E-TELE-001`**; `run_adapter_conformance.py` 19/19 exit 0;
+   229	`run_nfr_harness.py` MEASURED_IN_BOUNDS.
+   230
+   231	**Device row (ADR-P2-010):** every number above is a **sandbox** measurement.
+   232	The target-device installation and its acceptance runs are **owner procedures**
+   233	(§7, G-TARGET-DEVICE-001 / G-CAPACITY-001/002).
+   234
+   235	---
+   296	  8 hits, all allowlisted abstract seams (each with ≥1 concrete implementation)
+   297	  or the mandated Wave-Out notes; 0 Wave-In stubs; no `pass`-only bodies outside
+   298	  cancellation handling.
+   299	- [x] **No specification deviation occurred beyond logged & accepted items.** —
+   300	  deviations are exactly: ADR-P2-003 (additive handoffs), ADR-P2-005
+   301	  (research/ops paths), ADR-P2-009 (adapter conformance = synthetic + owner
+   302	  export; real gate OPEN), ADR-P2-010 (sandbox/device labels), ADR-P2-013
+   303	  (frozen `.gitignore`), plus the logged issues in §8 (ISSUE-CP8-001…006 and
+   304	  the predecessor entries they close).
+   305
+   306	**Honest limits of this declaration.** It covers the repository as measured in
+   307	this sandbox: no venue was called, no capital was risked, no target-device
+   308	measurement was taken, and no AI.13 external gate is claimed closed. The
+   309	`HARNESS-READY` label applies to G-PAPER-*/G-CAPACITY-*/G-ADAPTER-*; the rest
+   310	are owner procedures listed in §7.
+=== CP-8 NFR traceability assertions ===
+    55	| T-AD-001/002 · T-PKG-001 · T-RESTORE-001 · NFR harnesses (T-NFR-001..004 per ADR-P2-010) · §9.9 boxes · E-VAL-021/022 sweep re-run | CP-8 | PASS(2026-09-14) — **T-AD-001**: tests/integration/test_cp8_adapters.py::TestTAd001Synthetic + scripts/run_adapter_conformance.py (synthetic self-checks pass; `real_data_gate` OPEN/UNVERIFIED per ADR-P2-009 — an owner export is processed, but < 100 samples keeps the gate open); **T-AD-002**: tests/integration/test_cp8_adapters.py::TestTAd002AdapterSeam (100 retries against the real `ToobitAdapter` + fake responder: `unique_keys=1`, `new_submissions=1`, `cached_hits=99`, exactly one `POST /api/v1/futures/order`, 0 signature violations) + tests/unit/test_ai10_harness.py::TestHarnessRun; **T-PKG-001**: tests/unit/test_research_governance.py::TestInjectionLedger (first injection writes one suggestion; re-injection is a no-op; idempotency survives a process restart); **T-RESTORE-001**: tests/unit/test_ops_backup.py::TestRestoreDrillT001 (tempdir end-to-end, 25 records, 0 mismatches, RTO within 1800 s); **NFR harnesses (T-NFR-001..004)**: scripts/run_nfr_harness.py + tests/unit/test_ai10_nfr_harness.py — T-NFR-004 asserted in-process (2000 P0 all delivered, P2 evicted, lane ≤ 1000); T-NFR-001/002 measured in-sandbox and labelled **SANDBOX-PARTIAL** (analysis p95 0.74 ms / submission p95 0.34 ms vs the 400/200 ms bounds); T-NFR-003 labelled **OWNER-VERIFY** (acceptance = the 60-minute target-device run); T-TOOBIT-001/002 remain owner measurements; **§9.9 boxes**: E11 K=9, adapters read-only (`read_only=True` on every T-AD-001 case), snapshot determinism (CP-1/2/3 suites), never-OI=0 (T-DC-004) and corrections SUPERSEDED+revision (T-CL-001/002) — CP-8 re-ran the affected suites, all green; **E-VAL-021/022 sweep re-run**: tests/unit/test_toobit_map.py -k "Symbol or Interval or Timeframe" ⇒ 19 passed; tests/unit/test_catalog.py -k "core10 or timeframe or TDC" ⇒ 5 passed |
+    56	| External gates AI.13 (G-TOOBIT-*, G-TARGET-DEVICE-*, G-CAPACITY-*, G-ADAPTER-*, G-RESTORE-*, G-PAPER-*, G-RISK-*, G-FALLBACK-*) | harness built by owning stage (CP-1/6/7/8); MEASUREMENTS = OWNER procedures; status recorded honestly (never agent-claimed) | OPEN/UNVERIFIED(2026-09-14, CP-8) — harnesses exist and were executed in-sandbox, but every gate that needs the venue, the device, capital or a PAPER window is an **owner procedure**: T-TOOBIT-001/002 (depth, rate) were never called by an agent; G-ADAPTER-001 sits at OPEN/UNVERIFIED with 0/100 legacy samples (`apex/research/adapter_conformance.py` `real_data_gate`); G-RESTORE-001 is proven by the tempdir drill yet the production restore is an owner run; G-PAPER-*/G-RISK-*/G-FALLBACK-*/G-TARGET-DEVICE-*/G-CAPACITY-* need the owner's PAPER window, capital and target device. Per-gate procedures in PHASE2_FINAL_REPORT.md §7 |
+   349	| R-CP8\|11 | AI.10 T-AD-001/002 · T-PKG-001 · T-RESTORE-001 · T-NFR-001..004 | scripts/run_adapter_conformance.py + scripts/run_nfr_harness.py + harnesses | tests/unit/test_ai10_harness.py (9) + tests/unit/test_ai10_nfr_harness.py (12) + tests/integration/test_cp8_adapters.py (11) — harness runner 19/19 cases PASS, tamper ⇒ exit 2 before any case; NFR-004 asserted, NFR-001..003 labelled | PASS(2026-09-14) |
+   350
+=== Production run_apex / PaperRuntime roots ===
+   695	async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
+   696	                 interval: float = 60.0, report_every: int = 1) -> int:
+   697	    if cfg.apex_env == "LIVE" and not cfg.economic_gate_signed:
+   698	        code = "LIVE_CAPITAL_LOCKED"
+   699	        _say(f"REFUSED: {code} — APEX_ENV=LIVE is not a capital switch; LIVE "
+   700	             "capital stays locked until APEX_ECONOMIC_GATE_SIGNED=1 (Y.1 "
+   701	             "L17093) and the owner's written approval. Run PAPER first.")
+   702	        return EXIT_DEGRADED
+   703	    if not cfg.allow_signed:
+   704	        _say("REFUSED: SIGNED_NOT_ALLOWED — PAPER orders require "
+   705	             "APEX_ALLOW_SIGNED=1 (Y.1 L17093). Re-run exactly:")
+   706	        _say("  APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 TOOBIT_API_KEY=... "
+   707	             "TOOBIT_API_SECRET=... TELEGRAM_BOT_TOKEN=... "
+   708	             "TELEGRAM_OWNER_CHAT_ID=... python scripts/run_apex.py serve")
+   709	        return EXIT_DEGRADED
+   710
+   711	    runtime = await Runtime(cfg).start()
+   712	    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
+   713	    await service.open()
+   714	    gateway = None
+   715	    try:
+   716	        ledger, bus = runtime.ledger, runtime.bus
+   717	        clock = C.SystemClock()
+   718	        adapter = runtime.adapter()
+   719	        notifier = await _notifier_for(cfg)
+   720	        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+   721	                                       owner_chat_id=cfg.telegram_owner_chat_id
+   722	                                       or None)
+   723	                     if cfg.telegram_bot_token else None)
+   724	        control = CP.ControlPlane(
+   725	            signaling=signaling, config=cfg, clock=clock.monotonic,
+   726	            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+   727	            paper_balance=(await EC.paper_balance(ledger)
+   728	                           if cfg.apex_env == "PAPER" else "0"))
+   729	        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+   730	        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+   731	                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+   732	                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+   733	            control.register(name, _noop_handler(name))
+   734	        if cfg.telegram_bot_token:
+   735	            gateway = GW.TelegramGateway(
+   736	                control=control, source=GW.AiogramUpdateSource(config=cfg),
+   737	                notifier=_telegram_reply(signaling),
+   738	                bootstrap=service, clock=clock.monotonic,
+   739	                utc_now=clock.utc_now, poll_timeout=5.0)
+   740	        watchdog = WD.Watchdog(telegram_plane=signaling,
+   741	                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+   742	                               now=time.time)
+   743	        # CP-9 bridge: the provider is registered at the composition root, so
+   744	        # every PAPER cell now asks the governed store/context → pattern/setup
+   745	        # → gates → forecast → risk/decision chain for a real plan.  Missing
+   746	        # persisted engine context remains a named fail-closed refusal; the
+   747	        # provider never falls back to a hand-built plan.
+   748	        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+   749	                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+   750	        plan_bridge = PB.PaperPlanBridge(
+   751	            store=runtime.store, environment=cfg.apex_env,
+   752	            context_source=producer.get_bridge_context if producer is not None else None,
+   753	            context_preparer=producer.prepare if producer is not None else None)
+   754	        async def catch_up(now_ms: int) -> Dict[str, Any]:
+   755	            result = await service.catch_up(now_ms)
+   756	            if cfg.apex_env == "PAPER":
+   757	                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+   758	            return result
+   759
+   760	        driver = PL.PaperRuntime(
+   761	            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+   762	            adapter=adapter, signaling=signaling, control=control,
+   763	            gateway=gateway, watchdog=watchdog, clock=clock,
+   764	            environment=cfg.apex_env, notifier=notifier,
+   765	            plan_provider=plan_bridge, catch_up=catch_up)
+   766	        _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
+   767	             "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
+   768	        drift = await C.measure_drift(
+   769	            _venue_server_time if adapter is not None else _no_venue_time, clock)
+   770	        boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+   771	        try:
+   772	            EC.load_classifier()
+   773	            artifact_name = "E11_ARTIFACT"
+   774	        except EC.BridgeError as exc:
+   775	            artifact_name = exc.reason
+   776	        _say(f"  boot_state={boot['boot_state']} "
+   777	             f"new_trades_allowed={boot['new_trades_allowed']} "
+   778	             f"drift={drift['state']} ({drift.get('reason') or 'measured'}) "
+   779	             f"artifact={artifact_name}")
+   780	        if driver.plan_provider is None:
+   781	            _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
+   782	                 "refusal NO_PLAN_PROVIDER")
+   783	        else:
+   784	            _say("  plan seam: WIRED — governed PAPER store bridge "
+   785	                 "(missing context refuses by name; no synthetic plan)")
+   786	        _say(f"  signal_source={driver.signal_source} · cells=140 · "
+   787	             f"max_trades_per_cycle={driver.max_trades_per_cycle} · "
+   788	             f"telegram={'WIRED' if gateway is not None else 'DISABLED (no token)'}")
+   789	        _say("  (Ctrl-C stops the loop; the ledger chain and the durable "
+   790	             "cursors stay consistent)")
+   791	        outcome = await driver.run(cycles=cycles, interval=interval)
+   792	        for cycle in driver.cycles[-3:]:
+   793	            _say(f"  cycle {cycle['cycle']}: cells={cycle['cells_due']} "
+   794	                 f"complete={cycle['cells_complete']} "
+   795	                 f"halted={cycle['cells_halted']} blocked={cycle['cells_blocked']} "
+   796	                 f"trades={len(cycle['trades'])} open={len(cycle['open_intents'])}")
+   797	            if cycle.get("halt_reasons"):
+   798	                _say(f"    named refusals: "
+   799	                     f"{json.dumps(cycle['halt_reasons'], sort_keys=True)}")
+   800	        _say(f"  cycles={outcome['cycles']} trades={outcome['trades']} "
+   801	             f"open={outcome['open_intents']} refusals={outcome['refusals']} "
+   802	             f"ledger_chain_intact={outcome['ledger_chain_intact']}")
+   803	        if as_json:
+   804	            _say(json.dumps({"boot": boot, "outcome": outcome,
+   805	                             "cycles": driver.cycles}, default=str, indent=2,
+   806	                            sort_keys=True))
+   807	        return EXIT_READY if boot["boot_state"] == "READY" else EXIT_DEGRADED
+   808	    finally:
+   809	        if gateway is not None:
+   810	            await gateway.aclose()
+   811	        await service.close()
+   812	        await runtime.stop()
+   813
+   648	    async def _resolve_plan(self, payload: Mapping[str, Any]
+   649	                            ) -> Mapping[str, Any]:
+   650	        """Ask the decision bridge for this cell's plan (the frozen SL-5 → SL-6
+   651	        seam). No provider ⇒ a NAMED refusal, never a fabricated plan."""
+   652	        if self.plan_provider is None:
+   653	            raise CellRefusal(
+   654	                "NO_PLAN_PROVIDER",
+   655	                "no plan provider is wired: the engine → fabric → setup → "
+   656	                "forecast → risk → plan bridge is a separate increment "
+   657	                "(PHASE2_HANDOFF_WIRING §REMAINING WORK)")
+   658	        provided = self.plan_provider(payload["symbol"], payload["timeframe"],
+   659	                                      payload["as_of"])
+   660	        plan = await provided if hasattr(provided, "__await__") else provided
+   661	        if plan is None:
+   662	            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+   663	            if self.environment == "PAPER" and refusal:
+   664	                raise CellRefusal(refusal["reason"],refusal.get("detail",""))
+   665	            raise CellRefusal("NO_PLAN_FOR_CELL",
+   666	                              f"{payload['cell_id']} has no governed plan at "
+   667	                              f"{payload['as_of']}")
+   668	        if not isinstance(plan, Mapping):
+   669	            raise CellRefusal("PLAN_TYPE_QX", type(plan).__name__)
+   670	        return dict(plan)
+   956	    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+   957	        moment = self.clock.now_ms() if now_ms is None else int(now_ms)
+   958	        as_of = _ms_to_iso(moment)
+   959	        self._budget_taken = 0
+   960	        self._cycle_proposals = {}
+   961	        if not self._cursor_loaded:
+   962	            await self._load_cursor()
+   963	        cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
+   964	                                 "signal_source": self.signal_source,
+   965	                                 "trading_enabled": self.trading_enabled,
+   966	                                 "budget_limit": self.max_trades_per_cycle}
+   967	        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+   968	                             {"cells_checked": 0, "cells_updated": 0,
+   969	                              "bars_ingested": 0, "failures": []})
+   970	        self._catch_up_failed = {row["cell"]: row
+   971	                                 for row in cycle["catch_up"]["failures"]}
+   972	        if self.watchdog is not None:
+   973	            cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
+   974	        cycle["storage"] = await self._storage_guard()
+   975	        if self.gateway is not None:
+   976	            cycle["telegram"] = await self.gateway.run_once()
+   977	        # The scheduler's law is "on each TF close run the stages for THAT
+   978	        # cell": a cell runs once per close, and a cell whose close has not
+   979	        # advanced since the previous cycle is not run again.
+   980	        already = []
+   981	        due = []
+   982	        for item in self.scheduler.due_cells(now_ms=moment):
+   983	            recorded = self._last_close.get(item[0].cell_id)
+   984	            if recorded is not None and int(item[1]) <= int(recorded):
+   985	                already.append(item)
+   986	                continue
+   987	            due.append(item)
+   988	        cycle["cells_skipped_already_decided"] = len(already)
+   989	        if self.max_cells_per_cycle is not None:
+   990	            due = due[:self.max_cells_per_cycle]
+   991	        # G1: all expensive source preparation completes before run_cell
+   992	        # starts its latency clock. D22 failures never enter preparation;
+   993	        # a failed source must not fall back to its previous cached success.
+   994	        self._context_preparation_failed = {}
+   995	        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+   996	        receipt_ms = max(moment,self.clock.now_ms())
+   997	        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+   998	                                for cell,close in due} if self.environment == "PAPER" else {})
+   999	        cycle["decision_as_of"] = dict(self._decision_as_of)
+  1000	        cycle["publishers"] = await self._refresh_publishers(due)
+  1001	        published = (cycle.get("catch_up") or {}).get("quality_publish") or {}
+  1002	        cycle["publishers"]["quality_facts_written"] = int(
+  1003	            cycle["publishers"].get("quality_facts_written") or 0) + int(
+  1004	                published.get("written") or 0)
+  1005	        cycle["publishers"]["failures"] = list(
+  1006	            cycle["publishers"].get("failures") or [])
+  1007	        cycle["publishers"]["failures"].extend(list(published.get("failures") or []))
+  1008	        prepare = getattr(self.plan_provider, "prepare", None)
+  1009	        if callable(prepare):
+  1010	            for cell, close in due:
+  1011	                if cell.cell_id in self._catch_up_failed:
+  1012	                    continue
+  1013	                preparation["cells_checked"] += 1
+  1014	                try:
+  1015	                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+  1016	                    preparation["cells_prepared"] += 1
+  1017	                except Exception as exc:
+  1018	                    failed = {"cell": cell.cell_id,
+  1019	                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+  1020	                              "detail": getattr(exc, "detail", type(exc).__name__)}
+  1021	                    self._context_preparation_failed[cell.cell_id] = failed
+  1022	                    preparation["failures"].append(failed)
+  1023	        cycle["context_preparation"] = preparation
+  1024	        tasks = [asyncio.create_task(self.scheduler.run_cell(
+  1025	                    cell, close_ms=close, context={"cell_state": {}}))
+  1026	                 for cell, close in due]
+  1027	        runs = list(await asyncio.gather(*tasks)) if tasks else []
