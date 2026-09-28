@@ -1,0 +1,13 @@
+fraction 0.70 | PAPER(D29 strict-below): OK                   veto=None | default/LIVE(inclusive): OK                   veto=None
+fraction 0.60 | PAPER(D29 strict-below): OK                   veto=None | default/LIVE(inclusive): WARNING              veto=None
+fraction 0.50 | PAPER(D29 strict-below): WARNING              veto=None | default/LIVE(inclusive): WARNING              veto=None
+fraction 0.40 | PAPER(D29 strict-below): WARNING              veto=None | default/LIVE(inclusive): ACTION               veto=14
+fraction 0.30 | PAPER(D29 strict-below): ACTION               veto=14 | default/LIVE(inclusive): ACTION               veto=14
+fraction 0.20 | PAPER(D29 strict-below): ACTION               veto=14 | default/LIVE(inclusive): LIQUIDATION_APPROACH veto=14
+fraction 0.10 | PAPER(D29 strict-below): LIQUIDATION_APPROACH veto=14 | default/LIVE(inclusive): LIQUIDATION_APPROACH veto=14
+
+== the CP-6 test input (margin_health_fraction=0.40, no environment/margin_model) ==
+adjudicate(0.40) default (CP-6 test shape): REJECT | vetoes: [14]
+adjudicate(0.40) with PAPER/D29 identity:   ALLOW | vetoes: []
+
+=> the CP-6 test asserts REJECT at 0.40, which only the DEFAULT/LIVE inclusive branch produces; D29 PAPER at exactly 0.40 does NOT fire veto 14 (strictly below).

@@ -1,0 +1,12 @@
+_by_num size: 73
+all keys are strings (full_ids), not feature numbers: True
+sample keys: ['APEX.L00.ATOM.CNDL.BODY_RATIO.RATIO.V1', 'APEX.L00.ATOM.CNDL.UPPER_WICK_R.RATIO.V1']
+declared type: Dict[int, FeatureContract] (catalog.py:82)
+populated with contract.id.full_id (catalog.py:90)
+
+all _by_num references in the repo:
+/home/user/Upstage/apex/data_catalog/catalog.py:82:        self._by_num: Dict[int, FeatureContract] = {}
+/home/user/Upstage/apex/data_catalog/catalog.py:90:        self._by_num[contract.id.full_id] = contract
+/home/user/Upstage/tests/unit/test_setup_gates.py:73:    def test_evaluate_dispatches_by_number(self):
+
+=> written in register(), never read anywhere (no lookup path uses it).

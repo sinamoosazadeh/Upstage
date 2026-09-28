@@ -1,0 +1,35 @@
+== O-002: device-only artifacts ==
+data/                            exists: False
+params/e11_classifier_v1.yaml    exists: False
+.gitignore lines mentioning them: ['data/', '/params/e11_classifier_v1.yaml']
+README RUNTIME_ARTIFACTS sentence present: True
+e11_params_v4.yaml references device-only report: True
+
+== O-003: lock completeness ==
+direct pins: 9
+   aiohttp==3.9.5
+   aiogram==3.7.0
+   aiosqlite==0.20.0
+   matplotlib==3.8.4
+   pandas==2.2.0
+   numpy==1.26.0
+   pydantic==2.5.0
+   python-dateutil==2.8.2
+   pytz==2024.1
+any package hashes recorded: False
+transitive pins (e.g. aiofiles, multidict, pyarrow): []
+pyproject build-system: ['requires = ["setuptools>=68"]']
+Ch.1 self-declares hashes UNVERIFIED: True
+
+== environment actually installed in THIS session (for comparison) ==
+   aiogram==3.7.0
+   aiohttp==3.9.5
+   aiosqlite==0.20.0
+   matplotlib==3.8.4
+   numpy==1.26.0
+   pandas==2.2.0
+   pydantic==2.5.0
+   pydantic_core==2.14.1
+   pytest==9.1.1
+   python-dateutil==2.8.2
+   pytz==2024.1

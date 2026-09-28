@@ -1,0 +1,12 @@
+governance §17.1 row: budget_per_trade = 1.0% | yaml_ref: params/risk_defaults_v1.yaml#budget_per_trade
+governance §17.1 row: k_attn = 0.05 | yaml_ref: params/risk_defaults_v1.yaml#k_attn
+
+YAML (runtime source of record):
+  budget_per_trade = 0.005 | k_attn = 0.25
+
+assert_yaml_consistency divergences:
+   budget_per_trade | blueprint: 1.0% | yaml: 0.005 | note: doc_inconsistency
+   k_attn | blueprint: 0.05 | yaml: 0.25 | note: doc_inconsistency
+
+size() R_allowed = 50.0 (= 0.005 * 10000 -> YAML budget, NOT the §17.1 1.0%)
+size() attention bound with atr_cap=50: 125000.0 (= 0.25 * 50 -> YAML k_attn, NOT the §17.1 0.05)

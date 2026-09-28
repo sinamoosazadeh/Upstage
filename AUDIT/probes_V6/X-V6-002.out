@@ -1,0 +1,11 @@
+shallow clone (depth=1, the Arena checkout shape) exit: 0
+clone is shallow: true
+git show f14be36:params/risk_defaults_v1.yaml exit: 128
+stderr: fatal: invalid object name 'f14be36'.
+replicated test subprocess: CalledProcessError (returncode 128 ) -> pytest test FAILS in a shallow clone
+
+full session checkout: git show f14be36 exit: 0 | first line: # params/risk_defaults_v1.yaml — §9.5 item 11 FROZEN_BOOTSTRAP risk numbers
+
+session observation (before unshallow): 1 failed / 95 passed;
+after unshallow: 96 passed. The failing test was exactly
+TestLiveParamsWriteForbidden::test_frozen_params_files_are_untouched_by_this_suite.

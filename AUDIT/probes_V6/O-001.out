@@ -1,0 +1,13 @@
+current APEX_GEN5.md sha256: 493568887acb7164c985a0310809140ef3a6b3651e15d05782708b7f73e98569
+README-recorded CP-14.6-FIX digest: 493568887acb7164c985a0310809140ef3a6b3651e15d05782708b7f73e98569
+match: True
+
+docs file copies the frozen text? False | it is a hash record of length 1155 bytes
+
+== git history scan for the freeze digest 216bcc9e… ==
+commits in history touching APEX_GEN5.md: 20
+commits whose APEX_GEN5.md digest == freeze digest: [('102dffe01', '216bcc9e5f3e54c7567303bea7b642a9f5ccf482d2282d05dc78c2f7cb0fbd9e')]
+
+== was this checkout shallow? ==
+is-shallow-repository (after this session's unshallow fetch): false
+NOTE: the checkout WAS shallow at session start; the audit's environment was shallow too, so its 'not locally reconstructible' statement was true THERE; with full history the baseline IS reconstructible and matches.

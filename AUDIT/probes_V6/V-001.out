@@ -1,0 +1,19 @@
+symbols: 10 ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'LTCUSDT']
+timeframes: 14 ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '1w', '1mo']
+unique symbols: 10 | unique TFs: 14
+tick_size: covers all 10 symbols: True
+quantity_step: covers all 10 symbols: True
+min_notional: covers all 10 symbols: True
+exchange_max_leverage: covers all 10 symbols: True
+
+q_raw rows: 14 | all sum to 1: True []
+q_raw TF coverage == 14: True
+q_min_by_tf rows: 14 | q_thr rows: 14 | freshness rows: 14 | oi_lag rows: 14
+
+setup weights sum: 1.0 | count: 12
+family_engines: ['structure', 'liquidity', 'fvg', 'trend', 'regime', 'temporal', 'orderblock', 'momentum']
+required evidence mass: 0.54 | + optional: 0.7
+Q_setup denominator (family mass) = 0.70: True
+
+leverage caps match Y.2 groups (2/3/4/5): True | rows: 14
+risk scalars: budget_per_trade 0.005 k_attn 0.25 daily 0.03 weekly 0.06 halt 4

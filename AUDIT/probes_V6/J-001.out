@@ -1,0 +1,20 @@
+CLI commands (argparse choices): ['alerts', 'boot', 'bootstrap', 'demo', 'grid', 'publish-quality-backfill', 'repair-partial', 'serve', 'status', 'train-e11']
+
+README documents these run_apex commands:
+  alerts                   in README: True
+  boot                     in README: True
+  bootstrap                in README: False
+  demo                     in README: True
+  grid                     in README: True
+  publish-quality-backfill in README: False
+  repair-partial           in README: False
+  serve                    in README: False
+  status                   in README: False
+  train-e11                in README: False
+
+Where is a serve/bootstrap run procedure documented?
+PHASE2_HANDOFF_CP9.md -> ['run_apex.py serve', 'run_apex.py bootstrap', 'run_apex.py status', 'train-e11', 'repair-partial', 'publish-quality-backfill']
+PHASE2_HANDOFF_CP14.md MISSING
+
+G16 (PHASE2_GLOBAL_DIRECTIVES.md): 'ONE clear run procedure' clause:
+   G16. TERMUX-FIRST RUNTIME REQUIREMENT (from §16 + §9.5 + Ch.23). The final system must execute on the owner's single Termux/Android device; the delivery include

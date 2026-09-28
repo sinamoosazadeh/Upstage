@@ -1,0 +1,13 @@
+submit #1: ACKNOWLEDGED 0 | order_id: 900001
+submit #2 (same content, different intent): ACKNOWLEDGED 0 | order_id: 900002
+venue POSTs recorded: 2
+   POST /api/v1/futures/order | clientOrderId: i-aaaaaaaaaaaaaaaaaaaaaaaa | signed: True
+   POST /api/v1/futures/order | clientOrderId: i-bbbbbbbbbbbbbbbbbbbbbbbb | signed: True
+distinct clientOrderIds: 2
+
+AI.8 order_hash would be identical for both submits: same symbol/side/qty/price -> one hash
+idempotency key in HTTP query params: False
+idempotency key in HTTP query params: False
+Ch.16 key recorded in adapter attempt audit trail: True
+
+control: repeat SAME intent -> outcome: ACKNOWLEDGED | venue POSTs still: 2 | result_source: None
