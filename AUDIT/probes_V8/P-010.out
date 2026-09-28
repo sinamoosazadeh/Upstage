@@ -1,0 +1,5 @@
+RV=sum(r^2)= 0.0029999999999999988
+annualized_hv(tf=1h,days=365)= 5.1264022471905175
+daily_contract_sqrt(RV*365)= 1.0464224768228172
+ratio= 4.898979485566357
+result requires interpretation of whether RV is a single daily RV or intraday window RV

@@ -1,0 +1,3 @@
+validated_synthetic_OHLC_bars= 3000 processed= 3000 elapsed_seconds= 18.461
+retained_history_bars= 3000 closes= 3000 volumes= 3000 obv= 3000
+tracemalloc_current_bytes= 6369751 peak_bytes= 6583666

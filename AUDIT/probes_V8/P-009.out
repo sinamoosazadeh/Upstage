@@ -1,0 +1,5 @@
+defaults gap_atr_mult= 8
+prev_ATR= 2.0 opening_gap= 20.0
+last_state_ATR= 3.357142857142857
+last_events= ['EV_VLT_007']
+last_error= {'code': 'TR_WINSORIZED_Q0_SUSPECT', 'quality': 'Q0', 'as_of_ts': 1767423600000}

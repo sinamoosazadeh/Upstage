@@ -1,0 +1,2 @@
+input rows=50; unique ts= 1 history= 50 emitted= 0
+after one distinct bar: unique ts= 2 history= 51 emission= True reported_prior_history= 50

@@ -1,0 +1,7 @@
+validated_observations_per_run=55; cached_outputs= 5 5 fresh_changed_input= 5
+same_result_object= True same_ids= True
+first_oi_state_embedded_in_explanation= E03 participation evidence: vr=1.0 vz=0.0 ad=0.2506628334508236 events=['EV_VOL_011 OI_Unavailable']
+second_replay_returns_cached_same_payload= True
+cached_last_snapshot= e010755787dee8ac5cbf7d70fd0aa66a10e55f0052046ed0b41d325199b24728 fresh_last_snapshot= f2ac44cfe0e6163aa529de17944e2ae257f742e5dab2602e04df46f4e54a9d77
+cached_last_state_vs_fresh_differs= True
+fresh_last_feature_dependencies= ('window', 'oi', 'atr_prev')

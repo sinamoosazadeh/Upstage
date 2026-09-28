@@ -1,0 +1,4 @@
+source_engine_state=DEGRADED by ingest rule for OI MISSING; source_quality= Q1
+event_names= ['EV_VOL_001 Volume_Spike', 'EV_VOL_011 OI_Unavailable']
+emitted condition_state= EV_VOL_001 Volume_Spike resolution_class= Q3 validity= VALID fate= ACTIVE confidence= 0.0
+all event names present in condition_state= False

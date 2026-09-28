@@ -1,0 +1,3 @@
+validated_observations=5; increasing_oi= ['1000', '1001', '1002', '1003', '1004']
+oi_timestamp_units=epoch_ms; consecutive_gap_ms= 3600000
+timeframe_sec=3600; result= (True, 'STALE_GAP_3600000')
