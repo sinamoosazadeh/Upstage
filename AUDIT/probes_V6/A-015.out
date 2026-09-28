@@ -1,0 +1,13 @@
+== 1) top-level veto (control: must be REJECTED) ==
+REJECTED red_line_clean= False RED_LINE_FIELD
+== 2) the SAME veto nested under 'risk' ==
+VALIDATED red_line_clean= True violations= []
+== 3) nested alias spellings of forbidden rows ==
+VALIDATED red_line_clean= True violations= []
+== 4) unknown top-level key accepted ==
+VALIDATED violations= []
+== 5) proposals=None drops the proposal requirement ==
+alpha_spread w/o proposals: VALIDATED violations= []
+alpha_spread proposals=None: VALIDATED violations= []
+== 6) out-of-bounds value IS checked for known governed rows (control) ==
+REJECTED ['OUT_OF_BOUNDS']

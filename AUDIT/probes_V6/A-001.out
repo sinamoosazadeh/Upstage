@@ -1,0 +1,5 @@
+PASS explicit missing path ignored by _load_env | no exception raised; keys=['E2B_EVENTS_ADDRESS', 'E2B_SANDBOX', 'E2B_SANDBOX_ID']
+PASS Config(env_path=<missing paper file>) | ('LIVE', True, True, 'data/live.sqlite3')
+PASS Config(env_path=<existing paper file>) with LIVE process env | ('LIVE', True, True, 'data/live.sqlite3')
+PASS control: unset env + existing file | ('PAPER', False, False, 'data/paper.sqlite3')
+PASS control: unset env + missing file -> defaults | ('RESEARCH', False, False)

@@ -1,0 +1,24 @@
+anchor on value            | 'k: &base 123'                         -> {'k': '&base 123'}
+alias as value             | 'k2: *base'                            -> {'k2': '*base'}
+tag !!str                  | 'k3: !!str 123'                        -> {'k3': '!!str 123'}
+block scalar marker |      | 'k4: |\\n  line1\\n'                   -> "ValueError: params YAML line 2: bad indentation '  line1'"
+block scalar marker >      | 'k5: >\\n  folded\\n'                  -> "ValueError: params YAML line 2: bad indentation '  folded'"
+document separator         | '---\\na: 1\\n'                        -> "ValueError: params YAML line 1: unsupported node '---' (outside the frozen APEX params subset)"
+unclosed single quote      | "k6: 'unterminated"                    -> {'k6': "'unterminated"}
+unclosed double quote      | 'k7: "unterminated'                    -> {'k7': '"unterminated'}
+set syntax ?               | '? complex\\n: value\\n'               -> "ValueError: params YAML line 1: unsupported node '? complex' (outside the frozen APEX params subset)"
+multiline plain scalar     | 'k8: some value\\n  continuation\\n'   -> "ValueError: params YAML line 2: bad indentation '  continuation'"
+plain multi-line           | 'a: 1\\nb: 2\\nc: 3'                   -> {'a': 1, 'b': 2, 'c': 3}
+
+== do the six frozen YAMLs + others use any of this syntax? ==
+decision_runtime_v1.yaml     clean
+decision_v1.yaml             clean
+e11_classifier_v1.yaml       MISSING (expected for e11_classifier_v1.yaml)
+e11_params_v4.yaml           clean
+e11_training_v1.yaml         clean
+paper_account_v1.yaml        clean
+quality_weights_v1.yaml      clean
+risk_defaults_v1.yaml        clean
+setup_weights_v1.yaml        clean
+toobit_wire_v1.yaml          clean
+universe_v1.yaml             clean

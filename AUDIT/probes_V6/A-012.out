@@ -1,0 +1,8 @@
+initial budget_per_trade = 0.005
+after in-memory mutation, same instance reads: 0.5
+new instance reads: 0.005
+cache is per-instance: True
+file untouched (sha256): f35e3a99ab44c8b1 …
+Params has module-level singleton? False
+direct-assignment scan (assignment only):
+scan done

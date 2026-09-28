@@ -1,0 +1,16 @@
+has_active_value: True
+active_value: 2.0 (allowed_bounds were [0,1])
+conservative(): False
+
+== missing field is caught (control) ==
+caught: EC_FIELDS_MISSING | sample
+
+== who consumes ECRegister.active_value at runtime? ==
+/home/user/Upstage/apex/research/governance.py:363:    def has_active_value(self) -> bool:
+/home/user/Upstage/apex/research/governance.py:368:        return not self.has_active_value
+/home/user/Upstage/apex/research/governance.py:372:                "has_active_value": self.has_active_value,
+/home/user/Upstage/apex/research/governance.py:376:class ECRegister:
+/home/user/Upstage/apex/research/governance.py:393:    def active_value(self, name: str) -> Optional[float]:
+/home/user/Upstage/apex/research/governance.py:397:        return float(entry.semantics["value"]) if (entry.has_active_value
+
+tests referencing it: 8 lines

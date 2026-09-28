@@ -1,0 +1,13 @@
+== 1) formal/garbage proposal values are APPROVED ==
+decision: APPROVED | missing: []
+== 2) same with 'NA' strings and empty-string windows ==
+decision: APPROVED | missing: []
+== 3) windows of 1 day (numeric, < 180 / < 30) ==
+decision: REJECTED | missing: ['pit_backtest_180d<180d', 'forward_observation_30d<30d']
+== 4) full draft_package flow with the formal proposal ==
+promotion gate: PROMOTE
+draft_package decision: DRAFTED
+validation: {'decision': 'VALIDATED', 'red_line_clean': True, 'violations': []}
+
+NOTE: no file was written (draft_package returns the package only);
+injection is a separate, explicit InjectionLedger.inject step.

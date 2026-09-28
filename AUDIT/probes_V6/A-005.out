@@ -1,0 +1,11 @@
+== 1) scalar overflow ==
+1e9999 -> inf isinf: True
+-1e9999 -> -inf
+nan spelling: 'nan' 'NaN'
+== 2) full document + public loader ==
+{'x': inf}
+public _load_yaml -> {'budget_per_trade': inf, 'k_attn': 0.25} | no rejection at loader layer
+RiskKernel.size signature: None
+size() with inf budget raised: AttributeError module 'apex.risk.kernel' has no attribute 'RiskKernel'
+size() with inf budget raised: OverflowError cannot convert float infinity to integer
+size() with inf k_attn -> {'decision': 'ALLOW', 'sized_quantity': 0.5, 'risk_state': 'LowRisk', 'R_allowed': 50.0, 'multiplier': 1.0, 'q_risk_bound': 0.5, 'q_attention_bound': inf, 'min_quantity': 0.001, 'notes': [], 'correlation': {}}

@@ -1,0 +1,13 @@
+.env                     IGNORED   (.gitignore:4:.env)
+.env.paper               NOT IGNORED  -> could be added to git
+.env.live                NOT IGNORED  -> could be added to git
+.env.production          NOT IGNORED  -> could be added to git
+config/production.env    NOT IGNORED  -> could be added to git
+secrets/env.txt          NOT IGNORED  -> could be added to git
+params/env.local         NOT IGNORED  -> could be added to git
+prod.env                 NOT IGNORED  -> could be added to git
+.envrc                   NOT IGNORED  -> could be added to git
+
+== .env-file flag help text (scripts/run_apex.py) ==
+usage: run_apex.py [-h] [--json] [--env-file ENV_FILE] [--cells CELLS]
+--env-file ENV_FILE   optional .env path (never overrides real env)

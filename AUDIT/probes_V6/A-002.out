@@ -1,0 +1,16 @@
+== 1) inline comment after value ==
+parsed: {'APEX_ALLOW_SIGNED': '1 # comment'}
+value repr: '1 # comment'
+Config.allow_signed with '1 # comment' = False
+== 2) '#' inside a value (no separator) ==
+parsed: {'TOOBIT_API_KEY': 'sk#abc'}
+== 3) unbalanced quote in secret accepted? ==
+parsed without error: {'TOOBIT_API_KEY': '"unbalanced'} | value repr: '"unbalanced'
+== 4) duplicate name — silent replace? ==
+parsed: {'APEX_ENV': 'LIVE'} | (last wins, no warning)
+== 5) leading '#' full-line comment + export prefix ==
+parsed: {'APEX_ENV': 'BACKTEST'}
+== 6) value with '=' inside ==
+parsed: {'TOOBIT_API_SECRET': 'abc=def='} 'abc=def='
+== 7) quoted value with trailing spaces ==
+parsed: {'APEX_ENV': ' PAPER '} ' PAPER '

@@ -1,0 +1,7 @@
+inject with ledger path outside allowed root -> False False
+ledger file exists at (outside) path: True
+ledger methods call assert_live_params_untouched on package_dir/target only: True
+_flush validates path against research root: False
+control: package_dir outside root -> refused: SUGGESTION_TARGET_OUTSIDE_RESEARCH
+control: package_dir under real params/ -> refused: LIVE_PARAMS_WRITE_FORBIDDEN
+ledger on YAML file -> json.JSONDecodeError: Expecting value: line 1 column 1 (char 0)

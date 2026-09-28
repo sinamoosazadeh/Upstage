@@ -1,0 +1,20 @@
+single-quote escape            | "x: 'it''s'"           -> {'x': "it''s"}
+double-quote \n                | 'x: "a\\nb"'           -> {'x': 'a\\nb'}
+double-quote backslash         | 'x: "a\\\\b"'          -> {'x': 'a\\\\b'}
+double-quote escaped quote     | 'x: "a\\"b"'           -> {'x': 'a\\"b'}
+single-quote plain             | "x: 'abc'"             -> {'x': 'abc'}
+
+real YAML semantics: 'it''s' -> "it's" ; "a\nb" -> 'a<newline>b' ; "a\\b" -> 'a\b' ; "a\"b" -> 'a"b'
+
+== escapes in real params files? ==
+decision_runtime_v1.yaml     no escapes
+decision_v1.yaml             no escapes
+e11_classifier_v1.yaml       MISSING
+e11_params_v4.yaml           no escapes
+e11_training_v1.yaml         no escapes
+paper_account_v1.yaml        no escapes
+quality_weights_v1.yaml      no escapes
+risk_defaults_v1.yaml        no escapes
+setup_weights_v1.yaml        no escapes
+toobit_wire_v1.yaml          no escapes
+universe_v1.yaml             no escapes

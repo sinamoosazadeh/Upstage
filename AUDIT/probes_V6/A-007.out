@@ -1,0 +1,20 @@
+null first key + more      | 'a:\\nb: 2'      -> "ValueError: params YAML line 2: trailing content 'b: 2'"
+null mid key               | 'a: 1\\nb:\\nc: 3' -> {'a': 1, 'b': None, 'c': 3}
+null last key (control)    | 'a: 1\\nb:'      -> {'a': 1, 'b': None}
+single null key            | 'a:'             -> {'a': None}
+nested null then value     | 'outer:\\n  a:\\n  b: 2' -> "ValueError: params YAML line 3: bad indentation '  b: 2'"
+
+real YAML semantics expect: a: None, b: 2 for case 1
+
+== do any real params files contain a null value key? ==
+decision_runtime_v1.yaml     [(4, 'p_min_tf:'), (25, 'paper_bootstrap:')]
+decision_v1.yaml             no null-value keys
+e11_classifier_v1.yaml       MISSING
+e11_params_v4.yaml           no null-value keys
+e11_training_v1.yaml         no null-value keys
+paper_account_v1.yaml        no null-value keys
+quality_weights_v1.yaml      [(4, 'freshness_threshold_seconds:'), (19, 'q_min_by_tf:'), (34, 'oi_lag_threshold_seconds:'), (49, 'q_thr_by_tf:'), (64, 'q_raw_weights_by_tf:'), (80, 'q_evidence_weights:')]
+risk_defaults_v1.yaml        [(19, 'system_leverage_cap_by_tf:')]
+setup_weights_v1.yaml        [(12, 'weights:'), (45, 'family_engines:'), (56, 'regime_window:')]
+toobit_wire_v1.yaml          [(8, 'symbol_map:'), (19, 'interval_map:'), (23, 'public_endpoints:'), (34, 'signed_wave_in_endpoints:'), (49, 'side_map:'), (54, 'order_defaults:')]
+universe_v1.yaml             [(13, 'tick_size:'), (24, 'quantity_step:'), (35, 'min_notional:'), (46, 'exchange_max_leverage:')]

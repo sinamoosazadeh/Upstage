@@ -1,0 +1,24 @@
+quoted URL item        | 'endpoints:\\n  - "https://example.invalid"' -> {'endpoints': [{'"https': '//example.invalid"'}]}
+plain URL item         | 'endpoints:\\n  - https://example.invalid' -> {'endpoints': [{'https': '//example.invalid'}]}
+quoted item, no :      | 'endpoints:\\n  - "plain"'               -> {'endpoints': ['plain']}
+quoted host:port       | 'endpoints:\\n  - "example.com:8443"'    -> {'endpoints': [{'"example.com': '8443"'}]}
+inline k:v quoted      | 'endpoints:\\n  - "GET /path"'           -> {'endpoints': ['GET /path']}
+
+== real toobit_wire_v1.yaml endpoint items: quoted or plain? ==
+  24 '- GET /api/v1/time'
+  25 '- GET /api/v1/exchangeInfo'
+  26 '- GET /quote/v1/depth'
+  27 '- GET /quote/v1/klines'
+  28 '- GET /quote/v1/openInterest'
+  29 '- GET /api/v1/futures/fundingRate'
+  35 '- POST /api/v1/futures/order'
+  36 '- DELETE /api/v1/futures/order'
+  37 '- DELETE /api/v1/futures/batchOrders'
+  38 '- GET /api/v1/futures/order'
+  39 '- GET /api/v1/futures/openOrders'
+  40 '- GET /api/v1/futures/positions'
+  41 '- GET /api/v1/futures/balance'
+  42 '- POST /api/v1/futures/leverage'
+  43 '- POST /api/v1/futures/marginType'
+  44 '- GET /api/v1/futures/userTrades'
+  45 '- GET /api/v1/futures/commissionRate'

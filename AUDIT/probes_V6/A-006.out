@@ -1,0 +1,20 @@
+root flow map            | '{a: 1, b: 2}'     -> {'{a': '1, b: 2}'}
+root flow map, no space  | '{a:1,b:2}'        -> {'{a': '1,b:2}'}
+root flow seq            | '[1, 2, 3]'        -> [1, 2, 3]
+root flow map single     | '{a: 1}'           -> {'{a': '1}'}
+root flow empty map      | '{}'               -> {}
+
+expected by real YAML semantics: {a: 1, b: 2} -> {'a': 1, 'b': 2}
+
+== do any real params files start with a root flow map? ==
+decision_runtime_v1.yaml     first content line: 'capital_hard_cap_fraction: 0.60'
+decision_v1.yaml             first content line: 'direction_conflict_threshold: 0.15'
+e11_classifier_v1.yaml       MISSING
+e11_params_v4.yaml           first content line: 'K: 9'
+e11_training_v1.yaml         first content line: 'iterations: 100000'
+paper_account_v1.yaml        first content line: 'capital_usdt: 10000.0'
+quality_weights_v1.yaml      first content line: 'freshness_threshold_seconds:'
+risk_defaults_v1.yaml        first content line: 'budget_per_trade: 0.005'
+setup_weights_v1.yaml        first content line: 'family_id: SF_FVG_SWEEP_REV'
+toobit_wire_v1.yaml          first content line: 'base_url: https://api.toobit.com'
+universe_v1.yaml             first content line: 'symbols: [BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, AVAXUSDT, LINKUSDT, LTCUSDT]'

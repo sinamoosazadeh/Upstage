@@ -1,0 +1,20 @@
+flow map w/ nested seq     | 'x: {a: [1, 2], b: 3}'     -> "ValueError: flow map entry without ':' ' 2]'"
+flow seq of seqs           | 'x: [[1, 2], [3, 4]]'      -> {'x': ['[1', '2]', '[3', '4]']}
+flow seq w/ nested map     | 'x: [{a: 1}, {b: 2}]'      -> {'x': ['{a: 1}', '{b: 2}']}
+flat flow map (control)    | 'x: {a: 1, b: 3}'          -> {'x': {'a': 1, 'b': 3}}
+flat flow seq (control)    | 'x: [1, 2, 3, 4]'          -> {'x': [1, 2, 3, 4]}
+unterminated flow map      | 'x: {a: 1'                 -> "ValueError: unterminated flow map: '{a: 1'"
+unterminated flow seq      | 'x: [1, 2'                 -> "ValueError: unterminated flow sequence: '[1, 2'"
+
+== nesting usage in real params files (flow value containing '[' or '{' inside)? ==
+decision_runtime_v1.yaml     no nested flow
+decision_v1.yaml             no nested flow
+e11_classifier_v1.yaml       MISSING
+e11_params_v4.yaml           no nested flow
+e11_training_v1.yaml         no nested flow
+paper_account_v1.yaml        no nested flow
+quality_weights_v1.yaml      no nested flow
+risk_defaults_v1.yaml        no nested flow
+setup_weights_v1.yaml        no nested flow
+toobit_wire_v1.yaml          no nested flow
+universe_v1.yaml             no nested flow

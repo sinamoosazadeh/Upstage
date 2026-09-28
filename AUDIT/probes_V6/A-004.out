@@ -1,0 +1,20 @@
+== 1) duplicate key, root block map ==
+{'budget_per_trade': 0.5}
+== 2) duplicate key, nested block map ==
+{'risk': {'budget_per_trade': 0.5}}
+== 3) duplicate key, flow map ==
+{'m': {'a': 2}}
+== 4) duplicate key via the PUBLIC loader (risk_defaults name) ==
+public _load_yaml -> {'budget_per_trade': 0.5, 'k_attn': 0.25}
+== 5) control: real risk_defaults_v1.yaml has no duplicate keys ==
+decision_runtime_v1.yaml     no duplicate (indent,key) pairs
+decision_v1.yaml             no duplicate (indent,key) pairs
+e11_classifier_v1.yaml       MISSING
+e11_params_v4.yaml           no duplicate (indent,key) pairs
+e11_training_v1.yaml         no duplicate (indent,key) pairs
+paper_account_v1.yaml        no duplicate (indent,key) pairs
+quality_weights_v1.yaml      [('1m', 5, 20), ('3m', 6, 21), ('5m', 7, 22), ('15m', 8, 23), ('30m', 9, 24), ('1h', 10, 25), ('2h', 11, 26), ('4h', 12, 27), ('6h', 13, 28), ('8h', 14, 29), ('12h', 15, 30), ('1d', 16, 31), ('1w', 17, 32), ('1mo', 18, 33), ('1m', 20, 35), ('3m', 21, 36), ('5m', 22, 37), ('15m', 23, 38), ('30m', 24, 39), ('1h', 25, 40), ('2h', 26, 41), ('4h', 27, 42), ('6h', 28, 43), ('8h', 29, 44), ('12h', 30, 45), ('1d', 31, 46), ('1w', 32, 47), ('1mo', 33, 48), ('1m', 35, 50), ('3m', 36, 51), ('5m', 37, 52), ('15m', 38, 53), ('30m', 39, 54), ('1h', 40, 55), ('2h', 41, 56), ('4h', 42, 57), ('6h', 43, 58), ('8h', 44, 59), ('12h', 45, 60), ('1d', 46, 61), ('1w', 47, 62), ('1mo', 48, 63), ('1m', 50, 65), ('3m', 51, 66), ('5m', 52, 67), ('15m', 53, 68), ('30m', 54, 69), ('1h', 55, 70), ('2h', 56, 71), ('4h', 57, 72), ('6h', 58, 73), ('8h', 59, 74), ('12h', 60, 75), ('1d', 61, 76), ('1w', 62, 77), ('1mo', 63, 78)]
+risk_defaults_v1.yaml        no duplicate (indent,key) pairs
+setup_weights_v1.yaml        no duplicate (indent,key) pairs
+toobit_wire_v1.yaml          no duplicate (indent,key) pairs
+universe_v1.yaml             [('BTCUSDT', 14, 25), ('ETHUSDT', 15, 26), ('SOLUSDT', 16, 27), ('BNBUSDT', 17, 28), ('XRPUSDT', 18, 29), ('ADAUSDT', 19, 30), ('DOGEUSDT', 20, 31), ('AVAXUSDT', 21, 32), ('LINKUSDT', 22, 33), ('LTCUSDT', 23, 34), ('BTCUSDT', 25, 36), ('ETHUSDT', 26, 37), ('SOLUSDT', 27, 38), ('BNBUSDT', 28, 39), ('XRPUSDT', 29, 40), ('ADAUSDT', 30, 41), ('DOGEUSDT', 31, 42), ('AVAXUSDT', 32, 43), ('LINKUSDT', 33, 44), ('LTCUSDT', 34, 45), ('BTCUSDT', 36, 47), ('ETHUSDT', 37, 48), ('SOLUSDT', 38, 49), ('BNBUSDT', 39, 50), ('XRPUSDT', 40, 51), ('ADAUSDT', 41, 52), ('DOGEUSDT', 42, 53), ('AVAXUSDT', 43, 54), ('LINKUSDT', 44, 55), ('LTCUSDT', 45, 56)]

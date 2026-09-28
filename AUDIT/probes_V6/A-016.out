@@ -1,0 +1,9 @@
+validate_package -> REJECTED red_line_clean= False
+direct inject -> {'package_id': 'pkg-probe', 'cached': False, 'no_op': False, 'path': '/tmp/tmp7pqrlovx/pkgs/pkg-probe-1.0.0.json'}
+files written: ['pkg-probe-1.0.0.json']
+ledger len: 1
+re-inject same id, different hash -> {'package_id': 'pkg-probe', 'cached': True, 'no_op': True, 'identical': False, 'path': '/tmp/tmp7pqrlovx/pkgs/pkg-probe-1.0.0.json', 'reason': 'PACKAGE_ALREADY_INJECTED'}
+files written now: ['pkg-probe-1.0.0.json']
+re-inject same id + same hash -> {'package_id': 'pkg-probe', 'cached': True, 'no_op': True, 'identical': True, 'path': '/tmp/tmp7pqrlovx/pkgs/pkg-probe-1.0.0.json', 'reason': 'PACKAGE_ALREADY_INJECTED'}
+
+real params/ dir untouched: True
