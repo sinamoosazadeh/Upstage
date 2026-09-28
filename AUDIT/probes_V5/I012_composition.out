@@ -1,0 +1,1073 @@
+=== I-012 baseline source: adapter_conformance.py ===
+    59	def _load_adapter(engine_id: str) -> Callable[[Mapping[str, Any]], Any]:
+    60	    target = ENGINE_ADAPTERS.get(engine_id)
+    61	    if target is None:
+    62	        raise AdapterConformanceError("ENGINE_ADAPTER_ABSENT", engine_id)
+    63	    module_name, _, attr = target.partition(":")
+    64	    module = __import__(module_name, fromlist=[attr])
+    65	    return getattr(module, attr)
+    66
+    67
+    68	def translate_legacy(*, engine_id: str, payload: Mapping[str, Any],
+    69	                     version: str) -> Dict[str, Any]:
+    70	    """Read-only translation of ONE legacy record into its v4 object.
+    71
+    72	    The caller receives the canonical v4 projection plus the lineage facts of
+    73	    the migration; nothing is written anywhere.
+    74	    """
+    75	    if version not in LEGACY_VERSIONS:
+    76	        raise AdapterConformanceError("LEGACY_VERSION_QX", version)
+    77	    adapter = _load_adapter(engine_id)
+    78	    before = canonical_json(dict(payload))
+    79	    obj = adapter(dict(payload))
+    80	    after = canonical_json(obj.to_canonical() if hasattr(obj, "to_canonical")
+    81	                           else (obj.to_dict() if hasattr(obj, "to_dict")
+    82	                                 else str(obj)))
+    83	    return {"engine_id": engine_id, "version": version,
+    84	            "legacy_hash": __import__("hashlib").sha256(
+    85	                before.encode()).hexdigest(),
+    86	            "v4_hash": __import__("hashlib").sha256(after.encode()).hexdigest(),
+    87	            "v4_object_type": type(obj).__name__,
+    88	            "read_only": True, "state_mutated": False,
+    89	            "contract_version": CONTRACT_VERSION}
+    90
+    91
+    92	def synthetic_legacy_cases() -> List[Dict[str, Any]]:
+    93	    """v4-derived self-check cases (ADR-P2-009): each case is built from a v4
+    94	    object, expressed in the legacy shape, then round-tripped through the real
+    95	    adapter and compared semantically."""
+    96	    e05 = {
+    97	        "schema_version": "3.0.0", "fid": "fvg-synth-1", "direction": "BULL",
+    98	        "lower": 100.0, "upper": 102.0, "created_at_ts": 1710460800000,
+    99	        "created_at_idx": 10, "ftype": "CONVENTIONAL",
+   100	    }
+   101	    e05_doji = {**e05, "fid": "fvg-synth-2", "ftype": "DOJI_FVG"}
+   102	    e06 = {
+   103	        "version": "3.0.0", "oid": "ob-synth-1", "direction": "LONG",
+   104	        "zone_lo": 99.0, "zone_hi": 101.0, "origin_ts": 1710460800000,
+   105	        "origin_idx": 12,
+   106	    }
+   107	    e06_hl = {**e06, "oid": "ob-synth-2"}
+   108	    e06_hl.pop("zone_lo")
+   109	    e06_hl.pop("zone_hi")
+   110	    e06_hl["origin_high"] = 101.0
+   111	    e06_hl["origin_low"] = 99.0
+   112	    return [
+   113	        {"engine_id": "E05", "version": "v3", "payload": e05,
+   114	         "expect": {"ftype": "CONVENTIONAL", "penalty_applied": False}},
+   115	        {"engine_id": "E05", "version": "v3", "payload": e05_doji,
+   116	         "expect": {"ftype": "CONVENTIONAL", "penalty_applied": True}},
+   117	        {"engine_id": "E06", "version": "v3", "payload": e06,
+   118	         "expect": {"derived_from": "zone_lo_zone_hi"}},
+   119	        {"engine_id": "E06", "version": "v3", "payload": e06_hl,
+   120	         "expect": {"derived_from": "origin_high_origin_low"}},
+   121	    ]
+   122
+   123
+   124	def t_ad_001(*, export_path: Optional[str] = None) -> Dict[str, Any]:
+   125	    """T-AD-001 — v2/v3 → v4.0.0 translation correct; semantics preserved.
+   126
+   127	    Without a user-provided legacy export the harness runs the synthetic
+   128	    v4-derived self-checks and reports the real-data leg as OPEN/UNVERIFIED
+   129	    (ADR-P2-009 — never fabricated).
+   130	    """
+   131	    results: List[Dict[str, Any]] = []
+   132	    failures: List[str] = []
+   133	    for case in synthetic_legacy_cases():
+   134	        translated = translate_legacy(engine_id=case["engine_id"],
+   135	                                      payload=case["payload"],
+   136	                                      version=case["version"])
+   137	        obj = _load_adapter(case["engine_id"])(dict(case["payload"]))
+   138	        expect = case["expect"]
+   139	        checks: Dict[str, Any] = {"translated": True}
+   140	        if "ftype" in expect:
+   141	            checks["ftype"] = getattr(obj, "ftype", None) == expect["ftype"]
+   142	            marker = getattr(obj, "extra", {}).get("v3_doji_penalty")
+   143	            checks["penalty_applied"] = ((marker == 0.7)
+   144	                                        == bool(expect["penalty_applied"]))
+   145	        if "derived_from" in expect:
+   146	            checks["zone_bounds"] = (float(obj.zone_lo) == 99.0
+   147	                                     and float(obj.zone_hi) == 101.0)
+   148	            checks["v4_snapshot_minted"] = bool(getattr(obj, "snapshot_id", ""))
+   149	        ok = all(bool(v) for v in checks.values())
+   150	        if not ok:
+   151	            failures.append(f"{case['engine_id']}:{json.dumps(checks, sort_keys=True)}")
+   152	        results.append({"engine_id": case["engine_id"], "version": case["version"],
+   153	                        "checks": checks, "ok": ok,
+   154	                        "v4_hash": translated["v4_hash"],
+   155	                        "read_only": translated["read_only"]})
+   156	    export_summary: Dict[str, Any] = {
+   157	        "gate": "G-ADAPTER-001", "status": "OPEN/UNVERIFIED",
+   158	        "reason": "ADR-P2-009 — no v2/v3 data set exists in this repository; "
+   159	                  "100 legacy samples cannot be sourced without fabrication",
+   160	        "required_samples": G_ADAPTER_SAMPLE_REQUIREMENT,
+   161	        "samples_supplied": 0, "owner_procedure": True}
+   162	    if export_path:
+   163	        path = Path(export_path)
+   164	        if not path.exists():
+   165	            raise AdapterConformanceError("EXPORT_PATH_ABSENT", export_path)
+   166	        records = json.loads(path.read_text(encoding="utf-8"))
+   167	        if not isinstance(records, list):
+   168	            raise AdapterConformanceError("EXPORT_SHAPE_QX", export_path)
+   169	        export_summary = run_legacy_export(records)
+   170	    return {"test": "T-AD-001", "synthetic_cases": len(results),
+   171	            "results": results, "failures": failures,
+   172	            "passed": not failures,
+   173	            "real_data_gate": export_summary,
+   174	            "contract_version": CONTRACT_VERSION}
+   175
+   176
+   177	def run_legacy_export(records: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+   178	    """Run a *user-provided* legacy export through the read-only adapters."""
+   179	    translated = 0
+   180	    failed: List[Dict[str, Any]] = []
+   181	    for record in records:
+   182	        try:
+   183	            engine_id = str(record.get("engine_id", ""))
+   184	            version = str(record.get("version", "v3"))
+   185	            if isinstance(record.get("payload"), Mapping):
+   186	                # harness synthetic case: engine_id/version + nested payload
+   187	                payload = dict(record["payload"])
+   188	            else:
+   189	                payload = {k: v for k, v in record.items()
+   190	                           if k not in ("engine_id", "version", "expect")}
+   191	            translate_legacy(engine_id=engine_id, payload=payload,
+   192	                             version=version)
+   193	            translated += 1
+   194	        except Exception as exc:               # noqa: BLE001 - reported, not hidden
+   195	            failed.append({"record": str(record)[:120],
+   196	                           "reason": f"{type(exc).__name__}:{exc}"})
+   197	    status = ("CLOSED" if translated >= G_ADAPTER_SAMPLE_REQUIREMENT
+   198	              and not failed else "OPEN/UNVERIFIED")
+   199	    return {"gate": "G-ADAPTER-001", "status": status,
+   200	            "samples_supplied": len(records), "translated": translated,
+   201	            "failures": failed,
+   202	            "required_samples": G_ADAPTER_SAMPLE_REQUIREMENT,
+   203	            "data_loss": 0 if translated == len(records) else
+   204	                         len(records) - translated}
+   205
+=== I-012 baseline source: E05 adapter ===
+   699	# --------------------------------------------------------------------------
+   700	# §5.5 v3→v4 migration adapter (read-only; fail-closed on ambiguity)
+   701	# --------------------------------------------------------------------------
+   702	def load_v3_adapter(payload: Dict[str, Any]) -> FVGObject:
+   703	    """Explicit read-only migration v3 → v4 (§5.5): mitigation_dir absent
+   704	    ⇒ default 0; ftype DOJI_FVG ⇒ CONVENTIONAL with the 0.7 penalty marker
+   705	    in extra. Unresolved ambiguity fails closed (never a silent v4 live
+   706	    interpretation)."""
+   707	    if payload.get("schema_version", "3.0.0") not in ("3.0.0", "3"):
+   708	        raise ValueError("E05_ADAPTER_VERSION_QX: not a v3 payload")
+   709	    required = ("fid", "direction", "lower", "upper", "created_at_ts",
+   710	                "created_at_idx")
+   711	    missing = [k for k in required if k not in payload]
+   712	    if missing:
+   713	        raise ValueError(f"E05_ADAPTER_AMBIGUOUS_QX: missing {missing}")
+   714	    ftype = payload.get("ftype", "CONVENTIONAL")
+   715	    penalty_applied = False
+   716	    if ftype == "DOJI_FVG":
+   717	        ftype = "CONVENTIONAL"
+   718	        penalty_applied = True
+   719	    lower = float(payload["lower"])
+   720	    upper = float(payload["upper"])
+   721	    sal0 = float(payload.get("salience_0", payload.get("salience", 0.0)))
+   722	    obj = FVGObject(
+   723	        fid=str(payload["fid"]), direction=payload["direction"],
+   724	        lower=lower, upper=upper, mid=(lower + upper) / 2,
+   725	        width=upper - lower,
+   726	        created_at_ts=int(payload["created_at_ts"]),
+   727	        created_at_idx=int(payload["created_at_idx"]),
+   728	        ftype=ftype,
+   729	        quality_tag=payload.get("quality_tag", "Q2"),
+   730	        fate=payload.get("fate", "FRESH"),
+   731	        age_bars=int(payload.get("age_bars", 0)),
+   732	        touch_count=int(payload.get("touch_count", 0)),
+   733	        mitigation_depth=float(payload.get("mitigation_depth", 0.0)),
+   734	        mitigation_dir=int(payload.get("mitigation_dir", 0)),
+   735	        salience_0=sal0,
+   736	        salience=float(payload.get("salience", sal0)),
+   737	        freshness=float(payload.get("freshness", 1.0)),
+   738	        premium_z=float(payload.get("premium_z", 0.0)))
+   739	    if penalty_applied:
+   740	        obj.extra["v3_doji_penalty"] = 0.7
+   741	    obj.update_snapshot()
+   742	    return obj
+   743
+=== I-012 baseline source: E06 adapter ===
+   727	# --------------------------------------------------------------------------
+   728	# §8.7 serialization compatibility (v3 read-only research adapter)
+   729	# --------------------------------------------------------------------------
+   730	def load_v3_adapter(payload: Dict[str, Any]) -> OB:
+   731	    """Live v4 does NOT consume v3 payloads directly (§8.7): only the
+   732	    explicit read-only migration adapter may derive zone_hi/zone_lo from
+   733	    older H/L-based fields; ambiguity fails closed."""
+   734	    if payload.get("version", "3.0.0") not in ("3.0.0", "3"):
+   735	        raise ValueError("E06_ADAPTER_VERSION_QX: not a v3 payload")
+   736	    if "zone_lo" in payload and "zone_hi" in payload:
+   737	        zone_lo, zone_hi = float(payload["zone_lo"]), float(payload["zone_hi"])
+   738	    elif "origin_high" in payload and "origin_low" in payload:
+   739	        zone_lo, zone_hi = (float(payload["origin_low"]),
+   740	                            float(payload["origin_high"]))
+   741	    else:
+   742	        raise ValueError(
+   743	            "E06_ADAPTER_AMBIGUOUS_QX: cannot derive zone from v3 fields")
+   744	    required = ("oid", "direction", "origin_ts", "origin_idx")
+   745	    missing = [k for k in required if k not in payload]
+   746	    if missing:
+   747	        raise ValueError(f"E06_ADAPTER_AMBIGUOUS_QX: missing {missing}")
+   748	    ob = OB(
+   749	        oid=str(payload["oid"]), direction=payload["direction"],
+   750	        zone_lo=zone_lo, zone_hi=zone_hi,
+   751	        origin_ts=int(payload["origin_ts"]),
+   752	        origin_idx=int(payload["origin_idx"]),
+   753	        displacement_mag=float(payload.get("displacement_mag", 0.0)),
+   754	        displacement_multi=float(payload.get("displacement_multi", 0.0)),
+   755	        structural_event=payload.get("structural_event", "NONE"),
+   756	        structural_strength=float(payload.get("structural_strength", 0.3)),
+   757	        otype=payload.get("otype", "ENTRY"),
+   758	        quality=payload.get("quality", "Q2"),
+   759	        fate=payload.get("fate", "CANDIDATE"),
+   760	        vol_ratio=float(payload.get("vol_ratio", 0.0)),
+   761	        width=zone_hi - zone_lo,
+   762	        confirmed_at=int(payload.get("confirmed_at",
+   763	                                     payload["origin_ts"])))
+   764	    ob.snapshot_id = e06_snapshot_id(ob)
+   765	    return ob
+   766
+=== I-012 baseline source: production harness composition ===
+   173	def run_harness(*, legacy_export: str | None = None) -> Dict[str, Any]:
+   174	    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+   175	    seal = verify_fixture(payload)
+   176	    try:
+   177	        fixture_name = str(FIXTURE.relative_to(REPO_ROOT))
+   178	    except ValueError:                    # relocated fixture (tests, owner copy)
+   179	        fixture_name = str(FIXTURE)
+   180	    report: Dict[str, Any] = {"harness": "AI.10 adapter conformance runner",
+   181	                              "fixture": fixture_name,
+   182	                              "fixture_seal": seal, "cases": []}
+   183	    if not (seal["ok"] and seal["count_ok"]):
+   184	        report["status"] = "FIXTURE_INTEGRITY_FAILURE"
+   185	        report["passed"] = False
+   186	        return report
+   187
+   188	    from apex.research import adapter_conformance as ac
+   189
+   190	    cases = [run_case(case) for case in payload["cases"]]
+   191	    report["cases"] = cases
+   192	    report["cases_passed"] = sum(1 for c in cases if c["ok"])
+   193	    report["cases_total"] = len(cases)
+   194	    report["t_ad_001"] = ac.t_ad_001(export_path=legacy_export)
+   195	    report["t_ad_002"] = ac.t_ad_002(retries=100, submit=_retry_seam())
+   196	    report["passed"] = (report["cases_passed"] == report["cases_total"]
+   197	                        and report["t_ad_001"]["passed"]
+   198	                        and report["t_ad_002"]["passed"])
+   199	    report["status"] = "PASS" if report["passed"] else "FAIL"
+   200	    return report
+=== I-012 baseline tests ===
+   122	# --------------------------------------------------------------------------
+   123	# T-AD-001 — legacy export translation through the real adapters
+   124	# --------------------------------------------------------------------------
+   125
+   126	class TestTAd001Synthetic:
+   127	    def test_synthetic_cases_pass(self):
+   128	        verdict = ac.t_ad_001()
+   129	        assert verdict["test"] == "T-AD-001"
+   130	        assert verdict["passed"] is True
+   131	        assert verdict["failures"] == []
+   132	        assert verdict["synthetic_cases"] == len(ac.synthetic_legacy_cases())
+   133	        assert all(row["read_only"] is True for row in verdict["results"])
+   134
+   135	    def test_every_case_is_translated_and_none_invented(self):
+   136	        cases = ac.synthetic_legacy_cases()
+   137	        report = ac.run_legacy_export(cases)
+   138	        assert len(cases) >= 2
+   139	        assert report["translated"] == len(cases)
+   140	        assert report["data_loss"] == 0
+   141	        assert report["failures"] == []
+   142
+   143	    def test_the_real_data_gate_stays_open_without_an_export(self):
+   144	        gate = ac.t_ad_001()["real_data_gate"]
+   145	        assert gate["gate"] == "G-ADAPTER-001"
+   146	        assert gate["status"] == "OPEN/UNVERIFIED"
+   147	        assert gate["samples_supplied"] == 0
+   148	        assert gate["required_samples"] == ac.G_ADAPTER_SAMPLE_REQUIREMENT == 100
+   149
+   150	    def test_a_short_owner_export_is_processed_but_the_gate_stays_open(
+   151	            self, tmp_path):
+   152	        import json
+   153	        path = tmp_path / "legacy_export.json"
+   154	        path.write_text(json.dumps(ac.synthetic_legacy_cases()))
+   155	        gate = ac.t_ad_001(export_path=str(path))["real_data_gate"]
+   156	        # every supplied record translated without loss, yet < 100 samples
+   157	        assert gate["samples_supplied"] == len(ac.synthetic_legacy_cases())
+   158	        assert gate["translated"] == gate["samples_supplied"]
+   159	        assert gate["status"] == "OPEN/UNVERIFIED"
+   160
+   161	    def test_a_corrupt_export_record_is_reported_not_hidden(self, tmp_path):
+   162	        import json
+   163	        path = tmp_path / "legacy_export.json"
+   164	        path.write_text(json.dumps([
+   165	            {"engine_id": "E05", "version": "v3", "ftype": "NOPE"},
+   166	            {"engine_id": "E99", "version": "v2", "ftype": "BULLISH_FVG"}]))
+   167	        gate = ac.t_ad_001(export_path=str(path))["real_data_gate"]
+   168	        assert gate["translated"] == 0
+   169	        assert len(gate["failures"]) == 2
+   170	        assert gate["status"] == "OPEN/UNVERIFIED"
+   171
+   172	    def test_absent_export_path_is_refused(self, tmp_path):
+   173	        with pytest.raises(ac.AdapterConformanceError) as err:
+   174	            ac.t_ad_001(export_path=str(tmp_path / "missing.json"))
+   175	        assert err.value.reason == "EXPORT_PATH_ABSENT"
+   176
+   177	    def test_summary_names_the_engines_and_the_rename(self):
+   178	        summary = ac.conformance_summary()
+   179	        assert set(summary["engine_adapters"]) == {"E05", "E06"}
+   180	        assert ac.rename_registry_entry("order_book_imbalance") == "obi_proxy"
+   181	        assert ac.rename_registry_entry("atr_zscore") == "atr_zscore"
+   182	        assert summary["real_data_requirement"] == 100
+    77	class TestHarnessRun:
+    78	    def test_every_golden_case_passes(self, report):
+    79	        assert report["status"] == "PASS"
+    80	        assert report["passed"] is True
+    81	        assert report["cases_total"] == 19
+    82	        assert report["cases_passed"] == 19
+    83	        assert [c["id"] for c in report["cases"]] == \
+    84	            [f"C-{i:02d}" for i in range(1, 20)]
+    85	        assert all(case["failures"] == [] for case in report["cases"])
+    86
+    87	    def test_t_ad_001_and_t_ad_002_are_part_of_the_verdict(self, report):
+    88	        assert report["t_ad_001"]["test"] == "T-AD-001"
+    89	        assert report["t_ad_001"]["passed"] is True
+    90	        assert report["t_ad_002"]["test"] == "T-AD-002"
+    91	        assert report["t_ad_002"]["passed"] is True
+    92	        assert report["t_ad_002"]["unique_keys"] == 1
+    93	        assert report["t_ad_002"]["new_submissions"] == 1
+    94
+    95	    def test_the_real_data_gate_is_reported_open(self, report):
+    96	        gate = report["t_ad_001"]["real_data_gate"]
+    97	        assert gate["gate"] == "G-ADAPTER-001"
+    98	        assert gate["status"] == "OPEN/UNVERIFIED"
+    99
+   100	    def test_main_exits_zero_on_a_green_run(self, runner, monkeypatch, capsys):
+=== Contract / decision clauses ===
+ 19252	| **G-CAPACITY-001** | Capacity Load Test (p95 latency) | Measure p95 analysis latency (feature → decision) on target device under 140 bundles/min load | p95 latency ≤ 400 ms; 30% headroom recommended (p95 ≤ 280 ms) | Load test results: 1000+ decisions sampled; p50, p95, p99 latencies; device/build/results logged | **OPEN/UNVERIFIED** | Run Phase 7; if p95 > 400 ms, redesign or upgrade device |
+ 19253	| **G-CAPACITY-002** | Capacity Load Test (CPU/Memory) | Measure CPU and heap memory under sustained 140 bundles/min | CPU < 20% sustained; heap < 400 MB; peak < 50% CPU, < 500 MB heap | 60-minute steady-state run; monitor CPU%, heap GB; peak measurements logged | **OPEN/UNVERIFIED** | Run Phase 7 |
+ 19254	| **G-ADAPTER-001** | Adapter Conformance | Verify E01–E12 v4.0.0 read-only migration adapters handle v2/v3 legacy data for research/backtest use only | Zero data loss; semantics preserved; outputs equivalent to direct v4.0.0 computation where applicable | 100 legacy data samples; adapter output vs. direct v4.0.0 output; byte-identical or documented equivalence | **N/A** | No legacy export exists (Session-A P5 2026-09-17, D6) |
+ 19255	| **G-RESTORE-001** | Backup/Restore Drill | Execute full backup → restore cycle on production-like data volume | Restore completes in ≤ 30 minutes; hash-chain validation 100% pass; zero data loss | Backup at T0 (12-hour data set); restore at T0+30min; hash all records; log mismatch count (must be 0) | **OPEN/UNVERIFIED** | Run 2 weeks before go-live; repeat weekly |
+ 19256	| **G-PAPER-001** | Paper Trading (Deterministic Replay) | Run strategy on 10 days of historical data; confirm zero execution errors | 100% of signals processed without exception; ledger reconciles with broker snapshot; P/L matches deterministic replay | 10-day backtest replay; compare live paper results to deterministic replay; log delta (must be 0 up to rounding) | **OPEN/UNVERIFIED** | Phase-2 deterministic double run over the whole local store (byte-identical hashes, zero exceptions); entry gate to PAPER (Session-A P5 2026-09-17, D6) |
+ 19257	| **G-PAPER-002** | Paper Trading (Drift Detection) | Run paper trading continuously for 5 days on the 24/7 crypto market; monitor for drift, clock, network issues | No unrecoverable errors; clock drift < 100 ms at all times; network uptime > 99.9% | 5-day live run logs; clock snapshots every 5 min; network error counts; all < thresholds | **OPEN/UNVERIFIED** | Measured passively during the first 5 days of normal PAPER use (5-min drift/uptime snapshots); exit gate towards LIVE, not entry to PAPER (Session-A P5 2026-09-17, D6) |
+ 19258	| **G-RISK-001** | Risk Veto Autonomy Verification | Confirm Risk Kernel vetoes independently; no override possible from upstream | Test 20 scenarios where Decision says "BUY" but Risk says "VETO"; all result in NO TRADE | Test harness; Decision forced to propose trades; Risk veto log shows all rejections with reasons | **OPEN/UNVERIFIED** | Run Phase 5 |
+ 19259	| **G-FALLBACK-001** | Fail-Closed Mode Drill | Simulate data corruption, lineage loss, broker mismatch; confirm system enters FAIL_CLOSED; new entries blocked | System blocks new entries; preserves protective orders; emits P0 alert; awaits manual override | Inject test failures; measure response time (must be < 5 sec); confirm protective orders in place | **OPEN/UNVERIFIED** | Run Phase 5 |
+ 19260	| **G-LEDGER-001** | Ledger Immutability Verification | Attempt to overwrite a CLOSED ledger record; confirm rejection | Attempt UPDATE fails; only INSERT (correction) allowed | SQL test; attempt UPDATE on ledger table; verify error code | **OPEN/UNVERIFIED** | Run Phase 5 |
+ 19261
+ 19262	**Status definitions:**
+ 19263	- **OPEN/UNVERIFIED:** gate condition not yet measured; must be completed before live deployment.
+ 19264	- **CLOSED:** gate condition met; evidence collected and archived.
+ 19265	- **BLOCKED:** gate condition not met; requires root-cause fix; deployment prohibited until resolved.
+ 19266	- **N/A:** gate does not apply (G-ADAPTER-001: no legacy export exists); recorded, not measured (Session-A P5 2026-09-17, D6).
+ 19267
+ 19268	**No claims of execution:** All gates listed above are **not yet executed**. The act of listing them is not a claim that measurements have been taken or that systems have been tested. This is a specification of what must be measured.
+ 19269
+ 19270	**Session-A P5 (2026-09-17; D6 — normative sequencing; nothing deleted, the
+ 19271	order changes):** G-PAPER-001 is satisfied by the W.6 Phase-2
+ 19272	deterministic double run (entry gate to PAPER); G-PAPER-002 is measured
+ 19273	passively during the first 5 days of normal PAPER use (exit gate towards
+ 19274	LIVE, not entry to PAPER); G-TOOBIT-*, G-CAPACITY-*, G-RESTORE-001,
+ 19275	G-RISK-001, G-FALLBACK-001, G-LEDGER-001 move to the pre-LIVE checklist;
+ 19276	G-ADAPTER-001 is N/A (no legacy export exists).
+ 19277
+ 19278	---
+ 19504	**Before Phase 2 (features & context) can be considered "complete":**
+ 19505	- [x] All T-E01-001 through T-E12 tests pass for instantiated engines (AI.10). Evidence: the twelve per-engine suites tests/unit/test_e01_structure.py (T-E01-001: ::TestTE01001Schema::test_50_candles_output_conforms_v4), test_e02_liquidity.py, test_e03_volume.py, test_e04_volatility.py, test_e05_fvg.py, test_e06_orderblock.py, test_e07_rtm.py, test_e08_wyckoff.py, test_e09_trend.py, test_e10_momentum.py, test_e11_regime.py, test_e12_temporal.py, plus the golden-fixture engine integrations tests/integration/test_cp2_engines.py..test_cp5_engines.py and the sealed AI.10 harness tests/unit/test_ai10_harness.py::test_every_golden_case_passes.
+ 19506	- [x] E11 K=9 explicitly validated (T-E11-K9). Evidence: tests/unit/test_e11_regime.py::TestTE11K9 (registry, state enum, probs/logits and T are 9 / 9x9), enforced at runtime by apex/engines/e11_regime/engine.py EngineParams and run_engine (T-E11-K9 guard).
+ 19507	- [x] E12 UTC window canonicalization verified (T-E12-Windows). Evidence: tests/unit/test_e12_temporal.py::TestTE12Windows (UTC window boundary table plus §8.8 boundary stability).
+ 19508	- [x] All adapters (v2/v3 → v4.0.0) implemented and tested (T-AD-001, T-AD-002, G-ADAPTER-001). Evidence: tests/integration/test_cp8_adapters.py::TestTAd001Synthetic and ::TestTAd002AdapterSeam, re-checked in the sealed harness tests/unit/test_ai10_harness.py::test_t_ad_001_and_t_ad_002_are_part_of_the_verdict. G-ADAPTER-001 is ticked only to the extent the tests prove it: the real-owner-export gate is asserted to be REPORTED OPEN (tests/integration/test_cp8_adapters.py::TestTAd001Synthetic::test_the_real_data_gate_stays_open_without_an_export, tests/unit/test_ai10_harness.py::test_the_real_data_gate_is_reported_open, ADR-P2-009) - this tick does not claim that gate is satisfied.
+ 19509
+ 19510	**Before Phase 5 (Risk & Execution) can be considered "complete":**
+    55	| T-AD-001/002 · T-PKG-001 · T-RESTORE-001 · NFR harnesses (T-NFR-001..004 per ADR-P2-010) · §9.9 boxes · E-VAL-021/022 sweep re-run | CP-8 | PASS(2026-09-14) — **T-AD-001**: tests/integration/test_cp8_adapters.py::TestTAd001Synthetic + scripts/run_adapter_conformance.py (synthetic self-checks pass; `real_data_gate` OPEN/UNVERIFIED per ADR-P2-009 — an owner export is processed, but < 100 samples keeps the gate open); **T-AD-002**: tests/integration/test_cp8_adapters.py::TestTAd002AdapterSeam (100 retries against the real `ToobitAdapter` + fake responder: `unique_keys=1`, `new_submissions=1`, `cached_hits=99`, exactly one `POST /api/v1/futures/order`, 0 signature violations) + tests/unit/test_ai10_harness.py::TestHarnessRun; **T-PKG-001**: tests/unit/test_research_governance.py::TestInjectionLedger (first injection writes one suggestion; re-injection is a no-op; idempotency survives a process restart); **T-RESTORE-001**: tests/unit/test_ops_backup.py::TestRestoreDrillT001 (tempdir end-to-end, 25 records, 0 mismatches, RTO within 1800 s); **NFR harnesses (T-NFR-001..004)**: scripts/run_nfr_harness.py + tests/unit/test_ai10_nfr_harness.py — T-NFR-004 asserted in-process (2000 P0 all delivered, P2 evicted, lane ≤ 1000); T-NFR-001/002 measured in-sandbox and labelled **SANDBOX-PARTIAL** (analysis p95 0.74 ms / submission p95 0.34 ms vs the 400/200 ms bounds); T-NFR-003 labelled **OWNER-VERIFY** (acceptance = the 60-minute target-device run); T-TOOBIT-001/002 remain owner measurements; **§9.9 boxes**: E11 K=9, adapters read-only (`read_only=True` on every T-AD-001 case), snapshot determinism (CP-1/2/3 suites), never-OI=0 (T-DC-004) and corrections SUPERSEDED+revision (T-CL-001/002) — CP-8 re-ran the affected suites, all green; **E-VAL-021/022 sweep re-run**: tests/unit/test_toobit_map.py -k "Symbol or Interval or Timeframe" ⇒ 19 passed; tests/unit/test_catalog.py -k "core10 or timeframe or TDC" ⇒ 5 passed |
+    56	| External gates AI.13 (G-TOOBIT-*, G-TARGET-DEVICE-*, G-CAPACITY-*, G-ADAPTER-*, G-RESTORE-*, G-PAPER-*, G-RISK-*, G-FALLBACK-*) | harness built by owning stage (CP-1/6/7/8); MEASUREMENTS = OWNER procedures; status recorded honestly (never agent-claimed) | OPEN/UNVERIFIED(2026-09-14, CP-8) — harnesses exist and were executed in-sandbox, but every gate that needs the venue, the device, capital or a PAPER window is an **owner procedure**: T-TOOBIT-001/002 (depth, rate) were never called by an agent; G-ADAPTER-001 sits at OPEN/UNVERIFIED with 0/100 legacy samples (`apex/research/adapter_conformance.py` `real_data_gate`); G-RESTORE-001 is proven by the tempdir drill yet the production restore is an owner run; G-PAPER-*/G-RISK-*/G-FALLBACK-*/G-TARGET-DEVICE-*/G-CAPACITY-* need the owner's PAPER window, capital and target device. Per-gate procedures in PHASE2_FINAL_REPORT.md §7 |
+   245	| G-TOOBIT-001 (listing) | `scripts/run_nfr_harness.py` owner-gate list + `apex/execution/toobit_map.py` Core-10 map | no venue call made | — | **OPEN/UNVERIFIED** | one-hour timestamped snapshot per symbol, 1 h before deployment |
+   246	| G-TOOBIT-002 (depth > 500k USDT) | same | no | — | **OPEN/UNVERIFIED** | REST `/depth` snapshot + hash per symbol |
+   247	| G-TOOBIT-003 (rate headroom > 120 req/s) | `apex/execution/toobit_adapter.py` token bucket (in-repo) + `scripts/run_nfr_harness.py` | bucket laws asserted; no venue load test | — | **OPEN/UNVERIFIED** | 10-minute production-like load run |
+   248	| G-TARGET-DEVICE-001 | — | no | — | **OPEN/UNVERIFIED** | record device model/OS/compiler |
+   249	| G-CAPACITY-001 (p95 ≤ 400 ms) | `scripts/run_nfr_harness.py` (`--decisions`) | yes — sandbox p95 **0.74 ms** | SANDBOX-PARTIAL | **OPEN/UNVERIFIED** | 1000+ decisions on the target device with 30 % headroom |
+   250	| G-CAPACITY-002 (CPU < 20 %, heap < 400 MB, 60 min) | `scripts/run_nfr_harness.py --minutes` | short sample only (CPU 0.08 %, RSS 25.3 MB) | OWNER-VERIFY | **OPEN/UNVERIFIED** | 60-minute steady-state on-device run |
+   251	| G-ADAPTER-001 (100 legacy samples) | `apex/research/adapter_conformance.py` + `scripts/run_adapter_conformance.py` | synthetic self-checks PASS; **0/100 real samples** | — | **OPEN/UNVERIFIED** (ADR-P2-009) | supply a v2/v3 export; the harness then reports translated/failed counts |
+   252	| G-RESTORE-001 | `apex/ops/backup.py` (`restore_drill`) | yes — tempdir drill, 0 mismatches, RTO within 1800 s | SANDBOX-PARTIAL | **OPEN/UNVERIFIED** | production-volume backup → restore ≤ 30 min, weekly |
+   253	| G-PAPER-001 (10-day replay) | paper loop + `scripts/run_apex.py demo` | loop demo green; no 10-day data set in-repo | — | **OPEN/UNVERIFIED** | 10-day PAPER replay vs deterministic replay, delta 0 |
+   254	| G-PAPER-002 (5-day drift/uptime) | drift block + clock tests | drift-block path green; no 5-day run | — | **OPEN/UNVERIFIED** | 5-day continuous PAPER run, 5-min clock snapshots |
+   255	| G-RISK-001 (veto autonomy, 20 scenarios) | `apex/risk/kernel.py` + `tests/unit/test_risk_kernel.py` (14 vetoes, order + boundaries) | yes (unit + chain) | — | **OPEN/UNVERIFIED** | 20 forced-proposal veto scenarios on the owner's system |
+   296	  8 hits, all allowlisted abstract seams (each with ≥1 concrete implementation)
+   297	  or the mandated Wave-Out notes; 0 Wave-In stubs; no `pass`-only bodies outside
+   298	  cancellation handling.
+   299	- [x] **No specification deviation occurred beyond logged & accepted items.** —
+   300	  deviations are exactly: ADR-P2-003 (additive handoffs), ADR-P2-005
+   301	  (research/ops paths), ADR-P2-009 (adapter conformance = synthetic + owner
+   302	  export; real gate OPEN), ADR-P2-010 (sandbox/device labels), ADR-P2-013
+   303	  (frozen `.gitignore`), plus the logged issues in §8 (ISSUE-CP8-001…006 and
+   304	  the predecessor entries they close).
+   305
+   306	**Honest limits of this declaration.** It covers the repository as measured in
+=== Baseline run_apex production composition ===
+   695	async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
+   696	                 interval: float = 60.0, report_every: int = 1) -> int:
+   697	    if cfg.apex_env == "LIVE" and not cfg.economic_gate_signed:
+   698	        code = "LIVE_CAPITAL_LOCKED"
+   699	        _say(f"REFUSED: {code} — APEX_ENV=LIVE is not a capital switch; LIVE "
+   700	             "capital stays locked until APEX_ECONOMIC_GATE_SIGNED=1 (Y.1 "
+   701	             "L17093) and the owner's written approval. Run PAPER first.")
+   702	        return EXIT_DEGRADED
+   703	    if not cfg.allow_signed:
+   704	        _say("REFUSED: SIGNED_NOT_ALLOWED — PAPER orders require "
+   705	             "APEX_ALLOW_SIGNED=1 (Y.1 L17093). Re-run exactly:")
+   706	        _say("  APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 TOOBIT_API_KEY=... "
+   707	             "TOOBIT_API_SECRET=... TELEGRAM_BOT_TOKEN=... "
+   708	             "TELEGRAM_OWNER_CHAT_ID=... python scripts/run_apex.py serve")
+   709	        return EXIT_DEGRADED
+   710
+   711	    runtime = await Runtime(cfg).start()
+   712	    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
+   713	    await service.open()
+   714	    gateway = None
+   715	    try:
+   716	        ledger, bus = runtime.ledger, runtime.bus
+   717	        clock = C.SystemClock()
+   718	        adapter = runtime.adapter()
+   719	        notifier = await _notifier_for(cfg)
+   720	        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+   721	                                       owner_chat_id=cfg.telegram_owner_chat_id
+   722	                                       or None)
+   723	                     if cfg.telegram_bot_token else None)
+   724	        control = CP.ControlPlane(
+   725	            signaling=signaling, config=cfg, clock=clock.monotonic,
+   726	            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+   727	            paper_balance=(await EC.paper_balance(ledger)
+   728	                           if cfg.apex_env == "PAPER" else "0"))
+   729	        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+   730	        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+   731	                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+   732	                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+   733	            control.register(name, _noop_handler(name))
+   734	        if cfg.telegram_bot_token:
+   735	            gateway = GW.TelegramGateway(
+   736	                control=control, source=GW.AiogramUpdateSource(config=cfg),
+   737	                notifier=_telegram_reply(signaling),
+   738	                bootstrap=service, clock=clock.monotonic,
+   739	                utc_now=clock.utc_now, poll_timeout=5.0)
+   740	        watchdog = WD.Watchdog(telegram_plane=signaling,
+   741	                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+   742	                               now=time.time)
+   743	        # CP-9 bridge: the provider is registered at the composition root, so
+   744	        # every PAPER cell now asks the governed store/context → pattern/setup
+   745	        # → gates → forecast → risk/decision chain for a real plan.  Missing
+   746	        # persisted engine context remains a named fail-closed refusal; the
+   747	        # provider never falls back to a hand-built plan.
+   748	        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+   749	                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+   750	        plan_bridge = PB.PaperPlanBridge(
+   751	            store=runtime.store, environment=cfg.apex_env,
+   752	            context_source=producer.get_bridge_context if producer is not None else None,
+   753	            context_preparer=producer.prepare if producer is not None else None)
+   754	        async def catch_up(now_ms: int) -> Dict[str, Any]:
+   755	            result = await service.catch_up(now_ms)
+   756	            if cfg.apex_env == "PAPER":
+   757	                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+   758	            return result
+   759
+   760	        driver = PL.PaperRuntime(
+   761	            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+   762	            adapter=adapter, signaling=signaling, control=control,
+   763	            gateway=gateway, watchdog=watchdog, clock=clock,
+   764	            environment=cfg.apex_env, notifier=notifier,
+   765	            plan_provider=plan_bridge, catch_up=catch_up)
+   766	        _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
+   767	             "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
+   768	        drift = await C.measure_drift(
+   769	            _venue_server_time if adapter is not None else _no_venue_time, clock)
+   770	        boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+   771	        try:
+   772	            EC.load_classifier()
+   773	            artifact_name = "E11_ARTIFACT"
+   774	        except EC.BridgeError as exc:
+   775	            artifact_name = exc.reason
+   776	        _say(f"  boot_state={boot['boot_state']} "
+   777	             f"new_trades_allowed={boot['new_trades_allowed']} "
+   778	             f"drift={drift['state']} ({drift.get('reason') or 'measured'}) "
+   779	             f"artifact={artifact_name}")
+   780	        if driver.plan_provider is None:
+   781	            _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
+   782	                 "refusal NO_PLAN_PROVIDER")
+   783	        else:
+   784	            _say("  plan seam: WIRED — governed PAPER store bridge "
+   785	                 "(missing context refuses by name; no synthetic plan)")
+   786	        _say(f"  signal_source={driver.signal_source} · cells=140 · "
+   787	             f"max_trades_per_cycle={driver.max_trades_per_cycle} · "
+   788	             f"telegram={'WIRED' if gateway is not None else 'DISABLED (no token)'}")
+   789	        _say("  (Ctrl-C stops the loop; the ledger chain and the durable "
+   790	             "cursors stay consistent)")
+   791	        outcome = await driver.run(cycles=cycles, interval=interval)
+   792	        for cycle in driver.cycles[-3:]:
+   793	            _say(f"  cycle {cycle['cycle']}: cells={cycle['cells_due']} "
+   794	                 f"complete={cycle['cells_complete']} "
+   795	                 f"halted={cycle['cells_halted']} blocked={cycle['cells_blocked']} "
+   796	                 f"trades={len(cycle['trades'])} open={len(cycle['open_intents'])}")
+   797	            if cycle.get("halt_reasons"):
+   798	                _say(f"    named refusals: "
+   799	                     f"{json.dumps(cycle['halt_reasons'], sort_keys=True)}")
+   800	        _say(f"  cycles={outcome['cycles']} trades={outcome['trades']} "
+   801	             f"open={outcome['open_intents']} refusals={outcome['refusals']} "
+   802	             f"ledger_chain_intact={outcome['ledger_chain_intact']}")
+   803	        if as_json:
+   804	            _say(json.dumps({"boot": boot, "outcome": outcome,
+   805	                             "cycles": driver.cycles}, default=str, indent=2,
+   806	                            sort_keys=True))
+   807	        return EXIT_READY if boot["boot_state"] == "READY" else EXIT_DEGRADED
+   808	    finally:
+   809	        if gateway is not None:
+   810	            await gateway.aclose()
+   811	        await service.close()
+   812	        await runtime.stop()
+   813
+=== Baseline PaperRuntime production composition ===
+   648	    async def _resolve_plan(self, payload: Mapping[str, Any]
+   649	                            ) -> Mapping[str, Any]:
+   650	        """Ask the decision bridge for this cell's plan (the frozen SL-5 → SL-6
+   651	        seam). No provider ⇒ a NAMED refusal, never a fabricated plan."""
+   652	        if self.plan_provider is None:
+   653	            raise CellRefusal(
+   654	                "NO_PLAN_PROVIDER",
+   655	                "no plan provider is wired: the engine → fabric → setup → "
+   656	                "forecast → risk → plan bridge is a separate increment "
+   657	                "(PHASE2_HANDOFF_WIRING §REMAINING WORK)")
+   658	        provided = self.plan_provider(payload["symbol"], payload["timeframe"],
+   659	                                      payload["as_of"])
+   660	        plan = await provided if hasattr(provided, "__await__") else provided
+   661	        if plan is None:
+   662	            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+   663	            if self.environment == "PAPER" and refusal:
+   664	                raise CellRefusal(refusal["reason"],refusal.get("detail",""))
+   665	            raise CellRefusal("NO_PLAN_FOR_CELL",
+   666	                              f"{payload['cell_id']} has no governed plan at "
+   667	                              f"{payload['as_of']}")
+   668	        if not isinstance(plan, Mapping):
+   669	            raise CellRefusal("PLAN_TYPE_QX", type(plan).__name__)
+   670	        return dict(plan)
+   956	    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+   957	        moment = self.clock.now_ms() if now_ms is None else int(now_ms)
+   958	        as_of = _ms_to_iso(moment)
+   959	        self._budget_taken = 0
+   960	        self._cycle_proposals = {}
+   961	        if not self._cursor_loaded:
+   962	            await self._load_cursor()
+   963	        cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
+   964	                                 "signal_source": self.signal_source,
+   965	                                 "trading_enabled": self.trading_enabled,
+   966	                                 "budget_limit": self.max_trades_per_cycle}
+   967	        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+   968	                             {"cells_checked": 0, "cells_updated": 0,
+   969	                              "bars_ingested": 0, "failures": []})
+   970	        self._catch_up_failed = {row["cell"]: row
+   971	                                 for row in cycle["catch_up"]["failures"]}
+   972	        if self.watchdog is not None:
+   973	            cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
+   974	        cycle["storage"] = await self._storage_guard()
+   975	        if self.gateway is not None:
+   976	            cycle["telegram"] = await self.gateway.run_once()
+   977	        # The scheduler's law is "on each TF close run the stages for THAT
+   978	        # cell": a cell runs once per close, and a cell whose close has not
+   979	        # advanced since the previous cycle is not run again.
+   980	        already = []
+   981	        due = []
+   982	        for item in self.scheduler.due_cells(now_ms=moment):
+   983	            recorded = self._last_close.get(item[0].cell_id)
+   984	            if recorded is not None and int(item[1]) <= int(recorded):
+   985	                already.append(item)
+   986	                continue
+   987	            due.append(item)
+   988	        cycle["cells_skipped_already_decided"] = len(already)
+   989	        if self.max_cells_per_cycle is not None:
+   990	            due = due[:self.max_cells_per_cycle]
+   991	        # G1: all expensive source preparation completes before run_cell
+   992	        # starts its latency clock. D22 failures never enter preparation;
+   993	        # a failed source must not fall back to its previous cached success.
+   994	        self._context_preparation_failed = {}
+   995	        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+   996	        receipt_ms = max(moment,self.clock.now_ms())
+   997	        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+   998	                                for cell,close in due} if self.environment == "PAPER" else {})
+   999	        cycle["decision_as_of"] = dict(self._decision_as_of)
+  1000	        cycle["publishers"] = await self._refresh_publishers(due)
+  1001	        published = (cycle.get("catch_up") or {}).get("quality_publish") or {}
+  1002	        cycle["publishers"]["quality_facts_written"] = int(
+  1003	            cycle["publishers"].get("quality_facts_written") or 0) + int(
+  1004	                published.get("written") or 0)
+  1005	        cycle["publishers"]["failures"] = list(
+  1006	            cycle["publishers"].get("failures") or [])
+  1007	        cycle["publishers"]["failures"].extend(list(published.get("failures") or []))
+  1008	        prepare = getattr(self.plan_provider, "prepare", None)
+  1009	        if callable(prepare):
+  1010	            for cell, close in due:
+  1011	                if cell.cell_id in self._catch_up_failed:
+  1012	                    continue
+  1013	                preparation["cells_checked"] += 1
+  1014	                try:
+  1015	                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+  1016	                    preparation["cells_prepared"] += 1
+  1017	                except Exception as exc:
+  1018	                    failed = {"cell": cell.cell_id,
+  1019	                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+  1020	                              "detail": getattr(exc, "detail", type(exc).__name__)}
+  1021	                    self._context_preparation_failed[cell.cell_id] = failed
+  1022	                    preparation["failures"].append(failed)
+  1023	        cycle["context_preparation"] = preparation
+  1024	        tasks = [asyncio.create_task(self.scheduler.run_cell(
+  1025	                    cell, close_ms=close, context={"cell_state": {}}))
+  1026	                 for cell, close in due]
+  1027	        runs = list(await asyncio.gather(*tasks)) if tasks else []
+=== Baseline conformance runner complete source ===
+     1	#!/usr/bin/env python3
+     2	"""AI.10 conformance **harness runner** (CP-8 scope; delegated by CP-7).
+     3
+     4	Runs, in one executable pass:
+     5
+     6	* the hash-locked 19-case Toobit conformance fixture
+     7	  (``tests/fixtures/toobit_adapter_conformance.json``) against the REAL CP-7
+     8	  ``ToobitAdapter`` over the in-repo fake responder (a test double only — no
+     9	  network, no credentials, nothing outside the sandbox);
+    10	* **T-AD-001** legacy-adapter translation (synthetic self-checks; an owner
+    11	  export path can be supplied with ``--legacy-export``);
+    12	* **T-AD-002** idempotent-retry conformance through the adapter seam.
+    13
+    14	The fixture is verified against ``_meta.cases_sha256`` BEFORE any case runs;
+    15	a tampered fixture aborts the harness (exit 2) instead of producing a verdict.
+    16
+    17	Usage
+    18	-----
+    19	    python3 scripts/run_adapter_conformance.py [--json] [--legacy-export PATH]
+    20
+    21	Exit codes: 0 all green · 1 conformance failure · 2 fixture integrity failure.
+    22	"""
+    23
+    24	from __future__ import annotations
+    25
+    26	import argparse
+    27	import hashlib
+    28	import json
+    29	import os
+    30	import sys
+    31	from pathlib import Path
+    32	from typing import Any, Dict, List
+    33
+    34	REPO_ROOT = Path(__file__).resolve().parents[1]
+    35	FIXTURE = REPO_ROOT / "tests" / "fixtures" / "toobit_adapter_conformance.json"
+    36
+    37	#: The harness itself is the composition root: it sets the PAPER/test-double
+    38	#: environment the adapter needs. These are the nine G16 names only — the
+    39	#: values here are the fixture key/secret of the in-repo responder.
+    40	HARNESS_ENV = {
+    41	    "APEX_ENV": "PAPER",
+    42	    "APEX_ALLOW_SIGNED": "1",
+    43	    "TOOBIT_API_KEY": "TEST_KEY_CP8_HARNESS",
+    44	    "TOOBIT_API_SECRET": "TEST_SECRET_CP8_HARNESS",
+    45	}
+    46
+    47
+    48	def _prepare_imports() -> None:
+    49	    for extra in (str(REPO_ROOT), str(REPO_ROOT / "tests")):
+    50	        if extra not in sys.path:
+    51	            sys.path.insert(0, extra)
+    52
+    53
+    54	def verify_fixture(payload: Dict[str, Any]) -> Dict[str, Any]:
+    55	    """Hash-seal check over the ``cases`` array (never over the whole file)."""
+    56	    from apex.identity.canonical_json import canonical_json
+    57
+    58	    cases = payload.get("cases")
+    59	    meta = payload.get("_meta", {})
+    60	    if not isinstance(cases, list) or not cases:
+    61	        return {"ok": False, "reason": "FIXTURE_CASES_ABSENT"}
+    62	    digest = hashlib.sha256(canonical_json(cases).encode("utf-8")).hexdigest()
+    63	    expected = meta.get("cases_sha256")
+    64	    return {"ok": digest == expected, "cases_sha256": digest,
+    65	            "expected": expected, "case_count": len(cases),
+    66	            "declared_count": meta.get("case_count"),
+    67	            "count_ok": meta.get("case_count") == len(cases),
+    68	            "reason": None if digest == expected else "FIXTURE_HASH_MISMATCH"}
+    69
+    70
+    71	def _apply_scenario(responder, scenario: Dict[str, Any]) -> None:
+    72	    if "fill_mode" in scenario:
+    73	        responder.set_fill_mode(scenario["fill_mode"],
+    74	                                price=scenario.get("fill_price"))
+    75	    if scenario.get("timeouts"):
+    76	        responder.lose_next_ack(scenario["timeouts"],
+    77	                                record=scenario.get("record_before_timeout",
+    78	                                                    True))
+    79	    if scenario.get("fail_with") is not None:
+    80	        responder.fail_next(scenario["fail_with"],
+    81	                            scenario.get("fail_times", 1))
+    82	    for order in scenario.get("seed_orders", []):
+    83	        responder.seed_order(**order)
+    84	    if scenario.get("seed_position"):
+    85	        responder.seed_position(**scenario["seed_position"])
+    86
+    87
+    88	def run_case(case: Dict[str, Any]) -> Dict[str, Any]:
+    89	    """One fixture case against the real adapter + the fake responder."""
+    90	    import asyncio
+    91
+    92	    from apex.config import Config
+    93	    from apex.execution.toobit_adapter import ToobitAdapter
+    94	    from fake_toobit_responder import FakeToobitResponder
+    95
+    96	    operations = {
+    97	        "submit_order": lambda adapter, call: adapter.submit_order(**call),
+    98	        "cancel_order": lambda adapter, call: adapter.cancel_order(**call),
+    99	        "query_order_state": lambda adapter, call:
+   100	            adapter.query_order_state(**call),
+   101	        "query_open_positions": lambda adapter, call:
+   102	            adapter.query_open_positions(**call),
+   103	        "query_account_margin_health": lambda adapter, call:
+   104	            adapter.query_account_margin_health(**call),
+   105	    }
+   106	    responder = FakeToobitResponder(api_key=HARNESS_ENV["TOOBIT_API_KEY"],
+   107	                                    api_secret=HARNESS_ENV["TOOBIT_API_SECRET"])
+   108	    adapter = ToobitAdapter(config=Config(), transport=responder,
+   109	                            utc_now=lambda: "2026-01-01T00:00:00.000Z",
+   110	                            clock=lambda: 1000.0)
+   111	    _apply_scenario(responder, case.get("scenario", {}))
+   112	    calls = case.get("calls") or [case["call"]]
+   113	    posts_before = len(responder.calls_to("/api/v1/futures/order", "POST"))
+   114	    result = None
+   115	    for call in calls:
+   116	        result = asyncio.run(operations[case["operation"]](adapter, call))
+   117	    observed = result.to_dict()
+   118	    failures: List[str] = []
+   119	    for key, expected in case.get("expect", {}).items():
+   120	        if key == "attempts":
+   121	            if len(result.attempts) != expected:
+   122	                failures.append(f"{key}: {len(result.attempts)} != {expected}")
+   123	        elif key == "attempt_sources":
+   124	            sources = [a.result_source for a in result.attempts]
+   125	            if sources != expected:
+   126	                failures.append(f"{key}: {sources} != {expected}")
+   127	        elif key == "unique_idempotency_keys":
+   128	            keys = [a.idempotency_key for a in result.attempts]
+   129	            unique = len(set(keys)) == len(keys)
+   130	            if unique is not expected:
+   131	                failures.append(f"{key}: unique={unique} != {expected}")
+   132	        elif key == "interval_disabled":
+   133	            if dict(result.interval_disabled or {}) != expected:
+   134	                failures.append(f"{key}: {result.interval_disabled} != {expected}")
+   135	        elif observed.get(key) != expected:
+   136	            failures.append(f"{key}: {observed.get(key)!r} != {expected!r}")
+   137	    venue = case.get("expect_venue") or {}
+   138	    if "posts_to_order_endpoint" in venue:
+   139	        posts = len(responder.calls_to("/api/v1/futures/order", "POST")) - \
+   140	            posts_before
+   141	        if posts != venue["posts_to_order_endpoint"]:
+   142	            failures.append(f"posts_to_order_endpoint: {posts} != "
+   143	                            f"{venue['posts_to_order_endpoint']}")
+   144	    if "signature_violations" in venue:
+   145	        violations = len(responder.signature_violations())
+   146	        if violations != venue["signature_violations"]:
+   147	            failures.append(f"signature_violations: {violations} != "
+   148	                            f"{venue['signature_violations']}")
+   149	    if "request_params" in venue:
+   150	        sent = responder.calls_to("/api/v1/futures/order", "POST")[-1].params
+   151	        for key, value in venue["request_params"].items():
+   152	            if sent.get(key) != value:
+   153	                failures.append(f"request_params.{key}: {sent.get(key)!r} != "
+   154	                                f"{value!r}")
+   155	    if "venue_recorded_client_order_id" in venue:
+   156	        if venue["venue_recorded_client_order_id"] not in responder.orders:
+   157	            failures.append("venue_recorded_client_order_id: absent")
+   158	    if "leverage_sent_for_BTCUSDT" in venue:
+   159	        if responder.leverage.get("BTC-SWAP-USDT") != \
+   160	                venue["leverage_sent_for_BTCUSDT"]:
+   161	            failures.append("leverage_sent_for_BTCUSDT: mismatch")
+   162	    state = case.get("expect_state") or {}
+   163	    if "disabled_intervals" in state:
+   164	        observed_state = {k: list(v) for k, v in
+   165	                          adapter.disabled_intervals().items()}
+   166	        if observed_state != state["disabled_intervals"]:
+   167	            failures.append(f"disabled_intervals: {observed_state} != "
+   168	                            f"{state['disabled_intervals']}")
+   169	    return {"id": case["id"], "operation": case["operation"],
+   170	            "ok": not failures, "failures": failures}
+   171
+   172
+   173	def run_harness(*, legacy_export: str | None = None) -> Dict[str, Any]:
+   174	    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+   175	    seal = verify_fixture(payload)
+   176	    try:
+   177	        fixture_name = str(FIXTURE.relative_to(REPO_ROOT))
+   178	    except ValueError:                    # relocated fixture (tests, owner copy)
+   179	        fixture_name = str(FIXTURE)
+   180	    report: Dict[str, Any] = {"harness": "AI.10 adapter conformance runner",
+   181	                              "fixture": fixture_name,
+   182	                              "fixture_seal": seal, "cases": []}
+   183	    if not (seal["ok"] and seal["count_ok"]):
+   184	        report["status"] = "FIXTURE_INTEGRITY_FAILURE"
+   185	        report["passed"] = False
+   186	        return report
+   187
+   188	    from apex.research import adapter_conformance as ac
+   189
+   190	    cases = [run_case(case) for case in payload["cases"]]
+   191	    report["cases"] = cases
+   192	    report["cases_passed"] = sum(1 for c in cases if c["ok"])
+   193	    report["cases_total"] = len(cases)
+   194	    report["t_ad_001"] = ac.t_ad_001(export_path=legacy_export)
+   195	    report["t_ad_002"] = ac.t_ad_002(retries=100, submit=_retry_seam())
+   196	    report["passed"] = (report["cases_passed"] == report["cases_total"]
+   197	                        and report["t_ad_001"]["passed"]
+   198	                        and report["t_ad_002"]["passed"])
+   199	    report["status"] = "PASS" if report["passed"] else "FAIL"
+   200	    return report
+   201
+   202
+   203	def _retry_seam():
+   204	    """T-AD-002 seam: the CP-7 adapter's own duplicate cache."""
+   205	    import asyncio
+   206
+   207	    from apex.config import Config
+   208	    from apex.execution.toobit_adapter import ToobitAdapter
+   209	    from fake_toobit_responder import FakeToobitResponder
+   210
+   211	    responder = FakeToobitResponder(api_key=HARNESS_ENV["TOOBIT_API_KEY"],
+   212	                                    api_secret=HARNESS_ENV["TOOBIT_API_SECRET"])
+   213	    adapter = ToobitAdapter(config=Config(), transport=responder)
+   214
+   215	    def submit(intent_id: str) -> Dict[str, Any]:
+   216	        result = asyncio.run(adapter.submit_order(
+   217	            intent_id=intent_id, symbol="BTCUSDT", timeframe="15m",
+   218	            direction="LONG", quantity=1, price=60000, order_type="LIMIT"))
+   219	        return result.to_dict()
+   220
+   221	    return submit
+   222
+   223
+   224	def main(argv: List[str] | None = None) -> int:
+   225	    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+   226	    parser.add_argument("--json", action="store_true",
+   227	                        help="print the full JSON verdict")
+   228	    parser.add_argument("--legacy-export", default=None,
+   229	                        help="path to an owner-supplied v2/v3 export (JSON list)")
+   230	    args = parser.parse_args(argv)
+   231
+   232	    _prepare_imports()
+   233	    for name, value in HARNESS_ENV.items():
+   234	        os.environ.setdefault(name, value)
+   235	    report = run_harness(legacy_export=args.legacy_export)
+   236
+   237	    if args.json:
+   238	        print(json.dumps(report, indent=2, sort_keys=True))
+   239	    elif report["status"] == "FIXTURE_INTEGRITY_FAILURE":
+   240	        print(f"FIXTURE INTEGRITY FAILURE: {report['fixture']} — "
+   241	              f"{report['fixture_seal'].get('reason')}; no case was executed")
+   242	    else:
+   243	        seal = report["fixture_seal"]
+   244	        print(f"fixture: {report['fixture']} "
+   245	              f"({seal.get('case_count')} cases, sha256 "
+   246	              f"{str(seal.get('cases_sha256'))[:16]}…, "
+   247	              f"sealed={seal['ok']})")
+   248	        for case in report["cases"]:
+   249	            mark = "PASS" if case["ok"] else "FAIL"
+   250	            print(f"  [{mark}] {case['id']} {case['operation']}"
+   251	                  + ("" if case["ok"] else " — " + "; ".join(case["failures"])))
+   252	        print(f"T-AD-001 legacy translation: "
+   253	              f"{'PASS' if report['t_ad_001']['passed'] else 'FAIL'}")
+   254	        print(f"T-AD-002 idempotent retries: "
+   255	              f"{'PASS' if report['t_ad_002']['passed'] else 'FAIL'}")
+   256	        print(f"status: {report['status']} "
+   257	              f"({report.get('cases_passed')}/{report.get('cases_total')} cases)")
+   258	    if report["status"] == "FIXTURE_INTEGRITY_FAILURE":
+   259	        return 2
+   260	    return 0 if report["passed"] else 1
+   261
+   262
+   263	if __name__ == "__main__":
+   264	    raise SystemExit(main())
+=== Baseline CP-8 adapter tests, full module ===
+     1	"""CP-8 integration — the AI.10 adapter-conformance harness against REAL CP-7
+     2	objects: the ``ToobitAdapter`` submit seam and the in-repo fake responder.
+     3
+     4	T-AD-002 (idempotency) is exercised here end-to-end because the research plane
+     5	must not own an exchange seam: the harness supplies the retry key, the CP-7
+     6	adapter answers duplicates from its own cache and the fake responder counts the
+     7	actual venue submissions. T-AD-001 (legacy export translation) runs the
+     8	synthetic legacy cases through the real E05/E06 adapters.
+     9	"""
+    10	from __future__ import annotations
+    11
+    12	import asyncio
+    13
+    14	import pytest
+    15
+    16	from apex.config import Config
+    17	from apex.execution.toobit_adapter import ToobitAdapter
+    18	from apex.research import adapter_conformance as ac
+    19
+    20	TEST_KEY = "TEST_KEY_CP8"
+    21	TEST_SECRET = "TEST_SECRET_CP8"
+    22	CLIENT_ORDER_ID = "intent-cp8-tad002"
+    23
+    24
+    25	def run(coro):
+    26	    return asyncio.run(coro)
+    27
+    28
+    29	@pytest.fixture(autouse=True)
+    30	def signed_env(monkeypatch):
+    31	    monkeypatch.setenv("APEX_ENV", "PAPER")
+    32	    monkeypatch.setenv("APEX_ALLOW_SIGNED", "1")
+    33	    monkeypatch.setenv("TOOBIT_API_KEY", TEST_KEY)
+    34	    monkeypatch.setenv("TOOBIT_API_SECRET", TEST_SECRET)
+    35
+    36
+    37	@pytest.fixture()
+    38	def venue():
+    39	    from fake_toobit_responder import FakeToobitResponder
+    40
+    41	    responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET,
+    42	                                    balance="10000")
+    43	    adapter = ToobitAdapter(config=Config(), transport=responder)
+    44	    return responder, adapter
+    45
+    46
+    47	# --------------------------------------------------------------------------
+    48	# T-AD-002 — the retry key against the real adapter seam
+    49	# --------------------------------------------------------------------------
+    50
+    51	class TestTAd002AdapterSeam:
+    52	    def _submit_factory(self, adapter, seen):
+    53	        def submit(intent_id: str):
+    54	            result = run(adapter.submit_order(
+    55	                intent_id=intent_id, symbol="BTCUSDT", timeframe="15m",
+    56	                direction="LONG", quantity=1, price=60000,
+    57	                order_type="LIMIT"))
+    58	            seen.append(result)
+    59	            return result.to_dict()
+    60
+    61	        return submit
+    62
+    63	    def test_one_hundred_retries_produce_one_venue_order(self, venue):
+    64	        responder, adapter = venue
+    65	        seen = []
+    66	        verdict = ac.t_ad_002(retries=100,
+    67	                              submit=self._submit_factory(adapter, seen))
+    68	        assert verdict["unique_keys"] == 1
+    69	        assert verdict["key_stable"] is True
+    70	        assert verdict["new_submissions"] == 1
+    71	        assert verdict["cached_hits"] == 99
+    72	        assert verdict["no_double_execution"] is True
+    73	        assert verdict["passed"] is True
+    74
+    75	        # the venue itself saw exactly one POST /api/v1/futures/order
+    76	        posts = responder.calls_to("/api/v1/futures/order", "POST")
+    77	        assert len(posts) == 1
+    78	        assert responder.open_order_count() == 1
+    79	        # no signature violation anywhere in the retry storm
+    80	        assert responder.signature_violations() == []
+    81
+    82	    def test_duplicate_result_is_flagged_cached_and_not_resubmitted(self, venue):
+    83	        responder, adapter = venue
+    84	        seen = []
+    85	        submit = self._submit_factory(adapter, seen)
+    86	        submit(CLIENT_ORDER_ID)
+    87	        submit(CLIENT_ORDER_ID)
+    88	        assert seen[-1].cached is True
+    89	        assert seen[-1].resubmitted is False
+    90	        assert seen[-1].order_id == seen[0].order_id
+    91	        assert seen[-1].idempotency_key == seen[0].idempotency_key
+    92	        assert len(responder.calls_to("/api/v1/futures/order", "POST")) == 1
+    93
+    94	    def test_the_retry_key_is_a_replay_key_not_the_attempt_index(self):
+    95	        common = dict(engine_version="4.0.0", contract_version="4.0.0",
+    96	                      symbol="BTCUSDT", timeframe="15m",
+    97	                      as_of="2026-08-30T14:00:00Z", input_hash="a" * 64,
+    98	                      parameter_package_id="pkg-cp8-0.1.0",
+    99	                      code_revision="0" * 40)
+   100	        payload = {"intent_id": CLIENT_ORDER_ID, "quantity": 1.0}
+   101	        first = ac.stable_retry_key(payload=payload, **common)
+   102	        again = ac.stable_retry_key(payload=payload, **common)
+   103	        assert first == again
+   104	        # any real change of the intent changes the key
+   105	        changed = ac.stable_retry_key(payload={**payload, "quantity": 2.0},
+   106	                                      **common)
+   107	        assert changed != first
+   108
+   109	    def test_a_lost_ack_is_recorded_on_the_venue_side(self, venue):
+   110	        responder, adapter = venue
+   111	        responder.lose_next_ack(1)
+   112	        seen = []
+   113	        submit = self._submit_factory(adapter, seen)
+   114	        verdict = ac.t_ad_002(retries=3, submit=submit)
+   115	        # the ACK was lost but the order WAS recorded: the retry answers from
+   116	        # the adapter cache, so the venue never sees a second order
+   117	        assert verdict["unique_keys"] == 1
+   118	        posts = responder.calls_to("/api/v1/futures/order", "POST")
+   119	        assert len(posts) == 1
+   120
+   121
+   122	# --------------------------------------------------------------------------
+   123	# T-AD-001 — legacy export translation through the real adapters
+   124	# --------------------------------------------------------------------------
+   125
+   126	class TestTAd001Synthetic:
+   127	    def test_synthetic_cases_pass(self):
+   128	        verdict = ac.t_ad_001()
+   129	        assert verdict["test"] == "T-AD-001"
+   130	        assert verdict["passed"] is True
+   131	        assert verdict["failures"] == []
+   132	        assert verdict["synthetic_cases"] == len(ac.synthetic_legacy_cases())
+   133	        assert all(row["read_only"] is True for row in verdict["results"])
+   134
+   135	    def test_every_case_is_translated_and_none_invented(self):
+   136	        cases = ac.synthetic_legacy_cases()
+   137	        report = ac.run_legacy_export(cases)
+   138	        assert len(cases) >= 2
+   139	        assert report["translated"] == len(cases)
+   140	        assert report["data_loss"] == 0
+   141	        assert report["failures"] == []
+   142
+   143	    def test_the_real_data_gate_stays_open_without_an_export(self):
+   144	        gate = ac.t_ad_001()["real_data_gate"]
+   145	        assert gate["gate"] == "G-ADAPTER-001"
+   146	        assert gate["status"] == "OPEN/UNVERIFIED"
+   147	        assert gate["samples_supplied"] == 0
+   148	        assert gate["required_samples"] == ac.G_ADAPTER_SAMPLE_REQUIREMENT == 100
+   149
+   150	    def test_a_short_owner_export_is_processed_but_the_gate_stays_open(
+   151	            self, tmp_path):
+   152	        import json
+   153	        path = tmp_path / "legacy_export.json"
+   154	        path.write_text(json.dumps(ac.synthetic_legacy_cases()))
+   155	        gate = ac.t_ad_001(export_path=str(path))["real_data_gate"]
+   156	        # every supplied record translated without loss, yet < 100 samples
+   157	        assert gate["samples_supplied"] == len(ac.synthetic_legacy_cases())
+   158	        assert gate["translated"] == gate["samples_supplied"]
+   159	        assert gate["status"] == "OPEN/UNVERIFIED"
+   160
+   161	    def test_a_corrupt_export_record_is_reported_not_hidden(self, tmp_path):
+   162	        import json
+   163	        path = tmp_path / "legacy_export.json"
+   164	        path.write_text(json.dumps([
+   165	            {"engine_id": "E05", "version": "v3", "ftype": "NOPE"},
+   166	            {"engine_id": "E99", "version": "v2", "ftype": "BULLISH_FVG"}]))
+   167	        gate = ac.t_ad_001(export_path=str(path))["real_data_gate"]
+   168	        assert gate["translated"] == 0
+   169	        assert len(gate["failures"]) == 2
+   170	        assert gate["status"] == "OPEN/UNVERIFIED"
+   171
+   172	    def test_absent_export_path_is_refused(self, tmp_path):
+   173	        with pytest.raises(ac.AdapterConformanceError) as err:
+   174	            ac.t_ad_001(export_path=str(tmp_path / "missing.json"))
+   175	        assert err.value.reason == "EXPORT_PATH_ABSENT"
+   176
+   177	    def test_summary_names_the_engines_and_the_rename(self):
+   178	        summary = ac.conformance_summary()
+   179	        assert set(summary["engine_adapters"]) == {"E05", "E06"}
+   180	        assert ac.rename_registry_entry("order_book_imbalance") == "obi_proxy"
+   181	        assert ac.rename_registry_entry("atr_zscore") == "atr_zscore"
+   182	        assert summary["real_data_requirement"] == 100

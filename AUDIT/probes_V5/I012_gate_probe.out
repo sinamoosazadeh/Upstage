@@ -1,0 +1,11 @@
+synthetic_case_count=4
+export_record_count=100
+unique_record_count=4
+records_per_unique=25
+required_samples=100
+samples_supplied=100
+translated=100
+failures=0
+gate_status=CLOSED
+export_summary_keys=data_loss,failures,gate,required_samples,samples_supplied,status,translated
+synthetic_self_checks_passed=True

@@ -1,0 +1,18 @@
+=== Required recursive consumer/caller search ===
+apex/research/adapter_conformance.py:124:def t_ad_001(*, export_path: Optional[str] = None) -> Dict[str, Any]:
+apex/research/adapter_conformance.py:169:        export_summary = run_legacy_export(records)
+apex/research/adapter_conformance.py:173:            "real_data_gate": export_summary,
+apex/research/adapter_conformance.py:177:def run_legacy_export(records: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+scripts/run_adapter_conformance.py:19:    python3 scripts/run_adapter_conformance.py [--json] [--legacy-export PATH]
+scripts/run_adapter_conformance.py:194:    report["t_ad_001"] = ac.t_ad_001(export_path=legacy_export)
+tests/integration/test_cp8_adapters.py:128:        verdict = ac.t_ad_001()
+tests/integration/test_cp8_adapters.py:137:        report = ac.run_legacy_export(cases)
+tests/integration/test_cp8_adapters.py:143:    def test_the_real_data_gate_stays_open_without_an_export(self):
+tests/integration/test_cp8_adapters.py:144:        gate = ac.t_ad_001()["real_data_gate"]
+tests/integration/test_cp8_adapters.py:155:        gate = ac.t_ad_001(export_path=str(path))["real_data_gate"]
+tests/integration/test_cp8_adapters.py:167:        gate = ac.t_ad_001(export_path=str(path))["real_data_gate"]
+tests/integration/test_cp8_adapters.py:174:            ac.t_ad_001(export_path=str(tmp_path / "missing.json"))
+tests/unit/test_ai10_harness.py:1:"""CP-8 — AI.10 conformance harness runner (``scripts/run_adapter_conformance.py``):
+tests/unit/test_ai10_harness.py:15:SCRIPT = REPO_ROOT / "scripts" / "run_adapter_conformance.py"
+tests/unit/test_ai10_harness.py:95:    def test_the_real_data_gate_is_reported_open(self, report):
+tests/unit/test_ai10_harness.py:96:        gate = report["t_ad_001"]["real_data_gate"]
