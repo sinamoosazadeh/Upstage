@@ -1,0 +1,20 @@
+{
+  "id": "K-003",
+  "probe": "k003",
+  "result": {
+    "classifier_dependency": "synthetic in-memory artifact; passed repository validate_classifier; default model artifact absent",
+    "corrected_event_id": "01a0e973-3d21-7b0d-a5d2-067844a3c0b9",
+    "fingerprint_after": "c2eb69915136620f076bd5be50f224597c1670aa21cf7b47e081e1ea04dc10c8",
+    "fingerprint_before": "c2eb69915136620f076bd5be50f224597c1670aa21cf7b47e081e1ea04dc10c8",
+    "fingerprint_unchanged": true,
+    "original_event_id": "01a0e973-3d0f-7082-9488-587151554ee1",
+    "prepare_reused_bridge_fact": true,
+    "producer_window_closes": [],
+    "real_compose_called": false,
+    "reused_prior_context_bar_close": "101",
+    "scope_note": "prepare cache-hit path, raw join, and window are real; prior context/evidence are schema-valid synthetic placeholders; no native setup/plan is claimed",
+    "store_get_window_closes": [
+      "102"
+    ]
+  }
+}

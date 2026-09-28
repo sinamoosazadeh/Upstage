@@ -101,8 +101,128 @@ async def k002() -> dict:
             await store.close()
 
 
+def synthetic_classifier():
+    import hashlib
+    import apex.ops.engine_context as ec
+    timeframes, symbols = ec.training_scope()
+    artifact = {
+        "W": [[0.0] * 8 for _ in range(9)], "b": [0.0] * 9,
+        "K": 9, "label_delay_candles": 48, "seed": 7,
+        "fit_protocol": {"iterations": 1, "learning_rate": 0.1, "l2": 0.0, "class_weights": False},
+        "training_window": {"start": "2020-01-01T00:00:00.000Z", "end": "2026-09-28T00:00:00.000Z",
+            "timeframes": list(timeframes), "symbols": list(symbols),
+            "default_timeframes": list(ec.DEFAULT_TRAINING_TIMEFRAMES),
+            "default_symbols": list(ec.CORE10_SYMBOLS), "max_bars_per_cell": 1},
+        "sample_count": 1, "training_query_sha256": "0" * 64,
+    }
+    artifact["artifact_sha256"] = ec.classifier_hash(artifact["W"], artifact["b"], artifact["seed"], artifact["fit_protocol"])
+    return ec.validate_classifier(artifact)
+
+
+def synthetic_context(event):
+    import apex.ops.engine_context as ec
+    from apex.fabric.context import COMPONENT_ENGINE
+    from apex.ops.plan_bridge import REQUIRED_RISK_KEYS
+    from apex.risk.kernel import RISK_LADDER_STATES, EMERGENCY_LADDER
+
+    state = "NoRisk" if "NoRisk" in RISK_LADDER_STATES else sorted(RISK_LADDER_STATES)[0]
+    emergency = "NORMAL" if "NORMAL" in EMERGENCY_LADDER else sorted(EMERGENCY_LADDER)[0]
+    weights = [[0.0] * 8 for _ in range(9)]
+    risk = {
+        "capital": 10000.0, "portfolio_exposure": 0.0, "proposed_notional": 1.0,
+        "capital_hard_cap": 10000.0, "circuit_breaker_engaged": False,
+        "emergency_state": emergency, "per_symbol_exposure": 0.0,
+        "symbol_cap": 10000.0, "portfolio_cap": 10000.0,
+        "staleness_seconds": 0.0, "freshness_sla_seconds": 3600.0,
+        "oi_lag_seconds": 0.0, "oi_lag_threshold_seconds": 3600.0,
+        "is_risk_increase": False, "uncertainty_is_rising": False,
+        "realized_daily_loss_fraction": 0.0, "realized_weekly_loss_fraction": 0.0,
+        "consecutive_losses": 0, "time_to_expiry_days": {"applicable": False, "contract_type": "PERPETUAL"},
+        "margin_health_fraction": 1.0, "min_quantity": 0.01,
+        "contract_multiplier": 1.0, "risk_state": state,
+    }
+    assert set(risk) == set(REQUIRED_RISK_KEYS)
+    return {
+        "events": [event], "data_trust": 0.5, "q_raw": 0.5,
+        "market_regime": "RANGE", "mtf_state": "ALIGNED", "utc_window_state": "ACTIVE",
+        "is_overlap": False, "volatility_state": "NORMAL", "structure_state": "BULLISH",
+        "regime_confidence": 0.5, "regime_uncertainty": 0.5, "divergence_magnitude": 0.0,
+        "temporal_window_validity": 1.0, "atr": 1.0, "fvg_zones": [],
+        "bos": {"strength": 0.5}, "regime_state": {"state": "RANGE"},
+        "e11_context": {"ic_inputs": {"x": 0.0}, "history_windows": {},
+            "classifier_W": weights, "classifier_b": [0.0] * 9, "regime_state": {"state": "RANGE"},
+            "bridge_inputs": {"bars": [{"c": "101"}]}},
+        "direction": 1, "pattern_id": "synthetic-pattern", "x": {"x": 0.0},
+        "forecast_quality": 0.5, "forecast_rr": 1.0, "forecast_cost_r": 0.1,
+        "window_qualities": [(0.5, 0.0)], "temporal_quality": "Q2", "volatility_quality": "Q2",
+        "s_i": {name: 1.0 for name in COMPONENT_ENGINE},
+        "q_i": {name: 0.5 for name in COMPONENT_ENGINE},
+        "package": {"parameter_package_id": "synthetic-v3"}, "p_min_tf": 0.5,
+        "p_min_source": ec.P_MIN_SOURCES[0], "c_min": 0.5, "freshness_ok": True,
+        "risk": risk, "risk_state": state, "h_norm": 0.5,
+        "family_status": "ACTIVE", "arbitration": {"decision": "PASS"},
+    }
+
+
+async def k003() -> dict:
+    from dataclasses import replace
+    from apex.data_catalog.contracts import LifecycleState, EvidenceEvent
+    import apex.ops.engine_context as ec
+
+    with tempfile.TemporaryDirectory(prefix="v3-k003-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        original_loader = ec.load_classifier
+        try:
+            artifact = synthetic_classifier()
+            ec.load_classifier = lambda path=None: artifact
+            open_time = "2026-01-10T00:00:00.000Z"
+            original = observation(timestamp=open_time, high="105", low="95", close="101")
+            original = replace(original, availability_time="2026-01-10T01:00:00.000Z")
+            original_id = await store.ingest_raw(original, "MISSING")
+            producer = ec.EngineContextProducer(store, environment="PAPER")
+            as_of = "2026-01-10T01:05:00.000Z"
+            fp_before = await producer._input_fingerprint("BTCUSDT", "1h", as_of)
+            event = EvidenceEvent(
+                evidence_id="v3-k003-event", engine_id="E01", analyst_version="v3-probe",
+                symbol="BTCUSDT", timeframe="1h", snapshot_id="v3-k003-snapshot",
+                event_time=open_time, availability_time="2026-01-10T01:00:00.000Z",
+                observation_window={}, feature_snapshot_id="v3-k003-feature",
+                feature_dependencies=(), condition_state="BULLISH", direction=1,
+                strength=0.5, confidence=0.5, quality=0.5, validity="VALID",
+                fate_state=LifecycleState.ACTIVE, age=0.0, decay=0.0, explanation="synthetic prior context",
+                parameter_version="synthetic-v3", lineage=(original_id,), resolution_class="Q2")
+            await ec.persist_complete_evidence(store, [event])
+            context = synthetic_context(event)
+            await ec.append_context_fact(store, "BRIDGE_CONTEXT", "BTCUSDT", "1h", as_of,
+                {"input_fingerprint": fp_before,
+                 "context": {**context, "events": [event.evidence_id]}})
+            corrected = observation(timestamp=open_time, high="106", low="95", close="102")
+            corrected = replace(corrected, availability_time="2026-02-01T00:00:00.000Z")
+            corrected_id = await store.correct_raw(original_id, corrected, "MISSING", "late availability", "V3-PROBE")
+            fp_after = await producer._input_fingerprint("BTCUSDT", "1h", as_of)
+            store_window = await store.get_window("BTCUSDT", "1h", as_of, 5)
+            producer_window = await producer.window("BTCUSDT", "1h", as_of, 5)
+            await producer.prepare("BTCUSDT", "1h", as_of)
+            reused = await producer.get_bridge_context("BTCUSDT", "1h", as_of)
+            return {
+                "classifier_dependency": "synthetic in-memory artifact; passed repository validate_classifier; default model artifact absent",
+                "fingerprint_before": fp_before, "fingerprint_after": fp_after,
+                "fingerprint_unchanged": fp_before == fp_after,
+                "original_event_id": original_id, "corrected_event_id": corrected_id,
+                "store_get_window_closes": [str(o.close) for o in store_window],
+                "producer_window_closes": [str(o.close) for o in producer_window],
+                "prepare_reused_bridge_fact": reused["e11_context"]["bridge_inputs"]["bars"][0]["c"] == "101",
+                "reused_prior_context_bar_close": reused["e11_context"]["bridge_inputs"]["bars"][0]["c"],
+                "real_compose_called": False,
+                "scope_note": "prepare cache-hit path, raw join, and window are real; prior context/evidence are schema-valid synthetic placeholders; no native setup/plan is claimed",
+            }
+        finally:
+            ec.load_classifier = original_loader
+            await store.close()
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001, "K-002": k002}
+    probes = {"K-001": k001, "K-002": k002, "K-003": k003}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}

@@ -4,7 +4,7 @@
 |---|---|---:|---:|---|---|---|
 | K-001 | CONFIRMED | S1 | S1 | Yes — frozen data contract/store | — | A — fail closed on hash-colliding revisions; owner-approved versioned hash migration before acceptance |
 | K-002 | CONFIRMED | S1 | S1 | Yes — frozen parser/store | ISSUE-CP1-012 (correction lifecycle only) | A — bind each revision to its recorded correction time; refuse historical reconstruction until version-aware reads exist |
-| K-003 | PENDING | S1 | — | — | — | — |
+| K-003 | CONFIRMED | S1 | S1 | No — producer is non-frozen; store DDL remains frozen | ISSUE-079 (cache correctness, distinct from latency) | A — fingerprint the selected PIT revision/status set and force cold rebuild on mismatch |
 | K-004 | PENDING | S2 | — | — | — | — |
 | K-005 | PENDING | S1 | — | — | — | — |
 | K-006 | PENDING | S1 | — | — | — | — |
@@ -130,3 +130,41 @@ Adopt A as containment: capture the actual correction receipt, serve only the ve
 
 #### Acceptance and regression tests
 With original value at `t0` and correction received at `t2`, query before `t2` must return the original version and query at/after `t2` the correction; both must carry matching raw lineage and availability. Verify unchanged time/version before and after restart, future version exclusion, correction chains, and an explicit refusal for ambiguous or missing revision timestamps. Add a direct test for `SQLiteStore.get_window`/`last_closed_price`, not only the producer path.
+
+### K-003
+
+#### Auditor claim (short quote)
+> “fingerprint ردیف‌های raw با `availability<=as_of` را می‌گیرد، نه status فعال market.” — “The fingerprint hashes raw rows available by `as_of`, not the active market status.”
+
+#### What I read (files, line ranges, functions, callers)
+Read all of `_input_fingerprint`, `prepare`, `get_bridge_context`, and `EngineContextProducer.window` (`apex/ops/engine_context.py:1775–1840,2367–2405`). `_input_fingerprint` selects `m.observation_id`, `m.raw_payload_hash`, and raw availability/OI metadata, filters only `m.symbol` and `r.availability_time<=as_of`, and omits `candle_status`; `prepare` uses fingerprint equality to reuse an exact `BRIDGE_CONTEXT` fact at `:1810–1819`. Caller trace: `scripts/run_apex.py:748–753` binds `producer.prepare` and `get_bridge_context` to `PaperPlanBridge`; `PaperPlanBridge.prepare` (`apex/ops/plan_bridge.py:530–539`) invokes the preparer; `PaperRuntime.run_cycle` (`apex/ops/paper_loop.py:1008–1029`) calls it before cells; the bridge then calls the context source. `get_bridge_context` returns the resulting `_ready` context at `engine_context.py:1829–1840`.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONDONTWRITEBYTECODE=1 python3 -B AUDIT/probes_V3/store_probes.py K-003`. Probe: `store_probes.py::k003`; raw result: `AUDIT/probes_V3/K-003.json`. On repository DDL/store code, the fingerprint before/after a correction was byte-for-byte equal. `SQLiteStore.get_window` changed to close 102; `EngineContextProducer.window` returned no bars because the active correction’s raw availability was after the historical `as_of`. I inserted a schema-valid synthetic prior evidence/context fact (not a native composed context), called the real `prepare` cache-hit path, and `get_bridge_context` reused the prior close 101. Because the model artifact is absent from this checkout, the probe supplies an in-memory synthetic artifact that passes the repository’s real `validate_classifier`; it does not call `_compose_bridge_context`, build a native plan, or establish device behavior. These bounds are recorded in the raw JSON.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). The raw join fingerprint excludes active status/revision selection; the active store window changes while the fingerprint remains equal. The real `prepare` cache-hit branch accepted a valid exact prior context at that equal fingerprint. The context contents in the probe are synthetic, so the evidence confirms the cache mechanism and stale-reuse condition, not an end-to-end trading outcome.
+
+#### Root cause
+The fingerprint treats stored raw rows with `availability_time<=as_of` as a complete identity of the market input, but a correction mutates the market projection’s status and inserts a new version. For a late-available correction, the old raw row still satisfies the fingerprint query and the new row is excluded, while `get_window` selects the current `CORRECTED` projection and the producer then rejects it for the historical `as_of`. Therefore identical fingerprint does not imply identical selected window.
+
+#### Direct impact
+An exact `BRIDGE_CONTEXT` fact can be reused after the current market view has changed or become unavailable for that `as_of`; the probe returned the prior synthetic context while the current producer window was empty. This can make warm preparation differ from recomputation/cold replay.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, `correct_raw`/retention/status transitions can change the active observation. Downstream, `PaperPlanBridge` consumes `get_bridge_context`; native feature, fabric, setup, forecast, and risk projection may then rely on the cached evidence. `ISSUE-079` overlaps because it concerns this fingerprint join’s performance, but this row is the independent correctness/invalidation defect, not a latency claim. K-009 is a separate in-memory HTF feature-timeline cache. No device cache hit or plan/order was observed.
+
+#### Contract and decisions
+`APEX_GEN5.md:903–930` forbids future-correction leakage, and `:1125–1130` states that later availability invalidates evidence tied to the old snapshot and requires a new snapshot/refusal when a required timeframe becomes insufficient. `PHASE2_DECISION_LOG.md`’s ISSUE-CP14-013 (`:389–390`) says the producer must retain raw availability rather than rewrite it; that decision does not equate a stable raw-row subset with an unchanged active market selection. Precedence: PIT/revision selection and deterministic cache identity outrank reuse convenience; no decision authorizes a hit after the selected input changed.
+
+#### Frozen status and non-frozen alternative
+**Not frozen at the defect site:** `EngineContextProducer` and its fingerprint are non-frozen; the underlying store/DDL is frozen. A non-frozen fix can hash the active, as-of-selected version set (including candle status/revision identity and every field used downstream), and bypass reuse if that identity cannot be proven. No frozen schema change is necessary for this guard; the existing `raw_revision`/status metadata can be read. It should also invalidate `_timelines` when their own multi-timeframe input identity changes (separately verified by K-009).
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — producer-only identity correction:** fingerprint the exact PIT-selected market/raw versions and relevant revision/status fields, then append a new immutable context fact on mismatch. Side effects: existing exact facts remain stored but stop matching; first post-deploy preparation recomputes and may refuse if historical revisions cannot be reconstructed; context/evidence identities and replay/training outputs may change. **B — shared version-aware reader:** add a canonical as-of revision view and use its selected IDs in both fingerprint and all readers. Side effects: wider adapter/query migration, cache namespace change, and required replay/retraining for affected snapshots. B is not required to contain the current producer bug.
+
+#### My recommendation
+Implement A first: the cache key must describe the same selected input set that `window()` actually serves. Treat uncertain revision lineage as a miss followed by a named refusal, never as a hit. Track query-performance tuning under ISSUE-079 separately so an index optimization cannot mask the correctness gap.
+
+#### Acceptance and regression tests
+Persist a valid context at `as_of`, then add a later correction with availability after that `as_of`: the fingerprint must change or the selected historical input must be reconstructed identically; `prepare` must not reuse the stale fact. Assert warm and cold calls agree on both value and named refusal, status/revision changes invalidate the key, and unchanged inputs reuse the exact context. Include correction, purge, restart, and content-hash collision cases; do not use an invalid or synthetic context as proof of native plan acceptance.
