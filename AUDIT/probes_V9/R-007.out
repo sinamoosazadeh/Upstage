@@ -1,0 +1,4 @@
+param_hash(A)=827244e18699 param_hash(B)=1bd571061b19 (differ: True)
+A: state=CRISIS Q=Q3 turb=17.775 sid=7064178048a18d52
+B: state=CRISIS Q=Q3 turb=17.775 sid=7064178048a18d52
+R-007 CONFIRMED: artifact sha replaces (not augments) the param digest; different governed params -> same snapshot identity

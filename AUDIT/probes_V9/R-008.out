@@ -1,0 +1,4 @@
+log emission = -4527286.7 -> eta = 0.0 (underflow)
+xi_pred sum = 1.000000 | xi_filt = [0. 0. 0. 0. 0. 0. 0. 0. 0.] sum = 0.000000
+next step with healthy eta: xi = [0. 0. 0. 0. 0. 0. 0. 0. 0.] sum = 0.000000
+R-008 CONFIRMED: EPS-padded normalization silently leaves the simplex on emission underflow; zero state is absorbing

@@ -1,0 +1,4 @@
+E11: query as_of=2024-01-01T00:00:00Z -> 3 evidence, event_time=2026-09-21T14:13:20.000Z
+E11 evidence dated ~2.7 years after the query as_of: accepted
+E10: state as_of restamped to 1704067200000 while pit.last_closed=1790252000000 (future bar)
+Q-029 CONFIRMED: engines trust the caller for PIT; as_of is a label, not a filter (E11 no filter; E10 restamps)

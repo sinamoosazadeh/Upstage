@@ -1,0 +1,8 @@
+healthy YAML: theta_H=1.105878 Q2=1.22988 Q5=0.564415
+yaml_assertions (3):
+    theta_H=1.105878 overrides chapter default 0.65 (ADR-P2-008: runtime YAML wins)
+    quality_H_Q2=1.22988 overrides chapter default 0.8 (ADR-P2-008: runtime YAML wins)
+    quality_H_Q5=0.564415 overrides chapter default 0.4 (ADR-P2-008: runtime YAML wins)
+broken loader: theta_H=0.65 Q2=0.8 Q5=0.4 yaml_assertions=[]
+delta on theta_H: 0.4559 nats — silently applied
+R-006 CONFIRMED: silent fallback to ungoverned defaults on any loader exception; no refusal, no assertion, no event

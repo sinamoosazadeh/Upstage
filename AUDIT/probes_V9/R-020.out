@@ -1,0 +1,7 @@
+quality_score signature: (vec: 'Dict[str, float]', H: 'float', Tur: 'float', data_ok: 'bool', contract_ok: 'bool', params: 'Optional[EngineParams]' = None) -> 'str'
+bar 0: state=RANGE transition=CONFIRMED Q=Q5 H=0.0000 Tur=4.896
+bar 1: state=RANGE transition=CONFIRMED Q=Q5 H=0.0000 Tur=3.293
+bar 2: state=RANGE transition=CONFIRMED Q=Q5 H=0.0000 Tur=2.401
+bar 3: state=RANGE transition=CONFIRMED Q=Q5 H=0.0000 Tur=1.835
+flip bar: state=RANGE state_raw=TREND transition=SUSPECTED Q=Q5 H=0.0000 Tur=3.815
+R-020 CONFIRMED: SUSPECTED transition carries Q5; hysteresis uncertainty is invisible to the quality cascade

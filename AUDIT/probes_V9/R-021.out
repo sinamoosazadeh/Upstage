@@ -1,0 +1,7 @@
+x_part without oi_state key (legacy rolling norm): 0.402675
+x_part with oi_state=MISSING (D23 sigmoid):          0.598688
+no key       : Q=Q5 (no D23 cap applied)
+oi_state=MISS: Q=Q4 (D23 Q4 cap)
+GF_03 id=GF_03_COMPRESSION_SQUEEZE | 'oi_state' occurrences in fixture: 0 | expected: {'vector': {'trendiness': 0.320821321252, 'volatility': 0.107142857143, 'compression': 1.0, 'expansion': 0.331812228608, 'liquidity_stability': 0.85, 'participation': 0.302940718479, 'structure_quality': 0.577495361463, 'momentum_state': 0.5}, 'bias': -0.005, 'state': 'COMPRESSION', 'Q': 'Q5', 'compression_gte': 0.6, 'entropy': 7.988e-09, 'turbulence': 6.320667515395, 'turbulence_lt': 8.0}
+'oi_state' occurrences across ALL 18 E11 fixtures: 0
+R-021 CONFIRMED: D23 branch is key-presence-gated; fixture/direct callers bypass both the sigmoid mapping and the Q4 cap (train/serve + test/runtime skew)

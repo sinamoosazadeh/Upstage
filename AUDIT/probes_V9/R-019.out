@@ -1,0 +1,5 @@
+hysteresis_manager([], 'TREND') -> ('TREND', 'CONFIRMED')
+bar 0: state=CRISIS transition=CONFIRMED | journal=['EV_RGM_001', 'EV_RGM_005'] | catalog=['EV_RGM_001', 'EV_RGM_003', 'EV_RGM_005']
+bar 1: state=CRISIS transition=CONFIRMED | journal=['EV_RGM_001'] | catalog=['EV_RGM_001', 'EV_RGM_003']
+bar 2: state=CRISIS transition=CONFIRMED | journal=['EV_RGM_001'] | catalog=['EV_RGM_001', 'EV_RGM_003']
+R-019 CONFIRMED: cold-start CONFIRMED without hysteresis; catalog/journal EV_RGM_003 semantics diverge — every stable bar publishes a 'regime change confirmed' evidence
