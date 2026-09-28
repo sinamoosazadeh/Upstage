@@ -1,0 +1,38 @@
+{
+  "id": "K-007",
+  "probe": "k007",
+  "result": {
+    "corrected_event_id": "01a0e97a-4041-7ab1-8e9d-f51b0fec53d9",
+    "foreign_keys_enabled": 1,
+    "injected_failure": false,
+    "market_statuses_after_attempt": [
+      "SUPERSEDED",
+      "CORRECTED"
+    ],
+    "original_event_id": "01a0e97a-403f-75d0-8d9b-332a2e505165",
+    "purge_allow_rows_after_attempt": 0,
+    "raw_rows_after_attempt": [
+      [
+        "01a0e97a-403f-75d0-8d9b-332a2e505165",
+        "2024-01-15T00:00:00.000Z"
+      ],
+      [
+        "01a0e97a-4041-7ab1-8e9d-f51b0fec53d9",
+        "2024-01-15T00:00:00.000Z"
+      ]
+    ],
+    "retention_events_after_attempt": [
+      [
+        "CORRECTION",
+        "original=01a0e97a-403f-75d0-8d9b-332a2e505165 new=01a0e97a-4041-7ab1-8e9d-f51b0fec53d9"
+      ]
+    ],
+    "retention_purge_error": "IntegrityError: FOREIGN KEY constraint failed",
+    "revision_rows_after_attempt": [
+      [
+        "01a0e97a-403f-75d0-8d9b-332a2e505165",
+        "01a0e97a-4041-7ab1-8e9d-f51b0fec53d9"
+      ]
+    ]
+  }
+}

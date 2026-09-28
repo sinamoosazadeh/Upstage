@@ -389,8 +389,51 @@ async def k006() -> dict:
             await store.close()
 
 
+async def k007() -> dict:
+    import sqlite3
+    old_open = "2024-01-15T00:00:00.000Z"
+    old_availability = "2024-01-15T01:00:00.000Z"
+    with tempfile.TemporaryDirectory(prefix="v3-k007-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        try:
+            original = MarketObservation(symbol="BTCUSDT", timeframe="1h", open=Decimal("100"),
+                high=Decimal("105"), low=Decimal("95"), close=Decimal("101"), volume=Decimal("10"),
+                oi=None, timestamp=old_open, sequence=1, status="CLOSED", source="V3-PROBE",
+                availability_time=old_availability, oi_timestamp=None)
+            original_id = await store.ingest_raw(original, "MISSING")
+            corrected = MarketObservation(symbol="BTCUSDT", timeframe="1h", open=Decimal("100"),
+                high=Decimal("106"), low=Decimal("95"), close=Decimal("102"), volume=Decimal("10"),
+                oi=None, timestamp=old_open, sequence=2, status="CLOSED", source="V3-PROBE",
+                availability_time=old_availability, oi_timestamp=None)
+            corrected_id = await store.correct_raw(original_id, corrected, "MISSING", "old corrected row", "V3-PROBE")
+            fk_enabled = (await (await store.db.execute("PRAGMA foreign_keys")).fetchone())[0]
+            purge_error = None
+            try:
+                await store.retention_purge(actor="V3-PROBE")
+            except sqlite3.IntegrityError as exc:
+                purge_error = f"{type(exc).__name__}: {exc}"
+            raw = await (await store.db.execute(
+                "SELECT event_id,as_of FROM raw_observation ORDER BY rowid")).fetchall()
+            market = await (await store.db.execute(
+                "SELECT candle_status FROM market_observation ORDER BY rowid")).fetchall()
+            revisions = await (await store.db.execute(
+                "SELECT original_event_id,new_event_id FROM raw_revision")).fetchall()
+            retention = await (await store.db.execute(
+                "SELECT event_kind,detail FROM retention_event ORDER BY rowid")).fetchall()
+            purge_flag = await (await store.db.execute("SELECT COUNT(*) FROM purge_allow")).fetchone()
+            return {"original_event_id": original_id, "corrected_event_id": corrected_id,
+                "foreign_keys_enabled": fk_enabled, "injected_failure": False,
+                "retention_purge_error": purge_error, "raw_rows_after_attempt": [list(r) for r in raw],
+                "market_statuses_after_attempt": [r[0] for r in market],
+                "revision_rows_after_attempt": [list(r) for r in revisions],
+                "retention_events_after_attempt": [list(r) for r in retention],
+                "purge_allow_rows_after_attempt": purge_flag[0]}
+        finally:
+            await store.close()
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006}
+    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}

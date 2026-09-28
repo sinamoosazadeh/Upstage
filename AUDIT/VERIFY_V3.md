@@ -8,7 +8,7 @@
 | K-004 | CONFIRMED | S2 | S2 | Yes — SQLiteStore is frozen; route via non-frozen guarded service pending owner approval for store guard | — | A now, B with owner approval — guard all three identity fields before correction |
 | K-005 | CONFIRMED | S1 | S1 | Yes — SQLiteStore is frozen; non-frozen atomic writer is a fallback | ISSUE-076 (commit boundary) | B with owner approval; until then gate writes or route through tested atomic writer |
 | K-006 | PARTIAL | S1 | S1 | Yes — core catalog/store frozen; non-frozen checked projection exists in producer | — | A — route every consumer through one lineage-checked final-observation projection |
-| K-007 | PENDING | S2 | — | — | — | — |
+| K-007 | CONFIRMED | S2 | S2 | Yes — purge and raw_revision DDL are in frozen SQLiteStore | — | Single safe path: preflight/hold referenced rows with explicit owner-approved archival/retention policy; never disable FK |
 | K-008 | PENDING | S2 | — | — | — | — |
 | K-009 | PENDING | S1 | — | — | — | — |
 | K-010 | PENDING | S2 | — | — | — | — |
@@ -282,3 +282,41 @@ Implement A first as a fail-closed, lineage-checked reader adapter, and normaliz
 
 #### Acceptance and regression tests
 With a valid same-cell correction, assert the store retains CORRECTED and its revision/retention lineage; PaperRuntime quality, paper marks, producer ADV, producer-backed and direct bridge paths, and `Catalog.get("body_ratio")` all return a consistent typed acceptance/result after the checked projection. The 720-hour ADV window must accept the final correction when otherwise complete, and cease to depend on it after the rolling window expires. PARTIAL/OPEN, SUPERSEDED originals, future availability, missing lineage, and invalid correction identity must remain refused; Catalog must never leak a `ValueError` for a producer-controlled status.
+
+### K-007
+
+#### Auditor claim (short quote)
+> “`raw_revision` به هر دو raw event FK دارد؛ correction قدیمی‌تر از ۱۲ ماه باعث `FOREIGN KEY constraint failed` در `retention_purge` شد و دو raw+revision ماندند.” — “`raw_revision` has foreign keys to both raw events; a correction older than 12 months caused `FOREIGN KEY constraint failed` in `retention_purge`, leaving both raw rows and the revision.”
+
+#### What I read (files, line ranges, functions, callers)
+Read the full `raw_revision` DDL (`apex/data_catalog/store/sqlite_store.py:246–256`), connection PRAGMAs at `:342–350`, `correct_raw` at `:448–479`, and `retention_purge` at `:627–660`. Both `original_event_id` and `new_event_id` are immediate SQLite foreign keys to `raw_observation(event_id)` with no `ON DELETE` action. Purge selects all raw rows whose `as_of` is older than `datetime('now','-12 months')`, then deletes one by one. `grep -RIn 'retention_purge('` found the store method and the store integration test; no separate production caller is present in this checkout. `apex/ops/partial_bar_repair.py:52–55` says both old rows share `as_of` and are purged together, but it does not account for the revision foreign keys.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONDONTWRITEBYTECODE=1 python3 -B AUDIT/probes_V3/store_probes.py K-007`. Probe: `store_probes.py::k007`; raw result: `AUDIT/probes_V3/K-007.json`. In a temporary repository SQLiteStore with `PRAGMA foreign_keys=1`, I wrote an old BTCUSDT observation and a same-cell correction with `as_of=2024-01-15T00:00:00.000Z`, verified `raw_revision` linked both IDs, then called the real `retention_purge`. It raised `IntegrityError: FOREIGN KEY constraint failed`; both raw rows and the revision remained, no PURGE_RAW event was added, the pre-existing CORRECTION audit remained, and the purge gate row was cleaned up. This is synthetic old data on repository DDL, not a device purge run.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The documented retention operation cannot delete a referenced correction pair with the installed foreign keys. The method repeatedly selects the same old events and raises; the pair’s age, not a test trigger, caused the failure.
+
+#### Root cause
+The physical foreign key graph forbids deleting either raw event while the immutable `raw_revision` row points to it, while purge attempts to delete raw events without archiving, detaching, or otherwise resolving revision references. Deleting both endpoints in sequence does not help under immediate FK checks; the first delete is rejected.
+
+#### Direct impact
+The corrected raw pair and its revision cannot be purged after the 12-month cutoff. Repeated calls fail, leaving the pair and its linked correction audit in place. The probe did not include unrelated old rows, so it does not assess whether a mixed batch might have additional partial-purge effects.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, `correct_raw` creates exactly the two references that block this delete. Downstream, repeated retention failure can grow the raw database beyond the target and makes retention status/reporting unreliable; preserving the pair does retain useful lineage, but the current method returns an exception rather than a typed legal hold. K-008 is a distinct orphan defect for unreferenced raw rows that do purge. No owner D/ISSUE item in the scoped overlap list resolves this retention/lineage policy.
+
+#### Contract and decisions
+`APEX_GEN5.md:18725–18735` says the AI.5 store is append-only, stores revisions/manifests, and sets raw retention to 12 rolling months; `:18692–18699` requires correction history and parent lineage. `PHASE2_DECISION_LOG.md:51` (ISSUE-CP1-012) specifies the append-only correction status/lineage but not purge ordering or archived-reference behavior. There is a real contract collision: both the retention limit and preserved revision lineage are binding, but no stated exception or archival mechanism reconciles them. Do not interpret FK failure as permission to disable constraints or delete lineage.
+
+#### Frozen status and non-frozen alternative
+**Frozen:** `SQLiteStore`, `raw_revision` DDL, and the purge method are in frozen `apex/data_catalog/**`. A non-frozen retention runner can preflight aged rows with references and fail/hold them explicitly, report IDs and storage growth, and avoid presenting the run as successful. This is safe containment only, not a way to meet the 12-month purge target. No non-frozen SQL ordering can delete referenced raw rows while preserving the current FK and revision row; an owner-approved archival/schema policy is needed.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**Single safe path:** obtain an owner decision on how the revision record remains auditable after its raw endpoints reach retention age, then implement that policy in the frozen store/DDL under explicit approval. Candidate designs include an immutable external archive/manifest with verifiable retrieval and an approved reference transition, or an explicit retention hold for linked raw rows; neither is currently authorized by the reviewed text. Side effects differ materially: archive/reference migration changes replay availability and FK/schema semantics, while a hold exceeds the 12-month raw-retention target and increases storage. Until the owner decides, keep foreign keys enabled and report/refuse the blocked purge.
+
+#### My recommendation
+Treat referenced corrections as an explicit legal hold and stop the retention job with a named, actionable report; ask the owner to reconcile AI.5 retention against correction-history preservation. Do not silently delete `raw_revision`, disable foreign keys, or claim the pair was purged.
+
+#### Acceptance and regression tests
+With FK enabled, test single corrections and multi-step correction chains across and inside the cutoff. The approved behavior must atomically either (1) archive and verify every endpoint/revision/audit before purging under a documented reference policy, or (2) refuse with exact held event IDs and a durable audit. Re-running must be deterministic; no partial deletion, dangling reference, hidden hold, or false-success count is allowed.
