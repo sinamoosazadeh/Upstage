@@ -1,0 +1,5 @@
+no-provider kz: degraded=True reason=E12_UNAVAILABLE_DEGRADED_QX is_overlap=True source=E07_LOCAL_NON_AUTHORITATIVE
+raising-provider kz: degraded=True is_overlap=True
+bundle: integrity=1.000 conf=1.000 class=Q5 degraded=True authority=E07_LOCAL_NON_AUTHORITATIVE
+quality_class_caps with degraded=True kz -> Q5
+Q-001 CONFIRMED: Q5 reachable in degraded (E12-absent/failing) mode

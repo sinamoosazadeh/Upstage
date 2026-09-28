@@ -1,0 +1,9 @@
+bundle from week-old confirmations: True
+fate=active age_bars=0 integrity=1.000
+update_bundle_fate(bars_since=21) -> expired
+in-tree references to update_bundle_fate:
+   apex/engines/e07_rtm/__init__.py:62:    update_bundle_fate,
+   apex/engines/e07_rtm/engine.py:935:def update_bundle_fate(bundle: RTMBundle, bars_since: int = 0,
+   apex/engines/e07_rtm/engine.py:1340:    "true_range_list", "update_bundle_fate", "utc_activity_window_check",
+non-definition, non-reexport callers in apex/: []
+Q-003 CONFIRMED: no staleness bound on confirmations; fate machine never driven (no caller of update_bundle_fate)

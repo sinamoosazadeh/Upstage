@@ -1,0 +1,7 @@
+default call: econ_conflict = False
+with HIGH event: econ_conflict = True (mechanism works when fed)
+engine_context.py lines mentioning econ_events/E07:
+   1251:from apex.engines.e07_rtm import engine as E07
+   1685:    events.extend(E07.E07RTMEngine().compute(symbol, timeframe, end, {
+producer lines passing econ_events: []
+Q-008 CONFIRMED: no econ calendar source wired anywhere in the producer; econ_conflict is constant False natively

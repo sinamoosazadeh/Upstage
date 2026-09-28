@@ -1,0 +1,7 @@
+E07 accepted: th_int=0.0 th_weight=-5.0 w_sweep=-1.5
+E08 accepted: w_position=100.0 entropy_threshold=-1.0
+E09 accepted: window_macro=0 adx_n=-14
+apex.engines.e07_rtm.engine rejects unknown key: ValueError
+apex.engines.e08_wyckoff.engine rejects unknown key: ValueError
+apex.engines.e09_trend.engine rejects unknown key: ValueError
+Q-030 CONFIRMED: unknown-key guard only; no domain/range validation

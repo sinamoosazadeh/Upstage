@@ -1,0 +1,4 @@
+expected chain: [('sweep', 1.5), ('choch', 1.0), ('fvg', 0.8), ('retest', 0.8), ('vol_confirm', 0.7)]
+integrity=0.8333 weight_coverage=0.8333 missing=['retest']
+bundle emitted = True | events = ['EV_RTM_011', 'EV_RTM_007']
+Q-005 CONFIRMED: retest-less CHAIN bundle emitted (integrity 0.833 >= 0.7, coverage 0.833 >= 0.6)

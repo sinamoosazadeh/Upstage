@@ -1,0 +1,5 @@
+canonical payload keys: ['as_of_ms', 'framework_id', 'integrity', 'present']
+UP  snapshot_id: fe1e8ed5db3469c62386c6c8a469e396d263953e6343cda10ac430cf1c24f10f
+DOWN snapshot_id: fe1e8ed5db3469c62386c6c8a469e396d263953e6343cda10ac430cf1c24f10f
+different avg_q/mtf: conf 0.975 vs 0.600, class Q5 vs Q2, same sid: True
+Q-007 CONFIRMED: snapshot identity excludes direction/confidence/class/symbol/timeframe

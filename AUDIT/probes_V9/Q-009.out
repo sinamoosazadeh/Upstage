@@ -1,0 +1,5 @@
+weights: [0.25, 0.25, 0.2, 0.15, 0.15] sum = 1.0 | phases: 8
+best-case z spread 1.0: p_max=0.2797 H=1.9943 nats (threshold 0.85)
+min H over extreme grid = 1.0000 (p_max 0.0000) at None
+real run last fate = AMBIGUOUS entropy = 2.0760
+Q-009 CONFIRMED: AMBIGUOUS is unreachable-from; ACTIVE fate mathematically impossible with governed weights/threshold

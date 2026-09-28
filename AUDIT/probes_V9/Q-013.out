@@ -1,0 +1,7 @@
+all _seen references:
+   _seen: set = set()
+   _seen.add(key)
+membership checks: []
+events after replaying identical bar: [('EV_WYK_001', 0), ('EV_WYK_001', 1), ('EV_WYK_001', 2), ('EV_WYK_001', 3), ('EV_WYK_001', 4), ('EV_WYK_001', 5), ('EV_WYK_001', 6), ('EV_WYK_001', 7), ('EV_WYK_001', 8), ('EV_WYK_001', 9), ('EV_WYK_001', 10), ('EV_WYK_011', 11), ('EV_WYK_001', 11), ('EV_WYK_001', 12), ('EV_WYK_001', 13), ('EV_WYK_002', 14), ('EV_WYK_001', 14), ('EV_WYK_002', 14), ('EV_WYK_001', 14)]
+EV_WYK_002 count: 2 | bar_idx: 15 | _seen size: 15
+Q-013 CONFIRMED: _seen never consulted; duplicate closed bar is fully reprocessed (no idempotent short-circuit)

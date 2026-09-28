@@ -1,0 +1,6 @@
+cycle record keys: ['as_of', 'confirmed_events', 'degraded', 'degraded_reason', 'entropy', 'fate', 'idempotency_key', 'phase_hypotheses', 'quality', 'range', 'snapshot_id', 'state', 'version']
+"age" in record: False | range.age_bars = 43
+SC event ts: 14 EV_WYK_002
+evidence age=0.0 decay=1.0 observation_window={'bars': 0, 'tf': '1h'}
+evidence explanation: E08 EV_WYK_002 SC_Detected state=AR fate=AMBIGUOUS quality=Q3
+Q-014 CONFIRMED: final.get('age') key mismatch (age_bars) => age=0/decay=1 on all evidence; events stamped with final state, not their own

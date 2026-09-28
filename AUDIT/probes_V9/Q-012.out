@@ -1,0 +1,4 @@
+detect_spring with bars_since_st=None: True
+detect_spring with bars_since_st=999: False
+events: ['EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_011', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_005', 'EV_WYK_001'] | final state: SPRING
+Q-012 CONFIRMED: SPRING reached from RANGE_DETECTED with no ST; since-ST cap skipped when no ST exists

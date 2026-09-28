@@ -1,0 +1,5 @@
+two opposing bundles built, classes: Q5 Q5 fates: active active
+resolver WOULD produce fates: [('UP', 'active')]
+apex/ callers outside definition/re-export: []
+apex/ sites passing has_conflict=True: []
+Q-031 CONFIRMED: conflict resolver dead; has_conflict constant False

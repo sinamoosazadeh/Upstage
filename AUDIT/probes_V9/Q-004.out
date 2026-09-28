@@ -1,0 +1,5 @@
+mss_proximity_check(100,200,atr=2) = False
+mss_confirmed(100,200,atr=2,integrity=1.0) = False
+MSS bundle emitted = True | integrity=1.000 class=Q4
+apex/ references outside definitions/re-exports: []
+Q-004 CONFIRMED: MSS proximity/confirmation rule dead code; bundle emitted with |p_sweep-p_choch| = 50*ATR20

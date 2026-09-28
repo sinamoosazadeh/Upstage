@@ -1,0 +1,5 @@
+emission-site literals in run_engine: ['EV_RTM_001', 'EV_RTM_004', 'EV_RTM_005', 'EV_RTM_007', 'EV_RTM_011']
+all EV_RTM_* literals in engine.py: ['EV_RTM_001', 'EV_RTM_002', 'EV_RTM_003', 'EV_RTM_004', 'EV_RTM_005', 'EV_RTM_006', 'EV_RTM_007', 'EV_RTM_008', 'EV_RTM_009', 'EV_RTM_010', 'EV_RTM_011']
+never emitted: ['EV_RTM_002', 'EV_RTM_003', 'EV_RTM_006', 'EV_RTM_008', 'EV_RTM_009', 'EV_RTM_010']
+apex files mentioning EV_RTM_*: ['apex/engines/e07_rtm/engine.py', 'apex/engines/e07_rtm/__pycache__/engine.cpython-311.pyc']
+Q-006 CONFIRMED: only EV_RTM_001/004/005/007/011 reachable; 002/003/006/008/009/010 dead catalog entries

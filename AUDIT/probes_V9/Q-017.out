@@ -1,0 +1,6 @@
+uniform predictor: brier=0.1094 (target 0.22) log_loss=0.2599 (target 0.65)
+analytic one-hot-vs-uniform brier: 0.1094
+apex references to the targets:
+   apex/engines/e08_wyckoff/engine.py:160:    brier_target: float = 0.22
+   apex/engines/e08_wyckoff/engine.py:161:    log_loss_target: float = 0.65
+Q-017 CONFIRMED: targets pass under zero-skill uniform prediction and are never enforced at runtime

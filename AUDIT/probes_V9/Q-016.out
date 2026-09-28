@@ -1,0 +1,15 @@
+prior row ACCUMULATION: {'ACCUMULATION': 0.1111, 'MARKUP': 0.1111, 'DISTRIBUTION': 0.1111, 'MARKDOWN': 0.1111, 'RE-ACCUMULATION': 0.1111, 'RE-DISTRIBUTION': 0.1111, 'RANGE': 0.1111, 'TRANSITION': 0.1111}
+distinct prior values: {0.1111111111}
+apex references:
+   apex/engines/e08_wyckoff/__init__.py:81:    transition_matrix,
+   apex/engines/e08_wyckoff/engine.py:501:def transition_matrix(counts: Optional[Dict[Tuple[str, str], int]] = None,
+   apex/engines/e08_wyckoff/engine.py:1340:    "spring_recovered", "transition_matrix", "true_range", "volume_z",
+   apex/engines/e11_regime/engine.py:988:                "transition_matrix": self.T,
+   apex/engines/e11_regime/engine.py:1008:                "transition_matrix": self.T,
+   apex/engines/e11_regime/engine.py:1036:                    "transition_matrix": self.T, "as_of": as_of})
+   apex/engines/e11_regime/engine.py:1129:    "transition_matrix", "base_rates", "contract_versions")
+   apex/engines/e11_regime/engine.py:1181:    tm = state.get("transition_matrix")
+   apex/engines/e11_regime/engine.py:1184:            raise ValueError("E11_STATE_SCHEMA_QX: transition_matrix shape")
+   apex/engines/e11_regime/engine.py:1186:            raise ValueError("E11_STATE_SCHEMA_QX: transition_matrix must be "
+real callers: []
+Q-016 CONFIRMED: transition matrix dead code (uniform 1/9 prior, never consulted by any runtime path)

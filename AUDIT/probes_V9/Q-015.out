@@ -1,0 +1,5 @@
+_quality source labels: ['"Q0"', '"Q1"', '"Q2"', '"Q3"', '"Q4"']
+best case with brier supplied: Q4
+run_full call site: ['self.process_bar(bar, atr, vr, close_position(bar)']
+qualities over run (structure+volume supplied): ['Q3']
+Q-015 CONFIRMED: Q5 label does not exist in _quality; Q4 gate requires a brier no runtime caller provides -> native cap Q3

@@ -1,0 +1,4 @@
+is_range = False
+bundle emitted = True | class = Q4
+events = ['EV_RTM_004', 'EV_RTM_007']
+Q-002 CONFIRMED: bundle + EV_RTM_004 emitted with is_range=False; range gate is informational only

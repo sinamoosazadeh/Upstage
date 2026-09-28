@@ -1,0 +1,9 @@
+producer-shaped bos (confirmed_at_idx == current): ['EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_011', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001'] -> SOS fired: False
+t-1 confirmed bos: ['EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_011', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_001', 'EV_WYK_006', 'EV_WYK_001'] -> SOS fired: True
+detect_sos with bearish BOS idx ok: True
+engine_context.py confirmed_at_idx sites:
+ 1302:                       "confirmed_at_idx": confirmation})
+1594:            "valid_at_idx": i, "confirmed_at_idx": i, "source": event})
+1695:        "bos_by_idx": {i: {"confirmed_at_idx": i, "direction": es[-1]["direction"]} for i, es in struct.items()}}))
+
+Q-010 CONFIRMED: native bos_by_idx is same-bar -> SOS structurally unreachable in production; BOS direction unchecked
