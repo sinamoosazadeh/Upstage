@@ -1,0 +1,2 @@
+confirmed= True alerts= [{'alert': 'CIRCUIT_OPEN', 'metric': 'emergency_L1', 'threshold': 'PAUSE', 'observed': 'L1', 'snapshot_id': '', 'escalation_note': 'immediate OWNER'}]
+circuit_policy= [{'metric': 'daily_realized_loss', 'threshold': 'per veto 10 table', 'alert': 'CIRCUIT_OPEN', 'channel': 'Telegram immediate', 'escalation': 'immediate OWNER', 'priority': <Priority.P0: 0>, 'dedup_exempt': True}]

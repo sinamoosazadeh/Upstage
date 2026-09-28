@@ -1,0 +1,1 @@
+plotted_y= [[0.5, 0.7]] expected_close= [1.5, 2.6] reported_layers= ('BOS', 'FVG') unavailable= () png_size= 28218 dimensions= 1200 800

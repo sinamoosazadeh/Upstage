@@ -1,0 +1,1 @@
+same_key= True first= {'authorized': True, 'reason': None, 'nonce': 'o-8c22756b48eabf7a', 'age_seconds': 0.0, 'ttl_seconds': 90.0, 'irreversible': True} second_old_key= {'authorized': True, 'reason': None, 'nonce': 'o-8c22756b48eabf7a', 'age_seconds': 0.0, 'ttl_seconds': 90.0, 'irreversible': True} stored_nonce_count= 1

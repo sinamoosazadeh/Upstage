@@ -1,0 +1,1 @@
+confirmed= True old= {'locked': True, 'level': 'L5', 'paused': True, 'new_positions_disabled': True, 'safe_mode': True, 'read_only': True} recreated= {'locked': False, 'level': None, 'paused': False, 'new_positions_disabled': False, 'safe_mode': False, 'read_only': False}

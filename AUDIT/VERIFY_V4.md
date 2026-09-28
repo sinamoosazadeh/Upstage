@@ -30,7 +30,13 @@ Read-only source/contract examination; probes used synthetic identities, injecte
 | G-004 | CONFIRMED | S2 | S2 | No | — | A: typed delivery result |
 | G-008 | CONFIRMED | S1 | S1 | No | G-009 distinct | A: OWNER auth |
 | G-010 | CONFIRMED | S1 | S1 | No | D57 distinct | A: pending vs committed |
-| G-005..G-007, G-011..G-014, G-019..G-020, G-024..G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
+| G-011 | CONFIRMED | S2 | S2 | No | G-013 distinct | A: durable unique nonce |
+| G-012 | CONFIRMED | S1 | S1 | No | = D57 L1/L2; beyond: lock/rehydration | A: durable state |
+| G-013 | CONFIRMED | S1 | S1 | No | G-011/012 distinct | A: durable receipt/effect |
+| G-014 | CONFIRMED | S1 | S1 | No | — | A: durable outbox |
+| G-020 | CONFIRMED | S2 | S2 | No | — | B: truthful close-only |
+| G-027 | CONFIRMED | S2 | S2 | No | D9 veto10-12 distinct | A: manual alert type |
+| G-005..G-007, G-019, G-024..G-026, G-028..G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
 
 **Shared test execution:** `PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/unit/test_ledger_store.py tests/unit/test_telegram_control_plane.py tests/unit/test_ops_telegram_gateway.py tests/unit/test_telegram_signaling.py tests/unit/test_identity.py > AUDIT/probes_V4/TARGETED_TESTS.out 2>&1`: **286 passed, 13 warnings**. For individual probes use `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V4/<ID>.py`; output is the sibling `.out`. `QUERY-PLAN.py/.out` run against the real schema with/without the two device-only indexes. Scope of assertions below is the cited implementation behavior, not end-to-end or device acceptance. Owner decisions in PHASE2_DECISION_LOG.md supersede conflicting blueprint prose. No source changes proposed here are authorized.
 
@@ -710,6 +716,162 @@ A, with serialized per-principal transition and safe handling of partial protect
 ### Acceptance and regression tests
 L5→NO/expiry then L1 allowed; handler failure and cancellation not reported as completed; L1→YES commits once; interleaved L2/L5 proposals and restart preserve only confirmed level; risk/order/ledger evidence separately checked.
 
+## G-011
+### Auditor claim (short quote)
+Reissuing confirmation in same millisecond resets a consumed nonce and lets an old click authorize again.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:137-146,212-265,800-858,901-937,1001-1005` (`nonce_key`, registry issue/consume, `_action`, `_emergency`), `gateway.py:277-309` callback route, tests `test_telegram_control_plane.py:251-319,817-861`. Grep `nonce_key`, `confirmations.issue` and `consume` in apex/scripts/tests shows no independent idempotent approval record.
+### Reproduction (command, probe file, actual result)
+`G-011.py/.out`: actual ConfirmationRegistry with fixed UTC millisecond/monotonic clock: issue→YES→issue same action/chat→YES with *old* key returns both authorized=True, `same_key=True`, one stored nonce. No real Telegram click or venue effect.
+### Verdict and reasoning
+CONFIRMED S2 as deterministic replay vulnerability at registry boundary, but probability of two human clicks within one ms unknown; in-process `update_id` dedup only blocks repeated identical update, not a new update carrying the same key. Severity limited without actual operational exploitation.
+### Root cause
+`nonce_key` deterministically hashes only action/chat/millisecond; issuing overwrites even consumed `_nonces[key]` with `consumed=False`.
+### Direct impact
+Old confirmation identifier can be reused after rapid re-issue.
+### Secondary effects and interactions (upstream/downstream)
+Upstream user-visible nonce binding and G-006 keyboard delivery; downstream `_execute_confirmed` may re-invoke emergency/other handler. G-013 update replay after restart and G-010 early ratchet compound risk. No proof of twice-executed order; no durable audit of individual confirmation lineage.
+### Contract and decisions
+`APEX_GEN5.md:17922-17926`: “Confirmation is Yes/No, irreversible, with a 90-second nonce”; `PHASE2_DECISION_LOG.md:194-210` D1 shared PAPER path; none overrides single-use law. Later owner decision wins; a synthetic same-ms counterexample defeats the present interpretation.
+### Frozen status and non-frozen alternative
+Control-plane registry non-frozen; additive durable nonce store outside frozen CP-1 DDL optional; no engine/params edit.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: cryptographically unique per-issue nonce plus atomic consumed registry and retention across restart, callback binds principal/action/expiry; tests for deterministic nonce hashes change, new persistence/migration and approval-audit identities/caches change, no retraining or historic ledger rewrite. B: add incrementing process counter; closes same-ms collision in process but restart reuse/durability remains.
+### My recommendation
+A, with durable single-use approval for capital/emergency actions.
+### Acceptance and regression tests
+Frozen millisecond issue→YES→issue→old key refused; concurrent issue keys distinct; wrong chat/action, expiry, cancellation, restart, duplicate update ID all fail closed; verify downstream handler exactly once.
+
+## G-012
+### Auditor claim (short quote)
+Process restart forgets lock, emergency level and all containment flags.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:393-487,758-775,902-975` (`EmergencyRatchet`, `ControlPlane.__init__`, `_command`, `_emergency_effect`); `scripts/run_apex.py:711-765` new service/control on serve; `paper_loop.py:351-455` constructor/boot (initializes risk-ladder DB, does not hydrate control flags), `gateway.py:230-262` offset initialization; grep `apex_risk_ladder_state`, `control.` and `ControlPlane(` in apex/scripts/tests.
+### Reproduction (command, probe file, actual result)
+`G-012.py/.out`: real control plane with synthetic successful L5 handler and OWNER `/lock`; old state `locked=True level=L5 paused=True disabled=True safe_mode=True read_only=True`; new instance all False/None. No real crash, broker or Telegram; synthetic handler does not close positions.
+### Verdict and reasoning
+CONFIRMED S1 for missing persistence/reconstitution of UI/control state, but no evidence that device runtime reached L5 or subsequent trades happened. Risk ladder DB migration is separate and does not rehydrate ControlPlane.
+### Root cause
+State/ratchet/lock live solely as instance attributes; serve reconstructs fresh instance and boot never binds state to ledger/recovery record.
+### Direct impact
+Previously acknowledged control state disappears when process restarts.
+### Secondary effects and interactions (upstream/downstream)
+Upstream Emergency/lock confirmations can appear successful (D-002 limits real effects); downstream `PaperRuntime._control_paused()` no longer blocks cycles. F-008 ledger reconcile gate durability, G-003 in-process recovery and G-013 offset replay are distinct; order admission still has independent boot verdict (ISSUE-075). Control-state hash/replay/audit cannot be reconstructed.
+### Contract and decisions
+`APEX_GEN5.md:18424-18434`: SELF_TEST “emergency-ladder state restored from the latest backup”, no new trades before READY; `1170-1177` incident containment/recovery; `17915-17926` OWNER emergency semantics. `PHASE2_DECISION_LOG.md:1173` D57 schedules durable L1/L2 state for CP-15 and higher watchdog levels CP-16, **overrides any reading that all are already implemented**; this row flags beyond D57 the missing ControlPlane lock/safe-mode rehydration and acknowledgement coherence, not a duplicate owner item. D-002/ISSUE-073 are separate no-op handlers.
+### Frozen status and non-frozen alternative
+Control-plane/serve/PaperRuntime migration path non-frozen. Frozen risk kernel and CP-1 DDL should not be rewritten; additive table/adapter outside frozen files.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: durable versioned control transition log with atomic ack and boot reconcile to risk ladder/ledger, fail closed on ambiguity; migration, backup/restart tests and derived control/replay hashes change, no E11 retraining; historical state cannot be inferred from absent records. B: refuse state-changing commands until durable store exists, protects against false ack but operator loses incident tool (requires independent watchdog).
+### My recommendation
+A staged alongside D57, with B truthful refusal until persistence exists; never auto-unpause uncertain state.
+### Acceptance and regression tests
+L1/L2/L5 and lock across new process with file SQLite, mid-write fault, same update replay and broker reconciliation; no new order until confirmed control/boot state; reduce-only exits continue; device backup drill still required.
+
+## G-013
+### Auditor claim (short quote)
+Update replay guard and poll offset are RAM-only, so a repeated update can invoke handler again after restart.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:332-357,450-487,725-743,800-827` (`UpdateDeduplicator`, command/callback), `gateway.py:84-114,230-342,385-405` (`AiogramUpdateSource`, `TelegramGateway`), `scripts/run_apex.py:724-735` new gateway each serve; tests `test_ops_telegram_gateway.py:215-240,261-281`. Grep `updates.record`/`.offset` in apex/scripts/tests; no durable update checkpoint observed.
+### Reproduction (command, probe file, actual result)
+`G-013.py/.out`: real `TelegramGateway.run_once` and ControlPlane, synthetic Source returns update_id=91 twice across two fresh gateway/control instances; first and second each `handled=1 offset=92`, handler `calls=['pause','pause']`. Synthetic polling, not Telegram replay behavior proof.
+### Verdict and reasoning
+CONFIRMED S1 for restart replay possibility and absent durable exactly-once gate. Telegram may redeliver if prior offset was not confirmed; same-instance guard works, but user device replay occurrence remains unverified.
+### Root cause
+`UpdateDeduplicator._seen` bounded RAM dictionary and both gateway/source offsets initialized None on each construction; effect and offset not atomically persisted.
+### Direct impact
+Previously accepted command can run twice when update is redelivered after restart.
+### Secondary effects and interactions (upstream/downstream)
+Upstream poll delivery/ack semantics unknown without device; downstream bootstrap effects, future emergency/export jobs and audit may duplicate. G-011 nonce reuse and G-012 state reset compound uncertainty; G-016 outbound idempotency is a different key/transport. Ledger/trade identity requires separate idempotency independent of Telegram update IDs.
+### Contract and decisions
+`APEX_GEN5.md:17922-17926`: irreversible Yes/No confirmation; `18943-18951` cached result/stable key semantics (“On receipt of request with key K”); `PHASE2_DECISION_LOG.md:194-210` D1 same FSM/ledger path, no override allowing repeated OWNER actions. Owner decisions take precedence; idempotency of action must be anchored beyond client offset.
+### Frozen status and non-frozen alternative
+Gateway/control-plane non-frozen; additive inbound receipt/effect table in non-frozen migration rather than changing frozen CP-1 store/engines.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: durable update_id→result/effect idempotency checkpoint in same transaction as action where possible; external effects need their own stable idempotency key and UNKNOWN reconciliation; DB migration, response/cache/approval hash versioning and restart tests change, no training. B: persist only offset, faster but can lose an unexecuted update if offset committed first or repeat effect if committed after.
+### My recommendation
+A, with explicit acknowledgement ordering and idempotent downstream handler; do not treat offset alone as exactly-once proof.
+### Acceptance and regression tests
+Effect→crash before next poll/ack, restart same update, exactly one durable effect with prior result replay; 4097 updates eviction, out-of-order updates, handler exception and network timeout; no live Telegram test without owner permission.
+
+## G-014
+### Auditor claim (short quote)
+“Durable outbox” is a RAM list lost on object recreation and failed messages have no recovery worker.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:407-441,579-626,666-807` (registry/outbox/send), `scripts/run_apex.py:717-725,839-856` plane construction/reply, `gateway.py:261-274`; `test_telegram_signaling.py:350-410,470-520`; `PHASE2_TRACEABILITY_MATRIX.md:318-321`. Grep `outbox`/`idempotency`/`replay_outbox` throughout apex/scripts/tests: `self.outbox.append` only, no durable reload/retry worker.
+### Reproduction (command, probe file, actual result)
+`G-014.py/.out`: real signaling send with synthetic P0 and transport 3 injected failures returns sent=False, in-memory outbox has FAILED entry (droppable=False); new plane outbox empty, registry empty and no `replay_outbox` API. No actual process crash, provider or persistent DB.
+### Verdict and reasoning
+CONFIRMED S1 for lack of persistence/recovery, not a claim that Telegram actually lost any message on device. Alert ledger optional append is not a pending outbound message log with attempt/ack.
+### Root cause
+Outbox and idempotency solely per-object lists/dicts; `_record_outbox` is append-only RAM and no pending worker exists.
+### Direct impact
+Pending/failed notification evidence and retries disappear across restart.
+### Secondary effects and interactions (upstream/downstream)
+Upstream risk/decision/ledger alert producers may record an ALERT independently; downstream G-017 suppression, G-016 in-flight race, G-023 P0 priority and G-028 receipt semantics complicate safe resend. Replaying messages without durable provider receipt may duplicate sends; do not assume exactly-once Telegram delivery.
+### Contract and decisions
+`APEX_GEN5.md:18168-18175`: P0 “never drop”, P3 droppable; `18980-18983`: P0/P1 preservation; `19214` explicitly “durable outbox/no silent drop”; `PHASE2_DECISION_LOG.md:194-210` D1 routes PAPER Telegram, no owner override downgrading durability. Traceability PASS refers to tests, not recovery proof; owner decisions supersede prose.
+### Frozen status and non-frozen alternative
+Signaling/ops persistence non-frozen; additive outbox table via non-frozen migration; leave frozen CP-1 store and original params untouched.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: durable pending/attempt/receipt outbox with stable identity and retry worker, UNKNOWN for ambiguous send; DB migration/disk writes, tests expecting RAM-only state change, delivery/replay identities/cache versioning needed, no model retraining. B: event-log-derived outbox from ledger ALERT alone misses arbitrary signal/reply and lacks receipt; insufficient without expanding event payload/version.
+### My recommendation
+A, with P0 reservation and per-chat rolling ceiling, and no blind resend after uncertain provider acknowledgement.
+### Acceptance and regression tests
+Pending→network fail→process restart and recovery, receipt absent/late/duplicate and exhausted retries; exactly one durable logical message, delivery outcome honest, no P0/P1 eviction; temporary file SQLite with repository DDL and fault injection.
+
+## G-020
+### Auditor claim (short quote)
+Chart plots OHLCV low as close and advertises layers not drawn.
+### What I read (files, line ranges, functions, callers)
+`signaling.py:267-344` (`_matplotlib_agg`, `CHART_LAYERS`, `render_chart`, `_png_size`), `test_telegram_signaling.py:700-772`, `tests/integration/test_cp7_paper_loop.py:935-979,1088-1096`; grep `render_chart(` apex/scripts/tests finds no runtime production render caller outside tests (chart readiness distinct). `APEX_GEN5.md:17962-17972,18235-18256` charts contract.
+### Reproduction (command, probe file, actual result)
+`G-020.py/.out`: actual `render_chart` and Agg PNG (1200×800, 28,218 bytes), instrumentation wraps real `Axes.plot` without replacing chart logic. Supplied OHLCV low [0.5,0.7], close [1.5,2.6]; only plotted y=[0.5,0.7], returned `layers=('BOS','FVG')`, unavailable empty. Synthetic candles, no user screen/provider.
+### Verdict and reasoning
+CONFIRMED S2 at callable boundary; no claim any production operator has viewed this chart, since runtime usage was not found by grep. Metadata advertisement does not prove overlays were rendered.
+### Root cause
+`row[3]` interpreted as closes for six-column OHLCV while close is index 4; requested layers copied to result without implementation of overlay rendering.
+### Direct impact
+Wrong price curve and misleading layer claims if chart delivered.
+### Secondary effects and interactions (upstream/downstream)
+Upstream schema/quality supplied by caller must be explicit; downstream Telegram image/G-029 formatting and operator interpretation, not risk/order decisions. Snapshot/lineage metadata is passed through but says nothing about plotted data; rendering caches/identity could change after correction.
+### Contract and decisions
+`APEX_GEN5.md:17962-17972`: “Charts overlay OHLCV, Swing High/Low, BOS ... [layers], and carry quality ... snapshot_id ... lineage”; `18243-18248` chart function shows overlay intent. `PHASE2_DECISION_LOG.md:194-210` D1 PAPER path and `148` ISSUE-CP7-003 module-frozen literals, neither authorizes advertising unrendered layers. Later owner decisions take precedence over illustrative PNG quality/dpi example.
+### Frozen status and non-frozen alternative
+Signaling/chart renderer non-frozen; do not change frozen engines/formulas to fake overlays. Adapter may supply governed plotted layers from read-only evidence.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: bind documented OHLCV schema, draw verified close and only computed overlays, unavailable for missing layers; breaks visual golden PNG/metadata tests, changes image hashes/caches/replay attachments, no DB migration/training if purely display. B: close-only graph plus explicitly unavailable overlays until governed inputs exist; smaller scope, avoids false claims but limits functionality.
+### My recommendation
+B immediately for honest output, then A per layer with provenance tests.
+### Acceptance and regression tests
+OHLCV low≠close, instrument artist data + PNG; each requested layer actually drawn or unavailable; no display/file writes, verify operator image via test double, real-data evidence remains unverified.
+
+## G-027
+### Auditor claim (short quote)
+Confirmed L1/L2/L3 manual action emits `CIRCUIT_OPEN`, which policy reserves for daily loss/veto 10.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:902-975` (`_emergency`, `_emergency_effect`), `signaling.py:90-133,816-880` (`ALERT_POLICY`, dedup/emit), `tests/unit/test_telegram_control_plane.py:900-919`; `grep -Rn 'CIRCUIT_OPEN' apex/telegram apex/risk scripts/tests` shows control-plane manual trigger and risk error name; no real daily-loss subscriber established by this row.
+### Reproduction (command, probe file, actual result)
+`G-027.py/.out`: real ControlPlane L1 confirm with synthetic successful handler and recording signaling: alert `CIRCUIT_OPEN`, `metric=emergency_L1`, `threshold=PAUSE`; real `ALERT_POLICY` defines CIRCUIT_OPEN metric `daily_realized_loss`, threshold `per veto 10 table`. No venue or real Telegram send.
+### Verdict and reasoning
+CONFIRMED S2 for mislabelled alert semantics; not proof of market loss or a working veto-10 alert. Existing unit test explicitly expects mislabeled L1 alert.
+### Root cause
+Generic emergency callback maps L1–L3 into loss-circuit alert type instead of distinct manual-control event.
+### Direct impact
+Owner may interpret a manual pause as a daily-loss circuit trip.
+### Secondary effects and interactions (upstream/downstream)
+Upstream no loss metric required; downstream P0 priority and dedup exemption accrue wrong alert counts/audit interpretation. G-019 missing real loss subscriber is separate; D-002/ISSUE-073 noop handlers mean downstream effects not guaranteed. No direct order decision or training change proved.
+### Contract and decisions
+`APEX_GEN5.md:18468-18477`: “Daily realized loss | per veto 10 table | CIRCUIT_OPEN”; `17915-17926`: distinct manual Emergency semantics. `PHASE2_DECISION_LOG.md:204-205` D9 adds CIRCUIT_OPEN to error registry for vetoes 10–12; this later owner decision broadens error-code use, but does **not** classify manual L1 as a loss circuit. D9 precedence does not rescue manual metric mislabelling.
+### Frozen status and non-frozen alternative
+Control-plane/signaling alert adapter non-frozen; risk engine frozen and need not be altered. New message type requires owner policy approval, not edits to frozen YAML.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: distinct MANUAL_EMERGENCY/PAUSE notification and reserve CIRCUIT_OPEN for governed veto policy; changes tests `test_l1_to_l3_raise_a_circuit_open_alert`, alert IDs/metrics, reporting/audit caches and replay classification; no DB migration unless alert schema enum restricted, no retraining. B: send plain operator reply without policy alert, simpler but may lose urgent visibility unless approved channel established.
+### My recommendation
+A after owner settles policy name/priority; retain independent veto10 alert generation.
+### Acceptance and regression tests
+L1–L3 with no loss never emit CIRCUIT_OPEN; veto10 daily realized-loss event does emit policy-matched metric/threshold; dedup/priority and audit logs checked without sending Telegram.
+
 ## New findings not in the audit
 
 ### X-V4-001 — repeated ledger queries have no selective indexes (S2, CONFIRMED plan shape; latency DEVICE-EVIDENCE-NEEDED)
@@ -740,10 +902,10 @@ EXPLAIN on real DDL before/after migration with device indexes both absent/prese
 
 ## Rows not verified or incomplete
 
-**Not verified (15 IDs; no verdict/severity assignment, no coverage claim):** G-005, G-006, G-007, G-011, G-012, G-013, G-014, G-019, G-020, G-024, G-025, G-026, G-027, G-028, G-029. Their unquoted full report rows and their complete referenced functions/caller/callee graphs were **not** independently reviewed to the mandatory depth; targeted suite success does not verify any of them. G-001 would also require strict synthetic config isolation before a safe probe. Known ISSUE-073 overlaps G-002, not a blanket verdict on other G rows. Device-specific facts for all rows remain unavailable. Do not extrapolate this report to 41-row coverage.
+**Not verified (9 IDs; no verdict/severity assignment, no coverage claim):** G-005, G-006, G-007, G-019, G-024, G-025, G-026, G-028, G-029. Their unquoted full report rows and their complete referenced functions/caller/callee graphs were **not** independently reviewed to the mandatory depth; targeted suite success does not verify any of them. G-001 would also require strict synthetic config isolation before a safe probe. Known ISSUE-073 overlaps G-002, not a blanket verdict on other G rows. Device-specific facts for all rows remain unavailable. Do not extrapolate this report to 41-row coverage.
 
 **Depth limits for the 21 bounded findings above:** code slices and grep consumers are recorded, but full-file end-to-end semantic review of every referenced file (especially the entire 21k-line contract, `fsm.py`, `gateway.py`, `signaling.py`, `control_plane.py`, all five complete test files, and every transitive caller/callee) was not completed. Thus these are **bounded direct-behavior conclusions, not complete mandatory-depth closure**. The source report's Persian rows cited in their individual sections were read, but no real DB/model/device/transport was available. Query plans were on empty real schema with/without the two specified indexes; optimizer choices and p95 on device are unverified. No L1/L2 risk ladder or order placements were executed. A source-file review must precede any patch; this report is not approval to trade or change frozen files.
 
 ## Final counts
 
-Of 41 requested audit IDs: **22 CONFIRMED** (bounded direct behavior), **4 PARTIAL**, **0 REJECTED**, **0 DEVICE-EVIDENCE-NEEDED as sole verdict**, **15 NOT VERIFIED**. One additional finding X-V4-001: plan shape CONFIRMED, device impact pending. No row is claimed fully closed at the mandatory exhaustive-depth standard. These counts exclude tests and known-owner items outside the 41-ID scope.
+Of 41 requested audit IDs: **28 CONFIRMED** (bounded direct behavior), **4 PARTIAL**, **0 REJECTED**, **0 DEVICE-EVIDENCE-NEEDED as sole verdict**, **9 NOT VERIFIED**. One additional finding X-V4-001: plan shape CONFIRMED, device impact pending. No row is claimed fully closed at the mandatory exhaustive-depth standard. These counts exclude tests and known-owner items outside the 41-ID scope.

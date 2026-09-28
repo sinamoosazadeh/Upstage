@@ -1,0 +1,1 @@
+first= {'polled': 1, 'handled': 1, 'offset': 92} second_fresh= {'polled': 1, 'handled': 1, 'offset': 92} handler_calls= ['pause', 'pause'] old_offset= 92 new_offset= 92

@@ -1,0 +1,3 @@
+first_sent= False transport_calls= 3 first_outbox= [{'signal_id': 'soutage', 'chat_id': '12345', 'priority': 0, 'status': 'FAILED', 'reason': 'network error after 3 attempts: OSError: INJECTED_TRANSPORT', 'idempotency_key': 'd007036c729f2a21e4d8bb7cc52b5b11ebfb027ab1687c75484324e919179f99', 'message_id': None, 'timestamp_utc': '2026-01-01T00:00:00.000Z', 'alert': None, 'droppable': False, 'attempts': 3}] registry_size= 0
+recreated_outbox= [] registry_size= 0
+outbox_has_restart_api= False
