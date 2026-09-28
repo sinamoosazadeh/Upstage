@@ -1,0 +1,20 @@
+tests/unit/test_scheduler_clock.py:428:    def test_due_cells_are_ordered_by_close_then_symbol_then_timeframe(self):
+tests/unit/test_scheduler_clock.py:431:        due = scheduler.due_cells()
+tests/unit/test_cp146.py:259:    from apex.ops.bootstrap_service import latest_close_boundary as boot_boundary
+tests/unit/test_cp146.py:261:    assert boot_boundary(sample, "1w") == C.latest_close_boundary(sample, "1w")
+tests/unit/test_cp146.py:262:    assert boot_boundary(sample, "1mo") == C.latest_close_boundary(sample, "1mo")
+tests/unit/test_cp146.py:264:        C.latest_close_boundary(sample, "1w") / 1000, dt.timezone.utc)
+tests/unit/test_cp146.py:441:            assert replay["cells_skipped_already_decided"] == 1
+tests/unit/test_cp146.py:446:            assert cursor["BTCUSDT:1h"] == C.latest_close_boundary(
+apex/ops/bootstrap_service.py:222:def latest_close_boundary(now_ms: int, timeframe: str) -> int:
+apex/ops/bootstrap_service.py:224:    from apex.scheduler.clock import latest_close_boundary as _boundary
+apex/ops/bootstrap_service.py:1468:            boundary = latest_close_boundary(now_ms, timeframe)
+apex/ops/engine_context.py:1777:        from apex.ops.bootstrap_service import latest_close_boundary
+apex/ops/engine_context.py:1788:             (symbol,timeframe,_ms_to_iso(latest_close_boundary(_iso_to_ms(as_of),timeframe)))),
+apex/ops/engine_context.py:2098:        from apex.ops.bootstrap_service import latest_close_boundary
+apex/ops/engine_context.py:2107:                if actual_close != latest_close_boundary(_iso_to_ms(as_of), tf):
+apex/ops/engine_context.py:3972:    from apex.ops.bootstrap_service import latest_close_boundary
+apex/ops/engine_context.py:3976:    end = latest_close_boundary(as_of_ms,timeframe)
+apex/ops/paper_loop.py:982:        for item in self.scheduler.due_cells(now_ms=moment):
+apex/ops/paper_loop.py:988:        cycle["cells_skipped_already_decided"] = len(already)
+scripts/run_apex.py:250:    due = scheduler.due_cells()

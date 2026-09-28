@@ -5,7 +5,7 @@ ID | Verdict | Auditor severity | Independent severity | Frozen? | Cross-ref (D/
 C-002 | CONFIRMED | S0 | S0 | No (factory/adapter/FSM); additive migration needed for fix | = ISSUE-075; = user-provided D58; D1/D2; related ISSUE-077/078 | A: governed simulator factory; never private network transport in PAPER
 C-001 | NOT VERIFIED | S3 (index only) | Not assigned | Not assessed | Not assessed | Verify full row
 C-003 | CONFIRMED | S1 | S1 | No for runtime/producer retention; catalog frozen | ISSUE-076/077/079 interactions; D50 | A: durable history + bounded views and cache generations
-C-004 | NOT VERIFIED | S1 (index only) | Not assigned | Not assessed | Not assessed | Verify and measure
+C-004 | CONFIRMED | S1 | S1 | No (scheduler/loop); catalog frozen | D50/D53; distinct from ISSUE-076/077/079 | A: durable close dispositions + deadline-driven wakeup
 C-005 | NOT VERIFIED | S2 (index only) | Not assigned | Not assessed | Not assessed | Verify full row
 C-006 | CONFIRMED | S1 | S1 | Runtime/producer non-frozen; catalog frozen | = ISSUE-079; overlaps ISSUE-076/077 | A: isolate control/protection + bounded preparation; exact-parity SQL repair
 C-007 | NOT VERIFIED | S2 (index only) | Not assigned | Not assessed | Not assessed | Verify full row
@@ -20,7 +20,7 @@ C-015 | NOT VERIFIED | S2 (index only) | Not assigned | Not assessed | Not asses
 O-006 | NOT VERIFIED | Not extracted | Not assigned | Not assessed | Not assessed | Verify full row
 V-003 | NOT VERIFIED | S4 | Not assigned | Not assessed | Not assessed | Verify full row
 
-**Current status: C-002 CONFIRMED/S0; C-006 and C-003 CONFIRMED/S1; 5 retained performance rows remain unverified; 9 rows are reassigned to V1c.** The appended C-002 formal-verdict section supersedes its retained initial evidence section. The full V1a scope is not complete; there is no real-data/device readiness claim.
+**Current status: C-002 CONFIRMED/S0; C-006, C-003 and C-004 CONFIRMED/S1; 4 retained performance rows remain unverified; 9 rows are reassigned to V1c.** The appended C-002 formal-verdict section supersedes its retained initial evidence section. The full V1a scope is not complete; there is no real-data/device readiness claim.
 
 Source baseline remains `85b2c155d7b054a468379ddfd802eb239d0801f9`. On continuation the sandbox had reconstructed baseline HEAD with the six prior AUDIT files untracked. I fetched this session's branch, staged only those AUDIT files, verified the entire staged tree was identical to remote checkpoint `7affafc5654027fc3a5c1a8bef0e8a9e39beb75f`, then restored this branch pointer with `git reset --soft origin/arena/01a0e911-upstage`. No source/worktree reset occurred, and no other branch was used. Report input was fetched again using the supplied SHA. All following source line numbers refer to the unchanged baseline.
 
@@ -235,7 +235,7 @@ Complete mandatory verification before accepting or rejecting the claim.
 
 Not defined or run for this row; required performance probes, where applicable, remain outstanding.
 
-## C-004 — not verified
+## C-004 — initial placeholder (superseded below)
 
 ### Auditor claim (short quote)
 
@@ -1200,24 +1200,105 @@ A, with producer failure/lineage retention and duplicate-safe durable audit trea
 
 Use this 140-cell soak with growing as_of and explicit GC; after the retention policy's warmup, require a stable bounded heap and container-size envelope while durable counts continue increasing. Test success and failure generations, active readers during eviction, exact-context reload after correction, bounded typed-hash precision/error parity, full ledger/audit retrieval after rotation, and duplicate client IDs after process restart. Budget/cycle totals must not reset when a deque rotates. SQL plans must be measured with both device indexes at ≥200k market rows. Native failure/observer retention was measured here; full-model context size, phone RSS and OOM remain device evidence, not extrapolated numbers.
 
+## C-004 — formal verdict
+
+### Auditor claim (short quote)
+
+“due_cells فقط آخرین boundary هر TF را می‌دهد” — due_cells returns only the latest boundary per TF. Full row also distinguishes catch-up **data** from replay of every decision, identifies post-work sleep, and recommends explicit backlog/disposition without blindly trading stale signals. Full row read from `/tmp/AUDIT.md`; auditor S1.
+
+### What I read (files, line ranges, functions, callers)
+
+Full `Scheduler.due_cells`/run_due/run_cell and cursor update flow (clock.py:501–606), constructor/cell fields 442–499, all calendar helpers `latest_close_boundary`, `_next_month_ms`, `tf_close_times`, `next_close` (189–253), FixtureClock and conversion methods (97–170). Full direct caller PaperRuntime.run_cycle (956–1067), run/_paused/_stopped (1103–1143), cursor DDL/load/upsert (218–269), real ingest 476–494 and constructor; complete CLI serve including interval/default/control wiring was already read for C-002. Complete BootstrapService.catch_up (1456–1565) was read for C-006; it catches up source bars and publishes quality, not scheduler decision records for each historical close. Native store DDL/get_window and content hashes are the shared reviewed callees. Consumers grep is saved in `C-004-consumers.out`.
+
+Read complete test functions: scheduler due ordering (test_scheduler_clock.py:428–435), cursor monotonic persistence (test_cp146.py:144–164), calendar 400-day enumeration (215–265), and integration pause/run-loop tests (test_ops_paper_loop.py:667–703). The three unit tests named below were executed; the integration pair was only read here. No claim of full-suite/full integration-file coverage.
+
+### Reproduction (command, probe file, actual result)
+
+`PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V1a/C-004.py`, raw `C-004.out`, exit 0. The native repository-DDL fixture has **200,000 market rows + 200,000 raw rows**, 1,000 PIT facts and 100 ledger records. The real PaperRuntime, Scheduler, native ingest/get_window, cursor migration/read/upsert and restart filtering execute; downstream signal/order stages are explicit inert fixtures and public publishers disabled. No exchange/Telegram/secrets/model used; guard attempts zero.
+
+One BTC:1m cell runs at minute 1, then the real fixture clock advances to minute 4. Repeat with neither device index and with **both** exact supplied indexes:
+
+| Device indexes | Selected decision minutes | Durable cursor | Fresh driver at minute 4 | Three-call elapsed |
+| --- | --- | --- | --- | --- |
+| Neither | [1,4] | 4 | due=0, already-decided=1 | 0.101569 s |
+| Both | [1,4] | 4 | due=0, already-decided=1 | 0.008418 s |
+
+No decision runs/dispositions at minutes 2/3 are created. Restart is an actual fresh driver reading the persisted cursor, not a manually copied Python dictionary. It cannot recover these skipped closes from the maximum cursor at minute 4.
+
+Actual SELECTs were captured and EXPLAINed with/without both indexes: native market window changes full **SCAN market_observation** + sort to **SEARCH ... idx_mo_sym_tf_open** + bounded outer sort. Schema migration lookup uses its covering PK; cursor loading is a full **SCAN cell_decision_cursor** (one row in this test, naturally one row per cell, not the 200k table). No PIT SELECT is issued by these isolated scheduling/ingest paths, so the PIT index does not affect this experiment. Unlike C-006, no raw metadata join is needed here. Indexes improve query time but do not change missing-decision semantics.
+
+Actual `PaperRuntime.run(cycles=2,interval=.05,sleep=waiter)` then uses a local catch-up workload sleeping 80 ms and advancing the fixture clock by 120 s; the supplied sleep records its argument, sleeps 50 ms and advances the fixture by 60 s. Work ends at **0.081288 s**, interval sleep starts **0.090522 s**, ends **0.140950 s**, then next work begins **0.140988 s**. Total **0.238562 s**. Decision minutes are **[5,8]**. The simulated clock jumps illustrate work-plus-interval, not a measured 120-second production catch-up. The CLI default interval remains 60 seconds; the test intentionally scales its real wait down.
+
+Calendar control: real `due_cells` at Jan 1 and Apr 1 selects only those endpoints; real `tf_close_times` enumerates Jan/Feb/Mar/Apr. Therefore this is not a missing D53 helper or a 30-day-month bug; enumeration exists but due_cells does not use it for missed closes.
+
+Existing regression command (same sanitized network-denying environment as C-002): `python3 -m pytest -q -p no:cacheprovider tests/unit/test_scheduler_clock.py::TestPriorityLanes::test_due_cells_are_ordered_by_close_then_symbol_then_timeframe tests/unit/test_cp146.py::test_d50_cell_cursor_survives_a_new_reader tests/unit/test_cp146.py::test_d53_week_and_month_boundaries_match_the_calendar_for_400_days`. `C-004-pytest.out`: **3 passed in 0.70s**, guard attempts **[]**. These establish calendar/order/no-rewind invariants, not backlog acceptance.
+
+### Verdict and reasoning
+
+**CONFIRMED / S1.** Latest-boundary selection plus max cursor can silently omit per-close decision invocations across a pause/slow cycle. A fixed sleep *after* work compounds drift. Neither faster queries nor restart makes the omitted closes available to this selection logic.
+
+The qualification matters: native feature_timeline may still consume historical bars and reconstruct historical feature state. The proof is not that intervening market data is absent or every engine-derived event is lost. It proves the missing **per-close scheduler decision/disposition** and its persistence across restart. Financial loss, missed profitable signal and exact phone latency are not established.
+
+### Root cause
+
+`due_cells` computes one `latest_close_boundary(moment,tf)` and compares it to one last-close value; it does not enumerate the interval. PaperRuntime additionally filters that one value by durable cursor and stores a monotone maximum after processing. No gap ledger records older boundaries. `run` sleeps the full configured interval after a completed cycle rather than waking against a fixed next deadline.
+
+### Direct impact
+
+For a gap spanning multiple boundaries, only the newest close is offered. Even bars already present in the native store do not trigger older decision invocations. A monotone max cursor prevents reprocessing completed closes (correct D50 behavior) but cannot represent missing earlier dispositions. This is a coverage/accounting gap, not permission to execute stale orders as a remedy.
+
+### Secondary effects and interactions (upstream/downstream)
+
+**ISSUE-076:** data replay/backfill can fill candles and quality, but does not create per-close runtime decisions; fixing replay CLI/row commits alone does not fix selection. **ISSUE-079:** long fingerprint/window work increases the chance of crossing close boundaries; its index repair reduces trigger frequency, not this cause. **ISSUE-077:** gather-before-persist can delay/lose cursor progress on interruption and cause repeated work; C-004 is the different case where the cursor successfully advances **over** unrepresented closes. Both need coherent recovery semantics rather than resetting the maximum blindly.
+
+Upstream catch-up follows a source frontier and availability policy; any historical evaluation must retain that PIT law and distinguish decision time from late receipt time. Downstream risk admission, identity/dedup, expiry, position management and budget cannot be treated as if old opportunities are current. Time-based exit checks may be delayed across a slow cycle (C-006), but no actual missed exit/loss is reproduced here. A historical replay can differ in decision invocation count without proving engine output mismatch.
+
+### Contract and decisions
+
+APEX_GEN5.md:20507: “on each TF close, ingest→quality→features→engines→setup→gates→risk→decision→execution for that (symbol,TF).” Normative per-close catch-up at 20512–20517 requires completed closed-bar catch-up before computation; it does not say the newest close may silently stand for all missed decision closes. D50 (PHASE2_DECISION_LOG.md:1159) requires durable last processed close and no repeated cell-close on restart; the existing maximum correctly satisfies no-rewind but is insufficient to certify completeness.
+
+D53 at 1165 expressly mandates Monday/month-start venue boundaries and a 400-day enumeration; preserve that later decision rather than use fixed seconds for calendar months. D22 same-close retry remains binding for preparation/catch-up failures. No later decision identified here authorizes silent missed-close disposal or retroactive live execution. **Owner policy is needed for stale-close disposition**, especially what is historical analysis versus current protection/execution; the audit cannot invent this policy.
+
+### Frozen status and non-frozen alternative
+
+Scheduler, PaperRuntime and additive runtime cursor/disposition migrations are non-frozen. Existing D53 helpers can implement a non-frozen enumerator; no frozen catalog/engine/backtest rewrite is necessary. Store append-only evidence and a bounded work queue in a non-frozen module. Changing historical engine/research semantics would cross frozen boundaries and require permission; it is not required just to make missing closes explicit.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+**A — durable per-close disposition, bounded backlog, deadline-based wakeup.** Enumerate from a durable contiguous frontier using native calendar helpers; record processed, deferred or explicitly policy-skipped closes. Prioritize current protection/control separately (C-006). Requires additive schema/migration, startup reconciliation of old max cursors with unknown history, backlog metrics and disk-floor/backpressure controls. Do not infer old gaps were decided when migrating. Per-close retries must preserve D50 identities and D22 failures; intermediate outcomes may only advance a contiguous frontier once their disposition is durable. Tests expecting one due cell after arbitrary jumps need explicit selected policy; calendar/no-rewind and no-duplicate tests must remain valid.
+
+**B — governed latest-only decisions with explicit gap records.** May keep current trading behavior and minimize backlog computation, but requires an owner-approved contract/policy and named durable skip reasons. It cannot be described as full per-close replay. Persist gap ranges with actual calendar semantics; classification affects compliance/metrics, not historical order hashes. Less compute than A but deliberately omits historical decisions.
+
+**C — deadline-based wakeup and faster preparation alone.** Removes avoidable post-work drift and helps normal throughput with no necessary schema or training change, but outages/long tasks still produce gaps. Suitable only as a partial mitigation, not closure. Never enqueue an unbounded RAM backlog to hide this defect; C-003 would worsen.
+
+For A/B, retaining original `as_of`, input snapshot/hash and proposal identity is essential; current receipt time cannot be rewritten into historical availability. Pure scheduling/accounting changes need no model retraining. Retraining becomes a separate governed question only if someone changes input history/label/sample semantics; that is not recommended. D51 budget is per cycle, so draining many historical closes in one cycle must not multiply allowed orders or reserve slots for stale analytical results.
+
+### My recommendation
+
+A with owner-approved stale-close disposition and current-protection priority; adopt C as an independent mitigation. Do not solve an observability/coverage defect by retroactively sending old trades or weakening D50's durable dedup.
+
+### Acceptance and regression tests
+
+Keep native ≥200k market-row tests and both index plans. Inject gaps of minutes, days, Monday boundaries, varying-length months and restarts mid-backlog. Every enumerated boundary must have durable processed/deferred/policy-skipped status, with no silent holes and no duplicate identity/order after restart. Preserve D22 retries, D53 calendar tests and D51 atomic budget. Measure deadline wakeups separately from cycle/feature timings; long work must not starve control/protection. Verify PIT receipt/correction parity during historical evaluation and named refusal of unauthorized stale execution. Device p95/phone behavior remains unmeasured.
+
 ## New findings not in the audit
 
 None established at mandatory depth. No X-V1a IDs assigned. The limited ledger SCAN observation and decision-label caveat above are retained as follow-up notes, not promoted to completed new findings. Full audit duplication checks have not been performed.
 
 ## Rows not verified or incomplete
 
-Retained, unverified: **C-004, C-008, C-010, C-012, C-013**.
+Retained, unverified: **C-008, C-010, C-012, C-013**.
 
 **Reassigned to V1c:** C-001, C-005, C-007, C-009, C-011, C-014, C-015, O-006, V-003. No V1a verdict or further verification is claimed for these nine IDs.
 
-Retained order: C-006, C-003, C-004, C-008, C-010, C-012, C-013. Some shared runtime source has been read for C-002; that is not a verdict on these rows. Their full-row comparisons, mandated complete files/tests, measured reproductions, per-cell/bar SQL EXPLAIN and fix-side-effect analyses remain outstanding. No coverage or readiness sign-off for those rows.
+Remaining order: C-008, C-010, C-012, C-013. Some shared runtime source has been read, but that is not a verdict on these four rows. Their full-row comparisons, mandated complete files/tests, measured reproductions, per-cell/bar SQL EXPLAIN and fix-side-effect analyses remain outstanding. No coverage or readiness sign-off for them. C-006, C-003 and C-004 are completed above, in the requested order.
 
 ## Final counts
 
-- CONFIRMED: **3** (C-002 S0; C-006 and C-003 S1)
+- CONFIRMED: **4** (C-002 S0; C-006, C-003 and C-004 S1)
 - PARTIAL: **0**
 - REJECTED: **0**
 - DEVICE-EVIDENCE-NEEDED: **0**
-- Retained unverified: **5**
+- Retained unverified: **4**
 - Reassigned to V1c: **9**
 - Established new findings: **0**
