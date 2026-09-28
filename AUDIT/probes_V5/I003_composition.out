@@ -1,0 +1,220 @@
+--- harness composition differs from production root ---
+tests/integration/test_cp7_paper_loop.py:130:class PaperLoop:
+tests/integration/test_cp7_paper_loop.py:288:    async def trade_cell(self, cell: C.BundleCell, *, price: str = "100",
+apex/ops/paper_loop.py:91:class PaperLoopError(RuntimeError):
+apex/ops/paper_loop.py:351:class PaperRuntime:
+scripts/run_apex.py:760:        driver = PL.PaperRuntime(
+--- production root ---
+        # → gates → forecast → risk/decision chain for a real plan.  Missing
+        # persisted engine context remains a named fail-closed refusal; the
+        # provider never falls back to a hand-built plan.
+        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+        plan_bridge = PB.PaperPlanBridge(
+            store=runtime.store, environment=cfg.apex_env,
+            context_source=producer.get_bridge_context if producer is not None else None,
+            context_preparer=producer.prepare if producer is not None else None)
+        async def catch_up(now_ms: int) -> Dict[str, Any]:
+            result = await service.catch_up(now_ms)
+            if cfg.apex_env == "PAPER":
+                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+            return result
+
+        driver = PL.PaperRuntime(
+            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+            adapter=adapter, signaling=signaling, control=control,
+            gateway=gateway, watchdog=watchdog, clock=clock,
+            environment=cfg.apex_env, notifier=notifier,
+            plan_provider=plan_bridge, catch_up=catch_up)
+        _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
+             "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
+        drift = await C.measure_drift(
+            _venue_server_time if adapter is not None else _no_venue_time, clock)
+        boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+        try:
+            EC.load_classifier()
+            artifact_name = "E11_ARTIFACT"
+        except EC.BridgeError as exc:
+            artifact_name = exc.reason
+        _say(f"  boot_state={boot['boot_state']} "
+             f"new_trades_allowed={boot['new_trades_allowed']} "
+             f"drift={drift['state']} ({drift.get('reason') or 'measured'}) "
+             f"artifact={artifact_name}")
+--- production plan boundary ---
+        return {"detail": f"intent={record['intent_id']} state={record['state']} "
+                          f"fill={record.get('fill')} protected="
+                          f"{record.get('protected')}"}
+
+    async def _resolve_plan(self, payload: Mapping[str, Any]
+                            ) -> Mapping[str, Any]:
+        """Ask the decision bridge for this cell's plan (the frozen SL-5 → SL-6
+        seam). No provider ⇒ a NAMED refusal, never a fabricated plan."""
+        if self.plan_provider is None:
+            raise CellRefusal(
+                "NO_PLAN_PROVIDER",
+                "no plan provider is wired: the engine → fabric → setup → "
+                "forecast → risk → plan bridge is a separate increment "
+                "(PHASE2_HANDOFF_WIRING §REMAINING WORK)")
+        provided = self.plan_provider(payload["symbol"], payload["timeframe"],
+                                      payload["as_of"])
+        plan = await provided if hasattr(provided, "__await__") else provided
+        if plan is None:
+            refusal = getattr(self.plan_provider,"refusals",{}).get(payload["cell_id"])
+            if self.environment == "PAPER" and refusal:
+                raise CellRefusal(refusal["reason"],refusal.get("detail",""))
+            raise CellRefusal("NO_PLAN_FOR_CELL",
+                              f"{payload['cell_id']} has no governed plan at "
+                              f"{payload['as_of']}")
+        if not isinstance(plan, Mapping):
+            raise CellRefusal("PLAN_TYPE_QX", type(plan).__name__)
+        return dict(plan)
+
+    async def _setup_exists(self, setup_id: str) -> bool:
+        if not setup_id:
+            return False
+        cursor = await self.store.db.execute(
+            "SELECT 1 FROM setup_candidate WHERE setup_id=? LIMIT 1",
+            (setup_id,))
+        return await cursor.fetchone() is not None
+
+    async def _evidence_count(self, symbol: str, timeframe: str) -> int:
+        cursor = await self.store.db.execute(
+            "SELECT COUNT(*) FROM evidence_event WHERE symbol=? AND timeframe=?",
+            (symbol, timeframe))
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    def _state(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        holder = payload.get("context") or {}
+        return holder.setdefault("cell_state", {})
+
+    # -- one plan, end to end ------------------------------------------------
+    async def execute_plan(self, plan: F.TradePlan, *, price: Any,
+                           timestamp_utc: Optional[str] = None,
+                           close_ms: Optional[int] = None
+                           ) -> Dict[str, Any]:
+--- assertion-bearing tests ---
+        assert [c["name"] for c in verdict["checks"]][:4] == \
+            ["dependencies", "schema_version", "clock_sync", "ladder_state"]
+        assert all(c["status"] == "PASS" for c in verdict["checks"])
+        assert posts == 0                      # reconcile-first, nothing traded
+
+    def test_one_cell_runs_the_full_fsm_lifecycle_to_reconciled(self, store,
+                                                                tmp_path):
+        async def body(p):
+            await p.boot()
+            record = await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+            await p.drain()
+            return record
+
+        record = scenario(store, tmp_path, body, fill_mode="none")
+        assert record["outcome"] == "ACKNOWLEDGED"
+        assert record["filled"] is True
+        assert record["protected"] is True
+        assert record["closed"] is True
+        assert record["reconciled"] is True
+        assert record["final_state"] == "RECONCILED"
+        assert record["stop_gap"] is None      # a target exit has no stop gap
+
+    def test_the_ledger_carries_the_whole_lifecycle_and_verifies(self, store,
+                                                                 tmp_path):
+        async def body(p):
+            await p.boot()
+    def test_an_emergency_pause_stops_the_execution_stage_only(self, store,
+                                                               tmp_path):
+        async def body(p):
+            await p.boot()
+            p.paused = True
+            cells = (C.BundleCell("BTCUSDT", "1h"),)
+            p.scheduler = C.Scheduler(clock=p.clock, bus=p.bus, cells=cells,
+                                      handlers=p._stage_handlers())
+            runs = await p.scheduler.run_due()
+            return runs[0].status, runs[0].stages[-1].detail, p.executed, \
+                len(p.order_posts()), p.refusals
+
+        status, result, executed, posts, p_refusals = scenario(
+            store, tmp_path, body, fill_mode="none")
+        assert status == "COMPLETE"            # the pipeline ran, the order did not
+        assert result.startswith("SYSTEM_PAUSED")
+        assert executed == []
+        assert posts == 0
+        assert p_refusals == [{"cell_id": "BTCUSDT:1h",
+                               "refused": "SYSTEM_PAUSED"}]
+
+
+# ---------------------------------------------------------------------------
+            research = await p.control.handle_callback(USER, "RESEARCH")
+            emergency = await p.control.handle_callback(USER, "EMERGENCY:L5")
+            return research, emergency
+
+        research, emergency = scenario(store, tmp_path, body)
+        assert research["screen"] == "ACCESS_DENIED"
+        assert research["reason"] == "RESEARCH_ONLY + BLOCK"
+        assert emergency["reason"] == "OWNER_ONLY"
+        assert emergency["ok"] is False
+
+    def test_an_owner_emergency_pause_stops_the_next_cell(self, store, tmp_path):
+        async def body(p):
+            await p.boot()
+            pending = await p.control.handle_callback(OWNER, "EMERGENCY:L1")
+            nonce = pending["nonce"]
+            confirmed = await p.control.handle_callback(
+                OWNER, f"CONFIRM:{nonce}:YES:EMERGENCY_L1")
+            cells = (C.BundleCell("BTCUSDT", "1h"),)
+            p.scheduler = C.Scheduler(clock=p.clock, bus=p.bus, cells=cells,
+                                      handlers=p._stage_handlers())
+            runs = await p.scheduler.run_due()
+            return confirmed["ok"], p.paused, runs[0].stages[-1].detail, \
+                len(p.order_posts()), [c["effect"] for c in p.calls]
+
+        ok, paused, result, posts, calls = scenario(store, tmp_path, body,
+                                                    fill_mode="none")
+        assert ok is True
+        assert paused is True
+        assert result.startswith("SYSTEM_PAUSED")
+        assert posts == 0
+        assert calls == ["EMERGENCY_PAUSE"]
+
+    def test_the_busy_guard_refuses_a_second_concurrent_run(self, store,
+                                                            tmp_path):
+# 4. Lost ack → RECOVERY_REQUIRED, one submission, P0 alert
+# ---------------------------------------------------------------------------
+
+class TestRecoveryInLoop:
+    def test_a_lost_ack_never_resubmits_and_raises_a_p0_alert(self, store,
+                                                              tmp_path):
+        async def body(p):
+            await p.boot()
+            p.responder.lose_next_ack(1)     # armed AFTER the boot queries
+            record = await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+            await p.drain()
+            return record, len(p.order_posts()), p.alerts, \
+                [int(e.priority) for e in p.events
+                 if e.topic == "execution.fsm.transition"][-1], \
+                [m["text"] for m in p.telegram.sent]
+
+        record, posts, alerts, priority, texts = scenario(
+            store, tmp_path, body, fill_mode="none")
+        assert record["outcome"] == "UNKNOWN"
+        assert record["final_state"] == F.RECOVERY_REQUIRED
+        assert record["filled"] is False
+        assert posts == 1                      # exactly ONE submission
+        assert len(alerts) == 1
+        assert alerts[0]["alert"] == "EXEC_RECOVERY"
+        assert alerts[0]["emitted"] is True
+        assert alerts[0]["priority"] == int(Priority.P0)
+        assert priority == int(Priority.P0)
+        assert "EXEC_RECOVERY" in texts[0].replace("\\", "")   # MarkdownV2
+
+    def test_recovery_reconciliation_runs_the_seven_ai9_checks(self, store,
+                                                               tmp_path):
+        async def body(p):
+            await p.boot()
+            p.responder.lose_next_ack(1)
+            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+            machine = F.StartupReconciliation(
+                ledger=p.ledger, adapter=p.adapter, bus=p.bus,
+                clock=p.clock.monotonic, utc_now=p.clock.utc_now,
+--- matrix claims ---
+| X-12 | PHASE2_CHECKPOINTS §CP-7 RULES/EXIT | the FULL PAPER loop on a fixture clock against the fake Toobit responder (test double only): clean boot READY with zero orders before READY → one cell through TRADE_PLAN/submit/FILL/PROTECTED/MANAGED/exit FILL/CLOSED+OUTCOME/RECONCILED with the chain intact → the five-operation wire surface with zero signature violations → 140-cell burst under semaphore 4 → drift-blocked loop → lost-ack recovery with a P0 alert and ONE submission → control-plane guardrails pausing the loop → signaling with an in-memory chart → two independent runs project identically and no secret reaches the ledger or a message | tests/integration/test_cp7_paper_loop.py (33 tests: TestCleanLoop, TestSchedulerInLoop, TestDriftBlocksTheLoop, TestRecoveryInLoop, TestControlPlaneInLoop, TestSignalingInLoop, TestLoopDeterminism) | PASS(2026-09-14) |
+| X-13 | PHASE2_CHECKPOINTS §CP-7 EXIT (README final) | README run section FINAL and copy-paste verified: `scripts/run_apex.py` exposes boot / grid / demo / alerts with the nine env names, documented exit codes (0 READY · 2 DEGRADED/refused · 3 RECOVERY_REQUIRED · 1 error) and no secret ever printed; the offline demo runs the whole loop and exits 0 | manual verification (this session): `grid` exit 0 · `demo` exit 0 with APEX_ALLOW_SIGNED=1 and exit 2 without · `boot` exit 2 DEGRADED with no credentials · `alerts` exit 2 with no bot token · `./scripts/run_all_tests.sh -q` green; CP-8 re-verifies from a clean clone: **PASS(2026-09-14)** — fresh clone of `arena/01a09fcd-upstage` (41deb78) + `python3 -m venv` + `pip install -r requirements.lock`: `scripts/run_all_tests.sh -q` ⇒ 2553 passed; `grid` exit 0 (140 cells, T_MONOTONE ceilings, HTF LAST_CLOSED_ONLY, semaphore 4); `demo` (PAPER + DEMO keys) exit 0 (READY, 11-record ledger chain intact, 0 signature violations); `boot` without credentials exit 2 DEGRADED; `alerts` without a token exit 2 with `E-TELE-001`; CP-8 harnesses from the clone: conformance 19/19 exit 0, NFR MEASURED_IN_BOUNDS | PASS(2026-09-14) |

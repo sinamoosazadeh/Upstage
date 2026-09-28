@@ -43,7 +43,7 @@
 | H-037 | PARTIAL | S2 | S2 | No | — | A — document independence as an assumption or use dependence-aware effective sample/cluster interval. Promotion protocol is non-frozen but contract Z.2 is normative; owner decision required before changing statistical acceptance, recompute all family gates and do not treat ATR as proof. |
 | I-001 | PARTIAL | S2 | S2 | No | = CP-1 config/parameter-loader checks and D24 missing-artifact behavior; test binds directly to the gitignored runtime artifact path | A — preserve D24 absent/present semantics but run the assertion against an isolated temporary params root; no production fallback or classifier commit. The test is filesystem-sensitive and does not prove run_apex→PaperRuntime composition. |
 | I-002 | PARTIAL | S2 | S2 | No | = CP-1 Part I tests prove pinned metadata/literals, not parser rejection, installation, or immutable Params; CP-14 separately covers fixture boundary | A — add hermetic parser/immutability/install assertions; retain CP-14 fixture separation and do not broaden matrix claims beyond asserted scope. No source/frozen change in this audit. |
-| I-003 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| I-003 | PARTIAL | S1 | S2 | No | = Matrix X-12 explicitly uses fixture clock/fake responder; test does not compose production `PaperRuntime` root | A — keep the harness evidence scoped to FSM/ledger under test doubles; add no-network composition coverage through `run_apex`/`PaperRuntime`. Synthetic pause/ACK assertions are not venue/fill evidence; CP-15 owns fill realism. |
 | I-004 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-005 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-006 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -114,7 +114,7 @@ Baseline source files were not changed. Selected actual-repository probes are in
 | H-037 | PARTIAL | S2 | S2 | No | — | A — document independence as an assumption or use dependence-aware effective sample/cluster interval. Promotion protocol is non-frozen but contract Z.2 is normative; owner decision required before changing statistical acceptance, recompute all family gates and do not treat ATR as proof. |
 | I-001 | PARTIAL | S2 | S2 | No | = CP-1 config/parameter-loader checks and D24 missing-artifact behavior; test binds directly to the gitignored runtime artifact path | A — preserve D24 absent/present semantics but run the assertion against an isolated temporary params root; no production fallback or classifier commit. The test is filesystem-sensitive and does not prove run_apex→PaperRuntime composition. |
 | I-002 | PARTIAL | S2 | S2 | No | = CP-1 Part I tests prove pinned metadata/literals, not parser rejection, installation, or immutable Params; CP-14 separately covers fixture boundary | A — add hermetic parser/immutability/install assertions; retain CP-14 fixture separation and do not broaden matrix claims beyond asserted scope. No source/frozen change in this audit. |
-| I-003 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| I-003 | PARTIAL | S1 | S2 | No | = Matrix X-12 explicitly uses fixture clock/fake responder; test does not compose production `PaperRuntime` root | A — keep the harness evidence scoped to FSM/ledger under test doubles; add no-network composition coverage through `run_apex`/`PaperRuntime`. Synthetic pause/ACK assertions are not venue/fill evidence; CP-15 owns fill realism. |
 | I-004 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-005 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-006 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -1552,39 +1552,38 @@ Test every supported and unsupported YAML form directly against the config parse
 ### Auditor claim (short quote)
 Paper harness injects fake adapter/clock and labels weak ACK/pause behavior as success.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers/callees)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: full custom `PaperLoop` test harness start/stop/stage handlers/trade cell and test bodies in `tests/integration/test_cp7_paper_loop.py:130–360,423–458,690–712,756–786,860–883`; fake Toobit responder and actual adapter/FSM/ledger wiring in its complete `start` and `trade_cell` functions; run_apex production composition at `scripts/run_apex.py:745–779`; complete `PaperRuntime._resolve_plan` and `execute_plan` at `apex/ops/paper_loop.py:644–735`. `grep -RIn` for harness/root/FakeToobitResponder and named tests is saved in `I003_consumers.out`; composition and actual assertion excerpts plus matrix rows are in `I003_composition.out`. Read matrix X-12 and CP-7 Part I/II claims. No public/private exchange endpoint was called.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+Ran the full `tests/integration/test_cp7_paper_loop.py`: **33 passed, 14 warnings in 5.73s** (`I003_pytest.out`). This harness explicitly constructs `FixtureClock`, test-key `ToobitAdapter` with `FakeToobitResponder`, its own test `PaperLoop`, hand-built `LoopProposal`/`loop_adjudication`, and manually records a synthetic fill after ACK. In `test_one_cell_runs_the_full_fsm_lifecycle_to_reconciled`, `fill_mode="none"` makes the fake responder non-filling; `trade_cell` then manually calls `record_fill` only after state ACKNOWLEDGED/PARTIAL, and the test separately asserts filled/protected/closed/reconciled. Thus ACK alone is not asserted to be a fill. Pause tests assert `SYSTEM_PAUSED`, zero order posts, and no executed records; one scheduler run is `COMPLETE` because the pipeline completed with an execution refusal. Lost-ACK test asserts UNKNOWN/RECOVERY_REQUIRED, one POST, and P0 alert. No trade operation or real venue call.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**PARTIAL, independent severity S2.** Fake clock/responder and synthetic plan/fill inputs are confirmed. The CP-7 tests do not compose `scripts/run_apex.py`’s actual `EngineContextProducer → PaperPlanBridge → PaperRuntime`; test code defines a separate `PaperLoop`. Therefore matrix X-12’s “FULL PAPER loop” phrasing exceeds what this test alone proves about production composition. But the specific ACK/pause criticism is only partly supported: test manually supplies a fill after ACK and asserts its later lifecycle; pause cases explicitly assert no order and name the refusal. No false live success, unfilled real position, or bypass was demonstrated. Severity S2 is for integration-evidence scope only.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+The X-12 harness is a faithful deterministic adapter/FSM/ledger/scheduler exercise assembled directly in the test file, rather than an invocation of the production `run_apex` composition root. It intentionally uses test-only clock/responder and explicit fill injection to drive FSM transitions. `PaperRuntime._resolve_plan` in production instead asks the `plan_provider` for a real governed mapping or returns a named refusal; the harness bypasses that seam with a locally constructed plan.
 
 ### Direct impact
-Not determined.
+The tests prove state-machine, adapter-contract and ledger invariants against their fake responder, and prove the harness refuses execution while paused. They do not establish server/device clock behavior, Toobit acknowledgement/fill truth, native producer evidence, or actual run_apex boot-to-order integration. The `COMPLETE` status in the pause scenario describes scheduler-stage completion and is paired with `SYSTEM_PAUSED` plus zero posts; it is not evidence that a trade succeeded. No production failure is inferred.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream, `scripts/run_apex.py` binds production runtime/store/ledger/adapter, creates `EngineContextProducer` and `PaperPlanBridge`, then passes that provider into `PaperRuntime`. Downstream, `PaperRuntime` resolves the provider’s mapping, submits through `ExecutionFSM` and records execution/ledger outcomes. CP7 harness uses actual FSM/adapter/ledger/scheduler primitives but replaces the provider/root and manually injects proposal/fills. This is distinct from D58/CP-15 PAPER fill-simulator realism; the current test harness cannot discharge that owner item. No risk sizing or training/cache/hash impact. No SQLite query plan applies.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+PHASE2_TRACEABILITY_MATRIX X-12 (`:333`) itself discloses a fixture clock and fake Toobit responder; the CP7 execution row `:33` claims FSM/adapter conformance and the integration test covers the named FSM lifecycle. It is valid synthetic contract evidence, not real venue evidence. Ch.16 requires the adapter/FSM/ledger lifecycle; Phase2 handoff and run_apex composition require governed plan provider and fail-closed missing context. Test assertions do not invoke that runtime root. D58 fill-simulator work is pending CP-15 and is not silently supplied by a fake responder. No later decision equates fake fills with real fills.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+Test harness and `apex/ops/paper_loop.py` are non-frozen; no frozen engine/data files are implicated. `scripts/run_apex.py` is non-frozen composition but changing its behavior is not needed to repair this evidence scope. Add a no-network integration test that invokes the production `PaperRuntime` with temporary SQLite, a fixture clock, fake adapter and actual provider seam; retain separate owner/device acceptance for real clock, venue ACK/fill and D58 simulator semantics. Never use a live endpoint in these tests.
 
 ### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+A: narrow matrix X-12 language to “CP-7 FSM/adapter/scheduler integration harness” and explicitly state its fake clock/responder plus manual synthetic fills; add a separate production-composition test through `PaperRuntime` using fakes. This changes only matrix/test scope and creates no live behavior. B: preserve “full PAPER loop” only after building a no-network test around `run_apex`’s actual provider/driver composition and asserting plan refusal, ACK, explicit FILL, protection, outcome and reconciliation separately. This adds integration setup and may expose missing root dependencies. Do not weaken assertions or call a real venue; D58/CP-15 remains an owner gate.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Keep the 33-test CP7 result as strong fake-seam FSM/ledger evidence, not device or full production-root evidence. Clarify X-12’s exact scope and separately test the provider → `PaperRuntime` seam. The test did not label an ACK as a fill or a paused cell as a successful trade, so do not preserve that overbroad allegation.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Retain tests for reconcile-first, lost ACK one-submission recovery, explicit post-ACK fill, pause zero posts, protection/close/reconcile and hash chain. Add one test that runs the actual production plan provider seam through `PaperRuntime` with a fixture store and no network: missing plan/artifact refuses; valid plan traverses the FSM; an ACK without a fill stays unfilled/unprotected and is not reported as a completed trade. Verify paused stage status is distinguished from trade success. Keep fake responder clearly labeled; external D58/CP-15 device/fill evidence remains separate.
 
 ## I-004
 
@@ -2173,9 +2172,9 @@ Acceptance: on a fresh checkout without f14be36, the test can execute determinis
 
 ## Rows not verified or incomplete
 
-No coverage claim is made for the following 15 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
+No coverage claim is made for the following 14 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
 
-`I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
+`I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
 
 Rows with a non-UNVERIFIED status were independently evidenced only to the exact scope stated in their sections. Synthetic tests do not establish real data/device/model behavior. H-002/H-003/H-005/H-006/H-007/H-011/H-013 have new bounded real-function probe evidence in this continuation; untested integration/device assertions remain explicitly excluded. H-004 is PARTIAL as above; H-022 and H-034 retain their prior partial caller/governance/integration review caveat. Full V5 acceptance requires completing all remaining unverified rows, mandatory caller/callee and test reads, and relevant SQLite plan checks where applicable.
 
@@ -2184,9 +2183,9 @@ Rows with a non-UNVERIFIED status were independently evidenced only to the exact
 | Verdict | Count |
 |---|---:|
 | CONFIRMED | 28 |
-| PARTIAL | 11 |
+| PARTIAL | 12 |
 | REJECTED | 0 |
-| UNVERIFIED / incomplete | 15 |
+| UNVERIFIED / incomplete | 14 |
 | DEVICE-EVIDENCE-NEEDED | 0 (no real-device dependent claim was assigned this verdict; device evidence was not obtained) |
 
-New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle); H-036 (signed return-series CVaR helper is not positive portfolio-loss CVaR and is unwired from production sizing); I-001 (classifier-absence unit assertion reads the gitignored runtime artifact path and can vary with device state; it does not prove runtime composition); I-002 (CP-1 lacks direct YAML-negative, install, and immutable-view assertions; later CP-14 tests do cover fixture separation).
+New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle); H-036 (signed return-series CVaR helper is not positive portfolio-loss CVaR and is unwired from production sizing); I-001 (classifier-absence unit assertion reads the gitignored runtime artifact path and can vary with device state; it does not prove runtime composition); I-002 (CP-1 lacks direct YAML-negative, install, and immutable-view assertions; later CP-14 tests do cover fixture separation); I-003 (X-12 exercises real FSM/adapter primitives behind fake clock/responder and a custom harness, not the run_apex/PaperRuntime composition; its ACK and pause assertions are explicitly separated from fill/trade success).

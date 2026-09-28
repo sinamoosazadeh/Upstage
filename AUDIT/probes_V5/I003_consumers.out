@@ -1,0 +1,15 @@
+tests/integration/test_cp7_paper_loop.py:130:class PaperLoop:
+tests/integration/test_cp7_paper_loop.py:161:        from fake_toobit_responder import FakeToobitResponder
+tests/integration/test_cp7_paper_loop.py:168:            self.responder = FakeToobitResponder(
+tests/integration/test_cp7_paper_loop.py:423:class TestCleanLoop:
+tests/integration/test_cp7_paper_loop.py:690:    def test_an_emergency_pause_stops_the_execution_stage_only(self, store,
+tests/integration/test_cp7_paper_loop.py:757:    def test_a_lost_ack_never_resubmits_and_raises_a_p0_alert(self, store,
+tests/integration/test_cp7_paper_loop.py:860:    def test_an_owner_emergency_pause_stops_the_next_cell(self, store, tmp_path):
+apex/ops/paper_loop.py:91:class PaperLoopError(RuntimeError):
+apex/ops/paper_loop.py:351:class PaperRuntime:
+apex/ops/paper_loop.py:555:        plan = await self._resolve_plan(payload)
+apex/ops/paper_loop.py:648:    async def _resolve_plan(self, payload: Mapping[str, Any]
+apex/ops/paper_loop.py:1187:    "PaperRuntime", "PlanQueue", "SIGNAL_SOURCE_DECISION_BRIDGE",
+scripts/run_apex.py:288:    from fake_toobit_responder import FakeToobitResponder   # test double only
+scripts/run_apex.py:296:        responder = FakeToobitResponder(
+scripts/run_apex.py:760:        driver = PL.PaperRuntime(
