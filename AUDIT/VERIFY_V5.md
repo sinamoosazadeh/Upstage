@@ -29,16 +29,16 @@
 | H-023 | CONFIRMED | S1 | S2 | No | — | A — re-check workload/time at each cell and checkpoint a named halt. Non-frozen scheduler/optimizer; interruption changes may affect expected run completion and need resume tests, no frozen change. |
 | H-024 | PARTIAL | S2 | S2 | No | = W.1 scope enforcement gap; W.5 RED LINE is a pre-paper-trial validation contract, not proof of live bypass | A — reject grid keys outside the selected optimizer scope before evaluation; validate RED LINE fields before candidate/paper-trial handoff. Optimizer/tests only; suggestions remain research-only and frozen params untouched. |
 | H-025 | CONFIRMED | S1 | S1 | No | — | A — pass per-trade exposure/limit evidence and enforce all trades, and require finite five-regime metrics. Non-frozen objective API; callers/tests and candidate identity change; no order path should consume prior summary-only approvals. |
-| H-026 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-026 | CONFIRMED | S1 | S1 | Partial | = W.5 / Z.9 gates are caller-asserted summaries; probe reaches DRAFTED, owner approval still required | A — bind promotion flags to recomputed metrics or verified provenance; fail closed on contradictions before `PROMOTE`/draft. Non-frozen promotion adapter only; frozen backtest untouched, old promotion evidence invalidated. |
 | H-027 | CONFIRMED | S1 | S1 | No | — | A — assert family equality across candidate, pool, WFO, PBO, DSR, benchmark and package. Non-frozen promotion layer; reject cross-family cached evidence and re-run affected candidates. |
 | H-028 | CONFIRMED | S1 | S1 | Partial | — | A — derive outcome and R from fills/price/stop and dedupe stable event identity. `Trade` is in frozen backtest; an outside promotion validator can reject inconsistent outcomes but cannot fix untrusted construction. Recompute pooled stats and promotion artifacts. |
 | H-029 | CONFIRMED | S2 | S2 | No | — | A — define n=0 shrinkage as family prior/unavailable and explicitly wire only under approved protocol. Non-frozen promotion; tests/consumer behavior change; no model retraining unless this enters runtime decisions. |
-| H-030 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-031 | UNVERIFIED | S2 | — | Partial | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-030 | PARTIAL | S1 | S2 | Partial | = W.5/Z.6 action contract; checkpoint monitor-log API exists but is not wired to LiveFamilyMonitor/runtime | A — connect family SPRT verdicts to durable logging and authorized halt/position-management actions; do not equate the returned string or in-memory flag with execution. Separate from D57 watchdog escalation. |
+| H-031 | CONFIRMED | S2 | S2 | Partial | = W.4 schedule/continuous contract; BootstrapRunner returns a Phase-3 plan only, no optimizer loop | A — add a non-frozen persistent scheduler/runner with checkpointed restart and owner-controlled start/stop; bootstrap.py is frozen, so compose outside it. No device scheduler was inspected. |
 | H-032 | CONFIRMED | S2 | S2 | Partial | — | A — serialize ATR-normalized risk from existing Trade fields, not nonexistent property. `Trade` class is in frozen backtest, but the non-frozen serializer can derive from `abs(entry-stop)` and ATR. Update serialization tests and no training needed. |
-| H-033 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-033 | CONFIRMED | S1 | S2 | Partial | = W.6 cursor never rewinds; CP9-007 mirror exists, but status/payload lack stale-generation guards | A — add per-run generation/CAS protection for status and payload while retaining monotone cursor; preserve intentional resume transitions and CP13 evidence carry-forward. Non-frozen checkpoint/wiring only. |
 | H-034 | CONFIRMED | S2 | S2 | No | = D58 for NOT_WIRED; delta: standalone estimate accepts incomplete components | A — validate complete component provenance/quality and make insufficient data unavailable; keep composite unwired per D58. Non-frozen logistic implementation but adapter alternative exists; forecast identities/calibration outputs change, no DB migration until persistence is added. |
-| H-035 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-035 | PARTIAL | S2 | S2 | No | = Ch.13 §13.1/T_FORECAST_INV; forecast object is serializable but invalidation has no production caller or durable lifecycle | A — retain the immutable invalidation rule and wire an owner-approved forecast lifecycle adapter with durable lineage; do not imply current PaperPlanBridge traces are persistent. D54 remains open and is not silently resolved. |
 | H-036 | UNVERIFIED | S2 | — | Yes | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | H-037 | PARTIAL | S2 | S2 | No | — | A — document independence as an assumption or use dependence-aware effective sample/cluster interval. Promotion protocol is non-frozen but contract Z.2 is normative; owner decision required before changing statistical acceptance, recompute all family gates and do not treat ATR as proof. |
 | I-001 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -100,16 +100,16 @@ Baseline source files were not changed. Selected actual-repository probes are in
 | H-023 | CONFIRMED | S1 | S2 | No | — | A — re-check workload/time at each cell and checkpoint a named halt. Non-frozen scheduler/optimizer; interruption changes may affect expected run completion and need resume tests, no frozen change. |
 | H-024 | PARTIAL | S2 | S2 | No | = W.1 scope enforcement gap; W.5 RED LINE is a pre-paper-trial validation contract, not proof of live bypass | A — reject grid keys outside the selected optimizer scope before evaluation; validate RED LINE fields before candidate/paper-trial handoff. Optimizer/tests only; suggestions remain research-only and frozen params untouched. |
 | H-025 | CONFIRMED | S1 | S1 | No | — | A — pass per-trade exposure/limit evidence and enforce all trades, and require finite five-regime metrics. Non-frozen objective API; callers/tests and candidate identity change; no order path should consume prior summary-only approvals. |
-| H-026 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-026 | CONFIRMED | S1 | S1 | Partial | = W.5 / Z.9 gates are caller-asserted summaries; probe reaches DRAFTED, owner approval still required | A — bind promotion flags to recomputed metrics or verified provenance; fail closed on contradictions before `PROMOTE`/draft. Non-frozen promotion adapter only; frozen backtest untouched, old promotion evidence invalidated. |
 | H-027 | CONFIRMED | S1 | S1 | No | — | A — assert family equality across candidate, pool, WFO, PBO, DSR, benchmark and package. Non-frozen promotion layer; reject cross-family cached evidence and re-run affected candidates. |
 | H-028 | CONFIRMED | S1 | S1 | Partial | — | A — derive outcome and R from fills/price/stop and dedupe stable event identity. `Trade` is in frozen backtest; an outside promotion validator can reject inconsistent outcomes but cannot fix untrusted construction. Recompute pooled stats and promotion artifacts. |
 | H-029 | CONFIRMED | S2 | S2 | No | — | A — define n=0 shrinkage as family prior/unavailable and explicitly wire only under approved protocol. Non-frozen promotion; tests/consumer behavior change; no model retraining unless this enters runtime decisions. |
-| H-030 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
-| H-031 | UNVERIFIED | S2 | — | Partial | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-030 | PARTIAL | S1 | S2 | Partial | = W.5/Z.6 action contract; checkpoint monitor-log API exists but is not wired to LiveFamilyMonitor/runtime | A — connect family SPRT verdicts to durable logging and authorized halt/position-management actions; do not equate the returned string or in-memory flag with execution. Separate from D57 watchdog escalation. |
+| H-031 | CONFIRMED | S2 | S2 | Partial | = W.4 schedule/continuous contract; BootstrapRunner returns a Phase-3 plan only, no optimizer loop | A — add a non-frozen persistent scheduler/runner with checkpointed restart and owner-controlled start/stop; bootstrap.py is frozen, so compose outside it. No device scheduler was inspected. |
 | H-032 | CONFIRMED | S2 | S2 | Partial | — | A — serialize ATR-normalized risk from existing Trade fields, not nonexistent property. `Trade` class is in frozen backtest, but the non-frozen serializer can derive from `abs(entry-stop)` and ATR. Update serialization tests and no training needed. |
-| H-033 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-033 | CONFIRMED | S1 | S2 | Partial | = W.6 cursor never rewinds; CP9-007 mirror exists, but status/payload lack stale-generation guards | A — add per-run generation/CAS protection for status and payload while retaining monotone cursor; preserve intentional resume transitions and CP13 evidence carry-forward. Non-frozen checkpoint/wiring only. |
 | H-034 | CONFIRMED | S2 | S2 | No | = D58 for NOT_WIRED; delta: standalone estimate accepts incomplete components | A — validate complete component provenance/quality and make insufficient data unavailable; keep composite unwired per D58. Non-frozen logistic implementation but adapter alternative exists; forecast identities/calibration outputs change, no DB migration until persistence is added. |
-| H-035 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| H-035 | PARTIAL | S2 | S2 | No | = Ch.13 §13.1/T_FORECAST_INV; forecast object is serializable but invalidation has no production caller or durable lifecycle | A — retain the immutable invalidation rule and wire an owner-approved forecast lifecycle adapter with durable lineage; do not imply current PaperPlanBridge traces are persistent. D54 remains open and is not silently resolved. |
 | H-036 | UNVERIFIED | S2 | — | Yes | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | H-037 | PARTIAL | S2 | S2 | No | — | A — document independence as an assumption or use dependence-aware effective sample/cluster interval. Promotion protocol is non-frozen but contract Z.2 is normative; owner decision required before changing statistical acceptance, recompute all family gates and do not treat ATR as proof. |
 | I-001 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -1013,39 +1013,38 @@ Run row-specific regression tests against the contract and ensure the proposed f
 ### Auditor claim (short quote)
 Promotion gate trusts caller flags even when underlying reported metrics contradict them.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: complete `PromotionCandidate.gates`, `evaluate_promotion`, and `draft_package` in `promotion.py:497–563`; `probability_of_backtest_overfitting` and `deflated_sharpe_gate` in `promotion.py:360–437`; frozen `evaluate_wfo` in `backtest.py:280–304`; `validate_package` in `governance.py:494–532`; and tests `TestPromotionDecision` / `TestDraftPackage` in `tests/unit/test_research_promotion.py:306–389`. `grep -Rn` for `PromotionCandidate`, `evaluate_promotion`, and `draft_package` across `apex`/`scripts` is saved in `H026_consumers.out`; no production caller was found. W.5/Z.9 validation language and matrix promotion rows were reviewed. No backtest dataset, device, or persisted package was used.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+`H026_promotion_flags.py` constructs a real `PromotionCandidate` with contradictory summaries: WFO says `PROMOTED` while its reported Sharpe/PF/drawdown fail the stated criteria; PBO says `flagged_high=False` with `pbo=0.99`; DSR says `passes=True` with `deflated_sharpe=-100`; benchmark says `outperforms=True` while reported strategy/benchmark returns contradict it. Real `evaluate_promotion` returns `PROMOTE` with all five checks true and `paper_trial_required=true`; `draft_package` then returns `DRAFTED` after package-value/proposal validation. Raw output is `H026_promotion_flags.out`. Ran full `tests/unit/test_research_promotion.py`: 46 passed in 0.08s (`H026_pytest.out`). Tests exercise boolean gating and package RED LINE, but their candidate fixture contains sparse summary mappings and no contradiction/recomputation assertion. The probe creates only in-memory objects; no package file is written.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**CONFIRMED, independent severity S1.** The public promotion gate bases WFO/PBO/DSR/benchmark decisions on caller-supplied boolean/label fields and does not recompute or bind them to the accompanying metrics. The controlled contradiction returns `PROMOTE`, and the package draft proceeds to the declared paper-trial/owner-approval next step. This is a promotion-evidence integrity defect; it does not prove that any actual candidate, paper trial, owner approval, injection, or trade was affected. I assign S1 because the gate can accept internally contradictory mandatory promotion evidence, while explicitly bounding the finding to the exposed API and research path.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+`PromotionCandidate` stores arbitrary mappings. `gates()` checks only `wfo["decision"] == "PROMOTED"`, `not pbo["flagged_high"]`, `bool(deflated_sharpe["passes"])`, and `bool(benchmark["outperforms"])`; reported numerical metrics and any `checks` fields are ignored. `draft_package` consumes that verdict and only then validates candidate parameter values/proposals, not the provenance or arithmetic of performance evidence.
 
 ### Direct impact
-Not determined.
+A caller can pass contradictory WFO, PBO, DSR and benchmark metrics with favorable flags; the gate can report PROMOTE and `draft_package` can return DRAFTED. This is not live injection: `draft_package` returns an object, its declared next step remains paper trial → owner approval → versioned injection, and the existing package path is suggestion-only. No value in `params/` was modified.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream, frozen `backtest.evaluate_wfo`, `promotion.probability_of_backtest_overfitting`, and `deflated_sharpe_gate` can compute legitimate outputs, but there is no consumer-side identity binding to prove the mappings came from those functions or that flags match metrics. Downstream, W.5 promotion/drafting can accept an invalid evidence summary; any later human paper trial or package decision might rely on it. The repository consumer search found tests and the separate package-validation path, not an optimizer→promotion runtime composition. No risk/order/ledger, training/cache/hash, or model-runtime effect is established. Existing W.5 RED LINE package-value validation remains distinct and cannot repair performance-evidence mismatch.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 §18.1/W.5 requires WFO, stress, and promotion-protocol validation before paper trial; Z.9 defines PBO/DSR gates, and WFO criteria in §18.4 require OOS Sharpe >1.0, profit factor >1.2 and max drawdown <15%. `evaluate_wfo` computes those thresholds from the supplied OOS metrics; PBO/DSR helpers likewise compute fields. But `PromotionCandidate.gates` does not call or bind to those producers. Existing matrix row `R-CP8|6` claims Z.1–Z.9 promotion gate and related tests, whose current bodies prove flag pass/block and package validation, not internal metric consistency. No later owner decision authorizes treating contradictory evidence as valid; this is not the separate frozen backtest calculation defect and must not be fixed inside `backtest.py` without ownership.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`promotion.py` and its tests are non-frozen. `apex/research/backtest.py` is frozen and directly supplies `evaluate_wfo`; no edit to it is needed. Add a non-frozen immutable evidence envelope/digest or a promotion adapter that recomputes WFO/PBO/DSR/benchmark checks from the metric inputs before evaluating flags. Keep `draft_package` and owner approval gates. No YAML, DB schema, engine, or runtime order path change is necessary.
 
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+### Fix options and side effects
+A: in the non-frozen promotion layer, require canonical metric-bearing structures and recompute/compare each decision, returning named `EVIDENCE_MISMATCH` on any conflict; bind to the actual OOS block, PBO matrix, DSR inputs and benchmark return pair. B: require independently signed/content-hashed receipts from the metric producers and validate all flags against receipt fields before promotion; this requires a new evidence schema and provenance generation across callers. Both options invalidate previously emitted promotion verdicts/drafts whose metrics are unbound and require regression of WFO/PBO/DSR/Z.9 and package proposal gates. Do not change frozen backtest formulas or reinterpret a pass flag alone as authority.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Implement option A as the minimal non-frozen repair, with typed inputs that preserve metric provenance and explicit recomputation at the promotion boundary. Until then, treat `PROMOTE` as unverified when a caller can construct arbitrary mappings; preserve the separate paper-trial and owner-approval gates and make no claim of live impact.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Build a consistent positive candidate from actual WFO/PBO/DSR/benchmark helper outputs and assert PROMOTE. Mutate each summary flag and each reported metric independently so they contradict; assert BLOCK/`EVIDENCE_MISMATCH` before `draft_package` can return DRAFTED. Test missing/malformed metrics, non-finite values, changed OOS block, PBO threshold boundary, DSR threshold boundary, benchmark direction, package RED LINE and required owner proposal. Confirm no frozen backtest diff, no suggestion/live param file write, and rerun the promotion/backtest suites.
 
 ## H-027
 
@@ -1169,78 +1168,76 @@ Run row-specific regression tests against the contract and ensure the proposed f
 ### Auditor claim (short quote)
 SPRT rollback action strings are not connected to durable halt/close/rollback operations.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: `promotion.py:241–353` complete `SPRTState`, `sprt_step`, `sprt_monitor`, `rollback_actions`, and `LiveFamilyMonitor.on_trade`; `checkpoints.py:75–90,256–270` M203 durable research monitor table and writer/reader; tests `TestSPRT` (`test_research_promotion.py:155–208`) and `TestMonitorLog` (`test_research_checkpoints.py:206–238`); and matrix rows `R-CP8|6`/`R-CP8|7` (`PHASE2_TRACEABILITY_MATRIX.md:344–345`). `grep -Rn` for `LiveFamilyMonitor`, SPRT actions and their consumers is saved in `H030_consumers.out`; only promotion definitions and tests consume the monitor, while the checkpoint logger has separate direct tests. No connection to `PaperRuntime`, the execution FSM, adapter, or order path was found. No SQLite row/cell/bar selection or production DB query is in this claim, so no query-plan experiment applies.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+`H030_sprt_actions.py` runs real `LiveFamilyMonitor` with a sequence of losses. It sets `halted=True` in memory on the 27th outcome, appends 27 entries to its in-memory `log`, and returns `HALT_AND_ROLLBACK`; `sprt_monitor` returns four descriptive strings, including a claim that log statistics are persisted. The monitor object has only `family_id`, `state`, `halted`, and `log`; the probe has no executor, persistent store, callback, or file write. Raw output: `H030_sprt_actions.out`. `tests/unit/test_research_promotion.py -k 'SPRT or live_monitor_halts_and_records'`: 7 passed, 39 deselected (`H030_pytest.out`); these assert statistical stopping/action text and the in-memory flag/log. Separately, `tests/unit/test_research_checkpoints.py::TestMonitorLog`: 2 passed (`H030_checkpoint_log_pytest.out`), proving the generic `ResearchCheckpointStore.log_monitor` can commit and reload a row. That API is not invoked by either SPRT function or `LiveFamilyMonitor`.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**PARTIAL, independent severity S2.** The runtime action list is descriptive only: no new-entry gate, position close, package rollback, or durable log call is wired from the SPRT monitor. `LiveFamilyMonitor` does set an object-local `halted` bit, and a separate durable research-monitor table/API exists, so the claim is too broad if read as “no halt state or durable log facility exists anywhere.” But neither state nor facility is connected to a live family execution path. No current live impact is demonstrated because repository-wide consumers contain no production monitor caller.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+The SPRT implementation is a pure statistics helper plus an in-memory wrapper. `rollback_actions()` returns strings; `LiveFamilyMonitor.on_trade()` updates `SPRTState`, appends a Python list entry and sets `halted`. `ResearchCheckpointStore.log_monitor()` provides an independent persistence API, but no constructor dependency or call path connects it to the monitor. There are no executor/position-manager/package-registry dependencies in the monitor.
 
 ### Direct impact
-Not determined.
+Calling the exposed helper produces an action description but does not itself block entries, close open positions, change the live playbook/package, or persist a reason/timestamp/statistics row. The only implemented halt is the monitor instance's in-memory boolean. This is a contract-to-code integration gap, not evidence that an active PAPER/LIVE process ignored an SPRT result.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream, caller-supplied boolean trade outcomes advance a family SPRT. Downstream, no production consumer reads the monitor's `halted` flag, invokes an execution/close API, or rolls back a `ParameterPackage`; separate `ResearchCheckpointStore.log_monitor` could persist a record but does not trigger an action and is not called here. The matrix's CP-8 SPRT tests demonstrate stop thresholds and returned strings, not end-to-end protection. The existing D57 watchdog/L3–L5 escalation is a distinct supervision path; ISSUE-077's generic persistence/migration concerns do not by themselves supply family-specific entry gating or position closes. D58's PAPER fill simulator is pending CP-15 and does not establish this integration. No ledger/order trace or actual position was used.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 Z.6 (`:17390–17405`) states every promoted family is monitored continuously after injection and an SPRT failure immediately blocks entries, closes open positions, rolls back the setup/package, and logs reason/timestamp/statistics. The checkpoint monitor-log table is a generic persistence mechanism, not proof those actions occur. Matrix `R-CP8|6` lists “SPRT halt/rollback” alongside statistical tests, but its named unit assertions cover the in-memory `halted` state/action strings; `R-CP8|7` separately proves durable generic log rows. These later implementation/matrix facts do not override the normative Z.6 operational outcome. No owner decision was found waiving the action requirement.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`promotion.py`, `checkpoints.py`, and tests are non-frozen. `apex/research/backtest.py` and `bootstrap.py` are frozen, but no change to either is needed. A non-frozen orchestrator/adapter can consume the SPRT verdict, durably log it with idempotent identity, engage a per-family entry gate, request approved close/rollback operations, and record acknowledgments. Do not let a research-only state machine directly issue exchange orders; any live close path must compose through the authorized risk/execution FSM and owner’s environment controls.
 
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+### Fix options and side effects
+A: introduce a typed `SPRTAction`/orchestrator interface with injected durable logger, family entry gate, position manager and package registry; return completion/failure receipts and fail closed on missing/failed critical action. B: if Z.6 is intentionally advisory at this stage, obtain an explicit owner decision and amend the operational contract rather than presenting string output as a live halt. Option A affects execution control, idempotency, position-management and restart recovery; must test duplicates, crash/restart between halt/close/rollback, partial close/failure, and environment separation. It overlaps only in broad persistence terminology with ISSUE-077, and specifically goes beyond that item's generic gather persistence; it also does not replace D57 watchdog. CP-15 simulator/close behavior must be reconciled before claiming PAPER fill outcomes.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Do not describe the current string/in-memory flag as an automatic live safety mechanism. Preserve current research-only arithmetic; route any future execution through an owner-approved non-frozen orchestration layer and test durable restart plus actual plan/position gates before asserting Z.6 completion.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Drive a real SPRT failure through the composed monitor and assert a committed, reloadable log row; after process restart, a family-specific entry gate remains blocked and the prior package identity remains known. Assert exactly-once/idempotent handling and an execution-FSM/position-manager close request, receipt/ledger identity, rollback/no-trade state, and named fail-closed outcomes for logger/close/rollback failure. Verify no new entry can bypass the family halt, no cross-family effect occurs, and no direct venue call bypasses the authorized adapter. Keep existing SPRT formula tests; distinguish helper-only output from end-to-end PAPER/ LIVE execution evidence.
 
 ## H-031
 
 ### Auditor claim (short quote)
 No persistent nightly/continuous orchestration path was found in examined research/bootstrap consumers.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: `optimizer.py:261–296` full `OptimizerSchedule`, `:331–421` complete one-run `DualOptimizer.run_run`; `bootstrap.py:163–239` command/state handling, `:361–399` complete Phase-2 and Phase-3 handoff; tests `TestPhase2Phase3` (`test_research_bootstrap.py:349–408`) and `TestSchedule` / `TestDualOptimizerRun` (`test_research_optimizer.py:196–314`). `grep -Rn` for `DualOptimizer`, `OptimizerSchedule`, Phase-3 methods and callers across `apex`, `scripts`, and `tests` is saved in `H031_consumers.out`. Also checked matrix rows `R-CP8|8–9` and W.3/W.4 contract. This is a source-repository claim; no phone/OS scheduler or device service was inspected.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+`H031_phase3_handoff.py` imports the real `BootstrapRunner`, `OptimizerSchedule`, and `DualOptimizer`. `phase3_plan()` returns metadata (`requires: DualOptimizer`, promotion function, window string and continuous flag); bootstrap methods include only `run_phase1`/`run_phase2` plus the metadata-only `phase3_plan`. `command("continuous on")` sets a boolean in bootstrap state. `OptimizerSchedule` provides predicates and `DualOptimizer.run_run` processes one supplied cell sequence once; no periodic loop/daemon method is present. Raw output is `H031_phase3_handoff.out`. Targeted tests for Phase-3 handoff and all schedule cases: 8 passed in 0.08s (`H031_pytest.out`). The handoff test asserts the `requires` string and schedule label, not a running optimizer. No scheduler process, network, or persistent bootstrap DB was created.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**CONFIRMED, independent severity S2 (repository scope).** The code exposes scheduling decisions, continuous-mode state and a Phase-3 plan, but no persistent nightly/continuous runner invokes `DualOptimizer` and `evaluate_promotion` on that schedule. The claim is confirmed for the examined repository composition; an external phone/OS job is not ruled out or tested. Severity S2 because this is an absent research orchestration feature, not an observed PAPER/LIVE order defect.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+`OptimizerSchedule.may_run` is a guard, and `DualOptimizer.run_run` is a one-shot async method whose caller supplies cells/evaluator/time/live-workload. `BootstrapRunner.phase3_plan()` returns a dictionary of requirements instead of invoking either. Its `continuous on` command toggles `BootstrapState.continuous`, but no worker/loop consumes it to schedule optimization. Repository consumer search shows only tests call `run_run`; no CLI/script composition invokes it.
 
 ### Direct impact
-Not determined.
+The repository does not autonomously start a nightly optimizer, repeat it on subsequent windows, or resume a long-running continuous optimization service after restart. Calling the Phase-3 plan does not sweep cells. Manual calls to `DualOptimizer.run_run` remain possible and are subject to its in-call time/workload checks. No live parameter injection or order is produced by the missing scheduler.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream, Phase-1 data acquisition and Phase-2 replay can complete and BootstrapRunner can report defaults active. Downstream, no persistent process consumes the plan's cell list, schedules W.4 windows, repeatedly invokes the optimizer, forwards candidates to promotion, or persists a Phase-3 run cursor. Optimizer's separate per-run checkpoints persist cell progress if a caller runs it, but do not create a scheduler. `apex/scheduler` paper-cycle scheduling is a separate runtime path and has no optimizer caller. This is distinct from H-030's absent SPRT action integration and from device watchdog D57; no same-cell or order effect is inferred. No real phone scheduler, external cron, or owner command was examined.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 Ch.18 W.3–W.4 (`:17223–17241`) requires per-cell isolated optimization in the default 03:00–05:00 UTC window, immediate halt on live workload, and an owner-enabled continuous run; W.8 defines checkpointing. `BootstrapRunner.phase3_plan` explicitly calls itself a hand-off and its test checks descriptive metadata only. Matrix `R-CP8|8` validates schedule predicates and one-shot per-cell optimizer/checkpoint behavior, not recurring orchestration; `R-CP8|9` records bootstrap phases and a Phase-3 hand-off. No later owner decision was found that marks the Phase-3 scheduler delivered. The file `apex/research/bootstrap.py` is frozen, so the absence cannot be closed by editing its implementation under current constraints.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`apex/research/bootstrap.py` is frozen; `optimizer.py` and new non-frozen runner/CLI/service code are not. Preserve the metadata contract and build a separate scheduler/orchestrator outside bootstrap that owns persistent schedule state, invokes the optimizer and promotion path, and obeys owner start/stop/continuous controls. Avoid editing frozen backtest/bootstrap or original YAML. Device-resident periodic execution remains device evidence, not source proof.
 
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+### Fix options and side effects
+A: add a non-frozen scheduler service/CLI with explicit one-shot and continuous modes, UTC clock source, live-workload admission, durable next-run/checkpoint state, restart reconciliation and named pause/error outcomes. This adds persistent state and operational controls and must not wake during live workload or infer owner approval. B: keep the current component as a manual research library and amend the delivery/status contract to say Phase 3 is a plan only; this avoids runtime behavior but leaves W.4 optimization unavailable. Either option must preserve W.3 full-grid rules, W.8 checkpoint semantics, promotion/owner gates, and D57 separation. Hardware battery/disk safeguards are separate from the missing scheduler and require owner/device acceptance.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Treat Phase 3 as a hand-off only, not an implemented nightly/continuous service. Add orchestration outside frozen `bootstrap.py` only when its owner-controlled run policy, persistence, and live-workload interaction are specified; do not claim phone automation from the existing unit tests.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Use a fake clock and persistent temporary checkpoint store to prove due-run starts at the configured UTC boundary, one complete pass invokes optimizer/promotion once per cell, no work begins during live workload, continuous mode repeats only while owner-enabled, pause/stop survive restart, and expired/restarted runs resume without duplicate cell evaluation. Verify optimizer/promotion outcomes remain suggestion-only and no live `params/` write or order path is reachable. Separately require the exact owner-device service/boot evidence before claiming 24/7 phone scheduling.
 
 ## H-032
 
@@ -1286,38 +1283,38 @@ Run row-specific regression tests against the contract and ensure the proposed f
 ### Auditor claim (short quote)
 Checkpoint upserts allow stale writes to regress status/payload while retaining a higher cursor.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: full `ResearchCheckpointStore.save_bootstrap`, `load_bootstrap`, `bootstrap_rows`, and `incomplete_bootstrap_cells` in `checkpoints.py:37–52,148–201`; complete `BootstrapRunner.run_phase1` and `pending_cells` in frozen `bootstrap.py:241–343`; complete `CanonicalMirroredCheckpoints.save_bootstrap`, `_canonical_upsert`, and `BootstrapService.open` in `bootstrap_service.py:832–1011,1155–1179`; and tests `TestBootstrapCursor` plus the bootstrap service mirror tests. `grep -Rn` for save/read/status consumers is saved in `H033_consumers.out`. DDL primary keys and W.6/W.8 resume requirements were read, together with CP9-007's canonical mirror decision. `EXPLAIN QUERY PLAN` for per-cell `load_bootstrap` lookup against in-memory repository migrations reports `SEARCH research_bootstrap_progress USING INDEX sqlite_autoindex_research_bootstrap_progress_1 (cell_id=?)` (`H033_checkpoint_stale.out`). This checkpoint table has a primary-key index; no market/device index is applicable. No persistent DB or `data/` access.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+`H033_checkpoint_stale.py` uses actual `ResearchCheckpointStore`, `CanonicalMirroredCheckpoints`, and repository SQLite DDL in two `:memory:` databases. It writes a `COMPLETE` checkpoint at cursor 900 with payload generation `new`, then simulates a stale lower-cursor `PENDING` write at 400 with different payload. Research row becomes `status=PENDING`, cursor remains 900, and generic payload is replaced by `stale`; bars are additively 13. The canonical mirrored `bootstrap_progress` row also becomes `PENDING` while its ISO cursor remains 900ms and bars_written increases to 13. The wiring wrapper preserves its two CP13 evidence keys (`invalid_bars_dropped`, `invalid_reasons`) on non-COMPLETE saves, but does not preserve arbitrary payload fields or status ordering. Query plan and full output are in `.out`. Ran full `tests/unit/test_research_checkpoints.py`: 20 passed in 0.15s; full `tests/unit/test_ops_bootstrap_service.py`: 71 passed in 2.33s (`H033_pytest.out`, `H033_service_pytest.out`). Existing `test_resume_never_rewinds_the_cursor` asserts only that cursor stays at 900 and bars add; it does not assert status/payload monotonicity. Service tests exercise normal mirror behavior, not stale-generation conflict. Both suites pass while the controlled stale-write behavior remains.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**CONFIRMED, independent severity S2.** The SQL intentionally applies `MAX` only to cursor, adds bars, and overwrites status/phase/metadata/payload from the latest arriving call. A stale lower-cursor call therefore retains the high-water cursor yet regresses status and generic payload. CP13 has a targeted merge for two invalid-bar evidence keys through the wiring wrapper, which narrows but does not eliminate payload regression. No raw market row is rewound or order path affected. Severity S2: false pending/progress and lost checkpoint metadata can force rework or hide evidence, but the cursor itself remains monotone and real operational loss was not observed.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+Neither checkpoint row has a generation/run sequence or compare-and-set predicate. `save_bootstrap` always updates `status`, `phase`, `oi_available`, `updated_at`, and `payload_json` from the incoming write, while protecting cursor with `MAX` and making `bars_ingested` additive. `_canonical_upsert` uses the same `MAX(cursor_open_time)` but overwrites status and increments bars. `updated_at` is assigned at write time, not the source task's logical sequence, so a delayed older operation appears newly updated.
 
 ### Direct impact
-Not determined.
+A completed research cell can be marked PENDING/IN_PROGRESS by a late older save while retaining its completed cursor. `BootstrapRunner.pending_cells` and progress counts use status, so the cell may appear unfinished and be revisited; generic payload metadata may be lost. Cursor high-water does not regress, preventing a backward resume, and the wrapper protects only `invalid_bars_dropped`/`invalid_reasons` on its non-COMPLETE path. Duplicate raw ingestion, data loss, and user-device consequences are not established by the probe.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream, Phase-1 status writes come through `BootstrapRunner` → `CanonicalMirroredCheckpoints` → research table plus canonical Ch.5 mirror. Downstream, `pending_cells`, `progress_async`, `incomplete_bootstrap_cells`, and owner status readers treat durable status as completion truth; stale regression may trigger a repeat walk, though it resumes from the preserved high cursor. Existing CP9-007 supplies the canonical mirror but repeats the same overwrite policy. ISSUE-077 overlaps generic progress/persistence; this finding is specifically missing stale-generation protection, not missing DDL or a lock timeout. No training artifact, engine, decision/risk/order, ledger, or replay impact proven. No device run.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 W.6 (`:17276`) says checkpoint Phase-1 progress and resume from cursor without rewinding; W.8-1 (`:17300–17305`) requires durable per-cell state and resume at the next uncompleted cell. CP9-007 (PHASE2_DECISION_LOG.md:170) requires mirroring the cursor into canonical `bootstrap_progress`; it specifies max cursor but does not make status/payload monotone. The current regression preserves cursor but can falsify completed/uncompleted state, so it only partially satisfies the broader durable-resume intent. CP13's evidence merge protects two fields by name. ISSUE-077's progress/persistence scope overlaps; delta is stale-write ordering across status and the rest of payload. No owner decision authorizes stale completion regressions.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`apex/research/checkpoints.py` and `apex/ops/bootstrap_service.py` are non-frozen. `apex/research/bootstrap.py` and `apex/data_catalog/**` are frozen; do not edit the runner or store DDL. Add a logical run/generation token and conditional upsert/CAS in the non-frozen checkpoint/wiring layer, mirrored consistently to the canonical row. Keep cursor MAX behavior, additive bar semantics where valid, and CP13 carry-forward. Because intentional re-runs can transition COMPLETE→IN_PROGRESS→COMPLETE, do not impose a simplistic monotone status rank; reject only writes older than the current generation/sequence.
 
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+### Fix options and side effects
+A: add a per-cell run generation or monotone write sequence, supplied by the owning runner and stored in the additive checkpoint row or non-frozen envelope; update research and canonical status/payload only when generation is current. B: serialize all writes through a single writer/lock and discard stale task messages before `save_bootstrap`; this needs an in-process and restart boundary guarantee and may not protect multiple processes. Both require migration/version handling, preserving W.6 cursor MAX, CP13 evidence keys, CP9 canonical mirror and legitimate restart/re-run transitions. Older incomplete checkpoint rows need a safe migration/default generation. Do not delete persisted progress or alter frozen Ch.5 DDL.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Add generation-aware conditional writes at the non-frozen checkpoint boundary and mirror only accepted writes. Retain the high cursor, but do not let cursor monotonicity stand in for status/payload consistency. Keep `bootstrap.py` and catalog DDL untouched.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
+Against in-memory repository DDL, apply a current COMPLETE write followed by delayed lower-generation PENDING/IN_PROGRESS and assert status/payload remain current in both research and canonical tables while cursor never decreases. A newer generation must be allowed to perform the intended COMPLETE→IN_PROGRESS→COMPLETE cycle and advance cursor; payload merge must preserve CP13 invalid-bar evidence and current metadata. Reopen DB and verify pending/progress/incomplete-cell decisions match durable accepted generation. Include EXPLAIN for per-cell reads, two-writer/process ordering if supported, locked-write retry behavior, and full checkpoint/bootstrap-service suites. No edits to frozen bootstrap/store schema or `data/`.
 
 
 ## H-034
@@ -1364,39 +1361,38 @@ Run row-specific regression tests against the contract and ensure the proposed f
 ### Auditor claim (short quote)
 Forecast invalidation is an in-memory method with no production consumer/persistence path.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: `ForecastRecord.invalidate`, `is_admissible`, `to_dict`, and `build_forecast` in `forecast/logistic.py:133–214,386–482`; all direct callers found by `grep -Rn` for `ForecastRecord`, `.invalidate(`, `build_forecast`, and invalidation reasons are saved in `H035_consumers.out`. Read store/ledger schema for forecast persistence and composition in `engine_context.py:1829–2010`, `plan_bridge.py:760–785,912–975`, production composition in `scripts/run_apex.py` and `PaperRuntime` plan consumption. Tests read: `TestInvalidation` in `tests/unit/test_forecast_logistic.py:263–294`, plus paper-chain forecast and T_DR_003 integration tests. Read APEX_GEN5 §13.1 invalidation and T_FORECAST_INV. No SQLite forecast lifecycle table/query or caller of `.invalidate()` was found; no SQL row query applies.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+`H035_forecast_invalidation.py` calls real `build_forecast` and `ForecastRecord.invalidate("REGIME_SHIFT",...)`. State and `to_dict()` become INVALIDATED with the supplied trigger observation ID on that object; the dataclass has no store/database/persistence handle. Raw output is `H035_forecast_invalidation.out`. Full `tests/unit/test_forecast_logistic.py`: 42 passed in 0.10s (`H035_pytest.out`); these prove reason validation, lineage requirement, immutability and inadmissibility on the same object. Production integration checks `test_forecast_is_bootstrap_paper_only` and `test_t_dr_003_forecast_p_u_c_replay_byte_identical`: 2 passed in 0.34s (`H035_production_pytest.out`), proving forecast is rebuilt/consumed for the plan chain and deterministic, not invalidation lifecycle. `grep` finds `build_forecast` in the real producer/bridge but no `.invalidate()` call outside tests. The bridge's `traces` dictionary is in-memory; it serializes `forecast.to_dict()` there, but no forecast-record table/append path exists in the inspected store/ledger DDL. No device, live package, or order was used.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**PARTIAL, independent severity S2.** The API method is a local mutation and has no production caller or durable write path; this part is confirmed. But the existing PAPER plan bridge creates a forecast per bridge invocation, uses P/U/C to gate/build that invocation's plan, and stores its diagnostic trace only in memory. No stale forecast reuse or order bypass from failure to invalidate was demonstrated, and §13.1's “never silently deleted” does not by itself specify a durable storage mechanism. Thus this is an implementation/lifecycle gap with potential operational significance, not a proven current trade defect.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+`ForecastRecord` is a mutable dataclass; `invalidate()` changes its own `state`/`invalidation` and returns `self`. `build_forecast` returns it to callers. Production bridge uses `forecast.to_dict()` only in `PaperPlanBridge.traces`; the live return shape is a plan dictionary and does not maintain a forecast-record registry that later regime, quality, package, horizon, or source events can address. `grep` found no persistent forecast-record schema and no event-bus subscriber invoking the method.
 
 ### Direct impact
-Not determined.
+In the exposed standalone forecast API, a caller can invalidate an object and see the immutable reason/lineage in its serialization, but it must retain that object itself. In the production PAPER bridge, the forecast is used to evaluate setup/eligibility and copied into an in-memory trace; no persistent forecast record is subsequently invalidated, and the trace is not a lifecycle store. The current bridge builds fresh forecast context per call, so this does not establish that a stale forecast is reused to authorize a later order. Nor does the audit show a trade being opened under an invalidated record.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream sources include E11 confirmed regime, quality, package version, and source freshness. Downstream plan bridge consumes `p_hat`, `u`, `c`, `q_forecast` for eligibility and risk inputs, then returns a plan; `PaperRuntime` consumes/persists plans and execution ledger events, not the ForecastRecord/invalidation envelope. A future stale-source/regime/quality invalidation needs a forecast-ID/lineage map plus downstream revalidation or cancellation/position policy. No D57 watchdog or D58 PAPER fill simulator currently supplies this linkage. D54 is recorded OPEN/not implemented; its broad evidence-expiry scope must not be mistaken for an approved forecast invalidation implementation. No training/cache/hash effect is established.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 §13.1 (`:16115–16132`) specifies seven immutable reasons and says an invalidated forecast record receives `{state, reason, at, trigger_observation_id}` and is never silently deleted; T_FORECAST_INV requires all reasons unique, traceable and immutable on fixtures. Current tests establish precisely those local-object properties, and matrix C6-FC|1 / X-11 establish forecast P/U/C construction and deterministic chain replay, not durable invalidation. Section 18.7's cascade text (`:18716–18720`) says downstream consumers are notified via event bus and revalidate; repository search found no ForecastRecord invalidation consumer. D54 remains open and does not override/complete §13.1. No later decision was found authorizing omission of forecast lifecycle behavior.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`apex/forecast/logistic.py`, `apex/ops/engine_context.py`, `plan_bridge.py`, and `paper_loop.py` are non-frozen; `apex/data_catalog/**` and `apex/research/backtest.py` are frozen. A non-frozen forecast lifecycle service can retain stable forecast IDs, connect invalidation triggers, persist immutable invalidation records using an owner-approved existing append-only schema or additive non-frozen storage, and notify downstream consumers. Do not edit frozen catalog DDL/store or assume the in-memory `PaperPlanBridge.traces` is durable.
 
-### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+### Fix options and side effects
+A: keep `ForecastRecord` a pure value object and add an owner-approved lifecycle registry/adapter that stores created forecast identity and each accepted invalidation, handles duplicate triggers idempotently, and publishes a revalidation event to the current plan/position boundary. This requires persistence schema/version, restart reconstruction, event-bus and consumer semantics, and a decision about already-materialized plans/open positions. B: if §13.1 is diagnostic-only until a future wave, obtain a documented owner ruling and label invalidation explicitly unwired; do not advertise automatic invalidation. Option A may alter setup/plan admission and cancel/close policy, requiring replay/decision and PAPER FSM tests; option B preserves current per-cycle fresh forecast behavior but leaves persistent forecasts unsupported. Neither requires a frozen-file change.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Treat invalidation as implemented only for an explicitly held `ForecastRecord`, not as a production lifecycle. Keep its immutable local-object contract, and do not claim automatic regime/source invalidation. Before wiring, resolve D54 separately and specify ID, persistence, trigger publication, restart, and downstream action/owner authority; leave source and frozen DDL untouched in this audit.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Retain all seven reason/immutability tests. Compose producer → PaperPlanBridge → PaperRuntime with a stable forecast ID and trigger each reason from its authoritative source; assert one durable invalidation row with observation lineage, no silent deletion/relabel, duplicate idempotency and recovery after restart. Verify the bridge/plan consumer rejects or revalidates an invalidated forecast before plan materialization; define separate behavior for an already-open position through authorized Risk Kernel/Execution FSM (do not assume close). Exercise no-match/future-PIT/missing lineage fail-closed, and prove ordinary T_DR_003 byte-identical replay remains unchanged when no invalidation occurs. Any persistence must use an approved non-frozen schema path; no data-catalog DDL edit or live endpoint test.
 
 ## H-036
 
@@ -2180,9 +2176,9 @@ Acceptance: on a fresh checkout without f14be36, the test can execute determinis
 
 ## Rows not verified or incomplete
 
-No coverage claim is made for the following 23 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
+No coverage claim is made for the following 18 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
 
-`H-026, H-030, H-031, H-033, H-035, H-036, I-001, I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
+`H-036, I-001, I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
 
 Rows with a non-UNVERIFIED status were independently evidenced only to the exact scope stated in their sections. Synthetic tests do not establish real data/device/model behavior. H-002/H-003/H-005/H-006/H-007/H-011/H-013 have new bounded real-function probe evidence in this continuation; untested integration/device assertions remain explicitly excluded. H-004 is PARTIAL as above; H-022 and H-034 retain their prior partial caller/governance/integration review caveat. Full V5 acceptance requires completing all remaining unverified rows, mandatory caller/callee and test reads, and relevant SQLite plan checks where applicable.
 
@@ -2190,10 +2186,10 @@ Rows with a non-UNVERIFIED status were independently evidenced only to the exact
 
 | Verdict | Count |
 |---|---:|
-| CONFIRMED | 24 |
-| PARTIAL | 7 |
+| CONFIRMED | 27 |
+| PARTIAL | 9 |
 | REJECTED | 0 |
-| UNVERIFIED / incomplete | 23 |
+| UNVERIFIED / incomplete | 18 |
 | DEVICE-EVIDENCE-NEEDED | 0 (no real-device dependent claim was assigned this verdict; device evidence was not obtained) |
 
-New findings: `X-V5-001` (test reproducibility dependency on unavailable base commit); H-010 adds a bounded report-provenance ambiguity between selected scope and realized per-cell contribution, without establishing a D30 contract violation.
+New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle).

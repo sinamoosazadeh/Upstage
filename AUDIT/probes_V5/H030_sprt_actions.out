@@ -1,0 +1,19 @@
+{
+  "durable_store_or_executor_attached": false,
+  "last_action": "HALT_AND_ROLLBACK",
+  "monitor_fields": [
+    "family_id",
+    "state",
+    "halted",
+    "log"
+  ],
+  "monitor_halted_in_memory": true,
+  "monitor_log_rows_in_memory": 27,
+  "rollback_action_strings": [
+    "halt: no new entries for the family",
+    "close: all open positions exit at market or via existing stop/target",
+    "rollback: family removed from the live playbook, reverting to the previous validated parameter package or no-trade mode",
+    "log: reason + timestamp + SPRT statistics persisted"
+  ],
+  "standalone_action": "HALT_AND_ROLLBACK"
+}

@@ -1,0 +1,3 @@
+apex/research/promotion.py:525:def evaluate_promotion(candidate: PromotionCandidate) -> Dict[str, Any]:
+apex/research/promotion.py:535:def draft_package(*, candidate: PromotionCandidate, values: Mapping[str, Any],
+apex/research/promotion.py:548:    verdict = evaluate_promotion(candidate)

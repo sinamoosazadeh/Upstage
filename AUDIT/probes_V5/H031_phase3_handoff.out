@@ -1,0 +1,21 @@
+{
+  "bootstrap_phase_methods": [
+    "phase3_plan",
+    "run_phase1",
+    "run_phase2"
+  ],
+  "continuous_command_sets_state_only": true,
+  "optimizer_run_method_is_single_run": true,
+  "phase3_plan": {
+    "cells": [
+      "BTCUSDT:15m"
+    ],
+    "completes_when": "all cells swept at least once with approved packages, or the owner halts bootstrap",
+    "continuous_flag": "continuous on",
+    "default_window": "03:00-05:00 UTC (W.4)",
+    "phase": 3,
+    "promotion": "apex.research.promotion.evaluate_promotion",
+    "requires": "apex.research.optimizer.DualOptimizer"
+  },
+  "schedule_exposes_periodic_loop": false
+}

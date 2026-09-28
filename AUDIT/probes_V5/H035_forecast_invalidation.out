@@ -1,0 +1,30 @@
+{
+  "function_returns_same_object": true,
+  "invalidation": {
+    "at": 5,
+    "reason": "REGIME_SHIFT",
+    "state": "INVALIDATED",
+    "trigger_observation_id": "obs-77"
+  },
+  "record_fields": [
+    "event",
+    "p_raw",
+    "p_hat",
+    "uncertainty",
+    "u",
+    "c",
+    "q_forecast",
+    "cost_r",
+    "r_penalty",
+    "eu",
+    "eligible_environments",
+    "bootstrap_prior",
+    "contract_version",
+    "state",
+    "invalidation",
+    "components"
+  ],
+  "record_has_store_or_persistence_handle": false,
+  "record_state_after_invalidate": "INVALIDATED",
+  "serialized_state": "INVALIDATED"
+}

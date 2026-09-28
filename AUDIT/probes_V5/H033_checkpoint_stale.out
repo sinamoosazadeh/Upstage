@@ -1,0 +1,20 @@
+{
+  "canonical_bars_written": 13,
+  "canonical_cursor_open_time": "1970-01-01T00:00:00.900Z",
+  "canonical_last_error": null,
+  "canonical_status": "PENDING",
+  "cell_read_query_plan": [
+    "SEARCH research_bootstrap_progress USING INDEX sqlite_autoindex_research_bootstrap_progress_1 (cell_id=?)"
+  ],
+  "device_index_applicable": false,
+  "repository_checkpoint_schema_has_cell_id_primary_key": true,
+  "research_bars_ingested": 13,
+  "research_cursor_ms": 900,
+  "research_payload": {
+    "detail": "old",
+    "generation": "stale",
+    "invalid_bars_dropped": 0,
+    "invalid_reasons": {}
+  },
+  "research_status": "PENDING"
+}

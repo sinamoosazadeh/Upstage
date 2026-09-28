@@ -1,0 +1,9 @@
+apex/research/promotion.py:314:        action = "HALT_AND_ROLLBACK"
+apex/research/promotion.py:319:            "rollback_actions": rollback_actions() if action == "HALT_AND_ROLLBACK"
+apex/research/promotion.py:327:        "close: all open positions exit at market or via existing stop/target",
+apex/research/promotion.py:328:        "rollback: family removed from the live playbook, reverting to the "
+apex/research/promotion.py:335:class LiveFamilyMonitor:
+apex/research/promotion.py:351:                "action": ("HALT_AND_ROLLBACK" if self.halted
+tests/unit/test_research_promotion.py:167:        assert out["action"] == "HALT_AND_ROLLBACK"
+tests/unit/test_research_promotion.py:195:        monitor = pr.LiveFamilyMonitor(
+tests/unit/test_research_promotion.py:203:        assert last["action"] == "HALT_AND_ROLLBACK"

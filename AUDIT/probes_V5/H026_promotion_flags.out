@@ -1,0 +1,17 @@
+{
+  "benchmark_metrics_contradict_flag": true,
+  "checks": {
+    "benchmark": true,
+    "deflated_sharpe": true,
+    "family_pool": true,
+    "pbo": true,
+    "wfo": true
+  },
+  "draft_decision": "DRAFTED",
+  "draft_next_step": "paper trial \u2192 owner approval \u2192 versioned injection",
+  "dsr_metric": -100.0,
+  "gate_decision": "PROMOTE",
+  "paper_trial_required": true,
+  "pbo_metric": 0.99,
+  "wfo_metrics_contradict_flag": true
+}

@@ -1,0 +1,21 @@
+apex/ops/bootstrap_service.py:901:class CanonicalMirroredCheckpoints:
+apex/ops/bootstrap_service.py:933:    async def save_bootstrap(
+apex/ops/bootstrap_service.py:1009:        await self._checkpoints.save_bootstrap(
+apex/ops/bootstrap_service.py:1171:            runner_store: Any = CanonicalMirroredCheckpoints(
+apex/ops/bootstrap_service.py:1677:    "CONTRACT_VERSION", "CanonicalMirroredCheckpoints", "RATE_LIMIT_MARKERS",
+apex/research/bootstrap.py:270:            await self.store.save_bootstrap(
+apex/research/bootstrap.py:298:                await self.store.save_bootstrap(
+apex/research/bootstrap.py:304:                await self.store.save_bootstrap(
+apex/research/bootstrap.py:319:            await self.store.save_bootstrap(
+apex/research/bootstrap.py:327:            "pending_cells": await self.pending_cells(),
+apex/research/bootstrap.py:337:    async def pending_cells(self) -> List[str]:
+apex/research/checkpoints.py:148:    async def save_bootstrap(self, *, cell_id: str, symbol: str,
+apex/research/checkpoints.py:194:    async def incomplete_bootstrap_cells(self) -> List[str]:
+tests/unit/test_research_bootstrap.py:404:                await store.save_bootstrap(cell_id="BTCUSDT:15m",
+tests/unit/test_research_checkpoints.py:73:                await opened.save_bootstrap(
+tests/unit/test_research_checkpoints.py:95:                await opened.save_bootstrap(
+tests/unit/test_research_checkpoints.py:117:                await opened.save_bootstrap(
+tests/unit/test_research_checkpoints.py:120:                await opened.save_bootstrap(
+tests/unit/test_research_checkpoints.py:133:                    await opened.save_bootstrap(
+tests/unit/test_research_checkpoints.py:136:                return await opened.incomplete_bootstrap_cells()
+tests/unit/test_research_checkpoints.py:143:                    await opened.save_bootstrap(

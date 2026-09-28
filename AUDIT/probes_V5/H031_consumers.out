@@ -1,0 +1,34 @@
+apex/execution/fsm.py:510:        awaits every subscriber inline (AI.12 Phase 3 / Ch.23 L18253). P1 goes
+apex/research/bootstrap.py:16:Phase 3 — Scheduled optimization cycles (W.3–W.5), run by
+apex/research/bootstrap.py:388:    # -- Phase 3 hand-off ------------------------------------------------
+apex/research/bootstrap.py:390:        """Phase 3 = scheduled optimization per W.3–W.5."""
+apex/research/bootstrap.py:393:                "requires": "apex.research.optimizer.DualOptimizer",
+apex/research/optimizer.py:261:class OptimizerSchedule:
+apex/research/optimizer.py:331:class DualOptimizer:
+apex/research/optimizer.py:338:    def __init__(self, *, schedule: Optional[OptimizerSchedule] = None,
+apex/research/optimizer.py:342:        self.schedule = schedule or OptimizerSchedule(*nightly_window())
+apex/research/optimizer.py:462:def optimizer_summary() -> Dict[str, Any]:
+tests/unit/test_research_bootstrap.py:349:class TestPhase2Phase3:
+tests/unit/test_research_bootstrap.py:396:        assert "DualOptimizer" in plan["requires"]
+tests/unit/test_research_optimizer.py:50:        summary = opt.optimizer_summary()
+tests/unit/test_research_optimizer.py:202:        schedule = opt.OptimizerSchedule("03:00", "05:00")
+tests/unit/test_research_optimizer.py:209:        schedule = opt.OptimizerSchedule("23:00", "01:00")
+tests/unit/test_research_optimizer.py:218:        decision = opt.OptimizerSchedule("03:00", "05:00").may_run(
+tests/unit/test_research_optimizer.py:224:        decision = opt.OptimizerSchedule("03:00", "05:00").may_run(
+tests/unit/test_research_optimizer.py:229:        schedule = opt.OptimizerSchedule("03:00", "05:00")
+tests/unit/test_research_optimizer.py:239:            opt.OptimizerSchedule("25:00", "05:00")
+tests/unit/test_research_optimizer.py:247:class TestDualOptimizerRun:
+tests/unit/test_research_optimizer.py:253:        optimizer = opt.DualOptimizer()
+tests/unit/test_research_optimizer.py:264:        result = _run(opt.DualOptimizer().run_run(
+tests/unit/test_research_optimizer.py:271:        optimizer = opt.DualOptimizer()
+tests/unit/test_research_optimizer.py:275:        second = opt.DualOptimizer()
+tests/unit/test_research_optimizer.py:287:        result = _run(opt.DualOptimizer().run_run(
+tests/unit/test_research_optimizer.py:295:        result = _run(opt.DualOptimizer().run_run(
+tests/unit/test_research_optimizer.py:302:            _run(opt.DualOptimizer().run_run(
+tests/unit/test_research_optimizer.py:320:                optimizer = opt.DualOptimizer(checkpoint_store=opened)
+tests/unit/test_research_optimizer.py:344:                rerun = opt.DualOptimizer(checkpoint_store=opened)
+tests/unit/test_research_optimizer.py:360:                optimizer = opt.DualOptimizer(checkpoint_store=opened)
+tests/unit/test_research_optimizer.py:372:        optimizer = opt.DualOptimizer(suggestions_dir=tmp_path / "suggestions")
+tests/unit/test_research_optimizer.py:384:        optimizer = opt.DualOptimizer()
+tests/unit/test_research_optimizer.py:393:        out1 = opt.DualOptimizer(suggestions_dir=tmp_path / "a").write_suggestion(
+tests/unit/test_research_optimizer.py:396:        out2 = opt.DualOptimizer(suggestions_dir=tmp_path / "b").write_suggestion(

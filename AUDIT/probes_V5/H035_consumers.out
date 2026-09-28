@@ -1,0 +1,31 @@
+apex/forecast/__init__.py:15:    INVALIDATION_REASONS,
+apex/forecast/__init__.py:21:    ForecastEvent,
+apex/forecast/logistic.py:64:INVALIDATION_REASONS: Tuple[str, ...] = (
+apex/forecast/logistic.py:66:    "QUALITY_DEGRADED", "PACKAGE_INVALIDATED", "SOURCE_STALE",
+apex/forecast/logistic.py:133:class ForecastEvent:
+apex/forecast/logistic.py:165:    event: ForecastEvent
+apex/forecast/logistic.py:186:        if reason not in INVALIDATION_REASONS:
+apex/forecast/logistic.py:386:def build_forecast(event: ForecastEvent, *, x: Mapping[str, float],
+apex/forecast/logistic.py:497:           "HORIZON_MULTIPLE", "INVALIDATION_REASONS", "MIN_OBS_DEFAULT",
+apex/forecast/logistic.py:499:           "ForecastError", "ForecastEvent", "ForecastRecord",
+apex/ops/engine_context.py:1852:        from apex.forecast.logistic import ForecastEvent, build_forecast
+apex/ops/engine_context.py:1957:        forecast = build_forecast(ForecastEvent(f"{PLAYBOOK_ID}:TARGET_3R",f"{ENTRY_LOGIC_REF}:SWEEP_LOW_INVALIDATION",
+apex/ops/plan_bridge.py:79:from apex.forecast.logistic import ForecastError, ForecastEvent, build_forecast
+apex/ops/plan_bridge.py:766:        forecast_event = ForecastEvent(
+tests/integration/test_context_to_trade_paper.py:85:    ForecastEvent,
+tests/integration/test_context_to_trade_paper.py:262:    event = ForecastEvent(
+tests/integration/test_context_to_trade_paper.py:441:        event = ForecastEvent(
+tests/unit/test_cp146.py:293:    from apex.forecast.logistic import ForecastError, ForecastEvent, X_FEATURES, build_forecast
+tests/unit/test_cp146.py:294:    event = ForecastEvent(
+tests/unit/test_forecast_logistic.py:19:    INVALIDATION_REASONS,
+tests/unit/test_forecast_logistic.py:25:    ForecastEvent,
+tests/unit/test_forecast_logistic.py:59:    return ForecastEvent(**kw)
+tests/unit/test_forecast_logistic.py:101:        assert INVALIDATION_REASONS == (
+tests/unit/test_forecast_logistic.py:103:            "QUALITY_DEGRADED", "PACKAGE_INVALIDATED", "SOURCE_STALE")
+tests/unit/test_forecast_logistic.py:104:        assert len(set(INVALIDATION_REASONS)) == 7
+tests/unit/test_forecast_logistic.py:266:        rec.invalidate("REGIME_SHIFT", at=5,
+tests/unit/test_forecast_logistic.py:275:            rec.invalidate("HORIZON_EXPIRED", at=6,
+tests/unit/test_forecast_logistic.py:279:    @pytest.mark.parametrize("reason", INVALIDATION_REASONS)
+tests/unit/test_forecast_logistic.py:282:        rec.invalidate(reason, at=1, trigger_observation_id="obs-1")
+tests/unit/test_forecast_logistic.py:289:            rec.invalidate("PRICE_MOVED", at=1, trigger_observation_id="obs-1")
+tests/unit/test_forecast_logistic.py:292:            rec.invalidate("REGIME_SHIFT", at=1, trigger_observation_id="")
