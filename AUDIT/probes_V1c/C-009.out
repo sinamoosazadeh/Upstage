@@ -1,0 +1,15 @@
+== (1) parser truthiness on the real Termux shape ==
+parse_battery_json(4%, 'UNPLUGGED') -> {'percentage': 4, 'plugged': True}
+parse_battery_json(10%, 'false')   -> {'percentage': 10, 'plugged': True}
+preflight(continuous, 4% 'UNPLUGGED' parsed) -> action=PROCEED reason=PREFLIGHT_OK (W.6 wants PAUSE below 5% unplugged)
+control with REAL boolean False 4% -> action=PAUSE reason=CONTINUOUS_BATTERY_BELOW_5PCT
+
+== (2) run_phase1 ignores SKIP_NIGHTLY ==
+battery=10%/False (preflight would say SKIP_NIGHTLY):
+  preflight alone -> action=SKIP_NIGHTLY reason=BATTERY_BELOW_15PCT
+  run_phase1      -> status=COMPLETE pages=2 completed=['BTCUSDT:1h']
+  fetch_calls=2 ingested_rows=1 (W.6 wants the nightly run SKIPPED: 0 fetches, no COMPLETE)
+
+== (3) read_battery ignores returncode ==
+termux exits rc=1 but prints valid JSON -> read_battery -> {'percentage': 3, 'plugged': True} (parsed anyway; returncode never read)
+CLAIMS_REPRODUCED=True

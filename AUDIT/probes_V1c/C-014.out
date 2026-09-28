@@ -1,0 +1,8 @@
+paused_at recorded at now=1767225600.0
+health_recheck_required() BEFORE resume: {'required': True, 'paused_hours': 25.0, 'threshold_hours': 24.0}
+command('resume') -> accepted=True health_recheck={'required': True, 'paused_hours': 25.0, 'threshold_hours': 24.0}
+health_recheck_required() AFTER resume: {'required': False, 'reason': 'NO_PAUSE_RECORDED'}  (paused_at was cleared)
+state.paused=False state.paused_at=None
+run_phase1 right after resume (no recheck executed anywhere): status=COMPLETE completed=['BTCUSDT:1h'] fetch_calls=2
+grep check: 'health' appears nowhere inside run_phase1 (W.8-3 wants the re-check BEFORE resuming the walk)
+CLAIM_REPRODUCED=True

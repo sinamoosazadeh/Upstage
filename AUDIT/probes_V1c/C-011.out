@@ -1,0 +1,13 @@
+== (a) fresh runner, zero pages, zero checkpoints ==
+current_cell=None pages_fetched=0 percent_complete=100.0  <- fresh run reports 100%
+
+== (b) mid-run: pages_fetched=1120 (=140*8), cells barely started ==
+pages_fetched=1120 cells=140 -> percent_complete=100.0
+pending_cells at that moment: 140 of 140
+pages=560 (50% of the guess) -> percent_complete=50.0
+
+== (c) ETA basis ==
+eta() before any command('start'): basis=NO_MEASUREMENT_YET measured=False eta_seconds=None
+eta() with 10 pages but started_at=None: basis=NO_MEASUREMENT_YET measured=False
+eta() after command('start'): measured=True seconds_per_page=0.0000
+CLAIM_REPRODUCED=True

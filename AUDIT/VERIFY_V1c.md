@@ -14,9 +14,9 @@
 | C-001 | تأیید | S3 | S3 | نه (scripts/run_apex.py فریز نیست) | H-008، K-026 | الف: انتقال ساخت Config به داخل try |
 | C-005 | تأیید | S2 | S2 | نه (apex/ops/ فریز نیست) | C-015, D50, ISSUE-075 (تقویت اثر آن) | الف (نگاشت disposition) با ابزار ب (ویژگیٔ retryable در cursor) |
 | C-007 | تأیید | S2 | S2 | نه | D51 (متریک)، ISSUE-075 (کد خروج) | الف (متریک‌های تفکیکی + اثر ناسالم‌بودن چرخه در exit) |
-| C-009 | _در حال بررسی_ | S1 | — | — | — | — |
-| C-011 | _در حال بررسی_ | S2 | — | — | K-020 | — |
-| C-014 | _در حال بررسی_ | S2 | — | — | G-005، K-020 | — |
+| C-009 | تأیید | S1 | S1 | **بله — بخش اصلی در apex/research/bootstrap.py (فریز)**؛ راه‌حل بیرون‌از‌فریز در لایهٔ service وجود دارد | — | ب (نگاشت صریح plugged در wiring + مدیریت SKIP_NIGHTLY در service) |
+| C-011 | تأیید | S2 | S2 | بله — علت اصلی در bootstrap.py (فریز)؛ جبران service-layer ممکن | K-020 | ب |
+| C-014 | تأیید | S2 | S2 | بله — علت اصلی در bootstrap.py (فریز)؛ جبران service-layer ممکن | G-005*، K-020 | ب |
 | C-015 | تأیید | S2 | S2 | نه | C-005, D51 (HANDOFF_CP9:934) | الف (release در مسیر exception اثباتاً-پیش‌ارسال + علت‌ثبت) |
 | O-006 | _در حال بررسی_ | S4 | — | — | — | — |
 | V-003 | _در حال بررسی_ | S4 | — | — | D-001، D-002، E-016، H-007 | — |
@@ -200,6 +200,48 @@ _(پس از راستی‌آزمایی هر ردیف، بخش دوازده‌سر
 
 **آزمون پذیرش و رگرسیون:** پذیرش: probe C-007 باید پس از اصلاح نشان دهد `trades_submitted=0, trades_refused=1` و (پس از ب) exit serve در چرخهٔ تمام‌رد ≠0. رگرسیون: `python3 -m pytest -q -p no:cacheprovider tests/integration/test_ops_paper_loop.py tests/integration/test_cp7_paper_loop.py` و افزودن تست واحد روی نگاشت exit در `_serve` (با driver جعلی — مانند ساختار فعلی تست‌ها).
 
+---
+
+### C-009 — تفسیر بولی باتری و اجرای SKIP_NIGHTLY در bootstrap نادرست است
+
+**ادعای ممیز (نقل کوتاه):** «دو شکست مستقل حفاظت باتری: `bool("UNPLUGGED")` و `bool("false")` در parser برابر True است (برای نمونهٔ ۴٪/UNPLUGGED، preflight پیوسته `PROCEED` داد)؛ حتی وقتی ورودی بولی unplugged و ۱۰٪ است و preflight `SKIP_NIGHTLY` می‌دهد، `run_phase1` فقط `PAUSE` را هندل می‌کند و fetch زده و `COMPLETE` می‌شود. `read_battery` نیز returncode ناموفق را بررسی نمی‌کند. تست موجود همین COMPLETE نادرست را انتظار دارد» (`apex/research/bootstrap.py:94–120,249–257`؛ `apex/ops/bootstrap_service.py:1089–1105,1410–1424`؛ `tests/unit/test_research_bootstrap.py:79–85,303–314`؛ شدت S1؛ «فرمت دستگاه احراز نشده»).
+
+**آنچه خواندم:**
+- `apex/research/bootstrap.py:1–438` (فایل کامل، **فریز**). `hardware_preflight` (73–101): `plugged = bool(battery.get("plugged"))` خط 94؛ شروط PAUSE/SKIP_NIGHTLY فقط وقتی `not plugged`. `parse_battery_json` (105–120): `{"percentage": data.get("percentage"), "plugged": bool(data.get("plugged"))}` — هر رشتهٔ غیرخالی (از جمله `"UNPLUGGED"` و `"false"`) → True. `run_phase1` (246–346): تنها شاخهٔ preflight خط 252 `if preflight["action"] == "PAUSE":` است؛ SKIP_NIGHTLY به مسیر عادی می‌افتد و حلقهٔ fetch اجرا و سلول‌ها COMPLETE می‌شوند. فراخوانندگان `hardware_preflight`/`parse_battery_json`: `apex/ops/bootstrap_service.py` (import خط 67–69) و تست‌ها.
+- `apex/ops/bootstrap_service.py:1–1680` (فایل کامل، غیرفریز). `read_battery` (1089–1105): `subprocess.run(..., timeout=10)` بدون `check=True`؛ **هیچ ارجاعی به returncode نیست** — stdout به `parse_battery_json` می‌رود (1104). در `run` (1410–1424): `battery = read_battery()` و preflight برای اعلان محاسبه و سپس `run_phase1(..., battery=battery)` صدا زده می‌شود؛ هیچ شاخه‌ای برای SKIP_NIGHTLY در سطح service هم نیست.
+- `tests/unit/test_research_bootstrap.py` در نقطه‌های استنادشده: تست `test_parse_battery_json` (79–81) **عمداً** `'{"percentage": 42, "plugged": "true"}' → plugged=True` را پین می‌کند — یعنی کوئرسیون رشته‌ای در طراحی تست هم هست، اما هیچ تستی برای `"UNPLUGGED"`یا `"false"` وجود ندارد؛ `test_battery_skip_is_honoured` (~312–326) با battery=10%/False صرفاً `result["status"] == "COMPLETE"` را assert می‌کند و تعداد fetch را نمی‌شمارد — دقیقاً همان چیزی که ممیز گفت.
+- قرارداد W.6 در `APEX_GEN5.md:17278` (متن کامل پایین نقل شده) و قالب واقعی Termux از منبع مستقل (پایین).
+
+**بازتولید:** `python3 AUDIT/probes_V1c/C-009.py` (خروجی خام `AUDIT/probes_V1c/C-009.out`) — import مستقیم توابع واقعی، بدون شبکه:
+- (۱) JSON واقعی Termux با ۴٪ و `"plugged": "UNPLUGGED"` → parser خروجی داد `{'percentage': 4, 'plugged': True}`؛ سپس `hardware_preflight(continuous=True)` → **`action=PROCEED`** درحالی‌که کنترل بولی واقعی (`plugged: False`، ۴٪) → `PAUSE (CONTINUOUS_BATTERY_BELOW_5PCT)`. همچنین `"plugged": "false"` → True.
+- (۲) با booleans درست (unplugged=False؟ خیر: `plugged=False`، ۱۰٪، حالت nightly): preflight درست `SKIP_NIGHTLY (BATTERY_BELOW_15PCT)` داد، اما `run_phase1` → **`status=COMPLETE` با ۲ فراخوانی fetch واقعی و ۱ ردیف ingest** — هیچ skipی رخ نداد.
+- (۳) `read_battery` با runner جعلی rc=1 + stdout معتبر → JSON parse شد (`{'percentage': 3, 'plugged': True}`)؛ returncode خوانده نشد.
+- `CLAIMS_REPRODUCED=True`.
+- **فرمت دستگاه:** ممیز گفته بود «احراز نشده». من با منبع مستقل احراز کردم که `plugged` در خروجی termux-battery-status **رشته** است با مقادیر UNPLUGGED/PLUGGED_AC/PLUGGED_USB/PLUGGED_WIRELESS (مستندات بستهٔ gotermux که نوع فیلد را `Plugged string` با همین مقادیر معرفی می‌کند و با پیاده‌سازی BatteryStatus در termux-api منطبق است) [منبع: pkg.go.dev/github.com/hugmouse/gotermux]. پس مسیر مضر (Parser→True برای دستگاه unplugged) روی دستگاه واقعی با termux-api فعال است. شاهد نهایی از خود دستگاه با دستور فقط‌خواندنی `termux-battery-status` تکمیلی می‌ماند (نسخهٔ termux-api روی گوشی مالک می‌تواند فرق کند، هرچند بدبینانه‌ترین حالت رشته است).
+
+**حکم و دلیل:** **تأیید** (هر سه ادعا + پین تست). شدت مستقل = S1 هم‌راستای ممیز: حفاظت W.6 در قالب واقعی دستگاه **معکوس** عمل می‌کند (به‌جای pause/skip، اجرای برداشت طولانی روی باتریٔ بحرانی شارژنشده) و پیامد آن خاموشی احتمالی میان‌نوشتن و فشار بر SQLite/بازیابی است — اختلال جدی در حفاظت/بازیابیِ مسیر برداشت. دو قید صداقت: (الف) اگر termux-api نصب نباشد، `read_battery` → None → «skip نکن» (W.6) — یعنی مسیر مضر به نصب‌بودن termux-api مشروط است؛ (ب) بخش returncode اثر عملی محدودتری دارد (stdoutِ معتبرِ battery-shape با خروج غیرصفر نادر است) و آن را S3/سندی جداگانه می‌دانم — اما دو پایهٔ اول S1 را تشکیل می‌دهند.
+
+**علت ریشه‌ای:** سه لایه: (۱) مدل قرارداد در APEX_GEN5.md:17278 خود مبهم است — «`plugged` (truthy if charging)» انگاشته که Termux boolean می‌دهد، درحالی‌که رشتهٔ enum است؛ کد همان مدل نادرست را literal پیاده کرده (`bool()`). (۲) در runner فریز، واژگان action سه‌تایی است (PROCEED/PAUSE/SKIP_NIGHTLY) اما `run_phase1` فقط دو‌تایی طراحی شده: «PAUSE یا ادامه»؛ SKIP_NIGHTLY هرگز در نقشهٔ اجرا ترجمه نشده. (۳) در wiring، `read_battery` قرارداد «معتبر فقط با خروج موفق» را enforce نکرده.
+
+**اثر مستقیم:** در حالت continuous با باتری <۵٪ (طراحی: PAUSE) → برداشت ادامه می‌یابد؛ در nightly با <۱۵٪ (طراحی: SKIP) → برداشت کامل اجرا و سلول‌ها COMPLETE علامت می‌خورند (وضعیت COMPLETE اشتباه در progress/status هم می‌نشیند چون واقعاً fetch شده، نه به‌خطای گزارش — ولی نسبت به نیت W.6 شب‌ skip این EN عملیات ممنوع بوده).
+
+**اثرات ثانویه و تعاملات (بالادست/پایین‌دست):**
+- بالادست: نصب termux-api (شرط فعال‌شدن)، سیاست W.6، و این واقعیت که service.run همان preflight را دوباره می‌سنجد (اصلاح در service پوشش مسیر production است اما مسیر مستقیم runner — مثلاً تست/RESEARCH — همچنان آسیب‌پذیر می‌ماند).
+- پایین‌دست: خاموشی احتمالی میان‌رای SQLite در برداشت چندساعته (بازیابی تحت فشار — با ISSUE-077 مرتبط است اما هویت/هش raw دگرگون نمی‌شود؛ cursor دوام دارد و Phase 1 resume می‌کند)؛ کیفیت دادهٔ تحویلی به آموزش E11 اگر run در برق ناپایدار COMPLETE شود؛ status/Telegram گزارش COMPLETE برای شبی که باید SKIPPED می‌شد.
+- تعامل: C-011 (گزارش پروگرس) و C-014 (resume بدون recheck) مجموعهٔ «بهره‌برداری برداشت» را کامل می‌کنند؛ K-020 (empty-page → COMPLETE بدون verifier) مستقل اما هم‌خانواده.
+
+**نسبت با قرارداد و تصمیم‌ها:** `APEX_GEN5.md:17278`: «Hardware preflight (easy thresholds): pause if free disk < 512 MB. Nightly auto skip only if battery readable and < 15% and unplugged. Continuous pause only if < 5% and unplugged. Missing battery API → do not skip. Battery JSON, if present, is Termux termux-battery-status: fields percentage (number) and plugged (truthy if charging). Do not invent a percentage when the API is absent.» — حق با ممیز است: (الف) نسبت به *نیت* این بند («skip زیر ۱۵٪ unplugged»)، هر دو نقص نقض مستقیم‌اند؛ (ب) نسبت به *حرف* بند («truthy if charging»)، مدل قرارداد با قالب واقعی Termux ناسازگار است و کد از حرف پیروی کرده — یعنی قرارداد هم نیازمند اصلاح سندی است (نگاشت «charging ⇔ plugged ∈ {True, "true", 1} یا startswith("PLUGGED")»). تصمیم مؤخری در DECISION_LOG پیدا نکردم که این را باطل یا تغییر کند (D1–D61 دربارهٔ battery تصمیمی ندارند).
+
+**فریز و راه‌حل بیرون از فریز:** `apex/research/bootstrap.py` **فریز است** (اصلاح parser/runner فقط با حکم مالک). راه‌حل بیرون‌از‌فریز در لایهٔ service موجود است: (الف) نگاشت صریح plugged در `read_battery` (bootstrap_service.py — غیرفریز) پیش از تحویل به runner: مقدار به True/False/None نرمال شود (UNPLUGGED→False، PLUGGED_*→True، boolean پاس‌-through، هر چیز دیگر→None با لاگ)؛ این تنها نقطهٔ ورود واقعی Termux است و runner همیشه mapping سالم می‌گیرد. (ب) مدیریت SKIP_NIGHTLY در `BootstrapService.run` (غیرفریز): اگر result preflight نهایی SKIP_NIGHTLY بود، اجرای run_phase1 صدا زده نشود و status گزارش «SKIPPED_NIGHTLY» شود — در عمل همان اثر را بدون دست‌زدن به فریز می‌دهد. قید: مسیر «فراخوانی مستقیم runner» بدون service همچنان نادرست می‌ماند و تست‌های فعلی که رفتار فریز-نادرست را پین کرده‌اند برای تصحیح نهایی نیازمند حکم مالک‌اند.
+
+**گزینه‌های اصلاح:**
+- الف) اصلاح فریز با حکم مالک: `plugged` با نگاشت صریح enum/bool و عبور SKIP_NIGHTLY از run_phase1 (status جدید «SKIPPED» — نه COMPLETE — با checkpoint دست‌نخورده). اثرات جانبی: تست‌های 79–81 و 312–326 باید بازنویسی شوند (همان‌ها امروز رفتار نادرست را پین کرده‌اند)؛ هیچ هش/هویت/کش اثر نمی‌گیرد؛ بدون مهاجرت DB.
+- ب) فقط لایهٔ wiring (غیرفریز، بدون حکم مالک برای فریز): نگاشت صریح در `read_battery` + گیت SKIP_NIGHTLY در `BootstrapService.run`. اثر جانبی: سیاستسازی در لایهٔ wiring (پیش‌رمض CP-10/CP-11/CP-12/CP-13 است که دقیقاً برای همین کار طراحی شده)؛ رفتار تست‌های واحد runner فریز دست‌نخورده می‌ماند؛ اما تناقض runner-مستقیم باقی است و باید مستند شود.
+- پ) هر دو.
+
+**پیشنهاد من:** ب را فوری (بدون لمس فریز، همان‌جا که production قرار دارد `run_apex.py bootstrap` را می‌خواند) و الف را با حکم مالک در اولین پنجرهٔ تغییر فریز دنبال کنید؛ ضمناً متن 17278 قرارداد را با قالب واقعی Termux صریح کنید. تست‌های پین‌کنندهٔ رفتار نادرست را در همان حکم مالک اصلاح کنید.
+
+**آزمون پذیرش و رگرسیون:** پذیرش: چهار سناریوی ممیز — (۱) ۴٪/UNPLUGGED در continuous ⇒ PAUSE (بعد از اصلاح wiring: `read_battery` خروجی False بدهد و preflight PAUSE شود)؛ (۲) ۱۰٪/False در nightly ⇒ هیچ فراخوانی fetch (`fetch_calls==0`) و status گزارش‌شده SKIPPED_NIGHTLY (نه COMPLETE)؛ (۳) plugged واقعی ⇒ ادامهٔ عادی؛ (۴) command ناموفق ⇒ battery=None (skip نکن). رگرسیون: `python3 -m pytest -q -p no:cacheprovider tests/unit/test_research_bootstrap.py tests/unit/test_ops_bootstrap_service.py` — پس از گزینهٔ ب، تست‌های موجود runner-فریز سبز می‌مانند؛ تست جدید wiring برای نگاشت plugged و شمارش fetch در حالت SKIP لازم است.
 
 
 
@@ -208,3 +250,81 @@ _(پس از راستی‌آزمایی هر ردیف، بخش دوازده‌سر
 
 
 
+
+
+
+### C-011 — درصد پیشرفت و ETA «بوت‌استرپ» فاقد مبنای واقعی است
+
+**ادعای ممیز (نقل کوتاه):** «`percent_complete` با مخرج فرضی `cells*8` (۱۴۰ سلول ⇒ هر ۸ صفحه یک سلول) محاسبه می‌شود درحالی‌که صفحات واقعی بر اساس جاری‌بودن `close_ms` کار می‌کنند؛ برای سلولی مانند 1m (بیش از ۸ صفحه) با رسیدن به ۱۱۲۰ صفحه، ۱۰۰٪ اعلام می‌شود درحالی‌که سلول‌ها pending هستند. `eta().measured` نیز نیازمند گذشت زمان از command('start') است و بدون آن `NO_MEASUREMENT_YET`» (`apex/research/bootstrap.py`؛ `apex/ops/bootstrap_service.py:1345–1383`؛ `scripts/run_apex.py:577–604`؛ شدت S2).
+
+**آنچه خواندم:**
+- `apex/research/bootstrap.py:1–438` (کامل، **فریز**): در `progress()`، `percent_complete = min(100.0, 100 * pages_fetched / (len(cells) * 8))` تنها شاخهٔ وقتی است که `pages_fetched > 0` — و **نکتهٔ بدتر: وقتی هنوز هیچ صفحه‌ای fetch نشده، تابع به‌جای ۰٪، ۱۰۰٪ برمی‌گرداند**. `pages_fetched` فقط یک شمارندهٔ درون‌حلقه (`+= 1` به‌ازای هر فراخوان fetcher) است و هرگز به «سلول تکمیل‌شده» تبدیل نمی‌شود؛ مخرج واقعی هر سلول (تعداد صفحات تا امروز) هیچ‌جا محاسبه نمی‌شود. با DEEP_START ≈ ۷ هفته، سلول 1m تقریباً ۱۴۴ صفحهٔ ۱۰۰۰تایی می‌خواهد در برابر «۱» صفحهٔ برآوردشدهٔ فرمول — انحراف سیستماتیک. `eta()` نیز `measured=True` فقط وقتی می‌دهد که `command("start")` ساعت را ثبت کرده باشد؛ پیش از آن `basis=NO_MEASUREMENT_YET` و `eta_seconds=None`.
+- `apex/ops/bootstrap_service.py:1345–1383` (غیرفریز): `status_text()` همان `runner.progress()["percent_complete"]` را در قالب ««N% — current=…»» بدون هیچ بازچکشی در پیام وضعیت می‌گذارد؛ همان اعداد در `progress()/eta()` گزارش service و سپس در `_status` (`scripts/run_apex.py:577–604`) و اعلان‌های Telegram نشسته‌اند.
+- تست‌های unit فعلی همان مخرج `len(cells)*8` را پین می‌کنند (مثلاً حساب `pages_fetched = cells * 8 / 2 ⇒ 50.0`)، یعنی ناسازگاری با صفحه‌بندی واقعی از سمت تست‌ها هم سنجیده نشده است.
+
+**بازتولید:** `python3 AUDIT/probes_V1c/C-011.py` (خروجی خام `AUDIT/probes_V1c/C-011.out`; import مستقیم از کد واقعی، بدون شبکه):
+- (الف) runner تازه، بدون هیچ صفحه و چک‌پوینت: `current_cell=None pages_fetched=0 → percent_complete=100.0` — اعلام «کامل» پیش از هر کاری.
+- (ب) میان‌راه با `pages_fetched=1120 (=140*8)`: **`percent_complete=100.0`** درحالی‌که `pending_cells()` برابر `140/140` است؛ با ۵۶۰ صفحه دقیقاً ۵۰٪ — کاملاً متناسب با فرمولِ مصنوعی و نه واقعیت.
+- (ج) ETA: پیش از `command("start")` → `basis=NO_MEASUREMENT_YET measured=False eta_seconds=None`؛ حتی با ۱۰ صفحهٔ fetch‌شده اما startِ نشده باز `measured=False`؛ پس از `command("start")` → `measured=True` و seconds_per_page محاسبه می‌شود — یعنی سازوکار اندازه‌گیری سالم است اما به شروعِ فرمانی گره خورده.
+- `CLAIM_REPRODUCED=True`.
+- قید صداقت دربارهٔ بخش «سلول 1m»ی ادعا: نمی‌توان گفت دقیقاً «در ۱۱۲۰ صفحه به حالت سلول ۱m رسیده‌ایم» (ترتیب سلول‌ها/پیل‌های page کامکنی است)؛ ادعای محکم این است که در هر ترکیبِ سلولی با بیش از ۱۱۲۰ صفحهٔ تجمیعی، گزارش ۱۰۰٪ در حالی‌ست که تا پایان راه مانده — همان‌چیزی که probe نشان داد.
+
+**حکم و دلیل:** **تأیید** (هر سه ادعا). شدت مستقل = S2 هم‌راستای ممیز: نه نقض لجر/هویت است و نه اثر مستقیم بر trade (این Phase 1 بوت‌استرپ تحقیقاتی است، نه مصوبی در مسیر اجرا)؛ اما داشبورد بهره‌بردار (وضعیت در Telegram و `--status` در run_apex) گزارشِ گمراه‌کننده می‌دهد و می‌تواند بر تصمیم‌های بهره‌برداری (انتظار «چقدر مانده»، برنامهٔ دستکاری شبانه، نجابتِ سیاست NIGHTLY در W.9 گام‌های بعدی) اثر بگذارد — در راستای تعریف S2 در CALIBRATION.md. بخش «۱۰۰٪ برای runner تازه» از دید من هم‌خانوادهٔ عیب نیست، همان عیب است (همان گیت `pages_fetched > 0` که معکوسش را پنهان می‌کند).
+
+**علت ریشه‌ای:** «len(cells) × 8» در بازنویسی CP-2 به‌عنوان تقریب کفّیِ بوت‌استرپِ deep (≈۷ هفته) برای ده نماد × چهارده تایم‌فریم طراحی شد و در runner فریز منجمد ماند؛ هیچ شمارنده‌ای به تعداد سلول‌های تکمیل‌شده یا به «صفحات واقعی لازم تا امروز برای هر سلول» متصل نشده است. دو علت دامن‌زننده: (۱) progress فقط جمع صفحات fetch‌شده را می‌شمرد و پایان سلول‌ها (به checkpoint) گره نخورد؛ (۲) ETA فقط از `started_at`ِ command("start") سرعت می‌خواند و از checkpointهای این‌بار resume چیزی به estimated-pace اضافه نمی‌کند — این مقررات در کد مستند نیست.
+
+**اثر مستقیم:** خطای سیستماتیک در هر سطحی که `runner.progress()["percent_complete"]` بدون reinterpretation عرضه می‌شود: `_status` در `run_apex.py:577–604`، `status_text()` در service و اعلان‌های Telegram مربوط. نتیجهٔ عملی برای مالک: «۹۵٪ تمام است» به‌معنای واقعی «۹۵ درصدِ سقف مصنوعی ۸×N صفحه گذشته است» است — در ریزترین تایم‌فریم‌ها ممکن است کمتر از یک‌ششمِ راه واقعی سپری شده باشد.
+
+**اثرات ثانویه و تعاملات:** بالادست: ترکیب/تعداد سلول‌ها (محیط فعلی = ۱۴۰) — اگر لیست تغییر کند بدون بازنگری سقف، خطا باز هم بدتر/بهتر می‌شود. پایین‌دست: هیچ اثر مستقیمی بر دادهٔ برداشت‌شده در SQLite (rows همان‌اند) و هیچ اثر مستقیمی بر اجرای بعد از Phase 1؛ اثر ثانویه روان‌شناسی/بهره‌برداری است: اعتماد به «٪» برای تصمیم‌های شبانه، برآوردهای نادرست برای CP-10 به بعد اگر به متن‌های status اعتماد شود. تعامل با K-020: اگر سلول خالی نیز بتواند COMPLETE شود، حتی پس از اصلاح فرمول باید «بر اساس سلول‌های کامل‌شده در checkpoint» حساب کنیم نه بر اساس صفحات.
+
+**نسبت با قرارداد و تصمیم‌ها:** `APEX_GEN5.md` در W.3/W.7 گزارش‌دهی بهره‌برداری را الزام گرفته اما برای صحت عددی «درصد/ETA» متن normative مستقیم ندارد. معیار من برای حکم این بود: «هر گزارش مبتنی‌بر باید نمایانگر مبنای خود باشد» — و امروز این‌طور نیست (به‌خصوص ۱۰۰٪ برای runner تازه). در DECISION_LOG هم تصمیم اسمی برای نرمال‌کردن تخمین صفحات ثبت نشده (D50/… تنها مسائل trade را پوشش می‌دهد). خود ETA در نبود start درست `NO_MEASUREMENT_YET` می‌دهد و این رفتار با منظور طراحی سازگار است؛ مشکل درصد است نه ETA.
+
+**فریز و راه‌حل بیرون از فریز:** علت اصلی در توابع فریز `progress/eta` در `apex/research/bootstrap.py` است. دو مسیر بیرون‌از‌فریز: (الف) در `bootstrap_service.py`، یک wrapper که خروجی runner را با `len(completed)/len(cells)` (از checkpoint) غنی‌سازی و legend صادق «cells-based vs runner-pages» در وضعیت‌ها بگذارد — می‌تواند فوراً در CP-10… اعمال شود؛ (ب) در لایهٔ `run_apex.py:577–604`، نمایش با notation مشخص («raw_runner_pages=…») برای انسجام گزارش CLI.
+
+**گزینه‌های اصلاح:**
+- الف) (با حکم مالک): اصلاح فریز به محاسبات مبتنی‌بر سلول‌کامل (‍`completed_cells / cells`) + تخمین صفحات لازم واقعی از DEEP_START تا now به‌ازای هر TF؛ ساده‌ترین root fix ولی contract گزارش‌دهی و تست‌های فعلی پین‌کننده را می‌شکند.
+- ب) (خارج از فریز، فوری): در `bootstrap_service.py` (و در صورت نیاز `_status`) نمایش cell-based در اولویت و runner-pages به‌صورت شفاف‌نامه با legend؛ تست‌های فعلی runner سبز می‌مانند.
+- پ) هر دو: ب الآن، الف در پنجرهٔ مالک.
+
+**پیشنهاد من:** اکنون ب — شفاف‌سازی در service (غیرفریز) به‌همراه legend — و در پنجرهٔ حکم مالک، الف برای یکدست‌سازی root. هر تصمیم نهایی باید در DECISION_LOG با نام «progress-basis» ثبت شود.
+
+**آزمون پذیرش و رگرسیون:** پذیرش پس از اصلاح: (۱) runner تازه ⇒ خروجی به‌کاربر «۰٪ (fresh)» نه ۱۰۰٪؛ (۲) در میانهٔ deep harvest با صفحات تجمیعی بالا اما سلول‌های تکمیل‌نشده، عدد نمایش‌داده‌شده معطوف به `completed/cells` باشد (با legend نه خام جایگزین)؛ (۳) بدون start، `measured=False/NO_MEASUREMENT_YET` حفظ شود. رگرسیون: `python3 -m pytest -q -p no:cacheprovider tests/unit/test_research_bootstrap.py tests/unit/test_ops_bootstrap_service.py` (پس از گزینهٔ ب همین‌ها باید سبز بمانند) + تست service جدید که سه حالت fresh/mid/complete را روی متنِ نهایی (با legend) چک کند.
+
+---
+
+### C-014 — پس از resume، بازبینی سلامت (recheck) بلافاصله اعمال نمی‌شود
+
+**ادعای ممیز (نقل کوتاه):** «contract می‌گوید پس از وقفهٔ بیش از ۲۴ ساعت، قبل از resume باید health check روی دادهٔ دانلودشده انجام شود، اما `command("resume")` فقط یک فلگ `health_recheck.required=True` برمی‌گرداند و `paused_at` را بلافاصله پاک می‌کند؛ هیچ persist، هیچ گیت در run_phase1 و هیچ recheck واقعی در مسیر resume وجود ندارد. تست فعلی فقط همان فلگ را می‌سنجد» (`apex/research/bootstrap.py`؛ `apex/ops/bootstrap_service.py:1259–1285`؛ `tests/unit/test_research_bootstrap.py:146–157`؛ شدت S2؛ «= G-005»؛ breadcrumb D55).
+
+**آنچه خواندم:**
+- `apex/research/bootstrap.py:374–404` (command + `health_recheck_required`): هنگام resume پس از وقفهٔ بیش‌از ۲۴h، در verdict کلید `health_recheck = {'required': True, 'paused_hours': …, 'threshold_hours': 24.0}` گذاشته می‌شود و **در همان فراخوان** `paused=False` و `paused_at=None` می‌شود — سندِ باقی‌مانده از «لازم بود recheck» صفر می‌شود؛ بلافاصله بعد `health_recheck_required()` جواب می‌دهد `{'required': False, 'reason': 'NO_PAUSE_RECORDED'}`. هیچ دادهٔ ماندگاری (DB/state) از نیاز به recheck باقی نمی‌ماند.
+- `run_phase1` (246–346) هیچ گیتی برای recheck ندارد: در هر سلول pending، fetch ادامه می‌یابد، فارغ از این که verdictِ resume «required» بوده یا نه.
+- `apex/ops/bootstrap_service.py:1259–1285` (غیرفریز): `command` متن را به runner می‌سپارد و خروجی verdict را فقط از طریق `_command_line` به‌صورت متن (شامل «health_recheck=…») گزارش می‌کند؛ هیچ اقدام enforceکننده (مکث، درخواست تأیید، یا قرار دادن gate جلوی run بعدی) رخ نمی‌دهد.
+- تست unit در بازهٔ استناد (`tests/unit/test_research_bootstrap.py:146–157`): فقط `verdict["health_recheck"]["required"]` را assert می‌کند؛ هیچ آزمونی برای «پاک‌شدن paused_at»، «پایان‌یافتن مستقیم run پس از resume» یا اجرای recheck نیست — دقیقاً همان‌طور که ممیز گفت.
+
+**بازتولید:** `python3 AUDIT/probes_V1c/C-014.py` (خروجی خام `AUDIT/probes_V1c/C-014.out`; fetcher شمارنده‌دار بدون شبکه):
+- pause در epoch واقعی، سپس +۲۵h ⇒ `health_recheck_required() = {'required': True, 'paused_hours': 25.0, 'threshold_hours': 24.0}` (سازگار با contract).
+- `command("resume")` → `accepted=True, health_recheck={'required': True, ...}`؛ بلافاصله بعد: `health_recheck_required() = {'required': False, 'reason': 'NO_PAUSE_RECORDED'}` و `state.paused=False, paused_at=None` — همان‌طور که ممیز گفت، فلگ advisory است و مدرک پاک می‌شود.
+- `run_phase1` بلافاصله پس از resume: **`status=COMPLETE` با ۲ فراخوانی fetch واقعی** — هیچ recheck، هیچ توقف، هیچ الزام به عمل قبل از restart برداشت.
+- `CLAIM_REPRODUCED=True`.
+
+**حکم و دلیل:** **تأیید**. شدت مستقل = S2 هم‌راستای ممیز: نه نقض لجر/هویت است و نه اثر مستقیم بر مسیر trade (این Phase 1 bootstrap تحقیقاتی است)؛ اما یک حکم بهره‌برداری صریح در contract (W.8-3) است که عملاً به «اشاره‌کردن و رد شدن» سقوط کرده و به گزارش متنیِ مالک محدود مانده — وقفهٔ طولانی بدون recheck وارد برداشتِ بالقوه stale می‌شود و بدون persistِ «لازم بود»، تحلیل بعدی دشوار است. در راستای تعریف S2 در CALIBRATION.md.
+
+**علت ریشه‌ای:** در contract حکم ثبت شده اما lifecycle «resume فقط وقتی معتبر است که recheck انجام شده» مهندسی نشده: (۱) `paused_at` بی‌درنگ پاک می‌شود و ردپای «لازم بود» از بین می‌رود؛ (۲) `health_recheck` در ریشهٔ فرمان‌ها (start/pause/resume/stop) نتیجهٔ *اعلامی* است نه *مهار رفتاری*؛ (۳) service — تنها پیام‌رسان مالک — فقط متن گزارش می‌سازد و رفتار را تغییر نمی‌دهد؛ (۴) D55 صراحتاً وضع advisory را توصیه کرده و هدفش «حفاظت از مسیر» بوده، ولی در عمل دیگر هیچ چیزی (نه فریز نه wiring) از انجام‌نشدن recheck جلوگیری نمی‌کند.
+
+**اثر مستقیم:** هر resume پس از گپ >۲۴h بدون هیچ اقدام واسط وارد مسیر برداشت ادامه‌دار روی دادهٔ بالقوه stale می‌شود؛ سیگنال «باید recheck» فقط در یک پیام متنی ممکن است به مالک برسد (و آن هم به wiring واقعی gateway↔service بستگی دارد — همان موضوعی که با G-005 نام‌گذاری شده و در این نشست فقط اشاره می‌شود).
+
+**اثرات ثانویه و تعاملات:** بالادست: مسیر زندهٔ control (telegram/toobit ↔ service) که خود دامنهٔ G-005 است. پایین‌دست: کیفیت داده‌ای که در آموزش‌های بعدی (E11 و فراتر) مصرف می‌شود می‌تواند به‌صورت خانوادگی از batches stale تأثیر بپذیرد؛ این معضل به trade execution (Paper/Ledger) منتقل نمی‌شود اما به «دستاورد بوت‌استرپ» لطمه می‌زند. تعامل با K-020: وقتی empty-page → COMPLETE هم ممکن است، در مدلی که recheck می‌خواهد باز هم verifier نداریم — هر دو به‌خانوادهٔ «health نامطمئن در harvest» برمی‌گردند.
+
+**نسبت با قرارداد و تصمیم‌ها:** `APEX_GEN5.md:17316` (W.8-3): «After pause duration exceeds 24 hours, before resume, re-run health check on downloaded data (detect stale feeds, re-sync as needed).» حق با ممیز است: (۱) «before resume» صریح است و پیاده‌سازی فعلی عملاً «اعلام و عبور» می‌کند؛ (۲) contract نمی‌گوید کدام duty باید recheck را اجرا کند (runner، service، یا اپراتور) — از این رو که تصمیم‌گیری در D55 به advisory برگشت، وجود خود این تناقض بین W.8-3 و D55 بخشی از ریشه است؛ (۳) D55 با اثرِ محضِ پاک‌شدن `paused_at` (که من در probe دیدم) از نظر عملی case را از advisory به «بدون اثر» می‌برد و این در روح تصمیم هم نیست. تطبیق معنادار W.8-3 در وضع فعلی اجرایی نیست.
+
+**فریز و راه‌حل بیرون از فریز:** علت اصلی در `apex/research/bootstrap.py` (فریز). راه‌حل بیرون‌از‌فریز در `BootstrapService` (غیرفریز) ممکن است: (الف) service در `command` پس از دیدن verdict «recheck_required» یک state جانبی (در `bootstrap_state` SQLite یا فایل کنار state) ثبت کند و تا وقتی «تأیید مالک» یا «اتمام recheck» نیامده، فراخوانی بعدی `run` را با status «PENDING_RECHECK» fail-closed پاسخ دهد؛ (ب) پیام صریح به مالک («این resume بدون recheck انجام شد؛ برای اعتبار، فلان فرمان را بزن») که put-out در همان متن service قابل پیاده‌سازی است. محدودیت: اگر فریز عوض نشود، resumeهای مستقیم runner اصلاً تحت این gate نیستند و باید مستند شوند.
+
+**گزینه‌های اصلاح:**
+- الف) (با حکم مالک): در فریز، resume را مشروط به `ack_health_recheck=True` (یا فرمان جداگانهٔ «resume_confirm») کنید؛ حکم W.8-3 از advisory به required ارتقا می‌یابد و کد تغییر می‌کند اما قرارداد درست‌تر می‌شود.
+- ب) (خارج از فریز، fail-closed): در service، state «needs_recheck_since» پایدار کنید؛ آن‌را فقط در دو راه پاک کنید: (۱) اتمام صریح یک job healthcheck، (۲) تأیید متنی مالک. run تا پاک‌شدن state اجازهٔ شروع Phase 1 ندارد.
+- پ) هر دو.
+
+**پیشنهاد من:** اکنون ب (fail-closed در `bootstrap_service.py`، بدون لمس فریز، با storage سبک مشترک) + ثبت در DECISION_LOG که «W.8-3 در عمل required است»، و در پنجرهٔ حکم مالک گزینهٔ الف برای یکپارچگی runner.
+
+**آزمون پذیرش و رگرسیون:** پذیرش پس از اصلاح: (۱) resume پس از وقفهٔ ۲۵h در service مستقیماً به fetch منتهی نشود (fail-closed با PENDING_RECHECK یا معادل)؛ (۲) پاک‌شدن فوراً `paused_at` باعث نشود state «needs_recheck» از دست برود — آن باید در service پایدار بماند و با یکی از دو مسیر پاک شود؛ (۳) بدون تأیید/recheck، run بعدی هیچ فراخوانی fetch انجام ندهد (`fetch_calls==0`). رگرسیون: `python3 -m pytest -q -p no:cacheprovider tests/unit/test_research_bootstrap.py tests/unit/test_ops_bootstrap_service.py` (تست‌های فعلی فریز زیر گزینهٔ ب نباید تغییر کنند؛ پس از حکم مالک، آزمون advisor-f در unit‌ها بازنویسی می‌شود) + تست service جدید برای سناریوی resume→run blocked → confirm → run resumes.
