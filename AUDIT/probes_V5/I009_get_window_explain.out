@@ -1,0 +1,14 @@
+SQLite 3.40.1; repository CH4_DDL; :memory: only
+repository secondary indexes on market_observation before probe index: [(0, 'sqlite_autoindex_market_observation_1', 1, 'pk', 0)]
+without hypothetical device index:
+(2, 0, 0, 'CO-ROUTINE (subquery-1)')
+(8, 2, 0, 'SCAN market_observation')
+(42, 2, 0, 'USE TEMP B-TREE FOR ORDER BY')
+(63, 0, 0, 'SCAN (subquery-1)')
+(84, 0, 0, 'USE TEMP B-TREE FOR ORDER BY')
+with temporary in-memory hypothetical composite index:
+(2, 0, 0, 'CO-ROUTINE (subquery-1)')
+(9, 2, 0, 'SEARCH market_observation USING INDEX idx_market_device_pit_window (symbol=? AND timeframe=? AND candle_status=? AND open_time<?)')
+(62, 2, 0, 'USE TEMP B-TREE FOR ORDER BY')
+(83, 0, 0, 'SCAN (subquery-1)')
+(104, 0, 0, 'USE TEMP B-TREE FOR ORDER BY')

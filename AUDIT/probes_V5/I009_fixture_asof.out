@@ -1,0 +1,16 @@
+CP4 AS_OF=2026-01-15T14:00:00Z (1768485600000)
+  AS_OF_MS constant=1768536000000 delta_ms=50400000
+  fixture=lcg_window(30), used by CP4 E07 emission fixture; n=30
+  first=2026-01-16T04:00:00+00:00
+  last=2026-01-17T09:00:00+00:00
+  timestamp comparison: before=0, equal=0, after=30
+  obs_window preserves timestamps: True; after_as_of=30
+
+CP5 AS_OF=2026-01-15T14:00:00Z (1768485600000)
+  AS_OF_MS constant=1768485600000 delta_ms=0
+  fixture=BARS=lcg_window(60), used by CP5 E10-E12 fixtures; n=60
+  first=2026-01-15T14:00:00+00:00
+  last=2026-01-18T01:00:00+00:00
+  timestamp comparison: before=0, equal=1, after=59
+  obs_window preserves timestamps: True; after_as_of=59
+  e11_candles preserves future ts/as_of: 59 ts; 59 as_of

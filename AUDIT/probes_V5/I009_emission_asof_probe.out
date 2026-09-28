@@ -1,0 +1,11 @@
+CP4 stated AS_OF=2026-01-15T14:00:00Z (1768485600000); event_count=6
+  counts_by_engine={'E07': 1, 'E08': 1, 'E09': 4}
+  E07: event_time_min=2026-01-17T09:00:00+00:00; event_time_max=2026-01-17T09:00:00+00:00; event_time_after_AS_OF=1/1; availability_after_AS_OF=1/1
+  E08: event_time_min=2026-01-16T15:00:00+00:00; event_time_max=2026-01-16T15:00:00+00:00; event_time_after_AS_OF=1/1; availability_after_AS_OF=1/1
+  E09: event_time_min=2026-01-17T09:00:00+00:00; event_time_max=2026-01-17T09:00:00+00:00; event_time_after_AS_OF=4/4; availability_after_AS_OF=4/4
+
+CP5 stated AS_OF=2026-01-15T14:00:00Z (1768485600000); event_count=6
+  counts_by_engine={'E10': 2, 'E11': 3, 'E12': 1}
+  E10: event_time_min=2026-01-18T02:00:00+00:00; event_time_max=2026-01-18T02:00:00+00:00; event_time_after_AS_OF=2/2; availability_after_AS_OF=2/2
+  E11: event_time_min=2026-01-18T01:00:00+00:00; event_time_max=2026-01-18T01:00:00+00:00; event_time_after_AS_OF=3/3; availability_after_AS_OF=3/3
+  E12: event_time_min=2026-01-18T01:00:00+00:00; event_time_max=2026-01-18T01:00:00+00:00; event_time_after_AS_OF=1/1; availability_after_AS_OF=1/1
