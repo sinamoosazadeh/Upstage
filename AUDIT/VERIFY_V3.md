@@ -10,7 +10,7 @@
 | K-006 | PARTIAL | S1 | S1 | Yes — core catalog/store frozen; non-frozen checked projection exists in producer | — | A — route every consumer through one lineage-checked final-observation projection |
 | K-007 | CONFIRMED | S2 | S2 | Yes — purge and raw_revision DDL are in frozen SQLiteStore | — | Single safe path: preflight/hold referenced rows with explicit owner-approved archival/retention policy; never disable FK |
 | K-008 | CONFIRMED | S2 | S2 | Yes — store frozen; non-frozen readers/training discovery can contain orphans | — | Single safe path: lineage-filter all non-frozen readers/discovery and refuse orphans consistently |
-| K-009 | PENDING | S1 | — | — | — | — |
+| K-009 | CONFIRMED | S1 | S1 | No — EngineContextProducer timeline cache is non-frozen; frozen engines unchanged | — | A — include all per-prefix MTF input identities and replay from earliest affected prefix |
 | K-010 | PENDING | S2 | — | — | — | — |
 | K-011 | PENDING | S1 | — | — | — | — |
 | K-012 | PENDING | S1 | — | — | — | — |
@@ -358,3 +358,41 @@ Apply A as a fail-closed consumer guard and request an owner decision for B. Do 
 
 #### Acceptance and regression tests
 Purge one unreferenced old raw row and assert every read path either returns a lineage-valid row or the same named refusal; no PaperRuntime/catalog path may expose it as verified. Training discovery must not count it, and `CELL_QUERY`/protocol hash/cache invalidation must be explicit. Also test a retained/revision-linked row (K-007), cutoff boundary, restart, and old market rows with missing/wrong raw hashes; preserve a durable report of coverage excluded by retention.
+
+### K-009
+
+#### Auditor claim (short quote)
+> “با تغییر HTF و پایهٔ ثابت، context دوباره ساخته می‌شود اما timeline همان `last_item` و state قبلی را می‌دهد؛ H4 از ۰٫۲۵ به −۰٫۸۵ عوض شد و خروجی گرم ۰٫۲۵ ماند.” — “With an HTF change and fixed base timeframe, context is rebuilt but the timeline returns the same `last_item` and prior state; H4 changed from 0.25 to −0.85 while the warm result remained 0.25.”
+
+#### What I read (files, line ranges, functions, callers)
+Read `EngineContextProducer.__init__` and `_timelines` (`apex/ops/engine_context.py:1773–1775`), `_frame_at` (`:2421–2442`), all of `feature_timeline` (`:2444–2549`), its runtime caller `prepare_engine_bundle` (`:2283–2318`), and `_compose_bridge_context` (`:1843–1856`). Runtime invokes `feature_timeline(..., incremental=True)`; the training call at `:3212` defaults to `incremental=False`, so I do not claim this exact cache hit was a completed training run. The cache is keyed only by `(symbol,timeframe)` and stores the base-window signatures plus history/μ/Σ/ATR/volatility state and `last_item`; equality tests only the supplied base-window signature prefix at `:2461–2470`, not the `_frame_at` dependencies or `dep_rows`. The H4/H1/M15 biases are read later at `:2507–2515`.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONDONTWRITEBYTECODE=1 python3 -B AUDIT/probes_V3/store_probes.py K-009`. Probe: `store_probes.py::k009`; raw result: `AUDIT/probes_V3/K-009.json`. The probe created 51 base 1h rows, 80 H4 rows, and 60 M15 rows in a temporary repository SQLiteStore. It ran the real async `feature_timeline` and real store/raw-lineage/window/correction methods. To isolate invalidation from native model correctness, it replaced `upstream_frame`, structure/confirmation, and E11 state-vector helpers in-process with deterministic synthetic functions; the H4 bias was derived from the actual last H4 close. Initial bias/trendiness were `0.25`/`1.0`. I then appended an available-by-`as_of` H4 correction, leaving all 51 base signatures unchanged. Warm incremental output reused the identical `last_item` and still reported H4 `0.25`, trendiness `1.0`; a fresh producer running the same real timeline function returned H4 `-0.85`, trendiness `0.0`. No native engine result, training artifact, or device evidence is claimed.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). The same base prefix, `as_of`, and code path produced warm and cold outputs that differ solely because an HTF revision changed. The test exercises the cache logic and real SQLite dependency reader; its synthetic engine functions limit conclusions to invalidation, not native indicator arithmetic or plan impact.
+
+#### Root cause
+The incremental timeline cache treats equality of base `MarketObservation` signatures as equality of the complete feature input. It stores no per-prefix H4/H1/M15 selected observation IDs, raw hashes, availability frontier, or dependency state. When all base signatures still match, `start == len(window)` returns the old `last_item` without re-reading dependencies, even though `_frame_at` would produce a different H4 state on a cold call.
+
+#### Direct impact
+A corrected HTF candle can leave a warm runtime timeline with stale bias, trendiness, and E11 normalization state while a cold recomputation sees the new revision. The probe showed `H4 bias=0.25` and `trendiness_raw=1.0` warm versus `−0.85` and `0.0` cold. This violates deterministic warm/cold parity for identical current store state.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, any required HTF version, availability, quality, or dependency row can change while the base prefix is unchanged. Downstream, `prepare_engine_bundle` uses the cached feature timeline for native evidence; stale bias affects E11 inputs/state and can flow into MTF/context, evidence, setup, forecast, and bridge projections. Runtime `prepare_engine_bundle` is incremental; training’s current call uses the cold default, so warm/cold training corruption was not observed. K-003 is a separate persisted BRIDGE_CONTEXT fingerprint defect; neither fix substitutes for the other. No real native plan or order was built.
+
+#### Contract and decisions
+`APEX_GEN5.md:943–960` requires all decision-relevant timeframe states to come from one `SnapshotBarrier` and one `as_of`; each TF tracks its own source snapshot, lookback, regime scope, and expiry/freshness, and a missing/insufficient required TF must downgrade or refuse. `:1110–1116` requires parent lineage back to raw to remain reconstructible. `PHASE2_DECISION_LOG.md:1046,1055,1060` records binding D35: a cell whose inputs changed is recomputed; the consumed-row hash includes cell bars plus prefetched HTF rows; any input mismatch means recompute, never partial reuse, and speedups require exact-parity tests. That D35 cache rule is specifically for training artifacts; I apply its input-identity/parity principle to this shared feature stream without claiming the probe exercised D35 cell-cache serialization. Precedence: a base-only warm hit cannot override a changed required timeframe under the shared PIT/MTF contract.
+
+#### Frozen status and non-frozen alternative
+**Not frozen at the defect site:** the incremental cache and producer are in non-frozen `apex/ops/engine_context.py`; no engine formula or frozen `apex/engines/**` code needs to change. The producer can key each prefix by the full consumed dependency signature or bypass the warm path whenever dependency identity is unavailable.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — dependency-aware incremental replay:** record, for every emitted base prefix, the exact PIT-selected input identity of each required timeframe (raw event/observation ID, content hash, availability, quality snapshot, timeframe, and relevant package/model versions). On mismatch, find the earliest affected prefix and replay all subsequent state; if exact invalidation boundaries are unavailable, clear the cell timeline and cold-recompute. Side effects: more signatures and storage in memory, more HTF reads/hash work, and reprocessing latency; downstream E11/evidence identities and snapshot/context outputs may change, so affected training/replay/cache artifacts must be regenerated and checked for identity collisions. **B — disable incremental reuse for multi-timeframe contexts:** cold-recompute every affected cell until a proven dependency signature is available. Side effects: increased runtime latency/CPU but simplest correctness fallback; no store migration.
+
+#### My recommendation
+Implement A with B as the fail-closed fallback. Invalidation must include selected raw revision and availability, not just OHLC values or the outer context fingerprint; replay state from the first changed dependency rather than replacing only the final bias.
+
+#### Acceptance and regression tests
+With an unchanged base window, correct each required HTF separately (H4, H1, M15) and assert warm incremental output equals a fresh cold producer at the same `as_of` for bias, trendiness, E11 vector, and downstream evidence. Also test newly available/deleted/missing HTF rows, availability-only changes, quality revision, a correction before and after the current prefix, and a changed base candle. Prove no stale cached `last_item`, history, μ/Σ, previous momentum, ATR history, or E04 stream survives an affected dependency; assert exact parity when all dependency identities are unchanged.

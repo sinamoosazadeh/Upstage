@@ -1,0 +1,20 @@
+{
+  "id": "K-009",
+  "probe": "k009",
+  "result": {
+    "base_signatures_unchanged": true,
+    "base_window_bars": 51,
+    "cold_timeline_h4_bias": -0.8499999999999943,
+    "cold_timeline_trendiness_raw": 0.0,
+    "corrected_event_id": "01a0e97e-2634-7ceb-a86a-bc74263046c6",
+    "h4_corrected_status": "CORRECTED",
+    "h4_target_open_time": "2026-01-11T20:00:00.000Z",
+    "h4_window_bars": 66,
+    "initial_h4_bias": 0.25,
+    "initial_trendiness_raw": 1.0,
+    "scope_note": "real feature_timeline/cache, SQLiteStore windows, raw lineage and correct_raw were run; synthetic upstream_frame/E11 projection helpers isolate cache behavior; this is not a native engine result or device data",
+    "warm_reused_same_last_item": true,
+    "warm_timeline_h4_bias": 0.25,
+    "warm_timeline_trendiness_raw": 1.0
+  }
+}

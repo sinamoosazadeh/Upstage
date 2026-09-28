@@ -466,8 +466,116 @@ async def k008() -> dict:
             await store.close()
 
 
+async def k009() -> dict:
+    import datetime as dt
+    from types import SimpleNamespace
+    import apex.ops.engine_context as ec
+
+    original_functions = {"upstream_frame": ec.upstream_frame,
+        "structure_projection": ec.structure_projection,
+        "structural_confirmation": ec.structural_confirmation,
+        "training_rule0": ec.training_rule0,
+        "compute_state_vector": ec.E11.compute_state_vector,
+        "vector_to_array": ec.E11.vector_to_array,
+        "mahalanobis_turbulence": ec.E11.mahalanobis_turbulence,
+        "ewma_update": ec.E11.ewma_update}
+    stack = {name: 1.0 for name in ec.E09.W_STACK_CORRECTED}
+    history_sources = tuple(ec.HISTORY_KEYS.values())
+    def synthetic_frame(raw_window, symbol, timeframe, **kwargs):
+        latest = raw_window[-1]
+        bias = float(latest.close) - 100.0 if timeframe == "4h" else (0.1 if timeframe == "1h" else 0.2)
+        return {"projection_refusals": [],
+            "volatility": {"states": [SimpleNamespace(atr14_wilder=1.0)]},
+            "vlt": SimpleNamespace(atr14_wilder=1.0, regime="NORMAL"),
+            "trend": {"bias": bias, "stack": dict(stack)},
+            "ic": {key: 0.1 for key in history_sources}}
+    def fake_state_vector(ic, history, previous_momentum):
+        return ({"momentum_state": 0.0}, 0.0)
+
+    ec.upstream_frame = synthetic_frame
+    ec.structure_projection = lambda *args, **kwargs: {"synthetic": True}
+    ec.structural_confirmation = lambda *args, **kwargs: True
+    ec.training_rule0 = lambda vector, *, turbulence: "RANGE"
+    ec.E11.compute_state_vector = fake_state_vector
+    ec.E11.vector_to_array = lambda vector: [0.0] * 8
+    ec.E11.mahalanobis_turbulence = lambda x, mu, sigma: 0.0
+    ec.E11.ewma_update = lambda mu, sigma, x: (mu, sigma)
+
+    def iso(value):
+        return value.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    async def collect(generator):
+        return [item async for item in generator]
+    with tempfile.TemporaryDirectory(prefix="v3-k009-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        try:
+            as_of_dt = dt.datetime(2026, 1, 12, 3, tzinfo=dt.timezone.utc)
+            as_of = iso(as_of_dt)
+            async def insert_series(timeframe, start, count, minutes, close_override=None):
+                ids = {}
+                for i in range(count):
+                    opening = start + dt.timedelta(minutes=i*minutes)
+                    closing = opening + dt.timedelta(minutes=minutes)
+                    close = Decimal(str((close_override or {}).get(i, "100.1")))
+                    obs = MarketObservation(symbol="BTCUSDT", timeframe=timeframe, open=Decimal("100"),
+                        high=Decimal("101"), low=Decimal("99"), close=close, volume=Decimal("10"), oi=None,
+                        timestamp=iso(opening), sequence=i+1, status="CLOSED", source="V3-SYNTHETIC",
+                        availability_time=iso(closing), oi_timestamp=None)
+                    ids[i] = await store.ingest_raw(obs, "MISSING")
+                return ids
+
+            h4_start = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+            h4_target_open = dt.datetime(2026, 1, 11, 20, tzinfo=dt.timezone.utc)
+            target_index = int((h4_target_open-h4_start).total_seconds() // (4*3600))
+            h4_ids = await insert_series("4h", h4_start, 80, 240,
+                {target_index: "100.25"})
+            await insert_series("15m", dt.datetime(2026, 1, 11, 12, tzinfo=dt.timezone.utc), 60, 15)
+            await insert_series("1h", dt.datetime(2026, 1, 10, tzinfo=dt.timezone.utc), 51, 60)
+
+            producer = ec.EngineContextProducer(store, environment="PAPER")
+            base_window = await producer.window("BTCUSDT", "1h", as_of, 301)
+            initial = await collect(producer.feature_timeline(
+                "BTCUSDT", "1h", base_window, incremental=True))
+            before = initial[-1]["ic"]["bias_per_TF"]["H4"]
+            before_trendiness = initial[-1]["ic"]["trendiness_raw"]
+            target_original = MarketObservation(symbol="BTCUSDT", timeframe="4h", open=Decimal("100"),
+                high=Decimal("101"), low=Decimal("99"), close=Decimal("99.15"), volume=Decimal("10"),
+                oi=None, timestamp=iso(h4_target_open), sequence=target_index+100,
+                status="CLOSED", source="V3-SYNTHETIC", availability_time=as_of, oi_timestamp=None)
+            corrected_id = await store.correct_raw(h4_ids[target_index], target_original,
+                "MISSING", "synthetic HTF correction", "V3-PROBE")
+            base_after = await producer.window("BTCUSDT", "1h", as_of, 301)
+            base_signatures_unchanged = [o.content_hash() for o in base_window] == [o.content_hash() for o in base_after]
+            warm = await collect(producer.feature_timeline(
+                "BTCUSDT", "1h", base_after, incremental=True))
+            cold_producer = ec.EngineContextProducer(store, environment="PAPER")
+            cold = await collect(cold_producer.feature_timeline(
+                "BTCUSDT", "1h", base_after, incremental=False))
+            current_h4 = await producer.window("BTCUSDT", "4h", as_of, 301)
+            return {"base_window_bars": len(base_window), "h4_window_bars": len(current_h4),
+                "h4_corrected_status": current_h4[-1].status,
+                "h4_target_open_time": iso(h4_target_open), "corrected_event_id": corrected_id,
+                "base_signatures_unchanged": base_signatures_unchanged,
+                "initial_h4_bias": before, "initial_trendiness_raw": before_trendiness,
+                "warm_timeline_h4_bias": warm[-1]["ic"]["bias_per_TF"]["H4"],
+                "warm_timeline_trendiness_raw": warm[-1]["ic"]["trendiness_raw"],
+                "warm_reused_same_last_item": warm[-1] is initial[-1],
+                "cold_timeline_h4_bias": cold[-1]["ic"]["bias_per_TF"]["H4"],
+                "cold_timeline_trendiness_raw": cold[-1]["ic"]["trendiness_raw"],
+                "scope_note": "real feature_timeline/cache, SQLiteStore windows, raw lineage and correct_raw were run; synthetic upstream_frame/E11 projection helpers isolate cache behavior; this is not a native engine result or device data"}
+        finally:
+            await store.close()
+            ec.upstream_frame = original_functions["upstream_frame"]
+            ec.structure_projection = original_functions["structure_projection"]
+            ec.structural_confirmation = original_functions["structural_confirmation"]
+            ec.training_rule0 = original_functions["training_rule0"]
+            ec.E11.compute_state_vector = original_functions["compute_state_vector"]
+            ec.E11.vector_to_array = original_functions["vector_to_array"]
+            ec.E11.mahalanobis_turbulence = original_functions["mahalanobis_turbulence"]
+            ec.E11.ewma_update = original_functions["ewma_update"]
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007, "K-008": k008}
+    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007, "K-008": k008, "K-009": k009}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}
