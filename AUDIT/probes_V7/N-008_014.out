@@ -1,0 +1,107 @@
+==============================================================================
+N-008  feed_touches accepts a level with instances=1, no swing/UTC proof
+==============================================================================
+  levels before: 4
+  after ONE feed_touches() call: levels=5 lid=lvl_106.72_6 instances=4 Q=Q2 fate=STRENGTHENED ltype=EQUAL_HIGH
+  emitted event: EV_LIQ_007 Q=Q3 payload={'prereq': {'P1_valid_level': False, 'P2_penetration': False, 'P3_rejection': False, 'P4_temporal': False, 'P5_data_quality': False}}
+  -> Q1 level formed from a SINGLE touch; no source-type / confirmed /
+     UTC validation of the SwingInput.v1 record is performed.
+
+==============================================================================
+N-009  on_new_closed_candle never checks Candle.is_closed
+==============================================================================
+  Candle(is_closed=False, H=120 L=80 gap) fed to on_new_closed_candle
+  bar appended to engine.candles? True
+  new levels formed: 2, new events: 4
+  ATR recomputed on the OPEN candle: 0.800000 -> 3.600000
+  sweep/touch events on the open bar: ['EV_LIQ_001', 'EV_LIQ_001', 'EV_LIQ_013', 'EV_LIQ_005']
+  -> the method's own name and the dedup guard only use bar_index;
+     is_closed is stored on the Candle and never read.
+
+==============================================================================
+N-010  streaming _ingest_touch vs. the §3.3 / §3.5 contract helper
+==============================================================================
+  streaming levels: 17  pools: 1
+              lvl_108.12_6 price=  108.1200 instances=2 members=[108.12, 108.12]
+               lvl_99.28_0 price=   99.2800 instances=1 members=[99.28]
+         lvl_102.737143_12 price=  102.7371 instances=1 members=[102.737143]
+         lvl_109.862857_19 price=  109.8629 instances=1 members=[109.862857]
+             lvl_110.92_20 price=  110.9200 instances=3 members=[110.92, 110.92, 110.92]
+         lvl_100.337143_20 price=  100.3371 instances=1 members=[100.337143]
+             lvl_102.08_13 price=  102.0800 instances=1 members=[102.08]
+         lvl_101.394286_21 price=  101.3943 instances=1 members=[101.394286]
+  contract helper group_equal_levels_hierarchical -> 14 groups (diameter<=2*theta_eq*ATR and every member within theta_eq*ATR of median)
+    members=1 median=99.2800 diameter=0.000000
+    members=1 median=100.3371 diameter=0.000000
+    members=1 median=101.3943 diameter=0.000000
+    members=2 median=102.4086 diameter=0.657143
+    members=1 median=103.1371 diameter=0.000000
+    members=1 median=104.1943 diameter=0.000000
+    members=1 median=104.8800 diameter=0.000000
+    members=1 median=108.1200 diameter=0.000000
+    members=2 median=107.7800 diameter=0.542858
+    members=2 median=109.6771 diameter=0.371428
+    members=1 median=110.9200 diameter=0.000000
+    members=1 median=111.6057 diameter=0.000000
+    members=1 median=112.6629 diameter=0.000000
+    members=1 median=113.7200 diameter=0.000000
+  eps_pool used by _update_pools = 2*theta_eq*ATR*kappa = 0.683290 ; theta_eq*ATR = 0.341645
+  widest intra-level member spread = 0.000000  (contract allows theta_eq*ATR = 0.341645)
+  -> _ingest_touch merges on |price - lv.price| <= theta_eq*ATR against the
+     RUNNING MEDIAN (lv.price is rewritten each touch); it never re-runs
+     the chain-preventing complete-linkage split of §3.3.
+
+==============================================================================
+N-011  dbscan_1d_optimal expands from NON-core members (border chaining)
+==============================================================================
+  eps=1.0 min_pts=3  prices=[100.0, 100.5, 101.0, 1.9, 2.4, 2.9, 3.4, 3.9]
+    cluster -> [1.9, 2.4, 2.9, 3.4, 3.9]
+    cluster -> [100.0, 100.5, 101.0]
+  true DBSCAN core points (>= 3 neighbours incl. self): [100.0, 100.5, 101.0, 1.9, 2.4, 2.9, 3.4, 3.9]
+  -> queue is seeded with the window of the FIRST core point but the
+     inner l2/r2 expansion uses sorted_levels[idx] for EVERY dequeued
+     member, so a border point drags in its own neighbours (border
+     chaining), which standard DBSCAN forbids.
+
+==============================================================================
+N-012  dbscan_1d_optimal is NOT O(n log n) — timing on 300 / 3000 levels
+==============================================================================
+  n=  300 eps=0.80 min_pts=3 ->    1 clusters      0.27 ms
+  n= 3000 eps=0.80 min_pts=3 ->    1 clusters      2.67 ms
+  n= 9000 eps=0.80 min_pts=3 ->    1 clusters      8.49 ms
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.020    0.020    0.027    0.027 /home/user/Upstage/apex/engines/e02_liquidity/engine.py:209(dbscan_1d_optimal)
+    26998    0.001    0.000    0.001    0.000 {method 'append' of 'list' objects}
+    18000    0.001    0.000    0.001    0.000 {method 'pop' of 'list' objects}
+        1    0.001    0.001    0.002    0.002 {built-in method builtins.sorted}
+        1    0.001    0.001    0.001    0.001 /home/user/Upstage/apex/engines/e02_liquidity/engine.py:254(<dictcomp>)
+     9000    0.001    0.000    0.001    0.000 /home/user/Upstage/apex/engines/e02_liquidity/engine.py:217(<lambda>)
+
+
+  per-cluster the seed scan re-walks `left` from 0 and re-derives the
+  window; the inner BFS re-derives l2/r2 per member.  Complexity is
+  O(n * cluster_reach) in practice, not O(n log n) as the docstring says.
+
+==============================================================================
+N-013  _update_fates caches the nearest HTF level per SIDE, not per level
+==============================================================================
+    level  102.00  salience=0.685604
+    level  104.00  salience=0.685877
+    level  128.00  salience=0.785598
+    level  150.00  salience=0.687797
+  proximity_htf(150.0, nearest=130.0) = 0.018316
+  proximity_htf(102.0, nearest=100.0) = 0.670320
+  -> p_htf_nearest_cache is keyed by lv.side, so the FIRST level of a
+     side in dict order fixes the HTF reference price for every other
+     level of that side in the same bar.
+
+==============================================================================
+N-014  a raid keeps re-emitting on later bars with no fresh sweep
+==============================================================================
+  sweeps=7 bars=[(13, 'lvl_108.36_12'), (24, 'lvl_112.16_23'), (26, 'lvl_111.96_19'), (36, 'lvl_113.96_24'), (46, 'lvl_115.96_34'), (49, 'lvl_111.84_47'), (56, 'lvl_117.96_44')]
+  EV_LIQ_008 raid events = 1
+    raid at_bar=49 side=SELL_SIDE count=2
+  -> the raid window is `c.bar_index - s['at_bar'] <= raid_window` over
+     sweep_log, which never expires, so the same 2 old sweeps re-qualify
+     on every bar until a third sweep enters the window.

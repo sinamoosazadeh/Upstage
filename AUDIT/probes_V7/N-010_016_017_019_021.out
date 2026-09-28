@@ -1,0 +1,79 @@
+==============================================================================
+N-010  streaming merge vs §3.3 diameter/median (auditor's exact numbers)
+==============================================================================
+  ATR14=2.000000  theta_eq*ATR=0.300000  D_max=2*theta_eq*ATR=0.600000
+  streaming levels after touches [100.0, 100.2, 100.4, 100.5, 100.68]: 1
+    lvl_100_50: median=100.400000 instances=5 Q=Q1 members=[100.0, 100.2, 100.4, 100.5, 100.68] diameter=0.680000
+  §3.3 helper on the same touches -> 2 groups [[100.0, 100.2, 100.4, 100.5], [100.68]]
+
+  maximal accepted chain touches: [100.0, 100.2997, 100.5994, 100.5994, 100.8991, 100.8991, 100.8991, 100.8991, 101.1988, 101.1988]
+    -> levels=1 instances=10 Q=Q1 diameter=1.198800 (D_max=0.600000)
+    max |member - median| = 0.899100 (§3.3 allows theta_eq*ATR = 0.300000)
+    §3.3 helper on the same touches -> 3 groups of sizes [2, 2, 6]
+  VERDICT INPUT: diameter > D_max; the engine has NO diameter test at all (only |new - running_median| <= tol).
+
+==============================================================================
+N-016  Q3 assigned at bar 7 and never reverted (auditor: bar 4 -> bar 20)
+==============================================================================
+  bar   3: []
+  bar   4: []
+  bar   6: []
+  bar   7: [('lvl_106.72_4', 1, 'Q3', 'ACTIVE'), ('lvl_99.28_0', 1, 'Q3', 'ACTIVE')]
+  bar   9: [('lvl_106.72_4', 1, 'Q3', 'ACTIVE'), ('lvl_99.28_0', 1, 'Q3', 'ACTIVE')]
+  bar  13: [('lvl_106.72_4', 1, 'Q3', 'ACTIVE'), ('lvl_99.28_0', 2, 'Q3', 'STRENGTHENED'), ('lvl_104.32_7', 1, 'Q1', 'SWEPT')]
+  bar  14: [('lvl_106.72_4', 1, 'Q3', 'ACTIVE'), ('lvl_99.28_0', 2, 'Q3', 'STRENGTHENED'), ('lvl_104.32_7', 1, 'Q1', 'SWEPT')]
+  bar  19: [('lvl_106.72_4', 1, 'Q3', 'ACTIVE'), ('lvl_99.28_0', 2, 'Q3', 'STRENGTHENED'), ('lvl_104.32_7', 1, 'Q1', 'SWEPT')]
+  bar  20: [('lvl_106.72_4', 1, 'Q3', 'ACTIVE'), ('lvl_99.28_0', 2, 'Q3', 'STRENGTHENED'), ('lvl_104.32_7', 1, 'Q1', 'SWEPT')]
+  bar  30: [('lvl_106.72_4', 2, 'Q3', 'STRENGTHENED'), ('lvl_99.28_0', 3, 'Q2', 'STRENGTHENED'), ('lvl_104.32_7', 1, 'Q1', 'SWEPT'), ('lvl_105.52_23', 1, 'Q1', 'SWEPT'), ('lvl_100.48_21', 1, 'Q1', 'SWEPT')]
+  bar  39: [('lvl_106.72_4', 4, 'Q2', 'STRENGTHENED'), ('lvl_99.28_0', 4, 'Q2', 'STRENGTHENED'), ('lvl_104.32_7', 1, 'Q1', 'SWEPT'), ('lvl_105.52_23', 1, 'Q1', 'SWEPT'), ('lvl_100.48_21', 1, 'Q1', 'SWEPT'), ('lvl_100.48_31', 1, 'Q1', 'ACTIVE')]
+  detect_sweep P1 requires level.Q in ('Q1','Q2'): True
+  source line: []
+  _update_fates Q assignments: ['lv.Q = "Q2"', 'if len(self.candles) < 14 and lv.Q == "Q1":', 'lv.Q = "Q3"']
+
+==============================================================================
+N-017  same instance, same OHLCV, different params -> cache aliasing
+==============================================================================
+  call 1 (level_expiry_bars=96): 54 events; cache=1
+  call 2 (level_expiry_bars=0)  : 54 events; cache=1
+  call 2 returned call 1's object? True  identical content? True
+  a FRESH engine with level_expiry_bars=0 would give 204 raw events
+  -> within the 300s
+     TTL the second parameter set is never evaluated.
+
+==============================================================================
+N-019  E01/E02 lineage tokens are index-derived, not raw parent ids
+==============================================================================
+  raw observation content_hashes: 1 distinct
+  E02 lineage tokens emitted (20): ['candle_100', 'candle_101', 'candle_102', 'candle_103', 'candle_104', 'candle_105'] ...
+  any token equal to a raw content_hash? False
+  token pattern: 'candle_<bar_index>' (E02 _to_evidence lineage=)
+  source: ['lineage=tuple(f"candle_{c.bar_index}" for c in candles[-20:]),']
+  Gate11 with lineage=['candle_19'] -> passed=False reason='GATE11_SNAPSHOT_HASH_MISMATCH'
+  Gate11 with lineage=['not-a-real-id'] -> passed=False reason='GATE11_SNAPSHOT_HASH_MISMATCH'
+  _ID_TOKEN regex: ^(obs-[A-Za-z0-9_-]+|ev_[A-Za-z0-9_-]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{64})$
+
+==============================================================================
+N-020  _update_pools ignores member REMOVAL for an existing pid
+==============================================================================
+  ATR14=2.0000 eps_pool=0.6000
+  pool pool_100_100.3: members=['x100.0', 'x100.1', 'x100.2', 'x100.3'] weight=4.3396
+  after sweeping x100.1 -> pool members=['x100.0', 'x100.1', 'x100.2', 'x100.3'] weight=4.3396
+     events emitted this bar: []
+  actually ACTIVE levels now: ['lvl_101_0', 'lvl_99_0', 'x100.0', 'x100.2', 'x100.3']
+  recomputed weight from the live members: 3.6552
+  stale weight on the pool object      : 4.3396
+  the guard is `if not new_member_sets[pid].issubset(old)` — a strict
+  SUBSET (member loss) takes the no-op branch.
+
+==============================================================================
+N-021  accepted E02 parameters never reach detect_sweep
+==============================================================================
+  get_params accepted the overrides: [0.9, 0.05, 0.02, 0.02, 0.01], sweep_cooldown_bars=99, T_hit=7
+  engine.sweep_weights actually stored: [0.9, 0.05, 0.02, 0.02, 0.01]
+  engine.raid_window=3 (the cooldown the sweeps use)
+  detect_sweep mentions sweep_weights? False -> []
+  weights are hard-coded in the score line: ['w_p, w_r, w_c, w_v, w_f = 0.25, 0.25, 0.2, 0.2, 0.1']
+  _detect_sweeps call site: ['kind, prereq, score = detect_sweep(', 'c, lv, atr_now, vol_sma, self.sweep_min_pen,']
+  volume_profile_ok is passed as: ['volume_profile_ok=True)']
+  utc_activity_windows override honoured? module constant used: UTC_W0 vs params [('UTC_W0', 0.0, 24.0)]
+DONE N-010,N-016,N-017,N-019,N-020,N-021

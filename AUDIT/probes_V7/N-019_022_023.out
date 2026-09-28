@@ -1,0 +1,64 @@
+==============================================================================
+N-019  Gate 11 lineage check on a CORRECTLY hashed payload
+==============================================================================
+  lineage=     ['candle_19'] passed=False reason='GATE11_LINEAGE_UNRESOLVED'
+  lineage=['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'] passed=True reason='SNAPSHOT_LINEAGE_INTACT'
+  lineage=       ['obs-abc'] passed=True reason='SNAPSHOT_LINEAGE_INTACT'
+  lineage=        ['ev_x-1'] passed=True reason='SNAPSHOT_LINEAGE_INTACT'
+  lineage=['0000000000000000000000000000000000000000000000000000000000000000'] passed=True reason='SNAPSHOT_LINEAGE_INTACT'
+  -> E02's own `candle_<bar_index>` tokens do NOT match _ID_TOKEN, so
+     a raw engine_event lineage is REJECTED by Gate 11; the PAPER
+     producer therefore only passes because plan_bridge derives the
+     gate lineage from the FABRIC (raw observation ids), not from the
+     engine event's own lineage field.
+  fabric admits a member whose own lineage is 'candle_19' as long as
+  ONE token intersects the raw set: members=1 excluded=()
+
+==============================================================================
+N-022  what the CP-2 E01/E02 tests actually assert
+==============================================================================
+60:    no_future_leak_check,
+89:def lcg_candles(n, seed=42, base=100.0):
+92:    state = seed
+268:        candles = lcg_candles(60, seed=7)
+288:        candles = lcg_candles(80, seed=11)
+309:        candles = lcg_candles(60, seed=3)
+310:        assert no_future_leak_check(candles) is True
+313:        candles = lcg_candles(40, seed=5)
+375:        candles = lcg_candles(80, seed=13)
+389:        candles = lcg_candles(70, seed=17)
+400:        candles = lcg_candles(70, seed=19)
+419:        candles = lcg_candles(50, seed=23)
+437:        candles = lcg_candles(55, seed=29)
+605:        candles = lcg_candles(30, seed=31)
+645:        candles = lcg_candles(60, seed=37)
+
+---- traceability matrix rows for E01/E02 ----
+383:| E01-10 | E01 §7 | encyclopedia metrics: candle_features (BodyRatio/wicks/ClosePos/doji ≤0.1+Range/ATR>0.7), outside/inside bars, stop_context (P∓0.5·ATR, S<0.5 halve) | TestFormulas::test_candle_features_doji + test_stop_context + test_wick_and_gap_metrics | PASS(2026-09-12) |
+384:| E01-11 | E01 §8.1–§8.7 | FULL battery: FIX_001–010, §8.2 deterministic replay, §8.3 no-future-leak (mutate t+1 + prefix invariance), §8.4 ablation, §8.5 Wilson/z, §8.7 serialization | tests/unit/test_e01_structure.py (44 tests) | PASS(2026-09-12) |
+395:| E02-10 | E02 §7 | encyclopedia computational bits: Poisson significance, Jaccard pool stability | TestFormulas::test_poisson_significance + test_jaccard | PASS(2026-09-12) |
+396:| E02-11 | E02 §8.1–§8.7 | FULL battery: GF_LIQ_001–012, §8.2 replay, §8.3 first_seen≤at_bar−1, §8.4 ablation+ground truth (>0.5·ATR reversal in 5), §8.5 Wilson (§9 figures), §8.7 v3→v4 Q3 loader + additive-optional fields | tests/unit/test_e02_liquidity.py (46 tests) | PASS(2026-09-12) |
+
+---- CP-2 status ----
+24:## CP-2 · E01+E02+E03 — STATUS: COMPLETE (2026-09-12)
+27:[x] §8 BATTERIES E01–E03 + T-E01-001 + T-DR-001 green; FIX_* fixtures derived (not copied) — full suite 305 passed/0 failed; 147 CP-2 tests across tests/unit/test_e01_structure.py (44), test_e02_liquidity.py (46), test_e03_volume.py (49), tests/integration/test_cp2_engines.py (8)
+28:[x] HANDOFF CP-2 · MATRIX CP-2 · board updated · no overflow — PHASE2_HANDOFF_CP2.md (9 headings, LAW-ACK first line); PHASE2_TRACEABILITY_MATRIX.md Parts I/II/III CP-2 rows; ISSUE-CP2-001..016 in DECISION_LOG §B/CP-2; emission rows validate against store DDL (frozen evidence_event)
+34:[x] ENTRY: CP-2 [x] · batteries green (305 passed/0 failed re-verified at session start; E04 ε-tier, E05 lifecycle, E06 consumption-lint ahead)
+
+
+==============================================================================
+N-023  StructureEngineStreaming: growth + O(n^2) rebuild; 300 vs 3000
+==============================================================================
+  the streaming class is referenced ONLY by tests:
+apex/engines/e01_structure/__init__.py:4:    StructureEngineStreaming,
+apex/engines/e01_structure/engine.py:1212:class StructureEngineStreaming:
+tests/unit/test_e01_structure.py:30:    StructureEngineStreaming,
+tests/unit/test_e01_structure.py:518:            StructureEngineStreaming(config={"dynamic_k": True})
+tests/unit/test_e01_structure.py:644:        eng = StructureEngineStreaming(config=cfg)
+
+  run_pipeline is re-run on the WHOLE candle list on every bar:
+    ['if self.candles and self.candles[-1].get("close_time") == candle.get(', 'self.candles.append(candle)', 'if len(self.candles) < self.config.get("min_candles", 50):', 'output = run_pipeline(self.candles, self.config)']
+  the three growing containers:
+    ['self.config = config or get_params()', 'self.candles: List[Dict[str, Any]] = []', 'self.events: List[Dict[str, Any]] = []', 'self._seen: set = set()']
+  n=  300 bars:   31.298 s | candles=300 events=640 seen=640 peak=   1.48 MB
+  n=  600 bars:  204.443 s | candles=600 events=1429 seen=1429 peak=   2.24 MB

@@ -1,0 +1,63 @@
+=== N-022 CP-2 coverage (raw command output) ===
+$ python3 -m pytest -q -p no:cacheprovider tests/unit/test_e01_structure.py \
+      tests/unit/test_e02_liquidity.py tests/integration/test_cp2_engines.py
+........................................................................ [ 72%]
+............................                                             [100%]
+100 passed in 2.28s
+
+$ python3 -B -c "... no_future_leak_check(lcg_candles(n, seed=3)) ..."
+repo test case lcg_candles(60,seed=3) -> True
+  n=  61 seed=3 -> True
+  n=  80 seed=3 -> True
+  n= 120 seed=3 -> True
+  n= 165 seed=3 -> False      <-- the repo's OWN generator fails at 165 bars
+  n= 200 seed=3 -> False
+  n= 300 seed=3 -> False
+  run_pipeline n=80 events=110
+  run_pipeline n=140 events=235
+  run_pipeline n=200 events=308
+  run_pipeline n=300 events=387
+
+$ grep -n no_future_leak_check tests/unit/test_e01_structure.py
+60:    no_future_leak_check,
+309:        candles = lcg_candles(60, seed=3)
+310:        assert no_future_leak_check(candles) is True
+   -> the only no-future-leak assertion in the suite uses n=60, seed=3.
+
+$ grep -nE 'E01-1[01]|E02-1[01]' PHASE2_TRACEABILITY_MATRIX.md
+383:| E01-10 | E01 §7 | ... | TestFormulas::test_candle_features_doji + ... | PASS(2026-09-12) |
+384:| E01-11 | E01 §8.1-§8.7 | FULL battery: FIX_001-010, §8.2 deterministic replay,
+        §8.3 no-future-leak (mutate t+1 + prefix invariance), §8.4 ablation,
+        §8.5 Wilson/z, §8.7 serialization |
+        tests/unit/test_e01_structure.py (44 tests) | PASS(2026-09-12) |
+396:| E02-11 | E02 §8.1-§8.7 | FULL battery: GF_LIQ_001-012, §8.2 replay,
+        §8.3 first_seen<=at_bar-1, §8.4 ablation+ground truth (>0.5 ATR
+        reversal in 5), §8.5 Wilson (§9 figures), §8.7 v3->v4 Q3 loader |
+        tests/unit/test_e02_liquidity.py (46 tests) | PASS(2026-09-12) |
+
+$ grep -nE 'CP-2' PHASE2_CHECKPOINT_STATUS.md
+24:## CP-2 - E01+E02+E03 - STATUS: COMPLETE (2026-09-12)
+27:[x] §8 BATTERIES E01-E03 + T-E01-001 + T-DR-001 green; FIX_* fixtures
+    derived (not copied) - full suite 305 passed/0 failed; 147 CP-2 tests
+    across test_e01_structure.py (44), test_e02_liquidity.py (46),
+    test_e03_volume.py (49), tests/integration/test_cp2_engines.py (8)
+
+$ sed -n '330,338p' tests/unit/test_e02_liquidity.py   (the E02 ground-truth test)
+    def test_sweep_outcomes_ground_truth(self):
+        candles = lcg_candles(80, seed=23)
+        eng = run_engine(candles)
+        atr = compute_ATR_wilder(candles, 14)[-1]
+        rate, n = sweep_outcomes(eng.sweep_log, candles, atr)
+        assert 0.0 <= rate <= 1.0
+        assert n == len([s for s in eng.sweep_log
+                         if any(cc.bar_index == s["at_bar"] + 1
+                                for cc in candles)])
+   -> asserts only the RANGE and the presence of t+1; the direction semantics
+      of sweep_outcomes (N-015) are never asserted.
+
+$ sed -n '110,152p' tests/integration/test_cp2_engines.py
+        if r is not None:
+            assert r <= 0.15, ...
+   -> the E01/E02 redundancy correlation is guarded by `if r is not None`,
+      so an UNDEFINED Pearson r skips the bound entirely (three separate
+      occurrences: r<=0.15, r<=0.85, 0.3<=r<=0.8).

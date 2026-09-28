@@ -1,0 +1,65 @@
+==============================================================================
+N-010  streaming merge: auditor's exact touch sequence (ATR=2, th=0.15)
+==============================================================================
+  ATR14 = 2.000000  (target 2.0)  theta_eq*ATR = 0.300000  D_max = 0.600000
+  levels formed: 0  (§3.3 helper would split them:)
+    group_equal_levels_hierarchical -> 2 groups: [[100.0, 100.2, 100.4, 100.5], [100.68]]
+    contract helper on the same touches -> 5 groups: [3, 3, 3, 3, 1]
+  NOTE: _ingest_touch rewrites lv.price to the running median, so the
+  next test is against the MOVING median, never the level origin, and
+  no check compares max(member)-min(member) with 2*theta_eq*ATR.
+
+==============================================================================
+N-015  sweep_outcomes: SELL_SIDE counts an UP move as genuine
+==============================================================================
+  SELL_SIDE sweep at bar 0, next 5 closes all 99.0 (price FELL back under the level = the contract's 'genuine')
+    sweep_outcomes -> (0.0, 1)
+  same sweep, next 5 closes all 101.0 (price ROSE through the level = NOT a reversal)
+    sweep_outcomes -> (1.0, 1)
+  source: `move = max(f.close - base ...)` for SELL_SIDE — a HIGHER close
+         is scored as the successful outcome.
+  BUY_SIDE mirror, closes falling to 99.0 -> (1.0, 1)  (mirrored too)
+  only t+1 of horizon=5 exists -> n counted: 1 (1, not 0 — partial horizon still scored)
+
+==============================================================================
+N-016  E02 min_candles=50 never reaches the stream; Q3 never reverts
+==============================================================================
+  run_engine body mentions min_candles?  False
+  LiquidityEngineV4.__init__ mentions min_candles?  False
+  E02_DEFAULTS['min_candles'] = 50
+  first bar with ANY level: 7  [('lvl_108.96_4', 1, 'Q3'), ('lvl_99.04_0', 1, 'Q3')]
+  first bar with a Q3 level: 7  [('lvl_108.96_4', 1, 'Q3'), ('lvl_99.04_0', 1, 'Q3')]
+  at bar 59: levels=7  still Q3=0  []
+  _update_fates only assigns Q2 and, while len(candles) < 14, Q3.
+  There is NO Q3 -> Q1 path: a level tagged Q3 before bar 14 keeps Q3
+  forever (Q3 is not in the P1 valid set of detect_sweep).
+  detect_sweep P1 valid Q set: []
+
+==============================================================================
+N-017  E02 replay key omits t_close and every parameter but theta/kappa
+==============================================================================
+  compute() replay construction:
+    ['input_hash = _sha_of(_canon([c.to_dict() for c in candles]))', 'replay = self.build_replay_key(', 'symbol, timeframe, as_of, input_hash, "E02-LIQ-V4.0.0-DEFAULTS",', '_canon({"theta_eq": params["theta_eq"],', 'cached = self.replay_lookup(replay)']
+  observation_to_candle -> Candle.to_dict keys: ['bar_index', 'close', 'high', 'low', 'open', 'volume']
+  (t_close is NOT in to_dict, so the input_hash ignores bar times)
+  run 1: 54 evidence events, cache entries=1
+  run_engine(level_expiry_bars=96) events=228  level_expiry_bars=0 events=267  expired=128
+  engA cache keys == engB computed key ? True
+  engA.replay_lookup(key_from_other_instance) -> True
+  -> the key contains engine_version, contract_version, symbol, tf,
+     as_of, input_hash (no t_close), parameter_package_id (a CONSTANT
+     string) and _canon({theta_eq, kappa}) only.  level_expiry_bars,
+     sweep_min_pen/rej, lambda_decay, raid_window, htf, l2_snapshots
+     are all absent; TTL is 60-300s (base.REPLAY_*).
+
+==============================================================================
+N-018  E02 snapshot identity collides across different states
+==============================================================================
+  engine1 levels=[('lvl_100_5', 100.0), ('lvl_101_6', 101.0)]
+  engine2 levels=[('lvl_100_5', 100.0), ('lvl_140_6', 140.0)]
+  output() snapshot_id 1 = bd62c655109d1f4e8cf93fa1ce8b8e5d1db97e8fb7f3eaad61e3d1c4dcd72e19
+  output() snapshot_id 2 = bd62c655109d1f4e8cf93fa1ce8b8e5d1db97e8fb7f3eaad61e3d1c4dcd72e19
+  COLLISION: True
+  output() snapshot payload: ['{"levels": len(levels_out), "pools": len(pools_out),', '"levels": levels_out, "pools": pools_out, "events": self.events,']
+  Level.snapshot_id after a new member: True (unchanged)  price now 100.05  members [100.0, 100.05]
+DONE N-010,N-015..N-018

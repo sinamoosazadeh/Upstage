@@ -1,0 +1,93 @@
+==============================================================================
+N-008  ONE feed_touches() record is enough to form (and promote) a level
+==============================================================================
+  new events: []
+  record carried NO source proof (no E01 swing id, no UTC window, no
+  bar-index validation). Contract Q1 wants >= 2 instances from a
+  confirmed swing / UTC source; a single dict yields instances=1.
+  touch with bar_index=9999 (FUTURE) accepted: []
+
+==============================================================================
+N-009  is_closed is never read by on_new_closed_candle
+==============================================================================
+  fed Candle(is_closed=False) -> appended to candles: True
+  new levels=2  new events=5
+  ATR 2.297143 -> 4.990204 (wilder state advanced on an UNCLOSED bar)
+  event types emitted for bar 25: ['EV_LIQ_001', 'EV_LIQ_007', 'EV_LIQ_013']
+  liquidity_inputs() in engine_context.py filters on bar.is_closed, but
+  the engine has already used the bar; Candle.is_closed occurrences in the engine module:
+49:    is_closed: bool
+1539:                  bar_index=obs.sequence, is_closed=True,
+
+==============================================================================
+N-010  streaming merge does not apply §3.3 chain-preventing split
+==============================================================================
+  ATR14=2.385336 theta_eq=0.15 theta_eq*ATR=0.357800
+  streaming levels=64 pools=1
+  levels with >1 member: 13
+               lvl_105.28_23 median_price=  105.2800 members=[105.28, 105.28] spread=0.000000
+               lvl_111.22_19 median_price=  111.2200 members=[111.22, 111.22] spread=0.000000
+               lvl_111.28_47 median_price=  111.2800 members=[111.28, 111.28] spread=0.000000
+               lvl_114.22_29 median_price=  114.2200 members=[114.22, 114.22] spread=0.000000
+               lvl_117.22_41 median_price=  117.2200 members=[117.22, 117.22] spread=0.000000
+               lvl_117.28_71 median_price=  117.2800 members=[117.28, 117.28] spread=0.000000
+  widest member spread inside ONE level = 0.000000
+  §3.3 requires every member within theta_eq*ATR of the cluster median = 0.357800 and diameter <= 0.715601
+
+  deliberate chain test (ATR=2.2971, tol=0.3446, 2*tol=0.6891):
+    lid=lvl_100_1 price=100.000000 instances=1 members=[100.0] diameter=0.000000
+    lid=lvl_100.4824_2 price=100.482400 instances=1 members=[100.4824] diameter=0.000000
+    lid=lvl_100.9648_3 price=100.964800 instances=1 members=[100.9648] diameter=0.000000
+  contract helper group_equal_levels_hierarchical on the same 3 prices -> 2 group(s): [[100.0, 100.4824], [100.9648]]
+
+==============================================================================
+N-011  DBSCAN border chaining: a point reachable only through a border
+==============================================================================
+  prices=[0.0, 0.5, 1.0, 2.0, 2.9] eps=1.0 min_pts=3
+  standard-DBSCAN CORE points: [0.0, 0.5, 1.0, 2.0]
+  2.0 has 3 neighbours (BORDER);
+  2.9 has 2 neighbours and is NOT within eps of any core point -> standard DBSCAN: NOISE
+  engine cluster -> [0.0, 0.5, 1.0, 2.0, 2.9]
+  engine included 2.9 (a NOISE point) ? True
+  -> the BFS re-derives l2/r2 for EVERY dequeued member, so 2.0 (border)
+     expands its own neighbourhood and pulls 2.9 into the cluster.
+
+==============================================================================
+N-012  dbscan timing: sparse vs ONE DENSE cluster (300 / 3000)
+==============================================================================
+  (a) sparse, eps smaller than the spacing (1 cluster per 3 points)
+      n=  300 ->     1 clusters       0.21 ms
+      n= 3000 ->     1 clusters       2.49 ms
+  (b) ONE dense cluster: every point within eps of every other (the
+      case a real 'equal highs' wall produces)
+      n=  300 ->     1 clusters     152.13 ms  (507.09 us/level)
+      n=  600 ->     1 clusters    2443.07 ms  (4071.78 us/level)
+      n= 1200 ->     1 clusters   76136.63 ms  (63447.19 us/level)
+      n= 2000 ->     1 clusters  623144.77 ms  (311572.38 us/level)
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+   693888   74.087    0.000   74.087    0.000 {method 'pop' of 'list' objects}
+        1    1.518    1.518   75.637   75.637 /home/user/Upstage/apex/engines/e02_liquidity/engine.py:209(dbscan_1d_optimal)
+   694105    0.031    0.000    0.031    0.000 {method 'append' of 'list' objects}
+        1    0.001    0.001    0.001    0.001 /home/user/Upstage/apex/engines/e02_liquidity/engine.py:254(<dictcomp>)
+
+==============================================================================
+N-013  p_htf_nearest_cache is keyed by SIDE, not by level price
+==============================================================================
+  level A price=102.0: salience=0.785597675
+     with its OWN nearest HTF  (100.0) -> 0.785597675  match=True
+     with A's HTF price (100.0)          -> 0.785597675  match=True
+  level B price=150.0: salience=0.685056478
+     with its OWN nearest HTF  (130.0) -> 0.687797014  match=False
+     with A's HTF price (100.0)          -> 0.685056478  match=True
+
+==============================================================================
+N-014  EV_LIQ_008 raid re-fires on later bars from the SAME two sweeps
+==============================================================================
+  sweeps emitted at bars: [(21, 'lvl_113.68_11'), (29, 'lvl_116.08_19'), (30, 'lvl_114.13_21'), (37, 'lvl_118.48_27'), (45, 'lvl_120.88_35'), (53, 'lvl_123.28_43'), (54, 'lvl_121.33_45'), (61, 'lvl_125.68_51'), (69, 'lvl_128.08_59'), (77, 'lvl_130.48_67'), (78, 'lvl_128.53_69'), (85, 'lvl_132.88_75'), (93, 'lvl_135.28_83'), (101, 'lvl_137.68_91'), (102, 'lvl_135.73_93'), (109, 'lvl_140.08_99'), (117, 'lvl_142.48_107'), (125, 'lvl_144.88_115'), (126, 'lvl_142.93_117'), (133, 'lvl_147.28_123'), (141, 'lvl_149.68_131'), (149, 'lvl_152.08_139'), (150, 'lvl_150.13_141'), (157, 'lvl_154.48_147'), (165, 'lvl_156.88_155'), (173, 'lvl_159.28_163'), (174, 'lvl_157.33_165'), (181, 'lvl_161.68_171'), (189, 'lvl_164.08_179'), (197, 'lvl_166.48_187'), (198, 'lvl_164.53_189')]
+  EV_LIQ_008 raid events: [(30, 'SELL_SIDE', 2), (31, 'SELL_SIDE', 2), (32, 'SELL_SIDE', 2), (54, 'SELL_SIDE', 2), (55, 'SELL_SIDE', 2), (56, 'SELL_SIDE', 2), (78, 'SELL_SIDE', 2), (79, 'SELL_SIDE', 2), (80, 'SELL_SIDE', 2), (102, 'SELL_SIDE', 2), (103, 'SELL_SIDE', 2), (104, 'SELL_SIDE', 2), (126, 'SELL_SIDE', 2), (127, 'SELL_SIDE', 2), (128, 'SELL_SIDE', 2), (150, 'SELL_SIDE', 2), (151, 'SELL_SIDE', 2), (152, 'SELL_SIDE', 2), (174, 'SELL_SIDE', 2), (175, 'SELL_SIDE', 2), (176, 'SELL_SIDE', 2), (198, 'SELL_SIDE', 2), (199, 'SELL_SIDE', 2)]
+  -> 23 raid events for 31 sweeps; the raid window is a
+     lookback over sweep_log with no expiry, so one qualifying pair
+     keeps re-qualifying on every subsequent bar.
+
+DONE N-008..N-014

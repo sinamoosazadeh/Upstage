@@ -1,0 +1,30 @@
+==============================================================================
+N-023  (A) BATCH path actually used by apex/ops/engine_context.py
+==============================================================================
+  run_pipeline n=  300:    0.273 s  events=234 swings=18 peak=  0.27 MB
+  run_pipeline n= 1000:    2.252 s  events=234 swings=18 peak=  0.44 MB
+  run_pipeline n= 3000:   23.092 s  events=228 swings=18 peak=  1.10 MB
+
+==============================================================================
+N-023  (B) StructureEngineStreaming — full rebuild per bar
+==============================================================================
+  stream n=  300: cumulative     5.573 s   candles=300 events=640 seen=640  (no retention/pruning of any of the three)
+  stream n=  600: cumulative    37.699 s   candles=600 events=1429 seen=1429  (no retention/pruning of any of the three)
+      ratio vs n=300: 6.76x for 2.00x bars
+  stream n=  900: cumulative   111.053 s   candles=900 events=2225 seen=2225  (no retention/pruning of any of the three)
+      ratio vs n=600: 2.95x for 1.50x bars
+  -> 2x the bars costs >6x the time; the class re-runs run_pipeline on
+     the whole candle list for EVERY bar, and detect_bos rebuilds the
+     full `ranges`/`vols` arrays inside its per-t loop, so the cost is
+     super-quadratic in the retained length.  Extrapolating the 900-bar
+     measurement, 3000 bars would take on the order of an hour; that
+     extrapolation is an estimate, not a measurement, and the class is
+     NOT on the PAPER path (engine_context uses run_pipeline once per
+     300-bar window), so no current SLA is violated by it.
+
+  D35 memoisation note — atr_sma is memoised per _ATRWindow instance
+  (a fresh one is built per run_pipeline call), and detect_bos still
+  recomputes [cc['H']-cc['L'] for cc in candles] and
+  [cc.get('V',0) for cc in candles] for EVERY t_idx:
+    ['ranges = [cc["H"] - cc["L"] for cc in candles]', 'vols = [cc.get("V", 0) for cc in candles]']
+DONE N-023
