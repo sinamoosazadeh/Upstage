@@ -1,0 +1,3 @@
+fault= INJECTED_INSERT INTO ledger_audit
+before_next= 1 0 head= None
+after_next= 2 1 chain= {'records': 2, 'intact': False, 'breaks': [{'index': 1, 'ledger_id': 'lg-01a0e8b1-cc19-7120-a5df-f680e467cb80', 'kind': 'PARENT_LINK_BROKEN', 'expected_parent': 'dcdd589d1b74da1032f1480fbe1a3d6e27a0b8907fba4933d4f48afc7b799664', 'parent_ids': []}], 'head': '812a2708d6928f6d01837b41d7df1fd05705d857bd02310f2bb59f2285221eb5', 'event_ids_unique': True, 'sequence_monotonic': True, 'rule': 'Ch.16 L16757 hash-chained, append-only; T_LEDGER'}

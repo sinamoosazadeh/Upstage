@@ -1,0 +1,2 @@
+present_zero= 0 False
+absent= 1 True [{'symbol': 'BTCUSDT', 'exchange_quantity': '0', 'ledger_quantity': '0.25', 'delta': '-0.25', 'alert': 'RECONCILE_FAILURE'}]

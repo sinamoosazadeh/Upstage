@@ -1,0 +1,5 @@
+command= /lock ok= True locked= True
+flags= {'paused': False, 'new_positions_disabled': False, 'read_only': False, 'safe_mode': False}
+paper_loop_paused= False
+locked_verdict_OTHER= {'blocked': True, 'action': 'OTHER', 'reason': 'PANIC_LOCK_ENGAGED', 'allowed_commands': ('/myid', '/unlock'), 'rule': '§5.7 Panic Lock'}
+new_instance_locked= False

@@ -1,0 +1,2 @@
+ledger_fault= INJECTED_LEDGER transport_calls= 0 audit_count= 1
+factory_fault= INJECTED_TRANSPORT_FACTORY outbox_count= 0

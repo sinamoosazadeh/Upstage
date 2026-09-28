@@ -1,0 +1,16 @@
+repository_DDL
+find_by_fill ['SCAN ledger']
+find_by_intent ['SCAN ledger']
+read_ledger ['SCAN ledger']
+head ['SCAN ledger']
+trade_plans ['SCAN trade_plan', 'USE TEMP B-TREE FOR ORDER BY']
+market_scope ['SCAN market_observation', 'USE TEMP B-TREE FOR ORDER BY']
+pit_scope ['SCAN snapshot_pit']
+with_device_indexes
+find_by_fill ['SCAN ledger']
+find_by_intent ['SCAN ledger']
+read_ledger ['SCAN ledger']
+head ['SCAN ledger']
+trade_plans ['SCAN trade_plan', 'USE TEMP B-TREE FOR ORDER BY']
+market_scope ['SEARCH market_observation USING INDEX idx_mo_sym_tf_open (symbol=? AND timeframe=? AND open_time<?)']
+pit_scope ['SEARCH snapshot_pit USING INDEX idx_pit_scope_asof (source_state=? AND symbol_scope=? AND timeframe_scope=? AND as_of<?)']

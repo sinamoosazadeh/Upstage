@@ -1,0 +1,29 @@
+........................................................................ [ 25%]
+........................................................................ [ 50%]
+........................................................................ [ 75%]
+......................................................................   [100%]
+=============================== warnings summary ===============================
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+  /usr/local/lib/python3.11/dist-packages/matplotlib/_fontconfig_pattern.py:88: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+  /usr/local/lib/python3.11/dist-packages/matplotlib/_fontconfig_pattern.py:92: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+tests/unit/test_telegram_signaling.py::TestSending::test_an_image_is_sent_as_a_photo_with_its_caption
+  /usr/local/lib/python3.11/dist-packages/matplotlib/_mathtext.py:45: PyparsingDeprecationWarning: 'enablePackrat' deprecated - use 'enable_packrat'
+    ParserElement.enablePackrat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+286 passed, 13 warnings in 12.45s

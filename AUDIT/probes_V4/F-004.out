@@ -1,0 +1,4 @@
+trade_plan fault= INJECTED_INSERT INTO ledger (
+trade_plan rows= 1 ledger= 0
+outcome fault= INJECTED_INSERT INTO ledger (
+outcome rows= 1 ledger= 0

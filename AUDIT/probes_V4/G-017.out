@@ -1,0 +1,2 @@
+first= False network error after 3 attempts: OSError: INJECTED_TRANSPORT transport_calls= 3
+second= False DEDUP_SUPPRESSED transport_calls= 3

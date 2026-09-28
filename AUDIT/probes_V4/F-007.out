@@ -1,0 +1,3 @@
+trigger_reject= LEDGER_APPEND_ONLY
+modified_net= 9 chain= {'records': 1, 'intact': True, 'breaks': [], 'head': 'bab8a228206958f15aa0103aa7c9a73b1c762f72c65a362f9fe7c7af6a2883da', 'event_ids_unique': True, 'sequence_monotonic': True, 'rule': 'Ch.16 L16757 hash-chained, append-only; T_LEDGER'}
+after_direct_insert= {'records': 2, 'intact': True, 'breaks': [], 'head': 'e66ee3f9f25efbdc9351d339b06f432ead9bf0818ea3275024cf715fd4e45bdf', 'event_ids_unique': False, 'sequence_monotonic': True, 'rule': 'Ch.16 L16757 hash-chained, append-only; T_LEDGER'} ledger= 2 audits= 1

@@ -1,0 +1,1 @@
+orphan_accepted= {'records': 2, 'intact': True, 'breaks': [], 'head': '97c209b7a683727657f1bae30a60930a0389f553c2573ff94614d5a78d64b7c7', 'event_ids_unique': True, 'sequence_monotonic': True, 'rule': 'Ch.16 L16757 hash-chained, append-only; T_LEDGER'}

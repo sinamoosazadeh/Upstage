@@ -1,0 +1,6 @@
+divergence= 1 blocked= True
+restart_blocked= False
+restart_fill_accepted=True
+resolve_fault= INJECTED_INSERT INTO ledger (
+post_fault_blocked= False
+post_fault_fill_accepted=True
