@@ -1,0 +1,20 @@
+proxies has 'concept': False
+proxies has 'by_layer': False
+proxies public callables: ['Any', 'Dict', 'Iterable', 'List', 'Mapping', 'Optional', 'Path', 'ProxyConcept', 'RejectedConcept', 'Sequence', 'SpreadEstimate', 'Tuple', 'abdi_ranaldo_spread', 'adaptive_slippage', 'amihud_illiquidity', 'assert_registry_complete', 'assert_rejected_absent', 'corwin_schultz_spread', 'cvd', 'dataclass', 'detect_liquidation_cascade', 'field', 'footprint_delta', 'information_ratio', 'kyle_lambda', 'liquidity_regime_composite', 'obi_proxy', 'registry_rows', 'registry_summary', 'rejected_rows', 'roll_spread', 'sample_size_for_half_width', 'spread_quality_flag', 'taker_pressure', 'wilson_lower_bound']
+
+governance has 'validate_proposal': False
+governance actual validate* : ['validate_change_proposal', 'validate_package']
+
+BacktestEngine.__init__ params: ['self', 'symbol', 'timeframe', 'fee', 'alpha_spread', 'max_hold', 'min_quantity', 'slippage_fn']
+start_index in constructor: False
+BacktestEngine.run params: ['self', 'bars', 'signal_fn', 'start_index']
+
+ECRegister has 'add': False
+ECRegister actual methods: ['active_value', 'conservative_paths', 'get', 'register']
+
+governance has 'sensitivity_candidate': False
+actual: ['SENSITIVITY_REMOVAL_THRESHOLD', 'sensitivity_removal_candidate']
+signature: (*, s1: 'float', st: 'float', threshold: 'float' = 0.05) -> 'Dict[str, Any]'
+
+promotion has 'SPRTState/sprt_step/sprt_monitor': True
+backtest has walk_forward/evaluate_wfo/monte_carlo/cvar_bootstrap/stress_battery/apply_stress: True

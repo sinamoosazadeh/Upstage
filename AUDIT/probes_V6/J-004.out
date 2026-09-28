@@ -1,0 +1,10 @@
+FeatureContract fields: ['id', 'name', 'description', 'formula', 'inputs', 'outputs', 'dependencies', 'lookback', 'warmup', 'epsilon', 'unit', 'range', 'tolerance', 'validity', 'stability', 'computation_cost', 'owner', 'confidence_equation', 'version']
+has 'parameters' field: False
+has 'consumers' field: False
+has 'tests' field: False
+verbatim: for field in ("parameters", "validity", "consumers", "tests"):
+verbatim: _ = field  # contract completeness validated structurally below
+verify_completeness with gutted F73: {'count': 74, 'tiers': {'ATOM': 44, 'MOLE': 1, 'ORGN': 29}}
+verify_completeness with gutted F74: {'count': 74, 'tiers': {'ATOM': 44, 'MOLE': 1, 'ORGN': 29}}
+control: gutted validity -> ValueError: §3.13 VIOLATION: feature 73 template incomplete
+control: gutted dependencies -> ValueError: §3.13 VIOLATION: feature 73 template incomplete

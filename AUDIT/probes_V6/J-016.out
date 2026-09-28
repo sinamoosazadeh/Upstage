@@ -1,0 +1,15 @@
+engine params: convergence_dmag_max = 0.2 | price_delta_pct = 0.001 | mom_delta = 0.5
+
+== pivot path: the document's own BNBUSDT example (D_mag 0.078) ==
+GF07 classify_pivot_pair -> kind: REGULAR_BEARISH | D_mag: 0.077799
+fixture expected: {'kind': 'REGULAR_BEARISH', 'diverged': True, 'D_mag': 0.07779886148, 'D_mag_min': 0.05}
+D_mag 0.0778 < 0.2 but kind is a VALID divergence event: True
+=> the 0.2 filter does NOT gate the pivot path (its own min is 0.05 )
+
+== OLS path: same-sign low D_mag => CONVERGENCE + EV_MOM_007 ==
+GF11 beta_price: 2.0 beta_mom: -2.0 (opposite signs -> divergence)
+divergence_mag_ols(same-sign small) = 0.04761904761904764 -> would be < 0.2 => CONVERGENCE/EV_MOM_007 path
+
+ISSUE-CP5-006 CLOSED text says generally: 'D_mag < 0.2 => filtered + EV_MOM_007'
+E10 §9 Risk scopes it to 'strongly range-bound market' (L11431-11432)
+E10 §11 examples treat D_mag 0.078/0.09 as VALID pivot divergences (L11435-11437)

@@ -1,0 +1,5 @@
+SIGNAL_MIN_TRADES_PER_WINDOW = 100
+family_pool_gate(42 trades, 27 wins) -> eligible: True | reason: PROMOTION_ALLOWED | wilson_lower: 0.4917
+signal_objective(trades=42) -> feasible: False | value: -inf | constraints: {'min_trades_per_window': False, 'beats_buy_and_hold': True, 'calibration_fresh': True}
+cell full history = 42 < 100 => every test window <= 42 < 100: True
+Z.4 family floor = 30

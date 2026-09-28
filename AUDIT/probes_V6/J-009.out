@@ -1,0 +1,8 @@
+FEE_FRACTION = 0.0002
+backtest entry_price: 110.0 (signal bar close was 100.0, next open 110.0)
+backtest exit: 104.0 TARGET
+
+F3 semantics would fill the same entry at close=100.0 -> difference = 10.0
+
+files mentioning a paper fill simulator: (none)
+apex/execution simulator mentions: (none)

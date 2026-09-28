@@ -1,0 +1,4 @@
+class with _check_dependencies: StartupReconciliation
+CheckResult: CheckResult(name='dependencies', passed=True, status='PASS', detail='nine SBOM pins import cleanly', blocking=True)
+status: PASS | passed: True | detail: nine SBOM pins import cleanly
+

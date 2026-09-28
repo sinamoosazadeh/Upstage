@@ -1,0 +1,25 @@
+== build environment ==
+setuptools 66.1.1 (pyproject requires >=68)
+pip wheel exit: 0
+wheels: ['apex_gen5-4.0.0-py3-none-any.whl']
+total files in wheel: 8 | .py files: 4
+--- all .py files in the wheel ---
+   apex/__init__.py
+   apex/bus.py
+   apex/config.py
+   apex/errors.py
+--- non-py files ---
+   apex_gen5-4.0.0.dist-info/METADATA
+   apex_gen5-4.0.0.dist-info/RECORD
+   apex_gen5-4.0.0.dist-info/WHEEL
+   apex_gen5-4.0.0.dist-info/top_level.txt
+
+repo apex/**/_modules_: python files = 102 | distinct python dirs = 37
+subpackages delivered: 1
+params/ in wheel: False
+requirements/lock in wheel: False
+apex.config OK -> /tmp/b001_install/params
+ModuleNotFoundError: No module named 'apex.engines'
+ModuleNotFoundError: No module named 'apex.execution'
+ModuleNotFoundError: No module named 'apex.telegram'
+load_params from installed wheel: FileNotFoundError parameter file risk_defaults_v1.yaml missing from params/ (normative tree §9.5)

@@ -1,0 +1,12 @@
+registry count (aliases): 74
+distinct full_ids: 73
+full_ids used by more than one alias: {'APEX.L00.ORGN.CTXT.UTC_ACTIVITY_WINDOW.SCORE.V1': ['temporal_window', 'utc_activity_window']}
+lookup('APEX.L00.ORGN.CTXT.UTC_ACTIVITY_WINDOW.SCORE.V1') -> alias=utc_activity_window
+F70 alias lookup: temporal_window APEX.L00.ORGN.CTXT.UTC_ACTIVITY_WINDOW.SCORE.V1
+F71 alias lookup: utc_activity_window APEX.L00.ORGN.CTXT.UTC_ACTIVITY_WINDOW.SCORE.V1
+F70.full_id == F71.full_id: True
+_by_num keys are full_ids, not numbers: True
+F70 computer mentions UNAVAILABLE/context: True
+F71 computer mentions UNAVAILABLE/context: True
+temporal_window (outside catalog) -> ['/home/user/Upstage/apex/engines/e03_volume/engine.py', '/home/user/Upstage/apex/engines/e07_rtm/engine.py', '/home/user/Upstage/apex/engines/e12_temporal/__init__.py', '/home/user/Upstage/apex/engines/e12_temporal/engine.py', '/home/user/Upstage/apex/fabric/context.py', '/home/user/Upstage/apex/forecast/registry.py', '/home/user/Upstage/apex/ops/engine_context.py', '/home/user/Upstage/apex/ops/plan_bridge.py']
+utc_activity_window (outside catalog) -> ['/home/user/Upstage/apex/engines/e02_liquidity/engine.py', '/home/user/Upstage/apex/engines/e07_rtm/__init__.py', '/home/user/Upstage/apex/engines/e07_rtm/engine.py', '/home/user/Upstage/apex/engines/e12_temporal/__init__.py', '/home/user/Upstage/apex/engines/e12_temporal/engine.py', '/home/user/Upstage/apex/ops/engine_context.py', '/home/user/Upstage/apex/ops/plan_bridge.py', '/home/user/Upstage/apex/setup/family_sf_fvg_sweep_rev.py']

@@ -1,0 +1,8 @@
+u (weighted) = 0.44000000000000006
+c (1-u)      = 0.5599999999999999
+1 - max(U)   = 0.5
+max-form anywhere in record? False
+components keys: ['c_from_u', 'decay', 'e11_snapshot_id', 'eu', 'horizon', 'u_structured', 'uncertainty_model']
+
+D34 test expectation (tests/unit/test_forecast_logistic.py): u==0.44, c==0.56
+observed: 0.44000000000000006 0.5599999999999999 -> matches D34: True
