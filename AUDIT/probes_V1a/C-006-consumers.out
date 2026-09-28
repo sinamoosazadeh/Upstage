@@ -1,0 +1,40 @@
+apex/ops/engine_context.py:1775:    async def _input_fingerprint(self, symbol: str, timeframe: str, as_of: str) -> str:
+apex/ops/engine_context.py:1810:            fingerprint = await self._input_fingerprint(symbol,timeframe,as_of)
+apex/ops/engine_context.py:1856:        bundle = await self.prepare_engine_bundle(symbol,timeframe,as_of)
+apex/ops/engine_context.py:2283:    async def prepare_engine_bundle(self, symbol: str, timeframe: str, as_of: str,
+apex/ops/paper_loop.py:956:    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+apex/ops/paper_loop.py:1119:            await self.run_cycle()
+apex/ops/plan_bridge.py:517:                 context_preparer: Optional[ContextSource] = None,
+apex/ops/plan_bridge.py:522:        self.context_preparer = context_preparer
+apex/ops/plan_bridge.py:536:        if self.context_preparer is not None:
+apex/ops/plan_bridge.py:539:            await _maybe_await(self.context_preparer(symbol, timeframe, as_of))
+scripts/run_apex.py:753:            context_preparer=producer.prepare if producer is not None else None)
+tests/integration/test_cp14_producer.py:251:                               context_preparer=source.prepare)
+tests/integration/test_ops_paper_loop.py:372:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:392:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:407:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:430:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:453:            again = await h.runtime.run_cycle(now_ms=START_MS + 2 * HOUR)
+tests/integration/test_ops_paper_loop.py:488:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:517:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:533:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:549:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:566:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:583:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:606:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:626:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:654:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:710:            await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:784:            first = await h.runtime.run_cycle(now_ms=START_MS + 24 * HOUR)
+tests/integration/test_ops_paper_loop.py:878:            bridge = PaperPlanBridge(store=h.store, context_source=source, context_preparer=prepare)
+tests/integration/test_ops_paper_loop.py:880:            cycle = await h.runtime.run_cycle(now_ms=START_MS + 24 * HOUR)
+tests/integration/test_ops_paper_loop.py:908:            h.runtime.plan_provider = PaperPlanBridge(store=h.store, context_source=source, context_preparer=prepare)
+tests/integration/test_ops_paper_loop.py:909:            first = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:916:            second = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/unit/test_cp146.py:431:                cycle = await h.runtime.run_cycle(now_ms=START_MS + (index + 1) * HOUR)
+tests/unit/test_cp146.py:440:            replay = await h.runtime.run_cycle(now_ms=START_MS + 6 * HOUR)
+tests/unit/test_cp146.py:517:            cycle = await h.runtime.run_cycle(now_ms=START_MS)
+tests/unit/test_engine_context.py:274:            cycle = await driver.run_cycle()
+tests/unit/test_engine_context.py:1361:            bundle = await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-04T18:00:00.000Z",
+tests/unit/test_engine_context.py:1383:            later = await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-08T12:00:00.000Z",
+tests/unit/test_engine_context_store_sources.py:225:            bundle = await source.prepare_engine_bundle("ETHUSDT","1h",asof)

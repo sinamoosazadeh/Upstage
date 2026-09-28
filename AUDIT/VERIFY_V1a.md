@@ -7,7 +7,7 @@ C-001 | NOT VERIFIED | S3 (index only) | Not assigned | Not assessed | Not asses
 C-003 | NOT VERIFIED | S1 (index only) | Not assigned | Not assessed | Not assessed | Verify and measure
 C-004 | NOT VERIFIED | S1 (index only) | Not assigned | Not assessed | Not assessed | Verify and measure
 C-005 | NOT VERIFIED | S2 (index only) | Not assigned | Not assessed | Not assessed | Verify full row
-C-006 | NOT VERIFIED | S1 (index only) | Not assigned | Not assessed | ISSUE-079/077 comparison outstanding | Verify and measure
+C-006 | CONFIRMED | S1 | S1 | Runtime/producer non-frozen; catalog frozen | = ISSUE-079; overlaps ISSUE-076/077 | A: isolate control/protection + bounded preparation; exact-parity SQL repair
 C-007 | NOT VERIFIED | S2 (index only) | Not assigned | Not assessed | Not assessed | Verify full row
 C-008 | NOT VERIFIED | S1 (index only) | Not assigned | Not assessed | Not assessed | Verify and measure
 C-009 | NOT VERIFIED | S1 (index only) | Not assigned | Not assessed | Not assessed | Verify full row
@@ -20,7 +20,7 @@ C-015 | NOT VERIFIED | S2 (index only) | Not assigned | Not assessed | Not asses
 O-006 | NOT VERIFIED | Not extracted | Not assigned | Not assessed | Not assessed | Verify full row
 V-003 | NOT VERIFIED | S4 | Not assigned | Not assessed | Not assessed | Verify full row
 
-**Current status: C-002 CONFIRMED/S0; 16 rows remain unverified.** The appended C-002 formal-verdict section supersedes its retained initial evidence section. The full V1a scope is not complete; there is no real-data/device readiness claim.
+**Current status: C-002 CONFIRMED/S0 and C-006 CONFIRMED/S1; 6 retained performance rows remain unverified; 9 rows are reassigned to V1c.** The appended C-002 formal-verdict section supersedes its retained initial evidence section. The full V1a scope is not complete; there is no real-data/device readiness claim.
 
 Source baseline remains `85b2c155d7b054a468379ddfd802eb239d0801f9`. On continuation the sandbox had reconstructed baseline HEAD with the six prior AUDIT files untracked. I fetched this session's branch, staged only those AUDIT files, verified the entire staged tree was identical to remote checkpoint `7affafc5654027fc3a5c1a8bef0e8a9e39beb75f`, then restored this branch pointer with `git reset --soft origin/arena/01a0e911-upstage`. No source/worktree reset occurred, and no other branch was used. Report input was fetched again using the supplied SHA. All following source line numbers refer to the unchanged baseline.
 
@@ -335,7 +335,7 @@ Complete mandatory verification before accepting or rejecting the claim.
 
 Not defined or run for this row; required performance probes, where applicable, remain outstanding.
 
-## C-006 — not verified
+## C-006 — initial placeholder (superseded below)
 
 ### Auditor claim (short quote)
 
@@ -1037,21 +1037,107 @@ Executed: both native probes and 18 existing startup/recovery tests, all success
 
 Fix acceptance: (1) actual production PAPER factory without venue credentials produces no signature/packet across all five operations; (2) durable empty and nonempty simulator restart reconciles correctly, including mismatched state refusal; (3) unknown clock remains blocked; (4) known-good clock plus valid simulator becomes READY and can pass only authorized plans; (5) LIVE session closure on normal/exception/cancellation paths using a local responder, with no order to a venue; (6) existing startup/no-adapter/no-ledger/drift/divergence/ladder tests remain green; (7) simulator fee/slippage/exit/accounting parity and replay identities are tested separately against the governed contract. Run the remaining mandated integration files with isolated temporary databases and network/secret guards during their row reviews. Synthetic PASS cannot establish real market-data, model, device latency or accounting acceptance.
 
+## C-006 — formal verdict
+
+### Auditor claim (short quote)
+
+“catch-up و آماده‌سازی همهٔ سلول‌ها به‌ترتیب await می‌شوند؛ مدیریت پوزیشن پس از همهٔ آن‌هاست.” Catch-up and cell preparation are awaited sequentially; position management follows them. The full row (including Telegram polling before preparation, absent per-prepare deadline, semaphore limitation, recommendations and conditional safety effects) was read from `/tmp/AUDIT.md`, not merely its index. Auditor S1.
+
+### What I read (files, line ranges, functions, callers)
+
+Cumulative reading includes the entire `scripts/run_apex.py` and the boot/runtime material listed under C-002. For this row: complete `PaperRuntime.run_cycle` (paper_loop.py:956–1067), `run`/pause/stop (1103–1143), `_refresh_publishers` (873–949), storage/report/helper paths through 1192, `_load_cursor`, cursor migration/upsert (218–269), constructor/boot/stage dispatch (352–480), stages and provider resolution (480–689), complete execute/fill/management methods (692–869). The beginning 1–350 includes PlanQueue, normalization, intent identity and publisher classification. No inference from the stale DECLARED_SKIP docstring is used.
+
+Full named producer methods: `_input_fingerprint`, `prepare`, `get_bridge_context`, `_compose_bridge_context`, `quality_window`, `mtf_inputs`, `paper_marks`, `adv_input`, `ladder_input`, `paper_account_inputs`, `prepare_engine_bundle`, `decision_inputs`, `_raw_content_hash`, `window`, `training_dep_window`, `_frame_at`, `feature_timeline` (engine_context.py:1759–2548). Relevant direct consumer: PaperPlanBridge.prepare/__call__ (plan_bridge.py:530–560), bound in serve (run_apex.py:748–770). Scheduler constructor/due/run_cell/inner/burst/serialization (clock.py:442–650) provides the actual semaphore and stage timestamps. Native store get_window/_row_to_obs (sqlite_store.py:497–559) and real DDL/migrations (1–383), ledger initialization/DDL/read paths from C-002. BootstrapService.catch_up (1456–1565) was read completely: serial TF/symbol/page loops, per-row prior-hash lookup, await ingest/publish, named failure isolation, final counts and boundary update. Synthetic tests isolate this external catch-up seam rather than contact its source.
+
+`grep -rn` consumers search is saved in `C-006-consumers.out`. Read both relevant complete integration test functions at test_ops_paper_loop.py:865–925 (preparation outside-budget ordering and failed-preparation retry). Other complete engine formula bodies, unrelated tests and device artifacts are not certified by this scheduling verdict. The numerical engine chain was not reimplemented, executed on invented model weights, or accepted as correct.
+
+### Reproduction (command, probe file, actual result)
+
+Native probe: `PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V1a/C-006.py`; raw `C-006.out`, exit 0. Shared fixture builder `perf_support.py` initializes the repository's real SQLiteStore and LedgerWriter DDL in a temporary file, then bulk inserts **200,000 market rows + 200,000 matching raw rows**, 1,000 PIT facts, 100 native ledger records. Ten symbols × two TFs, 10,000 observations per cell; content hashes come from real MarketObservation.content_hash. This is a performance corpus, not real market evidence or an ingestion-throughput benchmark. Temporary DB was removed on exit. SQLite 3.40.1; no model or secrets read.
+
+Real `_input_fingerprint` and `window(...,300)` were called, with only classifier **metadata** stubbed for fingerprinting, not a classifier/engine computation. Exact executed SELECTs were captured at runtime and EXPLAINed in both index configurations, not extracted/reimplemented from AST. The native window returned 300 identity-validated rows without device indexes.
+
+| Native operation | No device indexes | Both device indexes |
+| --- | --- | --- |
+| `_input_fingerprint` | 0.851625 s, complete | interrupted at 2.000442 s |
+| `window(...,300)` | 0.233038 s, complete | interrupted at 2.000260 s |
+
+An audit-only SQLite progress handler bounds each operation at two seconds. **Interrupted timings are lower bounds, not completion latencies.** Without device indexes, join plan is SCAN r + PK SEARCH m. With them, fingerprint becomes SEARCH m by symbol + SCAN r, and metadata window becomes SEARCH m by symbol/TF/time range + SCAN r. This independently reproduces ISSUE-079's problematic planner direction at 200k rows, not its device seven-hour duration. The ordinary market get_window query improves from table SCAN to index SEARCH; therefore simply dropping the useful market index is not a general repair.
+
+Other query plans: global PIT facts still scan the snapshot PK index in both modes; prior-cell PIT improves to `idx_pit_scope_asof`; full ledger remains `SCAN ledger`; ladder and sqlite_master scans persist. Those are explicit performance observations: full-input fingerprint cost grows with retained facts/ledger; the small schema scan is not a claimed material bottleneck. Subquery scan over a LIMIT-300 result is bounded and not confused with scanning the whole market table.
+
+Actual `PaperRuntime.run_cycle`, real Scheduler and cursor persistence were then exercised on the same populated store. Public publishers and all order-bearing stages were replaced by declared offline observation seams; this isolates scheduling, not trading correctness. Catch-up slept 40 ms, two prepare calls slept 120 ms each:
+
+- Management began at **0.293971 s**, strictly after serial preparation; cycle took **0.294403 s**. Fixture-clock stage durations were `[0,0]` despite measured wall delay. This proves stage timing excludes preparation, not a real-device p95 violation.
+- Never-returning prepare: at **0.552771 s**, one gateway poll and heartbeat, zero scheduler runs, zero management, zero completed cycles. Audit cancellation ended the test; no production timeout ended the wait.
+- Separate stuck second scheduled cell: at **0.552340 s**, first cell already appears in Scheduler.runs, but **zero durable cursor rows and zero completed cycles** until the second cell is released. This is the gather barrier associated with ISSUE-077.
+
+Related pytest command used the existing offline guard/environment wrapper documented under C-002, with the two node IDs `test_cp14_context_preparation_is_outside_budget_and_before_source` and `test_cp14_preparation_failure_isolated_retry_same_close_and_no_stale_source`. Raw `C-006-pytest.out`: **2 passed, 13 warnings in 4.05s**. Unlike the native probe (zero guard attempts), these existing tests attempted six DNS resolutions in publisher work, all **blocked before network contact**. Their PASS includes conservative publisher refusal induced by the guard; it is not public-endpoint acceptance.
+
+### Verdict and reasoning
+
+**CONFIRMED / S1.** A slow or stuck prepare blocks subsequent preparations, scheduled cells and position management, and the next Telegram poll/heartbeat. A completed asynchronous SQL operation can leave the Python event loop available to other tasks, yet the single driver does not schedule another gateway/management pass. CPU-bound native work can additionally block the loop itself. Neither scenario is fixed by the later semaphore of four. The test does not claim venue-resident stop orders cease functioning or that an actual loss occurred.
+
+The auditor's conditional claim holds. However, outside-plan-budget preparation is expressly authorized by the later G1 decision; its location alone is not a contract violation and must not be “fixed” by deceptively moving timestamps. Operational wait/isolation is the defect.
+
+### Root cause
+
+One sequential driver orders catch-up → heartbeat/storage/control poll → publishers → per-cell prepare → gather(all scheduled cells) → cursor commits → manage_positions → reporting. There is no prepare deadline and no independent loop for gateway/management in this composition. Producer hashing reads all symbol history across TFs, global facts and ledger; a non-indexable expression on the raw PK adds the measured join hazard. These are distinct causes: query repair shortens work but does not bound a never-returning preparer.
+
+### Direct impact
+
+Delayed next operator poll, delayed local exit management, delayed heartbeat and whole-cycle observability; one analytical cell can stall unrelated cells. The query and scheduling reproductions are independent controls: neither synthetic sleeps nor empty model metadata is presented as evidence for native feature accuracy. Severity S1 reflects serious protection/control coupling, not guaranteed S0 deadlock on every dataset.
+
+### Secondary effects and interactions (upstream/downstream)
+
+**ISSUE-079:** exact fingerprint/window join and all-history read overlap; no duplicate new issue. The two device indexes can worsen this join order while improving other readers. **ISSUE-076:** indexed ordinary market/PIT reads improve; per-row catch-up/quality commits happen upstream of the same barrier and can lengthen it. Missing replay CLI is not causal to this scheduling failure. **ISSUE-077:** gather delays cursor/cycle publication even after a cell has finished; importantly scheduler events/runs can already exist, so it is too broad to say literally all possible evidence is absent. The DB-lock boot issue is separate from this probe.
+
+Upstream data growth/index state/classifier-package binding changes preparation cost and cache identity. D22 preparation failure must preserve same-close retry and prohibit stale-success fallback. Downstream delayed management can use an older cycle as_of (recorded before awaits), while C-004 governs skipped intervening close decisions. No replay outcome, monetary loss, model accuracy, phone RSS or live latency is inferred. D30 remains 20 default training cells, not the 140 data/runtime cells.
+
+### Contract and decisions
+
+APEX_GEN5.md:18435–18443: “single event loop for all input/output ... with a bounded worker pool for computation”; contention is serialized by the one ledger writer. 18897–18899: P0 “must never be dropped or delayed”; P1 “within 2 seconds”. 18869–18872 defines analysis p95 400 ms including native feature/context/forecast/decision but excluding network; these are declared targets, not measured acceptance. Lifecycle stages have no millisecond budget (153–158), so a 294-ms synthetic management delay alone is not a numeric lifecycle SLA breach; the unbounded analytical dependency is the safety issue.
+
+Later owner implementation direction at PHASE2_DECISION_LOG.md:802 binds source/preparer “outside scheduler budgets”; 573–575 explicitly orders prepare before cell clocks and retains D22 failure isolation. 944 repeats that binding. **Precedence:** preserve that explicit seam; add separate truthful operational latency and responsiveness controls rather than retroactively alleging the approved seam was unauthorized. D50 (1159) requires durable no-repeat closes; D51 (1161) atomic budget; preserve both under any concurrency change. CP9 handoff 629–631 confirms separate preparer/source and named per-cell catch-up failures, not permission for indefinite control starvation.
+
+### Frozen status and non-frozen alternative
+
+paper_loop, engine_context, scheduler and bridge are non-frozen. The catalog/store and engine bodies are frozen. The problematic join is in non-frozen engine_context, so a validated identity-aware query/producer adapter can repair it without touching frozen catalog DDL. Additive indexes must live in an authorized non-frozen migration; never silently mutate device schema during verification. CPU offload can be a non-frozen producer boundary with one ledger writer retained.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+**A — isolate control/protection servicing, bound analytical preparation, repair exact SQL separately.** Preserve single event loop I/O and serialized ledger writes; move CPU work to bounded workers with cooperative shutdown or process isolation. An asyncio timeout alone cannot preempt synchronous CPU work and may leave SQLite work queued; cancellation/late-result policy must be explicit. New interleavings require immutable as_of/generation binding, no stale cache resurrection, same-close retry and budget/no-duplicate tests. Existing outside-budget ordering tests should remain semantically valid; tests assuming BTC/ETH serial completion may require new scheduling-aware expectations. Worker completion must not publish a timed-out generation. No retraining is inherently needed if values/order/hash canonicalization stay identical; prove parity on cold/warm/restart paths.
+
+**B — exact-parity query/cache optimization first plus truthful duration reporting.** May greatly reduce measured delays but cannot resolve an indefinitely blocked external prepare. Fix both fingerprint and window joins; validate `obs-` identity grammar, duplicate/correction/PIT rows, output order and hash parity. Restricting the fingerprint to only a timeframe or recent bars is **not automatically parity-preserving**: it changes invalidation semantics and may miss cross-TF/PIT/ledger dependencies. Identity-preserving SQL rewrites require no model retraining; changed cache-key scheme needs versioning/invalidation, not historical hash rewrites. An additive index migration costs disk/write overhead and planner regression tests; no migration is necessary for a pure query rewrite.
+
+**C — per-cell cursor publication before gather completes.** Reduces the ISSUE-077 crash/repeat/observability window but not pre-stage preparation blocking. Changes commit ordering and timestamp/ledger interleavings; must preserve D50/D22, transactional state and not certify a cell before relevant durable effects. No retraining; DB schema need not change. The new gather-barrier regression intentionally changes after a correct fix, whereas retry/no-stale-source regression must not break.
+
+### My recommendation
+
+A with B, and treat C as the separately linked ISSUE-077 work. Do not weaken data quality, risk vetoes, offline PAPER isolation or owner-approved timing separation to obtain a fast fake PASS. No implementation changes are made by this audit.
+
+### Acceptance and regression tests
+
+Retain 200k fixture with both index sets and record all full scans; assert identical ordered rows, fingerprints and lineage for any SQL rewrite (including invalid identity and correction cases). Inject bounded, failing, cancelled and indefinitely pending prep and synchronous CPU work while measuring independent control/protection service. Assert no orders from timed-out/stale generations, no duplicated closes or budget reservations, D22 retry preserved, and durable completed-cell publication under one stalled sibling. Run both read integration regressions under network denial and record guard refusals explicitly. Device evidence still required for actual p95/RSS/throughput and real model/data outcomes; synthetic results prove mechanism only.
+
 ## New findings not in the audit
 
 None established at mandatory depth. No X-V1a IDs assigned. The limited ledger SCAN observation and decision-label caveat above are retained as follow-up notes, not promoted to completed new findings. Full audit duplication checks have not been performed.
 
 ## Rows not verified or incomplete
 
-16 IDs remain: **C-001, C-003, C-004, C-005, C-006, C-007, C-008, C-009, C-010, C-011, C-012, C-013, C-014, C-015, O-006, V-003**.
+Retained, unverified: **C-003, C-004, C-008, C-010, C-012, C-013**.
 
-Next required order: C-006, C-003, C-004, C-008, C-010, C-012, C-013, C-001, C-005, C-007, C-009, C-011, C-014, C-015, O-006, V-003. Some shared runtime source has been read for C-002; that is not a verdict on these rows. Their full-row comparisons, mandated complete files/tests, measured reproductions, per-cell/bar SQL EXPLAIN and fix-side-effect analyses remain outstanding. No coverage or readiness sign-off for those rows.
+**Reassigned to V1c:** C-001, C-005, C-007, C-009, C-011, C-014, C-015, O-006, V-003. No V1a verdict or further verification is claimed for these nine IDs.
+
+Retained order: C-006, C-003, C-004, C-008, C-010, C-012, C-013. Some shared runtime source has been read for C-002; that is not a verdict on these rows. Their full-row comparisons, mandated complete files/tests, measured reproductions, per-cell/bar SQL EXPLAIN and fix-side-effect analyses remain outstanding. No coverage or readiness sign-off for those rows.
 
 ## Final counts
 
-- CONFIRMED: **1** (C-002, S0)
+- CONFIRMED: **2** (C-002 S0; C-006 S1)
 - PARTIAL: **0**
 - REJECTED: **0**
 - DEVICE-EVIDENCE-NEEDED: **0**
-- Unverified: **16**
+- Retained unverified: **6**
+- Reassigned to V1c: **9**
 - Established new findings: **0**
