@@ -1,0 +1,8 @@
+negative volume rejected? -> None
+close>high rejected? -> None
+inf close rejected? -> None
+update() accepted candle, error = None | reason = INSUFFICIENT_HISTORY_Q1
+update() accepted candle, error = None | reason = INSUFFICIENT_HISTORY_Q1
+update() accepted candle, error = None | reason = INSUFFICIENT_HISTORY_Q1
+buffer size: 3 (3 bad candles ingested)
+R-005 CONFIRMED: no volume>=0, no C within [L,H], no isinf guard; corrupt bars poison velocity/volume buffers silently

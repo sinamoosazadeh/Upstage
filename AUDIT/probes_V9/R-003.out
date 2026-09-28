@@ -1,0 +1,5 @@
+mz = 5.413
+impulse_z=2 : events=['EV_MOM_001'] snapshot=3e6091de4647e0db7d94b76f7a5de33f416069101755c7b3456efaf0c8f25029
+impulse_z=99: events=[] snapshot=3e6091de4647e0db7d94b76f7a5de33f416069101755c7b3456efaf0c8f25029
+param_hash differs: True
+R-003 CONFIRMED: snapshot identity blind to event flags and parameters — same snapshot_id, different emitted events

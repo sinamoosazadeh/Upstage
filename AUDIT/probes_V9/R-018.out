@@ -1,0 +1,5 @@
+q_tag=Q4 method=BOTH kind=REGULAR_BEARISH candles=130
+wilson_ci: runtime callers in e10 = []
+divergence_success: runtime callers in e10 = []
+calibration_report: runtime callers in e10 = []
+R-018 CONFIRMED: Q4 without any statistical out-of-sample gate; the §8 statistical machinery is dead code at runtime

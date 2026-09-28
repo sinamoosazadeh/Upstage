@@ -1,0 +1,6 @@
+mom_window occurrences at lines: [178]
+   "mom_window": 14,
+computational reads: []
+uses outside e10: []
+states identical apart from param_hash: True | param_hash differ: True
+R-015 CONFIRMED: mom_window is a dead governed parameter; only param_hash moves

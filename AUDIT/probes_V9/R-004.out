@@ -1,0 +1,5 @@
+duplicate flag: True
+engine last close after 'correction': 106.1805 (corrected close was 201.7429)
+returned mz unchanged: True
+invalid duplicate returned as: Q2 (validation never ran)
+R-004 CONFIRMED: dedup precedes validation; corrections on the same close_time are unobservable

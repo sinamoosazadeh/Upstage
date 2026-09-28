@@ -1,0 +1,6 @@
+mz=2.986 with impulse_z=4.0 -> impulse_bull=False (engine says NO impulse)
+projection: {'momentum_state_raw': 'NEUTRAL', 'impulse_score': 0.0, 'as_of': 252000000, 'contract_version': 'E10_Momentum/4.0.0'}
+projection hardcodes th_imp=2.0 (source check: True)
+evidence: strength=0.7464 parameter_version=E10-MOM-V4.0.0/DEFAULTS-v1
+expected under override impulse_z=4: 0.3732
+R-016 CONFIRMED: evidence layer and projection use frozen defaults (2.0), not the parameters the engine actually ran with

@@ -1,0 +1,6 @@
+kind=REGULAR_BEARISH method=BOTH
+price pivot count: 6 | momentum pivot count: 28
+pit_proof p_idx=[102, 118] m_idx=[102, 118] (28 mom pivots vs 6 price pivots: any coincidence of indices is luck, not a checked invariant)
+cross-epoch pairing accepted: REGULAR_BEARISH method: PIVOT p_idx: [10, 40] m_idx: [90, 118]
+pairing-constraint tokens in _detect_divergence_pivot: []
+R-001 CONFIRMED: last-two-per-side pairing with unrelated bar indices; no temporal pairing constraint exists
