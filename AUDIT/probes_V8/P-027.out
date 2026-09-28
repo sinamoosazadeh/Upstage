@@ -1,0 +1,2 @@
+valid_bar=True; active_OBs=2; FVG_inputs=0; events= [{'code': 'EV_OBK_008', 'name': 'OB_Confluence', 'ts': 1767225600000, 'engine': 'E06_OrderBlock', 'version': '4.0.0', 'ob': 'ob1', 'other': 'ob2', 'iou': 0.8181818181818158}, {'code': 'EV_OBK_008', 'name': 'OB_Confluence', 'ts': 1767225600000, 'engine': 'E06_OrderBlock', 'version': '4.0.0', 'ob': 'ob2', 'other': 'ob1', 'iou': 0.8181818181818158}]
+active_OBs=1; FVG_not_consumed_by_method; confluence_events= []

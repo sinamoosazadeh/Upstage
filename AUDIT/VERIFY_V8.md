@@ -20,6 +20,16 @@
 | P-020 | CONFIRMED | S1 | S2 | Yes—E05 | D31 (not its scope) | A: producer preserves both canonical terminal payload and identity |
 | P-021 | PARTIAL | S2 | S2 | Yes—E05 | D31 | A: preserve native forensic event; admit terminal only as terminal |
 | P-022 | PARTIAL | S2 | S2 | Yes—E05 | — | A: producer treats corrections as new versions; native API remains exposed |
+| P-023 | PARTIAL | S2 | S2 | Yes—E05 | — | A: clarify `mtf_required` semantics; gate only if explicitly normative |
+| P-024 | PARTIAL | S2 | S2 | Yes—E04–E06 | — | A: enforce closed-only validated adapter on every engine ingress |
+| P-025 | CONFIRMED | S1 | S2 | Yes—E06 | — | A: producer advances lifecycle through last close; native bound remains |
+| P-026 | PARTIAL | S1 | S2 | Yes—E06 | — | A: PIT-check FVG state/availability at each confirmation index |
+| P-027 | CONFIRMED | S2 | S2 | Yes—E06 | — | A: non-frozen producer confluence check with actual E05 parent |
+| P-028 | CONFIRMED | S1 | S1 | Yes—E06 | — | A: producer gate refuses breaker lacking contemporaneous E01 BOS |
+| P-029 | PARTIAL | S1 | S2 | Yes—E06/E12 | — | A: verify/version lifecycle identity at producer boundary |
+| P-030 | CONFIRMED | S1 | S1 | Yes—E06 | — | A: candidate-to-confirmation gate before fabric admission |
+| P-031 | CONFIRMED | S2 | S2 | Yes—E06 | D31 does not cover E06 state | A: retain terminal diagnostic; exclude E06 terminal from active view |
+| P-032 | PARTIAL | S1 | S2 | Yes—E06 | — | A: E06 producer joins E03/E04 data by valid-time and availability |
 
 This is a read-only verification on baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`. The report source is `/tmp/AUDIT.md` fetched from audit commit `015d19bd6ec1956b853fd566157a929f9f95f260`; the compact index was only a locator. No `.env`, secrets, `data/`, database, device, exchange or Telegram endpoint was read or contacted. No source, config, tests, or existing documents were changed. The only working-tree additions are this report and new files in `AUDIT/probes_V8/`.
 
@@ -1069,16 +1079,536 @@ A for the current batch-oriented producer; prove producer correction invalidatio
 
 Same bit-identical candle remains idempotent; valid same-time wick correction causes recomputation or explicit refusal; corrected and fresh full-window oracle outputs match, including lifecycle, snapshot identity, and E06 downstream context.
 
+### P-023
+
+#### Auditor claim (short quote)
+
+“`mtf_required=True` is unused, yet a conventional LTF FVG is emitted without HTF input.”
+
+#### What I read (files, line ranges, functions, callers)
+
+`apex/engines/e05_fvg/engine.py:75–110` (parameter/default handling), `:332–405` (`classify_fvg`), `:463–535` (`process_bar`), `:676–701` (`run_engine`), `:762–803` (EngineBase compute); `APEX_GEN5.md:5680–5730,6013–6017,6084–6087`; and producer E05 context at `apex/ops/engine_context.py` E05 callsites. `grep -rn mtf_required` found the default declaration but no behavioral read in engine code. `classify_fvg` handles HTF objects if provided but does not make them mandatory.
+
+#### Reproduction (command, probe file, actual result)
+
+`PYTHONPATH=.:AUDIT/probes_V8 python3 AUDIT/probes_V8/P-023.py`; set `mtf_required=True`, passed no HTF list, and processed a three-bar valid FVG. The real engine emitted `EV_FVG_001_Zone_Created`; active zone was `CONVENTIONAL/Q2`. Raw output: `AUDIT/probes_V8/P-023.out`.
+
+#### Verdict and reasoning
+
+**PARTIAL.** The knob is an unused no-op and the engine emits without HTF. But the contract says MTF detection is out of scope and this engine checks alignment on already-detected HTF FVGs; it does not unambiguously say that every LTF FVG must be suppressed when the flag is true. The flag’s intended semantic requires owner/parameter contract clarification. Do not treat the default false behavior as a defect by itself.
+
+#### Root cause
+
+`mtf_required` is declared but never consumed. The engine can conditionally classify `SEQUENTIAL` when aligned HTF FVGs are supplied; absence does not block conventional classification.
+
+#### Direct impact
+
+Callers cannot rely on this parameter alone to gate FVG emission.
+
+#### Secondary effects and interactions (upstream/downstream)
+
+The producer passes MTF context for some projections, but native `E05FVGEngine.compute` can emit LTF objects with no HTF. E06 may use FVG bounds as context; the precise strength/permission effect is governed elsewhere and was not asserted here. No trade was tested.
+
+#### Contract and decisions
+
+E05 §1.3 says the engine does not perform MTF detection itself and only checks alignment on already detected FVGs; §3.5 defines alignment (`APEX_GEN5.md:5680–5730,5869–5886`). The contract’s `mtf_required` default is false (`:6013–6017`). No owner decision found requiring suppression under explicit true. Contract is binding; ambiguity means no inferred gate.
+
+#### Frozen status and non-frozen alternative
+
+E05 is frozen. Non-frozen producer can define and enforce the runtime policy when `mtf_required` is true (block, degrade or require alignment), with status lineage. Native parameter semantics change snapshots/zone membership and downstream E06 features; update fixtures and retrain/revalidate consumers if salience/zone availability changes.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+A. **Owner clarification + producer gate (preferred):** define true/false semantics then enforce outside E05. Side effects: availability of conventional zones changes in the producer and downstream evidence/hash; no frozen code.
+
+B. **Owner-authorized E05 implementation:** read the flag in native process path. Side effects: frozen file, golden fixtures, identity and E06/replay outputs change; dependent training/backtests need revalidation.
+
+#### My recommendation
+
+A. First decide if this is a required-input flag or a sequential-alignment toggle; do not invent semantics.
+
+#### Acceptance and regression tests
+
+Matrix true/false × HTF absent/aligned/opposite; assert exactly the owner-selected classification/emission. Check producer and low-level APIs separately; absent HTF must not be fabricated.
+
+### P-024
+
+#### Auditor claim (short quote)
+
+“Direct E04/E05/E06 APIs accept OPEN or malformed inputs, while PAPER’s closed-window adapter and validator protect the standard path.”
+
+#### What I read (files, line ranges, functions, callers)
+
+`apex/engines/e04_volatility/engine.py:852–873,1157–1207` (direct dict API and observation conversion), `apex/engines/e05_fvg/engine.py:274–331,481–499,748–762` (FVG API/converter), `apex/engines/e06_orderblock/engine.py:305–343,789–802` (E06 conversion/intake), `apex/data_catalog/contracts.py:185–239`, and `apex/ops/engine_context.py:1270–1283` (`closed_engine_window`). Grep callers confirm native direct APIs plus PAPER producer, which rejects non-final status before engine construction.
+
+#### Reproduction (command, probe file, actual result)
+
+`PYTHONPATH=.:AUDIT/probes_V8 python3 AUDIT/probes_V8/P-024.py`; all generated observations had `status=OPEN` and passed repository structural validation. The real E05 EngineBase path emitted one fresh FVG event; E04 compute emitted 39 states from 40 OPEN observations because its converter omits status. Raw output: `AUDIT/probes_V8/P-024.out`. No malformed OHLC was passed to an engine; contract rejection is covered by P-012.
+
+#### Verdict and reasoning
+
+**PARTIAL.** Direct E04/E05 wrappers lose candle status and accept valid OPEN observations. The standard PAPER adapter explicitly raises `DATA_QUALITY_QX` for status outside CLOSED/CORRECTED. Thus direct API defect is confirmed but the audit correctly disclaims the normal producer path. E06’s adapter preserves `is_closed` and detection checks it, so the blanket claim across all three engines would be too broad.
+
+#### Root cause
+
+E04/E05 observation converters do not preserve `MarketObservation.status`, while the native batch functions assume their inputs are already closed. E06 keeps a close marker and rejects nonclosed bars in detection.
+
+#### Direct impact
+
+Independent callers can compute preliminary states/zones from OPEN but otherwise valid OHLC; E06 is more guarded.
+
+#### Secondary effects and interactions (upstream/downstream)
+
+Upstream, `closed_engine_window` rejects OPEN/PARTIAL observations; this neutralizes the usual PAPER route. Downstream, uncontrolled callers could publish future-mutating E04/E05 state; no plan/risk path from an OPEN observation was exercised.
+
+#### Contract and decisions
+
+Global Candle/MarketObservation contracts distinguish OPEN/PARTIAL/CLOSED and require CLOSED-only feature input (`apex/data_catalog/contracts.py:95–240`; APEX global §2 at `:418–460`). E05 §2 requires CLOSED-only candles. No decision authorizes OPEN engine evidence. Producer guard is consistent with contract and outranks direct unvalidated convenience paths.
+
+#### Frozen status and non-frozen alternative
+
+E04/E05/E06 and data-catalog contracts are frozen. Non-frozen producer/adapters should accept validated final observations only and preserve correction status/lineage. Native converter fixes alter types/availability and EvidenceEvent identities, fixtures, replay and dependent feature training; owner exception would be required.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+A. **Enforce validated closed adapter everywhere (preferred):** use `closed_engine_window` equivalent at every external ingress. Side effects: explicit refusals for OPEN/PARTIAL; no frozen edit.
+
+B. **Owner-authorized native input typing:** carry status through E04/E05 and refuse nonclosed bars. Side effects: frozen API change and tests/fixtures/hash changes; retraining/replay revalidation.
+
+#### My recommendation
+
+A; retain the PAPER guard, and document direct low-level APIs as accepting only validated closed bars. Do not report a PAPER leak absent producer-path evidence.
+
+#### Acceptance and regression tests
+
+OPEN/PARTIAL valid OHLC must be refused at each public entry or explicitly preview-only; CLOSED/CORRECTED accepted under policy. H<L/invalid bounds refused by repository validator before engine calls. Verify producer guard and E06 close check.
+
+### P-025
+
+#### Auditor claim (short quote)
+
+“E06 `run_full` ends lifecycle at origin scan index 12 for a 19-bar window, not the last close at index 18.”
+
+#### What I read (files, line ranges, functions, callers)
+
+`apex/engines/e06_orderblock/engine.py:486–570` (`update_with_bar` lifecycle), `:699–721` (`run_full` loop bound/update placement), `:768–788` (`run_engine`), and producer `apex/ops/engine_context.py:1601–1622`. Grep callsites show `run_full` is the batch path; EngineBase E06 compute calls it through the public wrapper. Producer later limits retained raw window and applies age checks, which can hide some stale objects but does not advance omitted native lifecycle bars.
+
+#### Reproduction (command, probe file, actual result)
+
+`PYTHONPATH=.:AUDIT/probes_V8 python3 AUDIT/probes_V8/P-025.py`; 19 individually validated OHLC bars, defaults `disp_max_k=5`: scan bound was 13 indices, looped 0–12, and `update_with_bar` was called only for 1–12; last input index was 18. Raw output: `AUDIT/probes_V8/P-025.out`. This measured scan/update positions, not the auditor’s exact particular OB/TTL fixture.
+
+#### Verdict and reasoning
+
+**CONFIRMED.** The loop bound and update placement leave the last six bars out of lifecycle advancement for a 19-bar batch. The claimed exact `age=6` case was not independently recreated; the bound itself is directly reproduced.
+
+#### Root cause
+
+`run_full` couples origin scanning and lifecycle updating in `range(len(bars)-disp_max_k-1)`, so both stop before the last close needed for existing objects.
+
+#### Direct impact
+
+Fate/age may lag the actual final bar; an object can remain ACTIVE/CANDIDATE past its native expiry/invalidation boundary in that batch result.
+
+#### Secondary effects and interactions (upstream/downstream)
+
+Producer uses a roughly 300-bar E06 window and later computes evidence age; that can exclude old objects but does not substitute missed lifecycle transitions for recent objects. E06 outputs flow toward fabric/components. No setup/order impact was executed.
+
+#### Contract and decisions
+
+E06 lifecycle age/expiry and transitions are in `APEX_GEN5.md:7036–7050,7080–7082`; Chapter 4 requires lifecycle state to advance on closed bars. No owner decision authorizes a shorter lifecycle scan. Contract governs.
+
+#### Frozen status and non-frozen alternative
+
+E06 is frozen. Producer can independently project terminal fate through the rest of the known closed window or refuse to admit objects whose lifecycle may be incomplete, but must not duplicate native state transitions silently. Native correction changes object fate, age and snapshot hash, invalidates fixtures/replay and requires E06/E07/plan consumer revalidation; retrain if features change.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+A. **Producer completeness gate/projection:** mark E06 output incomplete if native scan did not cover last close; exclude from decision fabric or replay with a bounded adapter. Side effects: more refusals and possibly extra compute.
+
+B. **Owner-authorized E06 loop split:** scan origins up to supported K, then advance all existing objects through last close. Side effects: frozen change, altered lifecycle/snapshot identities, golden fixture and downstream replay/backtests.
+
+#### My recommendation
+
+A for current PAPER; obtain owner authorization for native loop correction after a parity harness specifies confirmation and lifecycle ordering.
+
+#### Acceptance and regression tests
+
+19-bar origin/confirmation/TTL case must reach expected final close fate; independently test detection cutoff and lifecycle advancement. Vary n around `disp_max_k+1`, verify no future candle used for detection and every existing object is updated through last closed index.
+
+### P-026
+
+#### Auditor claim (short quote)
+
+“E06 `detect_at` accepts a same-direction FVG regardless of future creation/availability/fate, elevating Q2 to Q3.”
+
+#### What I read (files, line ranges, functions, callers)
+
+`apex/engines/e06_orderblock/engine.py:396–429` (FVG context loop), `:699–721` (`run_full` supplies FVGs by index), `apex/ops/engine_context.py:1595–1622` (E05 objects bucketed by `created_at_idx`, passed into E06), E05 lifecycle at `apex/engines/e05_fvg/engine.py:550–624`, and fabric/producer timing. Direct callers from grep include unit and CP3 integration tests. `detect_at` checks direction/present/midpoint but not created time, availability, fate or parent.
+
+#### Reproduction (command, probe file, actual result)
+
+`PYTHONPATH=.:AUDIT/probes_V8 python3 AUDIT/probes_V8/P-026.py`; seven valid OHLC bars and aligned upstream evidence were ingested. A FVG with creation time after the E06 confirmation candle, future availability and `present=True` was injected. Without it, native detection returned `Q2/CANDIDATE`; with it, `Q3/ACTIVE`. Raw output `AUDIT/probes_V8/P-026.out`.
+
+#### Verdict and reasoning
+
+**PARTIAL.** Direct `detect_at` accepts future FVG metadata and changes quality. But PAPER buckets FVG objects by creation index and `run_full` only supplies nearby index entries; a final FILLED object may have been valid historically at the earlier decision. The direct injection does not prove the production producer supplied future/unavailable evidence at a decision boundary. The API defect is confirmed; operational PIT breach is not.
+
+#### Root cause
+
+E06 validates shape/direction/distance only and assumes the FVG input list is already PIT-filtered; temporal/fate contract is not enforced at the E06 boundary.
+
+#### Direct impact
+
+A future/unavailable same-direction FVG can be counted as context and raise quality/fate in a caller bypassing producer filtering.
+
+#### Secondary effects and interactions (upstream/downstream)
+
+E05 producer constructs objects and E06 consumes `asdict` by creation index; current PAPER timing projection is a mitigating boundary. If future context leaked, it could affect E06 evidence/fabric and setup components, but risk/order impact was not run. Terminal QX evidence retention follows D31 and must not be deleted to implement this gate.
+
+#### Contract and decisions
+
+E06 §2.5 says context is evaluated only after referenced observations are closed and `as_of >= confirmed_at`, never before (`APEX_GEN5.md:7012–7026`); E05/E06 inter-engine contracts define the FVG parent. No decision supersedes this. Contract governs; producer mitigation does not waive native API obligations.
+
+#### Frozen status and non-frozen alternative
+
+E06 is frozen. Producer can pass only index/time-aligned FVG versions available at confirmation; store historical versions and map fate as of the decision, not current final fate. Side effects: versioned lineage and changed E06 identities/quality. Native guard requires frozen approval, fixtures and replay snapshot changes, and retraining/revalidation if Q3-derived features feed models.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+A. **Producer PIT admission (preferred):** filter on created/available time and reconstruct historical status at confirmation. Side effects: more absent context and lineage/version cache work; no frozen edit.
+
+B. **Owner-authorized native validation:** reject future/unavailable/invalid parent FVG metadata in `detect_at`. Side effects: frozen E06 mutation and changed evidence/fixtures/hashes; downstream training/replay revalidation.
+
+#### My recommendation
+
+A now. Preserve final FILLED status separately from historical-at-decision status; never infer that current FILLED means historically unusable.
+
+#### Acceptance and regression tests
+
+Future-created or not-yet-available FVG cannot raise Q2→Q3; an FVG active at the actual confirmation time can. Test current terminal status with historical active version, parent ID, exact index/time and producer-to-fabric projection.
+
+### P-027
+
+#### Auditor claim (short quote)
+
+“`_detect_confluence` emits OB↔OB `EV_OBK_008` without any FVG and ignores a valid FVG.”
+
+#### What I read (files, line ranges, functions, callers)
+
+`apex/engines/e06_orderblock/engine.py:674–697` (`_detect_confluence`), `:699–721` (caller), E06 event catalog and contract `APEX_GEN5.md:7713–7722,8153–8160`; tests `tests/unit/test_e06_orderblock.py:700–718`; CP3 integration. Grep found only internal call from `update_with_bar`; function loops over active OBs, not FVGs.
+
+#### Reproduction (command, probe file, actual result)
+
+`PYTHONPATH=.:AUDIT/probes_V8 python3 AUDIT/probes_V8/P-027.py`; with one validated closed market bar and two overlapping active same-direction OB objects, no FVG objects supplied, the real method emitted two symmetric `EV_OBK_008` events at IoU `0.81818`. One OB alone emitted none. Raw output `AUDIT/probes_V8/P-027.out`.
+
+#### Verdict and reasoning
+
+**CONFIRMED.** Code and real method output show event semantics are OB-pair confluence, while the contract/event name says OB↔FVG. The missing FVG branch is also explicit. The probe does not establish Q3 promotion or trade impact.
+
+#### Root cause
+
+`_detect_confluence` nests only `self.active_obs` and compares each OB against every other; there is no E05 input at this method call.
+
+#### Direct impact
+
+A no-FVG OB pair is mislabeled `EV_OBK_008` and produces duplicate mirrored events; a true OB/FVG pair does not produce this method’s event.
+
+#### Secondary effects and interactions (upstream/downstream)
+
+E06 evidence/traceability and any confluence statistics become semantically inaccurate. The event does not itself change OB quality in the reviewed branch; setup/entry effect is not established. Fabric is only a projection and will preserve the event.
+
+#### Contract and decisions
+
+E06 §8.6 and event catalog require OB↔FVG overlap/co-occurrence (`APEX_GEN5.md:7713–7722,8153–8160`). ISSUE-CP3-013 only reconciles QX output tags, not confluence source; no owner decision changes EV_OBK_008 meaning. Contract governs.
+
+#### Frozen status and non-frozen alternative
+
+E06 is frozen. A non-frozen producer can compute an independent OB–E05 PIT overlap and emit a distinct parented confluence fact, while suppressing the mislabeled native OB-pair event from decision use. Side effects: additional event lineage and component/score changes. In-engine correction changes golden event outputs, identity hashes and downstream statistics; owner exception plus retraining/replay where used.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+A. **Producer-side actual FVG confluence (preferred):** create new context fact from live E05 parent and gate native OB-pair label. Side effects: non-frozen evidence adapter and altered event set.
+
+B. **Owner-authorized native correction:** pass PIT FVG list and separate any allowed OB↔OB event. Side effects: frozen change, event/fixture/hash changes and downstream recalibration.
+
+#### My recommendation
+
+A; do not count current `EV_OBK_008` as evidence of OB/FVG confluence.
+
+#### Acceptance and regression tests
+
+OB pair without FVG emits no OB/FVG event; same-direction, PIT-active FVG with required IoU/midpoint emits one event with OB+FVG parent IDs; opposite/stale/terminal FVG rejected; ensure no duplicate symmetric event.
+
+### P-028
+
+#### Auditor claim (short quote)
+
+“An invalidated OB reclaimed without a new BOS and with `VolRatio=0` becomes an ACTIVE Q3 BREAKER/BOS.”
+
+#### What I read (files, line ranges, functions, callers)
+
+`apex/engines/e06_orderblock/engine.py:571–612` (`_detect_breaker_conversion`), `:333–342` (`_safe_vol_ratio`), `:486–570` lifecycle caller, contract `APEX_GEN5.md:7036–7050`; grep consumers include `update_with_bar`, `run_full`, E06 emitter and producer/bridge. The conversion function checks geometric reclaim, catches absent volume as zero, and hardcodes structural event BOS, strength 1.0 and quality Q3; no structural-feed argument is read.
+
+#### Reproduction (command, probe file, actual result)
+
+`PYTHONPATH=.:AUDIT/probes_V8 python3 AUDIT/probes_V8/P-028.py`; one contract-validated reclaim candle and an INVALIDATED prior UP OB were supplied; volume evidence was valid but `volume_ratio=0`. With no structure feed, native engine created an ACTIVE BREAKER with `(quality=Q3, structural_event=BOS, vol_ratio=0.0)`. Output `AUDIT/probes_V8/P-028.out`.
+
+#### Verdict and reasoning
+
+**CONFIRMED.** Method’s full body matches the claim; the real output reproduces it. This is inconsistent with contract requiring a same-direction BOS at reclaim. It remains a research/context object path; no order was placed.
+
+#### Root cause
+
+Conversion uses a geometric reclaim predicate only, then synthesizes BOS/Q3 and treats unavailable volume as 0.0 without downgrading or refusing.
+
+#### Direct impact
+
+The new breaker object carries structural assertion and quality unsupported by the provided inputs.
+
+#### Secondary effects and interactions (upstream/downstream)
+
+E06 emitter can serialize this as ACTIVE/VALID and fabric can consume it; an E01 confirmation gate or risk gate may still block a plan, but that is not a defense for false provenance. No trade or exact setup score was executed.
+
+#### Contract and decisions
+
+E06 §2.7 requires reclaim **plus new BOS** in correct direction (`APEX_GEN5.md:7036–7050`); §1.6 quality ladder governs Q3 promotion. ISSUE-CP3-006 applies only to MITIGATION_BLOCK’s Q2 research ceiling and does not authorize breaker Q3 without structure. Contract/owner decision distinction: CP3-006 is not a defense for this separate transition.
+
+#### Frozen status and non-frozen alternative
+
+E06 is frozen. Producer can independently require a contemporaneous, aligned E01 BOS and valid volume provenance before admitting breaker evidence; missing inputs become diagnostic refusal. Native fix alters breaker history/snapshots, event IDs, golden fixtures and downstream components; revalidate/retrain derived features.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+A. **Producer breaker gate (preferred containment):** require E01 event/time/direction and a nonmissing volume status before decision admission. Side effects: increased refusal count and status lineage; does not repair forensic native object.
+
+B. **Owner-authorized E06 correction:** pass structural feed into conversion and derive Q-level only from governed ladder. Side effects: frozen change, snapshot/fixture/replay changes and downstream retraining if used.
+
+#### My recommendation
+
+A and retain native result as diagnostic only until owner approves B.
+
+#### Acceptance and regression tests
+
+Invalidated+reclaim with no BOS, opposite BOS, stale BOS, or missing/zero participation must not emit Q3/BOS; aligned fresh BOS with valid volume can create a versioned breaker only at its confirmation time. Test producer/fabric admission separately.
+
+### P-029
+
+#### Auditor claim (short quote)
+
+“E06 mutates lifecycle fields after snapshot identity is computed; the row also extends the same issue to E12.”
+
+#### What I read (files, line ranges, functions, callers)
+
+E06: `apex/engines/e06_orderblock/engine.py:117–125` (snapshot helper), `:210–260` (`OB.to_canonical`), `:455–469` creation and hash, `:486–671` lifecycle/merge mutation, `:876–917` emitter. E12: cited report lines `engine.py:1111–1134` were located but not fully traced in this tranche. E06 consumers found by `grep -rn`: lifecycle updates, history, merge, `_to_evidence`, `run_full`, producer E06 bundle and bridge. The snapshot includes age/touch/fate/quality; `snapshot_id` is not refreshed by all later mutation paths.
+
+#### Reproduction (command, probe file, actual result)
+
+`PYTHONPATH=.:AUDIT/probes_V8 python3 AUDIT/probes_V8/P-029.py`; construct valid E06 `OB`, compute real snapshot, mutate age/touch/fate, recompute through `e06_snapshot_id`. Stored identity remained `711b6561…`; canonical changed identity was `15ed82ab…`. Raw output `AUDIT/probes_V8/P-029.out`. E12 half was not reproduced.
+
+#### Verdict and reasoning
+
+**PARTIAL.** E06 stale identity after lifecycle mutation is confirmed. The row also includes E12’s separate lifecycle/hash path; that is outside V8’s native E03–E06 probe and was not independently reproduced, so this verdict does not affirm that part.
+
+#### Root cause
+
+E06 canonical snapshot contains mutable lifecycle fields, but age/touch/fate/quality can change after the initial hash without recalculation or a versioned immutable transition record.
+
+#### Direct impact
+
+One E06 snapshot ID can accompany different canonical OB content.
+
+#### Secondary effects and interactions (upstream/downstream)
+
+`E06OrderBlockEngine._to_evidence` serializes the old snapshot beside current fields; producer/fabric crosswalk uses snapshot identity to associate state. Replays and auditing can mistake changed lifecycle content for unchanged evidence. No database hash verification was executed. E12 impact remains unverified.
+
+#### Contract and decisions
+
+E06 §5.4 requires canonical SHA-256 identity (`APEX_GEN5.md:7326–7340`); global identity law makes snapshot content-addressed. No later decision found permitting E06 lifecycle fields to leave identity stale. Contract governs. E12 contract is not adjudicated in this E06 finding.
+
+#### Frozen status and non-frozen alternative
+
+E06 and E12 are frozen. Producer can verify the current E06 canonical hash before persistence and create a separate versioned transition record with parent ID; it cannot repair a stale native hash silently. Native change invalidates E06 snapshots, caches, golden fixtures, crosswalk IDs and any trained features keyed by snapshots; replay/retraining required.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+A. **Producer identity guard/transition sidecar:** reject mismatch for decision use while preserving raw event. Side effects: extra versioned records and potential refusals.
+
+B. **Owner-authorized E06 immutability/version correction:** snapshot each lifecycle version and parent. Side effects: frozen API/identity change, fixture and downstream replay/cache invalidation; model revalidation/retraining.
+
+#### My recommendation
+
+A until the owner authorizes native correction; separately audit E12 rather than importing this conclusion into its engine.
+
+#### Acceptance and regression tests
+
+For E06 create→touch→mitigate→invalidate/expire/merge, every emitted payload hash recomputes exactly or references an immutable parent/version. Test public-store roundtrip and replay. For E12, a separate probe and canonical/hash policy review are required.
+
+### P-030
+
+#### Auditor claim (short quote)
+
+“E06 `CANDIDATE/Q2` is emitted as ACTIVE/VALID and admitted by the fabric.”
+
+#### What I read (files, line ranges, functions, callers)
+
+`apex/engines/e06_orderblock/engine.py:343–485` (`detect_at` sets Q1/Q2 to CANDIDATE), `:876–917` (`_to_evidence` hardcodes lifecycle ACTIVE), `apex/fabric/evidence.py:335–405,430–472` (ACTIVE-only fabric assembly), and `apex/ops/engine_context.py:1601–1622,1862–1882` (E06 event assembly and producer admission loop). Producer’s special fate transition is E05-only; E06 CANDIDATE is not separately downgraded in the inspected loop.
+
+#### Reproduction (command, probe file, actual result)
+
+`PYTHONPATH=.:AUDIT/probes_V8 python3 AUDIT/probes_V8/P-030.py`; real `_to_evidence` for an E06 `OB(fate=CANDIDATE,quality=Q2)` yielded `EV_OBK_ENTRY_CANDIDATE`, validity VALID, resolution Q2, fate_state ACTIVE; real `fabric_from_events` returned it as an ACTIVE member with no exclusion. Output `AUDIT/probes_V8/P-030.out`.
+
+#### Verdict and reasoning
+
+**CONFIRMED.** Native projection maps a candidate to ACTIVE, and the generic fabric admits it. Producer source has no E06 candidate crosswalk comparable to the E05 fate mapping, so the claim goes beyond a direct API-only issue in the inspected decision-view assembly. This proves admission to evidence fabric, not that a final setup/order is guaranteed.
+
+#### Root cause
+
+E06 `_to_evidence` ignores `ob.fate` for `fate_state` and sets ACTIVE regardless of CANDIDATE; fabric admission trusts that field.
+
+#### Direct impact
+
+Unconfirmed E06 zones become active fabric members and may influence component projection/quality.
+
+#### Secondary effects and interactions (upstream/downstream)
+
+The producer assembles E06 events into shared fabric and setup components; separate gates/risk vetoes may still prevent a plan or order. The audit’s statement that no trade is proven remains correct. No decision, authorization, or order was executed.
+
+#### Contract and decisions
+
+E06 §2.5 requires delayed confirmation at/after `t+K` and forbids use before `confirmed_at` (`APEX_GEN5.md:7012–7026`); lifecycle vocabulary makes CANDIDATE distinct from ACTIVE. Fabric contract admits ACTIVE only (`apex/fabric/evidence.py:335–374`). ISSUE-CP3-006 is limited to MITIGATION_BLOCK Q2 and does not authorize general candidate admission. Contract governs.
+
+#### Frozen status and non-frozen alternative
+
+E06 is frozen. Non-frozen producer admission can retain native candidate event for forensics but map it to a non-admitted/diagnostic ref until the confirmation condition/time is satisfied; do not alter quality class or delete raw event. Native fix changes event lifecycle, snapshot identity, fixtures and fabric content hashes; setup/backtest/training outputs require revalidation.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+A. **Producer candidate gate (preferred):** candidate is diagnostic; publish decision-view version only after confirmation and correct timestamp. Side effects: fewer active components, new parent/version IDs, downstream fixture/hash updates.
+
+B. **Owner-authorized E06 emitter correction:** set lifecycle from native fate and emit a confirmed version. Side effects: frozen file, event/snapshot and golden fixture changes; retrain/replay where feature distributions change.
+
+#### My recommendation
+
+A immediately; this is an admission issue, not a request to promote quality. Preserve all underlying evidence and provenance.
+
+#### Acceptance and regression tests
+
+CANDIDATE without matured displacement/BOS cannot enter fabric; after `confirmed_at`, exactly the confirmed version may enter if validity/PIT/lineage pass. Assert generic `fabric_from_events`, producer `get_bridge_context`, component projection and no change to independent risk vetoes.
+
+### P-031
+
+#### Auditor claim (short quote)
+
+“E06 INVALIDATED/EXPIRED QX emits ACTIVE/Q1-degraded and the generic fabric admits it; PAPER has no E06 terminal crosswalk.”
+
+#### What I read (files, line ranges, functions, callers)
+
+`apex/engines/e06_orderblock/engine.py:512–570` (terminal mutation), `:876–917` (`_to_evidence` QX→Q1, validity DEGRADED but fate ACTIVE), `apex/fabric/evidence.py:335–405` (ACTIVE gate); producer `engine_context.py:1601–1622,1862–1882` crosswalks E05 but not E06. `PHASE2_DECISION_LOG.md:564–571` D31 concerns E05 terminal QX only. Grep identified E06 event/producer callers and no separate E06 state remap in this admission loop.
+
+#### Reproduction (command, probe file, actual result)
+
+`PYTHONPATH=.:AUDIT/probes_V8 python3 AUDIT/probes_V8/P-031.py`; real E06 emitter for INVALIDATED and EXPIRED QX OBs produced `validity=DEGRADED`, `resolution=Q1`, `fate_state=ACTIVE`; real fabric admitted both as members. Raw output `AUDIT/probes_V8/P-031.out`.
+
+#### Verdict and reasoning
+
+**CONFIRMED.** This is direct E06 API/fabric behavior and the inspected producer code has no E06-specific correction. `QX→Q1` is an existing schema crosswalk carrying degraded status, but it does not make terminal ACTIVE state correct. D31 is E05-only and does not cover E06.
+
+#### Root cause
+
+E06 emitter hardcodes ACTIVE for all object states and maps out-of-range QX to Q1; generic fabric checks only the emitted lifecycle, not the explanation/fate string.
+
+#### Direct impact
+
+A terminal E06 object can survive as an active fabric member, albeit marked DEGRADED/Q1.
+
+#### Secondary effects and interactions (upstream/downstream)
+
+P-025’s truncated lifecycle means some PAPER terminal transitions may not be reached in short batches; when terminal objects are emitted by the wrapper or external API, they are admitted unless age or another gate removes them. Downstream setup may still reject degraded/low-quality input; no trade is proven. D31 retention duty for E05 cannot be used to justify E06 terminal admission.
+
+#### Contract and decisions
+
+E06 lifecycle transitions in `APEX_GEN5.md:7036–7050` make INVALIDATED/EXPIRED terminal; `EvidenceFabric.assemble` (`apex/fabric/evidence.py:335–374`) admits only ACTIVE. D31 (`PHASE2_DECISION_LOG.md:564–571`) expressly authorizes preserved E05 QX only, not E06. No E06 owner decision overrides terminal lifecycle. Contract governs.
+
+#### Frozen status and non-frozen alternative
+
+E06 and fabric are frozen. Producer can preserve raw E06 terminal fact for audit but construct an explicit terminal decision-view ref (not active) before fabric; distinguish raw QX from normalized resolution. Native changes require owner exception, event identity/fixture updates and downstream replay/model revalidation.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+A. **Producer E06 terminal gate (preferred):** retain diagnostic event, exclude terminal from active members and record transition. Side effects: altered fabric hashes/components and evidence-projection tests; no frozen edit.
+
+B. **Owner-authorized native correction:** emit terminal fate correctly and retain QX only in raw diagnostics. Side effects: frozen change and crosswalk/schema/fixture/cache identity impact.
+
+#### My recommendation
+
+A. Do not delete terminal forensics, but do not admit a terminal state as active. D31 is not authority for E06.
+
+#### Acceptance and regression tests
+
+INVALIDATED/EXPIRED QX must be excluded from E06 active fabric at every age; diagnostic event remains roundtrippable with parent/snapshot. Include age≤5×TF to ensure freshness gate does not mask lifecycle gate, and producer full path.
+
+### P-032
+
+#### Auditor claim (short quote)
+
+“E06 validates volume only internally against its own availability, and never checks volume/ATR as-of or availability against the indexed candle.”
+
+#### What I read (files, line ranges, functions, callers)
+
+`apex/engines/e06_orderblock/engine.py:305–342` (`ingest_bars`, `_safe_vol_ratio`), `:343–429` (`detect_at` consumes positional volume/ATR), `:699–721` (`run_full`), `apex/ops/engine_context.py:1595–1622` (producer joins E05/E03/E04 projections by index/contract fields) and `APEX_GEN5.md:6986–6992,7012–7026`. Direct callers include `run_engine`, E06 EngineBase compute, producer joint evidence map and CP3 tests. Native E06 validates finite ATR and an internal volume as-of/availability ordering, not relationship to the candle timestamp.
+
+#### Reproduction (command, probe file, actual result)
+
+`PYTHONPATH=.:AUDIT/probes_V8 python3 AUDIT/probes_V8/P-032.py`; seven validated closed candles and evidence with `as_of` later than each candle were accepted by real `ingest_bars`. With ATR=2, `detect_at` returned Q2 at displacement 1.5; same bars, volume and structure with future-labeled ATR=20 returned no OB. Output `AUDIT/probes_V8/P-032.out`.
+
+#### Verdict and reasoning
+
+**PARTIAL.** Direct E06 API accepts future as-of evidence and the altered ATR changes zone existence. However, the PAPER producer constructs E03/E04 evidence by aligned index/as-of and its chronological stream only drains already-reached E04 bars; this probe bypasses that adapter. It proves API boundary weakness, not a current PAPER leak.
+
+#### Root cause
+
+Evidence validation is positional and local: no check that volume evidence, ATR evidence and availability are PIT-valid relative to `bars[idx]` or the decision confirmation boundary.
+
+#### Direct impact
+
+Future-dated inputs can change quality or suppress/create OBs in direct callers without a named refusal.
+
+#### Secondary effects and interactions (upstream/downstream)
+
+E03/E04→E06 is normally aligned in `engine_context.py`, which mitigates current PAPER route. API/refactor or corrected index alignment can reintroduce the issue. E06 output could then alter fabric/setup; no decision/risk/order path was executed.
+
+#### Contract and decisions
+
+E06 §2.1 candle time and §2.5 delayed confirmation/PIT require evidence available at decision time (`APEX_GEN5.md:6986–6992,7012–7026`). No owner decision authorizes future evidence. Contract governs over permissive low-level ingestion.
+
+#### Frozen status and non-frozen alternative
+
+E06 is frozen. Producer should time-join every dependency to source candle identity, validate source as-of/availability and allowed lag, and refuse missing/future/stale evidence before native call. This changes producer data eligibility/lineage but not native hash. Native correction changes E06 API outputs/identities and fixtures; retrain/replay if evidence-derived components shift.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+
+A. **Producer PIT admission (preferred):** bind E03/E04 to timestamp and source identity and reject future values. Side effects: refusals and additional input/version tracking.
+
+B. **Owner-authorized E06 validation:** enforce evidence `as_of` and availability against exact bar/confirmation. Side effects: frozen code, tests/fixtures/hashes and all joint producer inputs must be revalidated.
+
+#### My recommendation
+
+A for current PAPER. Preserve direct API warning and add producer regressions proving adapter is not bypassed.
+
+#### Acceptance and regression tests
+
+For each index, test timestamp-correct E03/E04, future as-of, future availability, allowed lag, stale evidence, missing evidence and mismatched identity. Future values must refuse/QX; valid lagged ATR must match expected OB; verify both direct API and producer/fabric decision path.
+
 ## New findings not in the audit
 
-None identified in this second tranche. This is not a claim that the full E03–E06 scope has no additional findings.
+None identified in this tranche. This is not a claim that the full E03–E06 scope has no additional findings.
 
 ## Rows not verified or incomplete
 
-The exact report text was read for P-001–P-013, P-015, P-016, P-018–P-022. For these, only the cited functions/ranges and direct callers identified by targeted `grep -rn` were examined; the mandatory complete-file read of every engine, full test file, complete context sections, all transitive callers/callees and all requested fixtures has not been completed. P-012's invalid-middle probe was deliberately not run because that input fails the mandatory data contract; only the malformed-path source logic and upstream guard were inspected. No real database/device/data validation was performed.
+The exact full report text was read for P-001–P-013, P-015, P-016, P-018–P-032. P-012 is limited to the validator refusal; malformed OHLC was not passed to an engine. P-029’s E12 extension was not independently reproduced. For every row, only cited functions and targeted caller searches have been reviewed; full-file reads of all E03–E06 engines, all requested tests/fixtures, the complete E03–E06 producer sections, all transitive callers/callees, and end-to-end PAPER SQLite/fabric paths are not complete. No real database, device, market/model data, orders or external endpoint was used.
 
-P-023–P-039 have not yet been independently assessed. P-014 and P-017 do not exist in the audit and are excluded, as requested.
+P-033–P-039 have not yet been independently assessed. P-014 and P-017 are absent from the audit and excluded as requested.
 
 ## Final counts
 
-Progress tranche (20 report IDs): CONFIRMED 12; PARTIAL 8; REJECTED 0; DEVICE-EVIDENCE-NEEDED 0. P-023–P-039 remain unverified; these are not full-scope V8 counts.
+Progress tranche (30 report IDs): CONFIRMED 17; PARTIAL 13; REJECTED 0; DEVICE-EVIDENCE-NEEDED 0. P-033–P-039 remain unverified; these are not full-scope V8 counts.

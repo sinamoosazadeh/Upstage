@@ -1,0 +1,2 @@
+validated_reclaim_OHLC=True; no_structural_feed; volume_ratio=0
+new_objects= [('Q3', 'BOS', 0.0, 'ACTIVE', 'BREAKER')]

@@ -1,0 +1,2 @@
+validated_ohlc_bars= 3 mtf_required= True htf_fvgs=None events= ['EV_FVG_001_Zone_Created']
+active_zones= [('CONVENTIONAL', 'Q2', '2e07a7965aaea9c958d6c396e4eceebbe2ecc2443ab9aee41c4bba488c372088')]

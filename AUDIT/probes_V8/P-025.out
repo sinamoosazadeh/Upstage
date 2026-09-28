@@ -1,0 +1,2 @@
+validated_bars= 19 disp_max_k= 5 run_full_scan_bound= 13
+update_indices= [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] max_updated_index= 12 last_input_index= 18

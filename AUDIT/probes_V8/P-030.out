@@ -1,0 +1,2 @@
+native_candidate= EV_OBK_ENTRY_CANDIDATE VALID Q2 ACTIVE
+fabric_members= [('ACTIVE', 'Q2')] excluded= ()

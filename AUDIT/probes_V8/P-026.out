@@ -1,0 +1,3 @@
+validated_OHLC_bars= 7 future_fvg_created_after_confirmation= True
+without_fvg= ('Q2', 'CANDIDATE', 1767243600000)
+with_future_fvg= ('Q3', 'ACTIVE', 1767243600000)

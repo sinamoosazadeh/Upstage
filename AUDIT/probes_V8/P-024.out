@@ -1,0 +1,2 @@
+validated_open_observations= 3 all_status_open= True E05_events= 1 E05_condition= EV_FVG_ZONE_CONVENTIONAL_FRESH
+validated_open_observations= 40 E04_events= 39 first_event= EV_VLT_STATE_NORMAL
