@@ -1,0 +1,23 @@
+apex/ops/engine_context.py:1829:    async def get_bridge_context(self, symbol: str, timeframe: str, as_of: str) -> dict:
+apex/ops/plan_bridge.py:27:store's explicitly named ``get_bridge_context``/``get_engine_context`` reader
+apex/ops/plan_bridge.py:580:        for name in ("get_bridge_context", "get_engine_context",
+apex/ops/plan_bridge.py:1013:    bridge = PaperPlanBridge(store=store, environment=environment,
+scripts/run_apex.py:750:        plan_bridge = PB.PaperPlanBridge(
+scripts/run_apex.py:752:            context_source=producer.get_bridge_context if producer is not None else None,
+tests/integration/test_context_to_trade_paper.py:162:def real_active_refs(bars):
+tests/integration/test_context_to_trade_paper.py:196:def synth_refs():
+tests/integration/test_context_to_trade_paper.py:357:    refs = real_active_refs(bars)
+tests/integration/test_context_to_trade_paper.py:358:    c = run_chain(refs + synth_refs())
+tests/integration/test_context_to_trade_paper.py:603:        refs = real_active_refs(bars) + synth_refs()
+tests/integration/test_context_to_trade_paper.py:625:        refs = real_active_refs(bars) + synth_refs()
+tests/integration/test_cp14_producer.py:73:   await source.get_bridge_context('BTCUSDT','1d','2026-01-07T00:00:00.001Z')
+tests/integration/test_cp14_producer.py:74:  ctx=await source.get_bridge_context('BTCUSDT','1d',ASOF)
+tests/integration/test_cp14_producer.py:76:  assert E.canonical_json(ctx)==E.canonical_json(await source.get_bridge_context('BTCUSDT','1d',ASOF))
+tests/integration/test_cp14_producer.py:184:        a=await source.get_bridge_context('BTCUSDT','1d',ASOF)
+tests/integration/test_cp14_producer.py:186:        b=await source.get_bridge_context('BTCUSDT','1d',ASOF)
+tests/integration/test_cp14_producer.py:201:        assert E.canonical_json(await source.get_bridge_context('BTCUSDT','1d',ASOF))==E.canonical_json(context)
+tests/integration/test_cp14_producer.py:204:def test_g1_real_bridge_consumes_context_without_fabricated_plan(real_context):
+tests/integration/test_cp14_producer.py:206:        bridge=PaperPlanBridge(store=store,environment='PAPER',context_source=source.get_bridge_context)
+tests/integration/test_cp14_producer.py:218:        bridge=PaperPlanBridge(store=store,environment='PAPER',context_source=source.get_bridge_context)
+tests/integration/test_cp14_producer.py:229:def test_bound_producer_existing_paper_loop_one_cycle_json(real_context,monkeypatch):
+tests/integration/test_cp14_producer.py:250:        bridge=PaperPlanBridge(store=store,environment='PAPER',context_source=source.get_bridge_context,

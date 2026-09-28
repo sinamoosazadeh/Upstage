@@ -1,0 +1,16 @@
+{
+  "database": ":memory:",
+  "repository_ddl_without_extra_index": [
+    "SCAN r",
+    "SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)",
+    "USE TEMP B-TREE FOR ORDER BY"
+  ],
+  "repository_market_indexes_before_hypothetical": [
+    "sqlite_autoindex_market_observation_1"
+  ],
+  "with_hypothetical_device_style_index": [
+    "SEARCH m USING INDEX device_market_window (symbol=? AND timeframe=? AND candle_status=? AND open_time>? AND open_time<?)",
+    "SCAN r",
+    "USE TEMP B-TREE FOR ORDER BY"
+  ]
+}
