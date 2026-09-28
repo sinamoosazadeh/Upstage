@@ -1,0 +1,31 @@
+{
+  "id": "K-011",
+  "probe": "k011",
+  "result": {
+    "as_of": "2026-01-10T01:00:00.000Z",
+    "as_of_ms": 1768006800000,
+    "catalog_body_ratio": {
+      "availability_time": "2026-01-10T02:15:00.000Z",
+      "reason": "",
+      "status": "OK",
+      "value": "0.250000"
+    },
+    "current_candle_close_boundary": 1768010400000,
+    "current_candle_open": "2026-01-10T01:00:00.000Z",
+    "last_closed_price": "105",
+    "legacy_store_window_last": {
+      "availability": "2026-01-10T02:15:00.000Z",
+      "close": "105",
+      "timestamp": "2026-01-10T01:00:00.000Z"
+    },
+    "producer_window_bars_1": [],
+    "producer_window_bars_2": [
+      {
+        "close": "100",
+        "timestamp": "2026-01-10T00:00:00.000Z"
+      }
+    ],
+    "raw_availability_frontier": "2026-01-10T02:15:00.000Z",
+    "scope_note": "real SQLiteStore, Catalog, last_closed_price and EngineContextProducer methods ran; only temp market rows/retrieved_at were seeded, no trade/order or device data"
+  }
+}

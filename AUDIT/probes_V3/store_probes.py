@@ -627,8 +627,57 @@ async def k010() -> dict:
             await store.close()
 
 
+async def k011() -> dict:
+    from apex.data_catalog.catalog import Catalog
+    from apex.ops.engine_context import EngineContextProducer
+    from apex.ops.paper_loop import last_closed_price
+    from apex.ops.bootstrap_service import close_time_ms, _iso_to_ms
+
+    with tempfile.TemporaryDirectory(prefix="v3-k011-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        try:
+            previous = MarketObservation(symbol="BTCUSDT", timeframe="1h", open=Decimal("100"),
+                high=Decimal("110"), low=Decimal("90"), close=Decimal("100"), volume=Decimal("10"),
+                oi=None, timestamp="2026-01-10T00:00:00.000Z", sequence=1, status="CLOSED",
+                source="V3-PROBE", availability_time="2026-01-10T01:00:00.000Z", oi_timestamp=None)
+            current = MarketObservation(symbol="BTCUSDT", timeframe="1h", open=Decimal("100"),
+                high=Decimal("110"), low=Decimal("90"), close=Decimal("105"), volume=Decimal("10"),
+                oi=None, timestamp="2026-01-10T01:00:00.000Z", sequence=2, status="CLOSED",
+                source="V3-PROBE", availability_time="2026-01-10T02:15:00.000Z", oi_timestamp=None)
+            previous_id = await store.ingest_raw(previous, "MISSING")
+            current_id = await store.ingest_raw(current, "MISSING")
+            for event_id, retrieval in ((previous_id, previous.availability_time),
+                                        (current_id, current.availability_time)):
+                await store.db.execute("UPDATE market_observation SET retrieved_at=? WHERE observation_id=?",
+                    (retrieval, "obs-"+event_id))
+            await store.db.commit()
+            as_of = "2026-01-10T01:00:00.000Z"
+            raw_store_window = await store.get_window("BTCUSDT", "1h", as_of, 1)
+            direct_price = await last_closed_price(store, "BTCUSDT", "1h", as_of)
+            catalog = Catalog(provider=store)
+            catalog_result = await catalog.get("body_ratio", "BTCUSDT", "1h", as_of, lookback=1)
+            producer = EngineContextProducer(store, environment="PAPER")
+            producer_one = await producer.window("BTCUSDT", "1h", as_of, 1)
+            producer_two = await producer.window("BTCUSDT", "1h", as_of, 2)
+            frontier = await store.max_availability_time("BTCUSDT", "1h", as_of)
+            open_ms = _iso_to_ms(current.timestamp)
+            return {"as_of": as_of, "current_candle_open": current.timestamp,
+                "current_candle_close_boundary": close_time_ms(open_ms, "1h"),
+                "as_of_ms": _iso_to_ms(as_of), "raw_availability_frontier": frontier,
+                "legacy_store_window_last": {"timestamp": raw_store_window[-1].timestamp,
+                    "close": str(raw_store_window[-1].close), "availability": raw_store_window[-1].availability_time},
+                "last_closed_price": direct_price,
+                "catalog_body_ratio": {"value": str(catalog_result.value), "status": catalog_result.status.value,
+                    "reason": catalog_result.reason, "availability_time": catalog_result.availability_time},
+                "producer_window_bars_1": [{"timestamp":o.timestamp,"close":str(o.close)} for o in producer_one],
+                "producer_window_bars_2": [{"timestamp":o.timestamp,"close":str(o.close)} for o in producer_two],
+                "scope_note": "real SQLiteStore, Catalog, last_closed_price and EngineContextProducer methods ran; only temp market rows/retrieved_at were seeded, no trade/order or device data"}
+        finally:
+            await store.close()
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007, "K-008": k008, "K-009": k009, "K-010": k010}
+    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006, "K-007": k007, "K-008": k008, "K-009": k009, "K-010": k010, "K-011": k011}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}

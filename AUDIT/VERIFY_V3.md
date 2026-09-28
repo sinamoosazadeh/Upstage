@@ -12,7 +12,7 @@
 | K-008 | CONFIRMED | S2 | S2 | Yes — store frozen; non-frozen readers/training discovery can contain orphans | — | Single safe path: lineage-filter all non-frozen readers/discovery and refuse orphans consistently |
 | K-009 | CONFIRMED | S1 | S1 | No — EngineContextProducer timeline cache is non-frozen; frozen engines unchanged | — | A — include all per-prefix MTF input identities and replay from earliest affected prefix |
 | K-010 | CONFIRMED | S2 | S2 | No — quality/backfill/scheduler wiring is non-frozen | — | Single path — enumerate calendar-month boundaries over explicit coverage; reuse for page and backfill |
-| K-011 | PENDING | S1 | — | — | — | — |
+| K-011 | CONFIRMED | S1 | S1 | Yes — store/Catalog frozen; non-frozen runtime/provider wrapper can contain direct price paths | — | A — one close-boundary + per-row raw-availability PIT reader for Catalog and PAPER prices |
 | K-012 | PENDING | S1 | — | — | — | — |
 | K-013 | PENDING | S2 | — | — | — | — |
 | K-014 | PENDING | S2 | — | — | — | — |
@@ -434,3 +434,41 @@ Use one shared calendar-boundary function for catch-up page facts and historical
 
 #### Acceptance and regression tests
 Cover continuous monthly data, missing middle/first/last month, Jan→May 2026, 28/29-day February, 30/31-day months, Dec→Jan, and duplicate opens. Assert exact expected boundary lists, gaps, completeness and `Q_seq`; compare page and backfill results for the same raw interval. Verify every fixed timeframe remains bit-identical, old facts are not rewritten, and dependent snapshots/training caches are invalidated or reissued.
+
+### K-011
+
+#### Auditor claim (short quote)
+> “`get_window` فقط `open_time<=as_of` را می‌سنجد، نه زمان بسته‌شدن و availability تک‌تک سطرها؛ `Catalog.get` نیز `as_of` را با `MAX(raw.availability_time)` مقایسه می‌کند، نه با هر عضو window.” — “`get_window` checks only `open_time<=as_of`, not close time or each row’s availability; `Catalog.get` compares `as_of` to `MAX(raw.availability_time)`, not each window member.”
+
+#### What I read (files, line ranges, functions, callers)
+Read `SQLiteStore.get_window/max_availability_time/_row_to_obs` (`apex/data_catalog/store/sqlite_store.py:497–556`), `Catalog.get` (`apex/data_catalog/catalog.py:314–380`), `EngineContextProducer.window` (`apex/ops/engine_context.py:2367–2406`), `last_closed_price` (`apex/ops/paper_loop.py:305–313`), and its direct callers `_stage_execution` and `manage_positions` (`:620–640,803–839`). `grep -RIn` found these two runtime callers and the integration test `tests/integration/test_ops_paper_loop.py:748–763`. `get_window` limits by open time before `Catalog` computes a feature; `Catalog` checks only the global maximum raw availability frontier. The producer separately checks close time and joined raw availability, but filters after receiving the already-limited window.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONDONTWRITEBYTECODE=1 python3 -B AUDIT/probes_V3/store_probes.py K-011`. Probe: `store_probes.py::k011`; raw result: `AUDIT/probes_V3/K-011.json`. In temporary repository SQLiteStore, I inserted a 00:00 1h bar (close 100, available at 01:00) and a 01:00 1h bar (close 105, available at 02:15), setting the test rows’ `retrieved_at` to those synthetic arrival times. At `as_of=01:00`, the 01:00 bar’s close boundary is 02:00. Actual `last_closed_price` returned 105; actual `Catalog.get("body_ratio")` returned `0.250000`/`OK` with `availability_time=02:15>as_of`. The actual producer with `bars=1` returned an empty window because it limited to the unclosed bar before filtering; with `bars=2` it returned the valid prior bar at 00:00/close 100. No order or trade was attempted. The existing integration test at `:748–763` independently expects 105 at `as_of=START_MS+HOUR`, even though the 01:00 candle closes at 02:00.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). Both the catalog feature and direct PAPER reference-price helper accepted a candle whose close boundary and raw availability were after `as_of`. The producer’s late filter contains the row when over-fetched, but `bars=1` loses the older valid candle before filtering. This establishes a path-level PIT defect, not an observed trade or device incident.
+
+#### Root cause
+The legacy store query equates `open_time<=as_of` with a closed, available observation. `Catalog.get` treats the maximum availability as a dataset-wide PIT check; because this query’s `as_of` is before the future row’s frontier, the check passes and no member-level availability/close predicate runs. `last_closed_price` uses `get_window(...,1)` directly and never validates the returned row. The producer’s post-limit filtering also needs to over-fetch or filter in the reader so an unclosed latest row cannot displace the last valid one.
+
+#### Direct impact
+A current/open candle’s close can be returned as a PAPER execution reference price; `_stage_execution` passes it to `execute_plan`, and `manage_positions` can compare it against stop/target and submit an exit. Catalog-derived features may use the same unfinished or not-yet-available bar while reporting `OK`. These are possible downstream uses from inspected callers; the probe did not submit an order or trigger stop/target handling.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, a window may contain a candle that has opened but has not closed or whose raw availability is future relative to the snapshot. Downstream, price/features, replay labels, risk/setup admission, and close/exit management can be biased; result availability can also reveal `>as_of` while status is OK. K-002 is a separate correction-backdating defect: fixing one does not enforce close-time/per-row availability on this reader. No live market response or account path was contacted.
+
+#### Contract and decisions
+`APEX_GEN5.md:920–930` says a Snapshot is built only when every required artifact has `availability_time≤as_of` and explicitly prohibits future candles and unfinished higher-timeframe bars from leaking into any calculation. `:14731` E-PIT-001 says `availability_time>as_of` blocks. `:20629–20637` defines staleness from the correct `close_time_ms` (fixed intervals add their length; monthly is calendar-aware) and says availability is not reinterpreted. Precedence: both close-boundary and each artifact’s raw availability must pass; the global maximum frontier is not a substitute for either condition. No PHASE2 ruling waives the per-artifact PIT law.
+
+#### Frozen status and non-frozen alternative
+**Frozen boundary:** `SQLiteStore.get_window` and `Catalog` are in frozen `apex/data_catalog/**`; `paper_loop.py` and `engine_context.py` are non-frozen. A non-frozen `PITWindowProvider` can over-fetch the store candidates, join each active market row to its immutable raw availability/identity, filter by `close_time_ms(open,tf)<=as_of` and `availability_time<=as_of`, then return the last requested count. Route `Catalog` through that provider and use it for direct PAPER pricing/management. The query must over-fetch before filtering; simply adding a post-filter to `last_closed_price` with a one-row window can return no price rather than the previous closed one.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — non-frozen canonical PIT reader:** share one close-boundary/raw-availability filter for catalog feature windows, last-price, marks, and producer calls; select the latest N rows only after filtering. Side effects: newly rejected inputs may change feature values, reference prices, decisions, context/evidence hashes, and replay/training samples; version cache/protocol identities and rerun affected parity/backtests. No store schema or raw content rewrite is needed. **B — owner-approved frozen reader/catalog correction:** enforce calendar-aware close boundaries and per-row raw availability in the frozen WindowProvider/Catalog seam. Side effects: frozen API behavior changes for all callers; compatibility, every feature consumer, and prior “PIT-safe” fixtures must be updated together. B is not needed to stop the current non-frozen execution seam if all callers route through A.
+
+#### My recommendation
+Implement A immediately and make it the only source for PAPER prices and Catalog windows. Treat missing raw lineage, missing availability, a not-yet-closed candle, or insufficient over-fetch as a named refusal; never fall back to the newest open-time row.
+
+#### Acceptance and regression tests
+At as_of 00:30, 01:00, and 01:59, a 1h 00:00 candle may be returned only after its 01:00 close and availability; the 01:00 candle must not appear until both its 02:00 close and raw availability pass. Test global max frontier with one future member, multiple rows with mixed availabilities, correction/revision, 1w and 1mo calendar boundaries, and bars=1 over-fetch behavior. Assert `Catalog.get` is not `OK` with `availability_time>as_of`, `last_closed_price` returns the last valid prior close, and both direct PAPER callers use this verified reader without placing an order in the test.
