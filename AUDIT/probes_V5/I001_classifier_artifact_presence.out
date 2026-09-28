@@ -1,0 +1,7 @@
+{
+  "absent_result": "FileNotFoundError",
+  "fixed_repo_params_dir": "/home/user/Upstage/params",
+  "present_result": {
+    "artifact_marker": "test-only"
+  }
+}

@@ -41,7 +41,7 @@
 | H-035 | PARTIAL | S2 | S2 | No | = Ch.13 §13.1/T_FORECAST_INV; forecast object is serializable but invalidation has no production caller or durable lifecycle | A — retain the immutable invalidation rule and wire an owner-approved forecast lifecycle adapter with durable lineage; do not imply current PaperPlanBridge traces are persistent. D54 remains open and is not silently resolved. |
 | H-036 | CONFIRMED | S2 | S2 | Yes | = APEX_GEN5 §15 tail-risk contract; signed return-tail statistic is not the positive portfolio-loss fraction consumed by Risk Kernel | A — keep frozen backtest helper semantics unchanged; add an approved adapter that derives/validates positive portfolio-loss CVaR from current positions/correlation/window and records provenance before passing it to the Risk Kernel. No current PAPER risk input is wired. |
 | H-037 | PARTIAL | S2 | S2 | No | — | A — document independence as an assumption or use dependence-aware effective sample/cluster interval. Promotion protocol is non-frozen but contract Z.2 is normative; owner decision required before changing statistical acceptance, recompute all family gates and do not treat ATR as proof. |
-| I-001 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| I-001 | PARTIAL | S2 | S2 | No | = CP-1 config/parameter-loader checks and D24 missing-artifact behavior; test binds directly to the gitignored runtime artifact path | A — preserve D24 absent/present semantics but run the assertion against an isolated temporary params root; no production fallback or classifier commit. The test is filesystem-sensitive and does not prove run_apex→PaperRuntime composition. |
 | I-002 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-003 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-004 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -112,7 +112,7 @@ Baseline source files were not changed. Selected actual-repository probes are in
 | H-035 | PARTIAL | S2 | S2 | No | = Ch.13 §13.1/T_FORECAST_INV; forecast object is serializable but invalidation has no production caller or durable lifecycle | A — retain the immutable invalidation rule and wire an owner-approved forecast lifecycle adapter with durable lineage; do not imply current PaperPlanBridge traces are persistent. D54 remains open and is not silently resolved. |
 | H-036 | CONFIRMED | S2 | S2 | Yes | = APEX_GEN5 §15 tail-risk contract; signed return-tail statistic is not the positive portfolio-loss fraction consumed by Risk Kernel | A — keep frozen backtest helper semantics unchanged; add an approved adapter that derives/validates positive portfolio-loss CVaR from current positions/correlation/window and records provenance before passing it to the Risk Kernel. No current PAPER risk input is wired. |
 | H-037 | PARTIAL | S2 | S2 | No | — | A — document independence as an assumption or use dependence-aware effective sample/cluster interval. Promotion protocol is non-frozen but contract Z.2 is normative; owner decision required before changing statistical acceptance, recompute all family gates and do not treat ATR as proof. |
-| I-001 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| I-001 | PARTIAL | S2 | S2 | No | = CP-1 config/parameter-loader checks and D24 missing-artifact behavior; test binds directly to the gitignored runtime artifact path | A — preserve D24 absent/present semantics but run the assertion against an isolated temporary params root; no production fallback or classifier commit. The test is filesystem-sensitive and does not prove run_apex→PaperRuntime composition. |
 | I-002 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-003 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-004 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -1476,39 +1476,38 @@ Run row-specific regression tests against the contract and ensure the proposed f
 ### Auditor claim (short quote)
 Config tests assume the classifier artifact is absent, making results sensitive to device artifacts.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers/callees)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: complete `Config`/`Params` loader and `_load_yaml` in `apex/config.py:38–146,437–504`; `load_classifier`, `EngineContextProducer.__init__` and `_input_fingerprint` in `apex/ops/engine_context.py:594–604,1760–1783`; the run_apex status/serve composition at `scripts/run_apex.py:570–599,745–779`; and `PaperRuntime._resolve_plan`/`execute_plan` in `apex/ops/paper_loop.py:644–695`. `grep -RIn` for `e11_classifier`, `load_classifier`, and `PARAMS_DIR` across `apex`, `scripts`, and `tests` is in `I001_consumers.out`. Read `tests/unit/test_config.py::test_params_loader_reads_only` and the full config test file. The referenced matrix coverage is Part I's `apex/config.py` env/security contract and frozen parameter-tree row, not an end-to-end runtime artifact test. Read APEX_GEN5 §9.5 artifact path and Session CP-14, plus D24/D47 in the decision log. No secret or `.env` was read.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+`I001_classifier_artifact_presence.py` redirects the actual `config.PARAMS_DIR` to a disposable temporary directory: no `e11_classifier_v1.yaml` yields `FileNotFoundError`; adding a test-only YAML mapping at the same filename makes `load_params()["e11_classifier"]` return it. It does not touch repository `params/`. Output: `I001_classifier_artifact_presence.out`. `test_config.py` passed 14/14 (`I001_config_pytest.out`), and the exact `test_params_loader_reads_only` node passed (`I001_params_test.out`): its assertion specifically expects `FileNotFoundError` for `e11_classifier`. The production code uses fixed `PARAMS_DIR = repo_root/params`; `load_classifier()` uses that same default `params/e11_classifier_v1.yaml`. The broader CP14 producer integration node was not used as evidence: its fixture tried to obtain public exchangeInfo and collection stopped at missing optional `aiohttp`; no endpoint was contacted. That failed attempt is recorded in `I001_pytest.out`, and was not retried to honor the no-exchange constraint.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**PARTIAL, independent severity S2.** The test’s absent-artifact assumption is confirmed: it queries the repository’s fixed, gitignored classifier path rather than an isolated test path, so a phone-generated runtime artifact present there changes the test result. The normative D24 behavior does require fail-closed behavior when the runtime artifact is absent, so the absent assertion is not itself a product defect. This test proves only the loader’s current checkout-path behavior and not the composed runtime behavior. No device artifact was inspected.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+`test_params_loader_reads_only` calls `load_params()` against the module-global `PARAMS_DIR`, then unconditionally expects that accessing `e11_classifier` raises. The runtime classifier is an optional phone-generated YAML in that same directory and gitignored rather than committed. `load_classifier()` also defaults to that path and converts missing/unreadable artifact to `CONFIGURATION_INVALID`. Thus test result can depend on a local device-generated artifact even though the test intends to cover the missing-file branch.
 
 ### Direct impact
-Not determined.
+On the clean checkout, the assertion passes. If the phone-generated artifact is present in the working tree, the parameter-loader test fails even if the artifact is valid. In production, missing classifier is named/fail-closed for E11 context generation: the run_apex status path displays `E11_ARTIFACT` or a refusal; the PAPER composition wires `EngineContextProducer` to `PaperPlanBridge`, and a provider request reaches `_input_fingerprint`/`load_classifier` before producing a context, so missing artifact does not silently produce a plan. The test does not execute this route or prove any plan/order behavior.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream, `train-e11` can create the gitignored classifier artifact; the same path is deliberately used by runtime. Downstream, `run_apex.py` wires producer → plan bridge → PaperRuntime, while `paper_loop._resolve_plan` accepts only the provider's mapping and fails closed if no plan/refusal is returned. Therefore device-artifact presence can affect test reproducibility and product availability (artifact missing → named fail-closed), but no invalid plan, ledger, order, or actual device behavior was observed. Matrix CP-1 config tests verify env/default/no-shadow/no-dotenv properties, and Part I lists committed governed parameter files; this individual assertion is not evidence of full production composition. No query-plan/database effect.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 §9.5 tree (`:20415–20435`) lists `params/e11_classifier_v1.yaml` as phone-generated/gitignored/never committed and separately names `tests/fixtures/e11_classifier_v1.yaml` as test-only, never runtime fallback. D24 in `PHASE2_DECISION_LOG.md:296` explicitly requires the absent-artifact case to fail closed only when the E11/plan path is requested, with valid fixture loading as a separate case; D47 (`:1115`) binds the artifact to fit protocol/hash, and D28 (`:440`) includes it in package identity when present. Those decisions confirm both branches and reinforce that a test of absence should not accidentally depend on a device’s runtime artifact. No later decision waives artifact provenance or authorizes a test fallback.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`apex/config.py` is not among the listed frozen paths, but the artifact path is governed and `apex/research/backtest.py` is frozen/irrelevant. Keep all runtime parameter/model paths unchanged. Make the test hermetic by directing `PARAMS_DIR`/loader path to `tmp_path` for the absent case, and test present/valid loading using the explicitly test-only fixture in an isolated temporary path. Do not copy the fixture into production `params/`, commit the phone artifact, or change runtime fallback semantics.
 
 ### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+A: isolate the loader test’s params root and assert both missing and present-artifact cases; this preserves D24 while removing device state from test outcome. It changes only tests, but fixture schema/hash assertions must remain meaningful. B: retain the repo-path assertion as an integration check but explicitly skip/mark it when the ignored artifact exists and add a separate hermetic unit test; this adds environment branching and can conceal invalid local artifacts. Do not add a fixture fallback in `load_classifier`; that would violate D24 and could change runtime model identity.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Keep the missing-artifact fail-closed production contract. Replace the test’s implicit dependency on the working-tree artifact with an isolated path and explicit fixture case. Count the current matrix’s config tests only for the behaviors actually asserted; they do not prove that production `run_apex`/`PaperRuntime` has a valid device classifier or a real device outcome.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+In `tmp_path`, assert `Params()["e11_classifier"]` fails when the runtime filename is absent; add a valid test-only artifact at that path and assert the loader returns the expected mapping; reject malformed/hash-invalid artifacts through `load_classifier`. Separately compose producer → plan bridge → PaperRuntime with an explicit test artifact and with a missing artifact: present artifact can proceed only through native inputs, absent artifact yields named `CONFIGURATION_INVALID`/no plan, and neither path reaches an exchange adapter. Run `tests/unit/test_config.py`, the relevant engine-context tests, and no public endpoint. Confirm the ignored runtime file is not committed and frozen YAMLs are unchanged.
 
 ## I-002
 
@@ -2175,9 +2174,9 @@ Acceptance: on a fresh checkout without f14be36, the test can execute determinis
 
 ## Rows not verified or incomplete
 
-No coverage claim is made for the following 17 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
+No coverage claim is made for the following 16 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
 
-`I-001, I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
+`I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
 
 Rows with a non-UNVERIFIED status were independently evidenced only to the exact scope stated in their sections. Synthetic tests do not establish real data/device/model behavior. H-002/H-003/H-005/H-006/H-007/H-011/H-013 have new bounded real-function probe evidence in this continuation; untested integration/device assertions remain explicitly excluded. H-004 is PARTIAL as above; H-022 and H-034 retain their prior partial caller/governance/integration review caveat. Full V5 acceptance requires completing all remaining unverified rows, mandatory caller/callee and test reads, and relevant SQLite plan checks where applicable.
 
@@ -2186,9 +2185,9 @@ Rows with a non-UNVERIFIED status were independently evidenced only to the exact
 | Verdict | Count |
 |---|---:|
 | CONFIRMED | 28 |
-| PARTIAL | 9 |
+| PARTIAL | 10 |
 | REJECTED | 0 |
-| UNVERIFIED / incomplete | 17 |
+| UNVERIFIED / incomplete | 16 |
 | DEVICE-EVIDENCE-NEEDED | 0 (no real-device dependent claim was assigned this verdict; device evidence was not obtained) |
 
-New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle); H-036 (signed return-series CVaR helper is not positive portfolio-loss CVaR and is unwired from production sizing).
+New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle); H-036 (signed return-series CVaR helper is not positive portfolio-loss CVaR and is unwired from production sizing); I-001 (classifier-absence unit assertion reads the gitignored runtime artifact path and can vary with device state; it does not prove runtime composition).

@@ -1,0 +1,150 @@
+..............E                                                          [100%]
+==================================== ERRORS ====================================
+__ ERROR at setup of test_g1_missing_classifier_and_scope_are_named_refusals ___
+
+symbol = 'BTCUSDT'
+client = <apex.data_catalog.ingest.toobit_public.ToobitPublicClient object at 0x7f5ed5917e90>
+now = <function seed.<locals>.<lambda> at 0x7f5ed569a5c0>
+
+    async def collect_public_venue_facts(symbol: str, *, client: Any = None,
+                                       now: Callable[[], float] = time.time) -> dict:
+        """D28 public exchangeInfo/funding reads only; no signing fallback.
+    
+        Only explicit exchangeInfo fields are admitted. In particular, lack of
+        commissionRate/takerCommissionRate never authorizes a fixture/default fee.
+        """
+        if client is None:
+            import aiohttp
+            from apex.data_catalog.ingest.toobit_public import ToobitPublicClient
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                client = ToobitPublicClient(session=_TimeoutVisibleSession(session))
+                try:
+                    return await collect_public_venue_facts(symbol, client=client, now=now)
+                except Exception as exc:
+                    _reraise_publisher_timeout(exc)
+                    raise
+        from apex.execution.toobit_map import to_wire_symbol
+        try:
+>           info = await client.get_exchange_info()
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+apex/ops/engine_context.py:1114: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+apex/data_catalog/ingest/toobit_public.py:241: in get_exchange_info
+    data = await self._get("/api/v1/exchangeInfo")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <apex.data_catalog.ingest.toobit_public.ToobitPublicClient object at 0x7f5ed5917e90>
+path = '/api/v1/exchangeInfo', params = None
+
+    async def _get(self, path: str, params: Optional[Dict[str, Any]] = None,
+                   ) -> Any:
+        """GET with the frozen retry discipline (3 attempts, 1s/2s/4s
+        backoff). Persistent failure → ToobitPublicError (fail-closed)."""
+>       import aiohttp
+E       ModuleNotFoundError: No module named 'aiohttp'
+
+apex/data_catalog/ingest/toobit_public.py:200: ModuleNotFoundError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path_factory = TempPathFactory(_given_basetemp=None, _trace=<pluggy._tracing.TagTracerSub object at 0x7f5edfa9f450>, _basetemp=PosixPath('/tmp/pytest-of-user/pytest-0'), _retention_count=3, _retention_policy='all')
+
+    @pytest.fixture(scope="module")
+    def real_context(tmp_path_factory):
+        folder=tmp_path_factory.mktemp("producer")
+        artifact=E.load_classifier(FIXTURE)
+        # Fixture only: native low-entropy admission, not synthetic training members.
+        artifact['b'][0]=8.
+        artifact['artifact_sha256']=E.classifier_hash(artifact['W'],artifact['b'],artifact['seed'],artifact['fit_protocol'])
+        classifier=folder/'loader-fixture.yaml'
+        E.write_classifier(artifact,classifier)
+        path=folder/'source.sqlite'
+        phase={"active":False}; calls=[]; batches=[]
+        patch=pytest.MonkeyPatch()
+        complete=E.complete_engine_bundle
+        def bundle(*args,**kwargs):
+            phase['active']=True; calls.clear()
+            try:
+                result=complete(*args,**kwargs)
+                batches.append(tuple(calls))
+                return result
+            finally: phase['active']=False
+        patch.setattr(E,'complete_engine_bundle',bundle)
+        for code,cls in (("E01",E.E01.E01StructureEngine),("E02",E.E02.E02LiquidityEngine),
+                         ("E12",E.E12.E12TemporalEngine),("E03",E.E03.E03VolumeEngine),
+                         ("E09",E.E09.E09TrendEngine),("E06",E.E06.E06OrderBlockEngine),
+                         ("E11",E.E11.E11RegimeEngine),("E07",E.E07.E07RTMEngine),
+                         ("E08",E.E08.E08WyckoffEngine)):
+            original=cls.compute
+            def tracked(self,*args,_code=code,_original=original,**kwargs):
+                if phase['active']: calls.append(_code)
+                return _original(self,*args,**kwargs)
+            patch.setattr(cls,'compute',tracked)
+        fvg=E.E05.run_engine
+        def tracked_fvg(*args,**kwargs):
+            if phase['active']: calls.append('E05')
+            return fvg(*args,**kwargs)
+        patch.setattr(E.E05,'run_engine',tracked_fvg)
+        for code,cls in (("E04",E.E04.E04VolatilityEngine),("E10",E.E10.E10MomentumEngine)):
+            original=cls._window_quality
+            def tracked(window,_code=code,_original=original):
+                if phase['active']: calls.append(_code)
+                return _original(window)
+            patch.setattr(cls,'_window_quality',staticmethod(tracked))
+>       try: context=asyncio.run(seed(str(path),classifier))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/integration/test_cp14_producer.py:122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.11/asyncio/base_events.py:653: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/integration/test_cp14_producer.py:68: in seed
+    await E.persist_public_venue_facts(store,'BTCUSDT',environment='PAPER',client=venue.client,now=now)
+apex/ops/engine_context.py:1201: in persist_public_venue_facts
+    raise refusal
+apex/ops/engine_context.py:1182: in persist_public_venue_facts
+    facts = await collect_public_venue_facts(symbol, client=client, now=now)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+symbol = 'BTCUSDT'
+client = <apex.data_catalog.ingest.toobit_public.ToobitPublicClient object at 0x7f5ed5917e90>
+now = <function seed.<locals>.<lambda> at 0x7f5ed569a5c0>
+
+    async def collect_public_venue_facts(symbol: str, *, client: Any = None,
+                                       now: Callable[[], float] = time.time) -> dict:
+        """D28 public exchangeInfo/funding reads only; no signing fallback.
+    
+        Only explicit exchangeInfo fields are admitted. In particular, lack of
+        commissionRate/takerCommissionRate never authorizes a fixture/default fee.
+        """
+        if client is None:
+            import aiohttp
+            from apex.data_catalog.ingest.toobit_public import ToobitPublicClient
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                client = ToobitPublicClient(session=_TimeoutVisibleSession(session))
+                try:
+                    return await collect_public_venue_facts(symbol, client=client, now=now)
+                except Exception as exc:
+                    _reraise_publisher_timeout(exc)
+                    raise
+        from apex.execution.toobit_map import to_wire_symbol
+        try:
+            info = await client.get_exchange_info()
+        except Exception as exc:
+>           raise BridgeError("VENUE_EXCHANGE_INFO_UNAVAILABLE", symbol) from exc
+E           apex.ops.plan_bridge.BridgeError: VENUE_EXCHANGE_INFO_UNAVAILABLE: BTCUSDT
+
+apex/ops/engine_context.py:1116: BridgeError
+=========================== short test summary info ============================
+ERROR tests/integration/test_cp14_producer.py::test_g1_missing_classifier_and_scope_are_named_refusals
+14 passed, 1 error in 3.68s

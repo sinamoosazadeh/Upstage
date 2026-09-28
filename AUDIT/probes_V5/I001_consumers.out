@@ -1,0 +1,52 @@
+apex/config.py:63:PARAMS_DIR = REPO_ROOT / "params"
+apex/config.py:74:    "e11_classifier": "e11_classifier_v1.yaml",
+apex/config.py:447:    path = PARAMS_DIR / fname
+apex/ops/engine_context.py:19:from apex.config import Config, PARAMS_DIR, PARAMS_FILES, REPO_ROOT, _YamlSubsetParser, load_params
+apex/ops/engine_context.py:56:    target = Path(path) if path is not None else PARAMS_DIR / "e11_training_v1.yaml"
+apex/ops/engine_context.py:594:def load_classifier(path: str | Path | None = None) -> dict[str, Any]:
+apex/ops/engine_context.py:595:    path = Path(path) if path is not None else PARAMS_DIR / "e11_classifier_v1.yaml"
+apex/ops/engine_context.py:984:    directory = Path(params_dir) if params_dir is not None else PARAMS_DIR
+apex/ops/engine_context.py:989:            if filename == "e11_classifier_v1.yaml" and not path.exists():
+apex/ops/engine_context.py:993:        if "e11_classifier_v1.yaml" in documents:
+apex/ops/engine_context.py:994:            validate_classifier(documents["e11_classifier_v1.yaml"])
+apex/ops/engine_context.py:1778:        artifact = load_classifier(self.classifier_path)
+apex/ops/engine_context.py:2291:        artifact = load_classifier(self.classifier_path)
+apex/ops/plan_bridge.py:475:            _finite_float(item, "e11_classifier")
+apex/research/governance.py:54:LIVE_PARAMS_DIR = REPO_ROOT / "params"
+apex/research/governance.py:548:    live = LIVE_PARAMS_DIR.resolve()
+apex/research/optimizer.py:38:from apex.research.governance import (LIVE_PARAMS_DIR, SUGGESTIONS_DIR,
+scripts/run_apex.py:594:        artifact_path = EC.PARAMS_DIR / "e11_classifier_v1.yaml"
+scripts/run_apex.py:596:            EC.load_classifier(artifact_path)
+scripts/run_apex.py:772:            EC.load_classifier()
+scripts/run_apex.py:952:    target = Path(out) if out is not None else EC.PARAMS_DIR / "e11_classifier_v1.yaml"
+scripts/run_apex.py:1113:                        help="train-e11: output artifact (default params/e11_classifier_v1.yaml)")
+tests/integration/test_cp14_producer.py:83:    artifact=E.load_classifier(FIXTURE)
+tests/unit/test_config.py:148:        if name == "e11_classifier":
+tests/unit/test_cp146.py:185:        (EC.PARAMS_DIR / name).read_text(encoding="utf-8")).parse()
+tests/unit/test_e11_regime.py:688:        source = config.PARAMS_DIR / "e11_params_v4.yaml"
+tests/unit/test_e11_regime.py:693:        monkeypatch.setattr(config, "PARAMS_DIR", tmp_path)
+tests/unit/test_engine_context.py:19:FIXTURE = Path(__file__).parents[1] / "fixtures" / "e11_classifier_v1.yaml"
+tests/unit/test_engine_context.py:23:    artifact = EC.load_classifier(FIXTURE)
+tests/unit/test_engine_context.py:33:    artifact = copy.deepcopy(EC.load_classifier(FIXTURE))
+tests/unit/test_engine_context.py:58:        EC.load_classifier(tmp_path / "missing.yaml")
+tests/unit/test_engine_context.py:391:    artifact = EC.load_classifier(FIXTURE)
+tests/unit/test_engine_context.py:594:assert load_classifier(sys.argv[1]) == a
+tests/unit/test_engine_context.py:688:        source = EC.PARAMS_DIR / name
+tests/unit/test_engine_context.py:734:    (folder / "e11_classifier_v1.yaml").write_bytes(FIXTURE.read_bytes())
+tests/unit/test_engine_context.py:737:    assert third["parameter_files"].count("e11_classifier_v1.yaml") == 1
+tests/unit/test_engine_context.py:738:    artifact = EC.load_classifier(folder / "e11_classifier_v1.yaml")
+tests/unit/test_engine_context.py:741:    EC.write_classifier(artifact, folder / "e11_classifier_v1.yaml")
+tests/unit/test_engine_context.py:1327:    artifact = EC.load_classifier(targets[0])
+tests/unit/test_engine_context.py:1357:            classifier = Path(__file__).parents[1] / "fixtures" / "e11_classifier_v1.yaml"
+tests/unit/test_engine_context.py:1370:            assert bundle["classifier_artifact_sha256"] == EC.load_classifier(classifier)["artifact_sha256"]
+tests/unit/test_engine_context.py:1398:    artifact = EC.load_classifier(Path(__file__).parents[1] / "fixtures" / "e11_classifier_v1.yaml")
+tests/unit/test_engine_context.py:2911:    from apex.config import PARAMS_DIR
+tests/unit/test_engine_context.py:2918:                     for path in sorted(PARAMS_DIR.glob("*.yaml"))}
+tests/unit/test_engine_context.py:2971:        assert not (EC.PARAMS_DIR / "e11_classifier_v1.yaml").exists()
+tests/unit/test_engine_context.py:2973:                for path in sorted(PARAMS_DIR.glob("*.yaml"))} == params_before
+tests/unit/test_engine_context.py:2997:    from apex.config import PARAMS_DIR
+tests/unit/test_engine_context.py:3002:    raw = (PARAMS_DIR / "e11_training_v1.yaml").read_text()
+tests/unit/test_research_governance.py:277:        target = gov.LIVE_PARAMS_DIR / "risk_defaults_v1.yaml"
+tests/unit/test_research_governance.py:288:        assert sneaky.resolve() == (gov.LIVE_PARAMS_DIR
+tests/unit/test_research_governance.py:375:            ledger.inject(_package(), package_dir=gov.LIVE_PARAMS_DIR)
+tests/unit/test_research_optimizer.py:385:        optimizer.suggestions_dir = opt.LIVE_PARAMS_DIR
