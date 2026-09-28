@@ -1,0 +1,128 @@
+=== Required recursive caller/consumer search ===
+apex/execution/fsm.py:374:class ExecutionFSM:
+apex/execution/fsm.py:671:    async def record_fill(self, *, fill_id: str, price: Any, quantity: Any,
+apex/execution/fsm.py:1355:    "E12_DRIFT_DEGRADED_SECONDS", "ExecutionFSM", "FILL_TIMEOUT_SECONDS",
+apex/ops/paper_loop.py:280:def fill_from_result(result: Any, plan: F.TradePlan,
+apex/ops/paper_loop.py:402:        self.working: Dict[str, F.ExecutionFSM] = {}
+apex/ops/paper_loop.py:638:        record = await self.execute_plan(
+apex/ops/paper_loop.py:692:    async def execute_plan(self, plan: F.TradePlan, *, price: Any,
+apex/ops/paper_loop.py:700:        machine = F.ExecutionFSM(
+apex/ops/paper_loop.py:734:            observed = await self._observe_fill(machine, plan)
+apex/ops/paper_loop.py:747:    async def _record_submission_fill(self, machine: F.ExecutionFSM,
+apex/ops/paper_loop.py:752:        fill = fill_from_result(result, plan) if result is not None else None
+apex/ops/paper_loop.py:756:        await machine.record_fill(fill_id=fill["fill_id"], price=fill["price"],
+apex/ops/paper_loop.py:762:    async def _observe_fill(self, machine: F.ExecutionFSM,
+apex/ops/paper_loop.py:781:                fill = fill_from_result(result, plan)
+apex/ops/paper_loop.py:788:                await machine.record_fill(
+apex/ops/paper_loop.py:839:            fill = fill_from_result(exit_result, plan, suffix="-exit")
+apex/ops/paper_loop.py:848:            await machine.record_fill(
+scripts/run_adapter_conformance.py:94:    from fake_toobit_responder import FakeToobitResponder
+scripts/run_adapter_conformance.py:106:    responder = FakeToobitResponder(api_key=HARNESS_ENV["TOOBIT_API_KEY"],
+scripts/run_adapter_conformance.py:209:    from fake_toobit_responder import FakeToobitResponder
+scripts/run_adapter_conformance.py:211:    responder = FakeToobitResponder(api_key=HARNESS_ENV["TOOBIT_API_KEY"],
+scripts/run_apex.py:288:    from fake_toobit_responder import FakeToobitResponder   # test double only
+scripts/run_apex.py:296:        responder = FakeToobitResponder(
+scripts/run_apex.py:344:        machine = F.ExecutionFSM(intent_id="i-demo-0001", ledger=ledger,
+scripts/run_apex.py:350:        await machine.record_fill(fill_id="f-demo-0001", price="100",
+scripts/run_apex.py:358:        await machine.record_fill(fill_id="x-demo-0001", price="103",
+scripts/run_nfr_harness.py:148:    from fake_toobit_responder import FakeToobitResponder
+scripts/run_nfr_harness.py:150:    responder = FakeToobitResponder(api_key=HARNESS_ENV["TOOBIT_API_KEY"],
+tests/fake_toobit_responder.py:55:class FakeToobitResponder:
+tests/fake_toobit_responder.py:409:__all__ = ["FakeToobitResponder", "RecordedCall", "TEST_API_KEY",
+tests/integration/test_cp7_paper_loop.py:13:        build_trade_plan → ExecutionFSM.submit → ToobitAdapter (5 operations,
+tests/integration/test_cp7_paper_loop.py:161:        from fake_toobit_responder import FakeToobitResponder
+tests/integration/test_cp7_paper_loop.py:168:            self.responder = FakeToobitResponder(
+tests/integration/test_cp7_paper_loop.py:267:        record = await self.trade_cell(cell, price="100")
+tests/integration/test_cp7_paper_loop.py:288:    async def trade_cell(self, cell: C.BundleCell, *, price: str = "100",
+tests/integration/test_cp7_paper_loop.py:303:        machine = F.ExecutionFSM(
+tests/integration/test_cp7_paper_loop.py:319:            await machine.record_fill(fill_id=f"f-{cell.cell_id}", price=price,
+tests/integration/test_cp7_paper_loop.py:331:                await machine.record_fill(fill_id=f"x-{cell.cell_id}",
+tests/integration/test_cp7_paper_loop.py:442:            record = await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:459:            await p.trade_cell(C.BundleCell("ETHUSDT", "15m"))
+tests/integration/test_cp7_paper_loop.py:489:            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:536:            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:560:            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:577:            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:592:            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:604:            records = [await p.trade_cell(C.BundleCell("BTCUSDT", tf))
+tests/integration/test_cp7_paper_loop.py:762:            record = await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:787:            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:817:            machine = F.ExecutionFSM(intent_id="i-prot", ledger=p.ledger,
+tests/integration/test_cp7_paper_loop.py:823:            await machine.record_fill(fill_id="f-p", price="100",
+tests/integration/test_cp7_paper_loop.py:941:            record = await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:970:            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:1020:            record = await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:1051:            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp7_paper_loop.py:1075:            await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+tests/integration/test_cp8_adapters.py:39:    from fake_toobit_responder import FakeToobitResponder
+tests/integration/test_cp8_adapters.py:41:    responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET,
+tests/integration/test_ops_paper_loop.py:740:        assert PL.fill_from_result(adapter_result(outcome="ACKNOWLEDGED"), plan) is None
+tests/integration/test_ops_paper_loop.py:741:        assert PL.fill_from_result(adapter_result(outcome="FILLED", data={}), plan) is None
+tests/integration/test_ops_paper_loop.py:742:        filled = PL.fill_from_result(adapter_result(
+tests/unit/test_engine_context.py:124:        from tests.fake_toobit_responder import FakeToobitResponder
+tests/unit/test_engine_context.py:126:        class Venue(FakeToobitResponder):
+tests/unit/test_engine_context.py:824:        from tests.fake_toobit_responder import FakeToobitResponder
+tests/unit/test_engine_context.py:832:        class Venue(FakeToobitResponder):
+tests/unit/test_execution_fsm.py:135:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_execution_fsm.py:141:            self.responder = FakeToobitResponder(api_key=TEST_KEY,
+tests/unit/test_execution_fsm.py:178:    def fsm(self, **kwargs) -> F.ExecutionFSM:
+tests/unit/test_execution_fsm.py:185:        return F.ExecutionFSM(**kwargs)
+tests/unit/test_execution_fsm.py:855:            entry = await machine.record_fill(fill_id="f-1", price="100",
+tests/unit/test_execution_fsm.py:872:            await machine.record_fill(fill_id="f-dup", price="100",
+tests/unit/test_execution_fsm.py:874:            await machine.record_fill(fill_id="f-dup", price="100",
+tests/unit/test_execution_fsm.py:884:                await machine.record_fill(fill_id="f-1", price="100",
+tests/unit/test_execution_fsm.py:975:            await machine.record_fill(fill_id="f-1", price="100",
+tests/unit/test_execution_fsm.py:1052:            await machine.record_fill(fill_id="f-1", price="100",
+tests/unit/test_execution_fsm.py:1068:            await machine.record_fill(fill_id="f-1", price="100",
+tests/unit/test_execution_fsm.py:1095:            await machine.record_fill(fill_id="f-1", price="100",
+tests/unit/test_execution_fsm.py:1120:            await machine.record_fill(fill_id="f-1", price="100",
+tests/unit/test_toobit_adapter.py:53:    from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:54:    assert isinstance(responder, FakeToobitResponder)
+tests/unit/test_toobit_adapter.py:60:    from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:61:    assert isinstance(responder, FakeToobitResponder)
+tests/unit/test_toobit_adapter.py:109:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:110:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:187:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:188:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:204:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:205:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:220:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:221:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:232:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:233:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:244:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:245:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:263:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:264:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:270:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:271:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:287:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:288:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:315:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:316:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:328:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:329:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:337:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:338:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:354:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:355:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:383:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:384:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:411:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:412:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:430:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:431:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:441:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:442:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:452:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:453:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:462:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:463:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:471:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:472:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:479:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:480:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:487:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:488:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)
+tests/unit/test_toobit_adapter.py:555:        from fake_toobit_responder import FakeToobitResponder
+tests/unit/test_toobit_adapter.py:556:        responder = FakeToobitResponder(api_key=TEST_KEY, api_secret=TEST_SECRET)

@@ -1,0 +1,1301 @@
+=== CP-7 test harness setup and fake transport ===
+     1	"""CP-7 integration — the WHOLE PAPER loop on a fixture clock against the fake
+     2	Toobit responder (a test double only; nothing here reaches a network).
+     3
+     4	Composition root, one event loop, one ledger writer (Ch.23 L18253–18260):
+     5
+     6	    FixtureClock (UTC, deterministic, monotone)
+     7	      → StartupReconciliation: STARTING → SELF_TEST → RECONCILING → READY
+     8	        (nine SBOM pins, schema version, clock drift, ladder state, then the
+     9	        broker reconciliation against the fake venue)
+    10	      → Scheduler: the 140-cell grid, semaphore 4, the nine contract stages,
+    11	        HTF last-closed only, leverage = min over ALL caps
+    12	      → the ``execution`` stage hands the CP-6 proposal + adjudication to
+    13	        build_trade_plan → ExecutionFSM.submit → ToobitAdapter (5 operations,
+    14	        signed) → the fake responder → ACK/fill
+    15	      → record_fill → place_protection (STOP + LIMIT, GTC, reduceOnly) →
+    16	        activate_management → close_position (stop-gap attribution, OUTCOME) →
+    17	        reconcile (T_MATCH / T-LR-002 / T-LR-003) → RECONCILED
+    18	      → the ledger single writer appends every event; verify_chain() recomputes
+    19	        every payload hash and the parent linkage at the end
+    20	      → EventBus → the alert bridge → SignalingPlane (token bucket, idempotency,
+    21	        retry, durable outbox, Agg-only in-memory chart) → the fake transport
+    22	      → ControlPlane: OWNER/USER roles, Busy Guard, Emergency ratchet + nonce,
+    23	        Panic Lock, update_id replay — every effect through the handler seam.
+    24
+    25	Also asserted: a drifted clock boots DEGRADED and NO cell runs; a lost ack ends
+    26	in RECOVERY_REQUIRED with a P0 alert and exactly one submission (never a
+    27	resubmit); the loop is deterministic over two independent runs; no secret
+    28	material reaches the ledger, the wire or a Telegram message.
+    29	"""
+    30	from __future__ import annotations
+    31
+    32	import asyncio
+    33	import dataclasses
+    34	import json
+    35	import re
+    36	from dataclasses import dataclass
+    37	from decimal import Decimal
+    38	from pathlib import Path
+    39	from typing import Any, Dict, List, Optional, Tuple
+    40
+    41	import pytest
+    42
+    43	from apex.bus import EventBus, Priority
+    44	from apex.config import Config
+    45	from apex.data_catalog.contracts import CORE10_SYMBOLS, TIMEFRAMES_14
+    46	from apex.data_catalog.store import sqlite_store as ss
+    47	from apex.errors import get_error_code
+    48	from apex.execution import fsm as F
+    49	from apex.execution.toobit_adapter import ToobitAdapter
+    50	from apex.execution.toobit_map import LEVERAGE_CAP_BY_TF
+    51	from apex.ledger import store as LS
+    52	from apex.scheduler import clock as C
+    53	from apex.telegram import control_plane as CP
+    54	from apex.telegram import signaling as SG
+    55
+    56	TEST_KEY = "TEST_KEY_CP7"
+    57	TEST_SECRET = "TEST_SECRET_CP7"
+    58	START = "2026-01-01T00:00:00.000Z"
+    59	OWNER = "-1001234567890"
+    60	USER = "-1009999999999"
+    61	WATCHDOG = "-2001234567890"
+    62
+    63
+    64	def run(coro):
+    65	    return asyncio.run(coro)
+    66
+    67
+    68	@pytest.fixture(autouse=True)
+    69	def signed_env(monkeypatch):
+    70	    monkeypatch.setenv("APEX_ENV", "PAPER")
+    71	    monkeypatch.setenv("APEX_ALLOW_SIGNED", "1")
+    72	    monkeypatch.setenv("TOOBIT_API_KEY", TEST_KEY)
+    73	    monkeypatch.setenv("TOOBIT_API_SECRET", TEST_SECRET)
+    74
+    75
+    76	@pytest.fixture()
+    77	def store(tmp_path):
+    78	    sqlite = ss.SQLiteStore(str(tmp_path / "apex.sqlite3"))
+    79	    run(sqlite.open())
+    80	    yield sqlite
+   130	class PaperLoop:
+   131	    """The CP-7 composition root: everything bound to ONE event loop."""
+   132
+   133	    def __init__(self, store, tmp_path: Path, *, drift: float = 0.0,
+   134	                 fill_mode: str = "immediate", lose_ack: int = 0,
+   135	                 with_adapter: bool = True) -> None:
+   136	        self.store = store
+   137	        self.tmp_path = tmp_path
+   138	        self.drift = drift
+   139	        self.fill_mode = fill_mode
+   140	        self.lose_ack = lose_ack
+   141	        self.with_adapter = with_adapter
+   142	        self.clock = C.FixtureClock(START)
+   143	        self.events: List[Any] = []
+   144	        self.alerts: List[Dict[str, Any]] = []
+   145	        self.telegram = FakeTelegram()
+   146	        self.calls: List[Dict[str, Any]] = []
+   147	        self.executed: List[Dict[str, Any]] = []
+   148	        self.refusals: List[Dict[str, Any]] = []
+   149	        self.bus: Optional[EventBus] = None
+   150	        self.ledger: Optional[LS.LedgerWriter] = None
+   151	        self.adapter: Optional[ToobitAdapter] = None
+   152	        self.responder = None
+   153	        self.signaling: Optional[SG.SignalingPlane] = None
+   154	        self.control: Optional[CP.ControlPlane] = None
+   155	        self.scheduler: Optional[C.Scheduler] = None
+   156	        self.boot_verdict: Dict[str, Any] = {}
+   157	        self.paused = False
+   158
+   159	    # -- wiring -------------------------------------------------------------
+   160	    async def start(self) -> "PaperLoop":
+   161	        from fake_toobit_responder import FakeToobitResponder
+   162
+   163	        self.ledger = LS.LedgerWriter(self.store, clock=_LedgerClock(START))
+   164	        await self.ledger.initialize()
+   165	        await self.ledger.start()
+   166
+   167	        if self.with_adapter:
+   168	            self.responder = FakeToobitResponder(
+   169	                api_key=TEST_KEY, api_secret=TEST_SECRET,
+   170	                server_time_ms=self.clock.now_ms(), balance="10000",
+   171	                clock=self.clock.monotonic)
+   172	            if self.fill_mode != "none":
+   173	                self.responder.set_fill_mode(self.fill_mode)
+   174	            if self.lose_ack:
+   175	                self.responder.lose_next_ack(self.lose_ack)
+   176	            self.adapter = ToobitAdapter(config=Config(),
+   177	                                         transport=self.responder,
+   178	                                         utc_now=self.clock.utc_now,
+   179	                                         clock=self.clock.monotonic)
+   180
+   181	        self.bus = EventBus()
+   182	        self.bus.subscribe("execution.fsm.transition", self._on_event)
+   183	        self.bus.subscribe("execution.boot", self._on_event)
+   184	        self.bus.subscribe("scheduler.cell", self._on_event)
+   185	        self.bus.subscribe("telegram.message", self._on_event)
+   186	        self._bus_task = self.bus.start()
+   187
+   188	        self.signaling = SG.SignalingPlane(transport=self.telegram,
+   189	                                           clock=self.clock.monotonic,
+   190	                                           utc_now=self.clock.utc_now,
+   191	                                           ledger=self.ledger, bus=self.bus,
+   192	                                           owner_chat_id=OWNER,
+   193	                                           watchdog_chat_id=WATCHDOG)
+   194	        self.control = CP.ControlPlane(
+   195	            signaling=self.signaling,
+   196	            access=CP.AccessControl(owner_chat_ids=[OWNER],
+   197	                                    user_chat_ids=[USER, WATCHDOG]),
+   198	            clock=self.clock.monotonic, utc_now=self.clock.utc_now,
+   199	            handlers=self._control_handlers(), bus=self.bus,
+   200	            environment="PAPER", paper_balance="10000")
+   201	        self.scheduler = C.Scheduler(clock=self.clock, bus=self.bus,
+   202	                                     handlers=self._stage_handlers(),
+   203	                                     drift_seconds=self.drift)
+   204	        return self
+   205
+   257	    async def _execution_stage(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+   258	        """The ninth stage: the projection from CP-6 to the venue and back."""
+   259	        if self.paused or self.control.safe_mode:
+   260	            refusal = {"cell_id": payload["cell_id"], "refused": "SYSTEM_PAUSED"}
+   261	            self.refusals.append(refusal)
+   262	            return {"stage": "execution", "cell_id": payload["cell_id"],
+   263	                    "refused": "SYSTEM_PAUSED",
+   264	                    "detail": "SYSTEM_PAUSED — Emergency pause is active; no "
+   265	                              "new order was sent"}
+   266	        cell = C.BundleCell(payload["symbol"], payload["timeframe"])
+   267	        record = await self.trade_cell(cell, price="100")
+   268	        self.executed.append(record)
+   269	        return {"stage": "execution", "cell_id": payload["cell_id"],
+   270	                "detail": f"{record['final_state']} intent={record['intent_id']}",
+   271	                **{k: record[k] for k in ("outcome", "filled", "protected",
+   272	                                          "closed", "reconciled", "leverage")}}
+   273
+   274	    # -- boot ---------------------------------------------------------------
+   275	    async def boot(self, **kwargs) -> Dict[str, Any]:
+   276	        machine = F.StartupReconciliation(ledger=self.ledger,
+   277	                                          adapter=self.adapter,
+   278	                                          bus=self.bus,
+   279	                                          clock=self.clock.monotonic,
+   280	                                          utc_now=self.clock.utc_now,
+   281	                                          environment="PAPER",
+   282	                                          drift_seconds=self.drift, **kwargs)
+   283	        self.boot_verdict = await machine.run()
+   284	        self.boot_state = machine.state
+   285	        return self.boot_verdict
+   286
+   287	    # -- one cell, end to end ----------------------------------------------
+   288	    async def trade_cell(self, cell: C.BundleCell, *, price: str = "100",
+   289	                         intent_id: Optional[str] = None,
+   290	                         exit_price: str = "103") -> Dict[str, Any]:
+   291	        proposal = LoopProposal(proposal_id=f"pr-{cell.cell_id}",
+   292	                                setup_id=f"su-{cell.cell_id}")
+   293	        plan = F.build_trade_plan(
+   294	            proposal=proposal, adjudication=loop_adjudication(),
+   295	            symbol=cell.symbol, timeframe=cell.timeframe, environment="PAPER",
+   296	            as_of=self.clock.utc_now(), capital=10000.0,
+   297	            contract_multiplier=1.0, risk_state="LowRisk",
+   298	            package_version="4.0.0", created_utc=self.clock.utc_now(),
+   299	            lineage=f"loop:{cell.cell_id}")
+   300	        await self._seed_setup(proposal.setup_id, cell)
+   301	        # the intent_id becomes the wire clientOrderId: venue-legal characters
+   302	        # only (no colon), and short enough for the 36-character limit.
+   303	        machine = F.ExecutionFSM(
+   304	            intent_id=intent_id or f"i-{cell.symbol}-{cell.timeframe}",
+   305	                                 ledger=self.ledger, adapter=self.adapter,
+   306	                                 bus=self.bus, clock=self.clock.monotonic,
+   307	                                 utc_now=self.clock.utc_now,
+   308	                                 environment="PAPER")
+   309	        submitted = await machine.submit(plan, price=price)
+   310	        record: Dict[str, Any] = {"cell_id": cell.cell_id,
+   311	                                  "intent_id": machine.intent_id,
+   312	                                  "outcome": submitted["outcome"],
+   313	                                  "state": machine.state,
+   314	                                  "leverage": plan.leverage,
+   315	                                  "quantity": plan.sized_quantity,
+   316	                                  "filled": False, "protected": False,
+   317	                                  "closed": False, "reconciled": False}
+   318	        if machine.state in ("ACKNOWLEDGED", "PARTIAL"):
+   319	            await machine.record_fill(fill_id=f"f-{cell.cell_id}", price=price,
+   320	                                      quantity=plan.sized_quantity)
+   321	            await machine.advance("FULL_FILL")
+   322	        record["filled"] = machine.state in ("FILLED", "PROTECTED", "MANAGED")
+   323	        if record["filled"]:
+   324	            protection = await machine.place_protection(
+   325	                stop_price=plan.stop_price, target_price=plan.target_price)
+   326	            record["protected"] = bool(protection["protected"])
+   327	            if record["protected"]:
+   328	                await machine.activate_management()
+   329	                # the target leg fills: the exit is a FILL of its own, so the
+   330	                # position recomputed from the ledger returns to flat (T_MATCH).
+   331	                await machine.record_fill(fill_id=f"x-{cell.cell_id}",
+   332	                                          price=exit_price,
+   333	                                          quantity=plan.sized_quantity,
+   334	                                          side="SELL_CLOSE")
+   335	                closed = await machine.close_position(
+   336	                    exit_price=exit_price, quantity=plan.sized_quantity,
+   337	                    exit_reason="TARGET_1", setup_id=proposal.setup_id,
+   338	                    pnl=str(Decimal(exit_price) - Decimal(price)))
+   339	                record["closed"] = machine.state == "CLOSED"
+   340	                record["stop_gap"] = closed["stop_gap"]
+   341	                reconciled = await machine.reconcile()
+   342	                record["reconciled"] = machine.state == "RECONCILED"
+   343	                record["reconcile"] = {k: reconciled[k]
+   344	                                       for k in ("agree", "delta")}
+   345	        record["final_state"] = machine.state
+   346	        return record
+   405	async def loop_body(store, tmp_path, body, **kwargs):
+   406	    """Run ``body(loop)`` inside one event loop with one writer."""
+   407	    paper = PaperLoop(store, tmp_path, **kwargs)
+   408	    await paper.start()
+   409	    try:
+   410	        return await body(paper)
+   411	    finally:
+   412	        await paper.stop()
+   413
+   414
+   415	def scenario(store, tmp_path, body, **kwargs):
+   416	    return run(loop_body(store, tmp_path, body, **kwargs))
+   417
+   423	class TestCleanLoop:
+   424	    def test_boot_reaches_ready_before_any_order_is_sent(self, store, tmp_path):
+   425	        async def body(p):
+   426	            verdict = await p.boot()
+   427	            return verdict, p.boot_state, len(p.order_posts())
+   428
+   429	        verdict, state, posts = scenario(store, tmp_path, body)
+   430	        assert verdict["boot_state"] == "READY"
+   431	        assert verdict["new_trades_allowed"] is True
+   432	        assert state == "READY"
+   433	        assert [c["name"] for c in verdict["checks"]][:4] == \
+   434	            ["dependencies", "schema_version", "clock_sync", "ladder_state"]
+   435	        assert all(c["status"] == "PASS" for c in verdict["checks"])
+   436	        assert posts == 0                      # reconcile-first, nothing traded
+   437
+   438	    def test_one_cell_runs_the_full_fsm_lifecycle_to_reconciled(self, store,
+   439	                                                                tmp_path):
+   440	        async def body(p):
+   441	            await p.boot()
+   442	            record = await p.trade_cell(C.BundleCell("BTCUSDT", "1h"))
+   443	            await p.drain()
+   444	            return record
+   445
+   446	        record = scenario(store, tmp_path, body, fill_mode="none")
+   447	        assert record["outcome"] == "ACKNOWLEDGED"
+   448	        assert record["filled"] is True
+   449	        assert record["protected"] is True
+   450	        assert record["closed"] is True
+   451	        assert record["reconciled"] is True
+   452	        assert record["final_state"] == "RECONCILED"
+   453	        assert record["stop_gap"] is None      # a target exit has no stop gap
+   454
+   455	    def test_the_ledger_carries_the_whole_lifecycle_and_verifies(self, store,
+   456	                                                                 tmp_path):
+   457	        async def body(p):
+   458	            await p.boot()
+   459	            await p.trade_cell(C.BundleCell("ETHUSDT", "15m"))
+   460	            rows = await p.ledger_rows()
+   461	            chain = await p.ledger.verify_chain()
+   462	            closing = [r for r in rows if r.event_type == "FSM_TRANSITION"][-1]
+   463	            return [r.event_type for r in rows], chain, closing
+   464
+   465	        types, chain, closing = scenario(store, tmp_path, body, fill_mode="none")
+   466	        assert chain["intact"] is True
+   467	        assert chain["breaks"] == []
+   468	        assert chain["records"] == len(types)
+   469	        assert types.count("FSM_TRANSITION") == 7      # the seven lifecycle edges
+   470	        assert types.count("FILL") == 2                # entry leg + exit leg
+   471	        assert types.count("TRADE_PLAN") == 1          # materialized pre-submit
+   472	        assert "OUTCOME" in types
+   473	        assert types[0] == "TRADE_PLAN"                # the plan comes first
+   474	        # the reconcile evidence lives on the closing transition (T_MATCH)
+   475	        assert closing.raw["payload"]["to_state"] == "RECONCILED"
+   476	        assert Decimal(closing.raw["payload"]["evidence"]["delta"]) == 0
+   477	        assert "T_MATCH" in closing.raw["payload"]["reason"]
+   478
+=== Fake responder no-fill behavior ===
+    55	class FakeToobitResponder:
+    56	    """Deterministic in-memory Toobit futures responder."""
+    57
+    58	    def __init__(self, *, api_key: str = TEST_API_KEY,
+    59	                 api_secret: str = TEST_API_SECRET,
+    60	                 server_time_ms: int = 1767225600000,
+    61	                 balance: str = "10000.00000000",
+    62	                 clock: Optional[Callable[[], int]] = None) -> None:
+    63	        self.api_key = api_key
+    64	        self.api_secret = api_secret
+    65	        self.server_time_ms = int(server_time_ms)
+    66	        self._clock = clock if clock is not None else (lambda: self.server_time_ms)
+    67	        self.calls: List[RecordedCall] = []
+    68	        self.orders: Dict[str, Dict[str, Any]] = {}     # by clientOrderId
+    69	        self.orders_by_id: Dict[str, Dict[str, Any]] = {}
+    70	        self.fills: List[Dict[str, Any]] = []
+    71	        self.positions: Dict[str, Dict[str, Any]] = {}
+    72	        self.balance = balance
+    73	        self.margin_type: Dict[str, str] = {}
+    74	        self.leverage: Dict[str, str] = {}
+    75	        self.commission_rate: Dict[str, str] = {
+    76	            "symbol": "BTCUSDT", "makerCommissionRate": "0.0002",
+    77	            "takerCommissionRate": "0.0005"}
+    78	        # scenario knobs
+    79	        self.timeouts_remaining = 0          # lost-ack / transport fault
+    80	        self.record_before_timeout = True    # lost ack ⇒ the order IS recorded
+    81	        self.fail_with: Optional[int] = None  # business code to return
+    82	        self.fail_times = 0
+    83	        self.fill_mode: str = "none"          # none | immediate | partial
+    84	        self.fill_price: Optional[str] = None
+    85	        self.divergence: Optional[str] = None  # inject a reconcile divergence
+    86	        self._seq = 0
+    87	        self._order_seq = 0
+    88	        self._fill_seq = 0
+    89
+    90	    # -- scenario helpers ---------------------------------------------------
+    91	    def lose_next_ack(self, count: int = 1, *, record: bool = True) -> None:
+    92	        self.timeouts_remaining = int(count)
+    93	        self.record_before_timeout = bool(record)
+    94
+    95	    def fail_next(self, business_code: int, times: int = 1) -> None:
+    96	        self.fail_with = int(business_code)
+    97	        self.fail_times = int(times)
+    98
+    99	    def set_fill_mode(self, mode: str, *, price: Optional[str] = None) -> None:
+   100	        if mode not in ("none", "immediate", "partial"):
+   101	            raise ValueError(mode)
+   102	        self.fill_mode = mode
+   103	        self.fill_price = price
+   104
+   105	    def seed_order(self, *, intent_id: str, symbol: str, timeframe: str,
+   284	    # -- venue state --------------------------------------------------------
+   285	    def _accept_order(self, params: Dict[str, str], note: str = "") -> Dict[str, Any]:
+   286	        client_order_id = params.get("clientOrderId", "")
+   287	        existing = self.orders.get(client_order_id)
+   288	        if existing is not None:
+   289	            existing["duplicate_submission"] = True
+   290	            return existing
+   291	        self._order_seq += 1
+   292	        order_id = f"{900000 + self._order_seq}"
+   293	        quantity = params.get("quantity", "0")
+   294	        price = params.get("price") or self.fill_price or "100.0"
+   295	        status = "NEW"
+   296	        executed = "0"
+   297	        order = {"orderId": order_id, "clientOrderId": client_order_id,
+   298	                 "symbol": params.get("symbol"), "side": params.get("side"),
+   299	                 "positionSide": params.get("positionSide", "BOTH"),
+   300	                 "type": params.get("type"), "timeInForce":
+   301	                 params.get("timeInForce"), "price": price,
+   302	                 "origQty": quantity, "executedQty": executed,
+   303	                 "status": status, "reduceOnly":
+   304	                 params.get("reduceOnly") in ("true", "True"),
+   305	                 "updateTime": self.server_time_ms, "note": note}
+   306	        self.orders[client_order_id] = order
+   307	        self.orders_by_id[order_id] = order
+   308	        if self.fill_mode == "immediate":
+   309	            self._fill(order, quantity, self.fill_price or price)
+   310	        elif self.fill_mode == "partial":
+   311	            partial = _half(quantity)
+   312	            self._fill(order, partial, self.fill_price or price)
+   313	        return order
+   314
+   315	    def _fill(self, order: Dict[str, Any], quantity: str, price: str) -> None:
+   316	        self._fill_seq += 1
+   317	        executed = _decimal_add(order["executedQty"], quantity)
+   318	        order["executedQty"] = executed
+   319	        from decimal import Decimal
+   320	        order["status"] = "FILLED" if Decimal(executed) == Decimal(
+   321	            str(order["origQty"])) else "PARTIALLY_FILLED"
+   322	        fill = {"id": str(700000 + self._fill_seq), "symbol": order["symbol"],
+   323	                "orderId": order["orderId"], "clientOrderId":
+   324	                order["clientOrderId"], "side": order["side"],
+   325	                "price": price, "qty": quantity, "quoteQty":
+   326	                _decimal_mul(price, quantity), "commission": "0.01000000",
+   327	                "commissionAsset": "USDT", "time": self.server_time_ms,
+   328	                "maker": False, "realizedPnl": "0.00000000"}
+   329	        self.fills.append(fill)
+   330	        self._update_position(order, quantity, price)
+=== FSM submit/result/fill/reconcile rules ===
+   530	    async def submit(self, plan: TradePlan, *,
+   531	                     price: Any, quantity: Optional[Any] = None,
+   532	                     timestamp_utc: Optional[str] = None,
+   533	                     nonce: Optional[str] = None) -> Dict[str, Any]:
+   534	        """READY → SUBMITTING → the adapter's five-operation surface.
+   535
+   536	        Pre-submission validation is part of READY (Ch.16 L16779): a REJECT
+   537	        decision, a zero sized quantity, a disabled (symbol, TF) cell, or a
+   538	        rollover ban never reaches the exchange.
+   539	        """
+   540	        self._plan = plan
+   541	        refusal = self.pre_submission_validation(plan)
+   542	        if refusal is not None:
+   543	            await self.advance("VALIDATION_FAILED", reason=refusal["reason"],
+   544	                               evidence=refusal)
+   545	            return {"submitted": False, "reason": refusal["reason"],
+   546	                    "state": self._state, "detail": refusal}
+   547	        if self._adapter is None:
+   548	            raise FsmError("ADAPTER_REQUIRED",
+   549	                           "the execution FSM is the only path to Toobit "
+   550	                           "(Ch.16 L16752) — no adapter was wired")
+   551	        qty = plan.sized_quantity if quantity is None else quantity
+   552	        if self._ledger is not None:
+   553	            # Ch.16: the `trade_plan` row is materialized BEFORE anything is
+   554	            # sent, so the venue order can always be traced to a governed plan
+   555	            # (single source of truth; reconcile-first).
+   556	            self._plan_entry = await self._ledger.append_trade_plan(plan.to_dict())
+   557	        await self.advance("SUBMIT_ORDER", reason="plan accepted for submission",
+   558	                           evidence={"symbol": plan.symbol,
+   559	                                     "timeframe": plan.timeframe,
+   560	                                     "quantity": str(qty), "price": str(price),
+   561	                                     "leverage": plan.leverage})
+   562	        result = await self._adapter.submit_order(
+   563	            intent_id=self.intent_id, symbol=plan.symbol,
+   564	            timeframe=plan.timeframe, direction=plan.direction, quantity=qty,
+   565	            price=price, phase="entry", kind="entry",
+   566	            leverage=plan.leverage, owner_leverage_cap=plan.owner_leverage_cap,
+   567	            timestamp_utc=timestamp_utc, nonce=nonce)
+   568	        self._last_adapter_result = result
+   569	        self._order_id = result.order_id
+   570	        return await self.apply_adapter_result(result)
+   571
+   572	    def pre_submission_validation(self, plan: TradePlan) -> Optional[Dict[str, Any]]:
+   573	        """READY-state validation (Ch.16 L16779 + L16903 rollover + L16877
+   574	        disabled cell). Returns a refusal record or ``None``."""
+   575	        if plan.decision == "REJECT":
+   576	            return {"reason": "RISK_REJECT",
+   577	                    "rule": "Ch.15 veto authority — a REJECT plan is never "
+   578	                            "submitted (Owner > Risk > Decision)"}
+   579	        if plan.decision not in ("ALLOW", "REDUCE"):
+   580	            return {"reason": "DECISION_QX", "rule": "Ch.16 L16830 CHECK"}
+   581	        if plan.sized_quantity <= 0:
+   582	            return {"reason": "QUANTITY_ZERO",
+   583	                    "rule": "Ch.15 §15.3 Q==0 ⇒ PORTFOLIO_CAPACITY"}
+   584	        if plan.direction == "FLAT":
+   585	            return {"reason": "NO_TRADE_DIRECTION",
+   586	                    "rule": "Ch.12 AF.3 NO-TRADE is first-class; never an order"}
+   587	        if self._adapter is not None and self._adapter.is_interval_disabled(
+   588	                plan.symbol, plan.timeframe):
+   589	            return {"reason": "TF_DISABLED_FOR_SYMBOL",
+   590	                    "rule": "Ch.16 L16877 −1120 disables that TF for that "
+   591	                            "symbol only"}
+   592	        rollover = rollover_entry_allowed(plan.to_dict().get("days_to_expiry"))
+   593	        if not rollover["allowed"]:
+   594	            return {"reason": rollover["reason"], "rule": rollover["rule"],
+   595	                    "veto": rollover["veto"]}
+   596	        return None
+   597
+   598	    async def apply_adapter_result(self, result: AdapterResult) -> Dict[str, Any]:
+   599	        """Map one adapter outcome onto exactly one FSM transition
+   600	        (Ch.16 L16858–16863). UNKNOWN ⇒ reconcile-before-action, never retry."""
+   601	        self._last_adapter_result = result
+   602	        if result.order_id and not self._order_id:
+   603	            self._order_id = result.order_id
+   604	        outcome = result.outcome
+   605	        if result.classification == "REFUSED":
+   606	            await self.advance("EXCHANGE_REJECT", reason=result.error_code or
+   607	                               "REFUSED_BEFORE_SUBMISSION",
+   608	                               evidence=result.to_dict())
+   609	        elif outcome == "ACKNOWLEDGED":
+   610	            await self.advance("EXCHANGE_ACK", reason="exchange acceptance",
+   611	                               evidence=result.to_dict())
+   612	        elif outcome == "PARTIAL":
+   613	            await self.advance("PARTIAL_FILL", reason="partial fill permitted "
+   614	                               "(IOC)", evidence=result.to_dict())
+   615	        elif outcome == "FILLED":
+   616	            await self.advance("FULL_FILL", reason="full fill",
+   617	                               evidence=result.to_dict())
+   618	        elif outcome == "REJECTED":
+   619	            await self.advance("EXCHANGE_REJECT",
+   620	                               reason=result.error_code or "EXCHANGE_REJECTED",
+   621	                               error_code=_ch7_code_for(result),
+   622	                               evidence=result.to_dict())
+   623	        elif outcome == "CANCELLED":
+   624	            await self.advance("CANCEL_CONFIRMED", reason="exchange cancelled",
+   625	                               evidence=result.to_dict())
+   626	        else:                                     # UNKNOWN — the only lawful path
+   627	            await self.advance("UNKNOWN_OUTCOME",
+   628	                               reason="UNKNOWN venue outcome — reconcile before "
+   629	                                      "action, never blind retry",
+   630	                               error_code=get_error_code("E-EXEC-001").code,
+   631	                               evidence=result.to_dict())
+   632	        return {"state": self._state, "outcome": outcome,
+   633	                "classification": result.classification,
+   634	                "reconcile_required": result.reconcile_required,
+   635	                "resubmitted": result.resubmitted,
+   636	                "order_id": self._order_id,
+   637	                "idempotency_key": result.idempotency_key}
+   638
+   671	    async def record_fill(self, *, fill_id: str, price: Any, quantity: Any,
+   672	                          fee: Any = None, slippage: Any = None,
+   673	                          side: Optional[str] = None,
+   674	                          symbol: Optional[str] = None) -> LedgerEntry:
+   675	        """Fills are idempotent under ``fill_id`` (Ch.16 L16919–16921) and are
+   676	        written through the single ledger writer."""
+   677	        if self._ledger is None:
+   678	            raise FsmError("LEDGER_REQUIRED", "fills live in the ledger")
+   679	        entry = await self._ledger.append_fill(
+   680	            intent_id=self.intent_id, fill_id=fill_id, order_id=self._order_id,
+   681	            price=price, quantity=quantity, fee=fee, slippage=slippage,
+   682	            symbol=symbol or (self._plan.symbol if self._plan else None),
+   683	            side=side or (side_for(self._plan.direction, "entry")
+   684	                          if self._plan else None),
+   685	            timeframe=self._plan.timeframe if self._plan else None)
+   686	        if not any(f["ledger_id"] == entry.ledger_id for f in self._fills):
+   687	            # a replayed fill_id returns the ORIGINAL ledger record (Ch.16
+   688	            # L16919–16921) — the FSM view must not double-count it either.
+   689	            self._fills.append({"fill_id": fill_id, "price": str(price),
+   690	                                "quantity": str(quantity), "fee": str(fee or ""),
+   691	                                "slippage": str(slippage or ""),
+   692	                                "ledger_id": entry.ledger_id})
+   693	        return entry
+   694
+   695	    async def place_protection(self, *, stop_price: Any, target_price: Any,
+   696	                               quantity: Optional[Any] = None,
+   697	                               timestamp_utc: Optional[str] = None
+   698	                               ) -> Dict[str, Any]:
+   699	        """FILLED → PROTECTED: stop (STOP + priceType MARKET) and target
+   700	        (LIMIT/GTC) orders placed (Ch.16 L16800–16805).
+   701
+   702	        If protection fails to place, the position is closed at market by the
+   703	        Playbook emergency path and the event escalates to the OWNER
+   704	        (L16916–16918) — PROTECTION_FAILED ⇒ RECOVERY_REQUIRED + P0 alert.
+   705	        """
+   706	        if self._adapter is None:
+   707	            raise FsmError("ADAPTER_REQUIRED", "protection is an exchange order")
+   708	        if self._plan is None:
+   709	            raise FsmError("PLAN_REQUIRED", "no trade plan on this intent")
+   710	        qty = self._plan.sized_quantity if quantity is None else quantity
+   711	        results: List[AdapterResult] = []
+   712	        stop_intent = f"{self.intent_id}-stop"
+   713	        target_intent = f"{self.intent_id}-target"
+   714	        stop = await self._adapter.submit_order(
+   715	            intent_id=stop_intent, symbol=self._plan.symbol,
+   716	            timeframe=self._plan.timeframe, direction=self._plan.direction,
+   717	            quantity=qty, price=stop_price, phase="flatten", kind="stop",
+   718	            reduce_only=True, timestamp_utc=timestamp_utc,
+   719	            # Ch.16 L16802 governed table: "Stop order | STOP, GTC" (the wire
+   720	            # block L16899 fixes type=STOP + priceType=MARKET; the TIF comes
+   721	            # from the governed order table — ISSUE-CP7-005).
+   722	            extra_params={"timeInForce": "GTC"})
+   723	        results.append(stop)
+   724	        target = await self._adapter.submit_order(
+   725	            intent_id=target_intent, symbol=self._plan.symbol,
+   726	            timeframe=self._plan.timeframe, direction=self._plan.direction,
+   727	            quantity=qty, price=target_price, phase="flatten", kind="target",
+   728	            reduce_only=True, timestamp_utc=timestamp_utc)
+   729	        results.append(target)
+   730	        placed = all(r.ok for r in results)
+   731	        if placed:
+   732	            await self.advance("PROTECTION_PLACED",
+   733	                               reason="stop + target placed",
+   734	                               evidence={"stop_intent": stop_intent,
+   735	                                         "target_intent": target_intent,
+   736	                                         "stop_order_id": stop.order_id,
+   737	                                         "target_order_id": target.order_id})
+   738	            return {"protected": True, "state": self._state,
+   739	                    "stop_order_id": stop.order_id,
+   740	                    "target_order_id": target.order_id}
+   741	        event = protection_failed_event(
+   742	            intent_id=self.intent_id,
+   743	            reason="; ".join(str(r.error_code or r.classification) for r in results))
+   744	        if self._ledger is not None:
+   745	            record = {k: v for k, v in event.items()
+   746	                      if k not in ("event_type", "intent_id")}
+   747	            await self._ledger.append(event_type=event["event_type"],
+   748	                                      intent_id=self.intent_id,
+   749	                                      result="PROTECTION_FAILED", **record)
+   750	        await self.advance("PROTECTION_FAILED", reason=event["reason"],
+   751	                           error_code=get_error_code("E-EXEC-001").code,
+   752	                           evidence=event)
+   753	        return {"protected": False, "state": self._state,
+   754	                "emergency_path": event["action"],
+   755	                "escalation": event["escalation"], "alert": event["alert"],
+   756	                "priority": event["priority"]}
+   757
+   758	    async def activate_management(self, *, reason: str = "playbook management "
+   759	                                  "active (trailing, time exit)") -> TransitionRecord:
+   760	        return await self.advance("MANAGEMENT_ACTIVE", reason=reason)
+   761
+   762	    async def close_position(self, *, exit_price: Any, quantity: Any,
+   763	                             exit_reason: str, fee: Any = None,
+   764	                             intended_stop: Optional[Any] = None,
+   765	                             actual_fill: Optional[Any] = None,
+   766	                             setup_id: Optional[str] = None,
+   767	                             mfe: Any = None, mae: Any = None,
+   768	                             duration: Optional[int] = None,
+   769	                             pnl: Any = None) -> Dict[str, Any]:
+   770	        """CLOSED via the Playbook exit path; the outcome record carries both
+   771	        ``intended_stop`` and ``actual_fill`` so a stop gap is attributed as
+   772	        STOP_GAP_SLIPPAGE (Ch.16 L16912–16918)."""
+   773	        gap = None
+   774	        if intended_stop is not None and actual_fill is not None:
+   775	            gap = stop_gap_slippage(intended_stop=intended_stop,
+   776	                                    actual_fill=actual_fill,
+   777	                                    direction=self._plan.direction
+   778	                                    if self._plan else "LONG")
+   779	        await self.advance("POSITION_CLOSED", reason=exit_reason,
+   780	                           evidence={"exit_price": str(exit_price),
+   781	                                     "quantity": str(quantity),
+   782	                                     "stop_gap": gap})
+   783	        outcome_id = None
+   784	        if self._ledger is not None and setup_id:
+   785	            entry = await self._ledger.append_outcome({
+   786	                "setup_id": setup_id,
+   787	                "entry_price": str(self._fills[0]["price"]) if self._fills else None,
+   788	                "exit_price": str(exit_price), "pnl": pnl, "fees": fee,
+   789	                "slippage": (gap or {}).get("stop_gap"), "mfe": mfe, "mae": mae,
+   790	                "duration": duration, "exit_reason": exit_reason,
+   791	                "risk_used": (self._plan.risk_amount if self._plan else None),
+   792	                "intended_stop": intended_stop, "actual_fill": actual_fill,
+   793	                "forecast": {}, "regime": None,
+   794	                "context": {"intent_id": self.intent_id,
+   795	                            "environment": self.environment}})
+   796	            outcome_id = entry.ledger_id
+   797	        return {"state": self._state, "exit_reason": exit_reason,
+   798	                "stop_gap": gap, "outcome_ledger_id": outcome_id}
+   799
+   800	    # -- cancellation -------------------------------------------------------
+   801	    async def cancel(self, *, reason: str = "cancel requested",
+   802	                     scope: str = "single") -> Dict[str, Any]:
+   803	        """Cancel through the adapter's operation 2/5 (``clientOrderId=
+   804	        intent_id``). ``scope='all'`` is the Emergency L3 CANCEL_ALL protective
+   805	        path (Ch.21 §5.7; Ch.15 §15.1 margin 20% ⇒ L3 automatic)."""
+   806	        if self._adapter is None:
+   807	            raise FsmError("ADAPTER_REQUIRED", "cancel is an exchange operation")
+   808	        result = await self._adapter.cancel_order(
+   809	            symbol=self._plan.symbol if self._plan else None,
+   810	            client_order_id=self.intent_id, scope=scope)
+   831	    # -- reconciliation (T_MATCH / T_RECONCILE / T-LR-002/003) --------------
+   832	    async def reconcile(self, *, exchange_position: Optional[Mapping[str, Any]] = None,
+   833	                        exchange_order: Optional[Mapping[str, Any]] = None,
+   834	                        query_exchange: bool = True) -> Dict[str, Any]:
+   835	        """Reconcile-first invariant (Ch.16 L16761–16764): no state may advance
+   836	        to RECONCILED while ledger and exchange disagree; divergence forces
+   837	        RECOVERY_REQUIRED."""
+   838	        if self._ledger is None:
+   839	            raise FsmError("LEDGER_REQUIRED", "reconciliation compares the "
+   840	                                               "ledger with the exchange")
+   841	        if query_exchange and self._adapter is not None:
+   842	            if exchange_order is None:
+   843	                q = await self._adapter.query_order_state(
+   844	                    symbol=self._plan.symbol if self._plan else None,
+   845	                    client_order_id=self.intent_id)
+   846	                self._last_adapter_result = q
+   847	                if q.outcome == "UNKNOWN" and not q.ok:
+   848	                    await self.advance("RECONCILE_DIVERGENCE",
+   849	                                       reason="order state UNKNOWN at the "
+   850	                                              "exchange — reconcile-before-action",
+   851	                                       error_code=get_error_code("E-EXEC-001").code,
+   852	                                       evidence=q.to_dict())
+   853	                    return {"agree": False, "state": self._state,
+   854	                            "action": "RECOVERY_REQUIRED", "query": q.to_dict()}
+   855	                data = dict(q.data or {})
+   856	                inner = data.get("data") if isinstance(data.get("data"), Mapping) else data
+   857	                exchange_order = dict(inner or {})
+   858	            if exchange_position is None:
+   859	                p = await self._adapter.query_open_positions(
+   860	                    symbol=self._plan.symbol if self._plan else None)
+   861	                data = dict(p.data or {})
+   862	                inner = data.get("data")
+   863	                rows = inner if isinstance(inner, list) else [inner] if inner else []
+   864	                exchange_position = _position_row_for(
+   865	                    rows, self._plan.symbol if self._plan else None)
+   866	        ledger_positions = await self._ledger.positions_from_ledger()
+   867	        symbol = self._plan.symbol if self._plan else None
+   868	        ledger_pos = ledger_positions.get(symbol or "", {})
+   869	        ledger_qty = Decimal(str(ledger_pos.get("net_quantity", "0") or 0))
+   870	        exchange_qty = Decimal(str((exchange_position or {}).get(
+   871	            "quantity", (exchange_position or {}).get("positionAmt", 0)) or 0))
+   872	        delta = exchange_qty - ledger_qty
+   873	        agree = abs(delta) <= Decimal(str(RECONCILE_DELTA_TOLERANCE_UNITS))
+   874	        order_state = str((exchange_order or {}).get("status") or "")
+   875	        if agree:
+   876	            trigger = "RECONCILE_MATCH"
+   877	            reason = (f"ledger {ledger_qty} == exchange {exchange_qty} "
+   878	                      f"(±{RECONCILE_DELTA_TOLERANCE_UNITS} unit) — T_MATCH")
+   879	        else:
+   880	            trigger = "RECONCILE_DIVERGENCE"
+   881	            reason = (f"ledger {ledger_qty} != exchange {exchange_qty} "
+   882	                      f"(delta {delta}) — AI.9 L18831")
+   883	            await self._ledger.append_correction(
+   884	                supersedes=self._ledger.head or "GENESIS",
+   885	                reason="BROKER_LEDGER_DELTA",
+   886	                delta={"symbol": symbol, "ledger_quantity": str(ledger_qty),
+   887	                       "exchange_quantity": str(exchange_qty),
+   888	                       "delta": str(delta), "alert": "RECONCILE_FAILURE",
+   889	                       "order_state": order_state,
+   890	                       "intent_id": self.intent_id})
+   891	        if trigger not in legal_targets(self._state):
+   892	            # A terminal/RECONCILED lifecycle is not re-opened by a re-check;
+   893	            # the divergence is still recorded above (fail-closed, never silent).
+   894	            return {"agree": agree, "state": self._state, "delta": str(delta),
+   895	                    "action": None if agree else "RECOVERY_REQUIRED",
+   896	                    "note": f"{trigger} is not legal from {self._state}; the "
+   897	                            "delta is recorded and new entries stay blocked",
+   898	                    "new_entries_blocked": not agree}
+   899	        record = await self.advance(trigger, reason=reason,
+   900	                                    evidence={"ledger_quantity": str(ledger_qty),
+   901	                                              "exchange_quantity": str(exchange_qty),
+   902	                                              "delta": str(delta),
+   903	                                              "order_state": order_state})
+   904	        return {"agree": agree, "state": self._state, "delta": str(delta),
+   905	                "action": None if agree else "RECOVERY_REQUIRED",
+   906	                "new_entries_blocked": not agree,
+   907	                "ledger_id": record.ledger_id,
+   908	                "rule": "Ch.16 L16761–16764 reconcile-first"}
+   909
+=== Production PaperRuntime fill and execution composition ===
+   691	    # -- one plan, end to end ------------------------------------------------
+   692	    async def execute_plan(self, plan: F.TradePlan, *, price: Any,
+   693	                           timestamp_utc: Optional[str] = None,
+   694	                           close_ms: Optional[int] = None
+   695	                           ) -> Dict[str, Any]:
+   696	        """submit → observe → record fill → protect → manage (one plan)."""
+   697	        if close_ms is None:
+   698	            raise CellRefusal("INTENT_CLOSE_MISSING",
+   699	                              "intent_id requires the cell close_ms (D50)")
+   700	        machine = F.ExecutionFSM(
+   701	            intent_id=intent_id_for(plan, int(close_ms)), ledger=self.ledger,
+   702	            adapter=self.adapter, bus=self.bus, clock=self.clock.monotonic,
+   703	            utc_now=self.clock.utc_now, environment=self.environment)
+   704	        submitted = await machine.submit(plan, price=price,
+   705	                                         timestamp_utc=timestamp_utc)
+   706	        # The FSM returns a venue answer whenever the adapter round-trip
+   707	        # happened (``apply_adapter_result``), and a validation refusal when it
+   708	        # never left READY (``submit``). A REFUSED classification means the
+   709	        # adapter's own guard stopped the order before the exchange saw it —
+   710	        # that is NOT a submission either (fail-closed record).
+   711	        accepted = ("outcome" in submitted
+   712	                    and submitted.get("classification") != "REFUSED")
+   713	        record: Dict[str, Any] = {
+   714	            "proposal_id": plan.proposal_id, "intent_id": machine.intent_id,
+   715	            "symbol": plan.symbol, "timeframe": plan.timeframe,
+   716	            "direction": plan.direction, "price_source": "LAST_CLOSED_BAR",
+   717	            "price": str(price), "submitted": accepted,
+   718	            "outcome": submitted.get("outcome"), "state": machine.state,
+   719	            "fill": None, "protected": False,
+   720	            "reason": submitted.get("reason") or (
+   721	                "REFUSED_BEFORE_SUBMISSION"
+   722	                if submitted.get("classification") == "REFUSED" else None)}
+   723	        if not accepted:
+   724	            self.refusals.append({"cell": f"{plan.symbol}:{plan.timeframe}",
+   725	                                  **record})
+   726	            self.trades.append(record)
+   727	            return record
+   728	        if machine.state == "FILLED":
+   729	            # The venue answered the SUBMISSION itself with a fill: the numbers
+   730	            # come from that response — no second FSM transition (the frozen
+   731	            # matrix has none from FILLED) and no re-query.
+   732	            observed = await self._record_submission_fill(machine, plan)
+   733	        else:
+   734	            observed = await self._observe_fill(machine, plan)
+   735	        record["fill"] = observed
+   736	        if observed.get("filled"):
+   737	            protection = await machine.place_protection(
+   738	                stop_price=plan.stop_price, target_price=plan.target_price)
+   739	            record["protected"] = bool(protection.get("protected"))
+   740	            if record["protected"]:
+   741	                await machine.activate_management()
+   742	            self.working[machine.intent_id] = machine
+   743	        record["state"] = machine.state
+   744	        self.trades.append(record)
+   745	        return record
+   746
+   747	    async def _record_submission_fill(self, machine: F.ExecutionFSM,
+   748	                                      plan: F.TradePlan) -> Dict[str, Any]:
+   749	        """Record the fill the SUBMISSION response reported (source
+   750	        SUBMIT_RESULT) — or refuse to record incomplete venue numbers."""
+   751	        result = machine.last_adapter_result
+   752	        fill = fill_from_result(result, plan) if result is not None else None
+   753	        if fill is None:
+   754	            return {"filled": False, "outcome": "FILLED", "attempt": 1,
+   755	                    "source": "SUBMIT_RESULT", "reason": "FILL_DATA_INCOMPLETE"}
+   756	        await machine.record_fill(fill_id=fill["fill_id"], price=fill["price"],
+   757	                                  quantity=fill["quantity"], symbol=plan.symbol)
+   758	        return {"filled": True, "outcome": "FILLED", "attempt": 1,
+   759	                "source": "SUBMIT_RESULT", "fill_id": fill["fill_id"],
+   760	                "price": fill["price"], "quantity": fill["quantity"]}
+   761
+   762	    async def _observe_fill(self, machine: F.ExecutionFSM,
+   763	                            plan: F.TradePlan) -> Dict[str, Any]:
+   764	        """Ask the venue (never the ledger, never a guess) whether the order
+   765	        filled. ``scope='single'`` is the Ch.16 keyed query."""
+   766	        if self.adapter is None:
+   767	            return {"filled": False, "reason": "NO_ADAPTER"}
+   768	        for attempt in range(max(1, self.fill_poll_attempts)):
+   769	            result = await self.adapter.query_order_state(
+   770	                symbol=plan.symbol, client_order_id=machine.intent_id,
+   771	                scope="single")
+   772	            if result.outcome == "ACKNOWLEDGED" and \
+   773	                    machine.state in ("ACKNOWLEDGED", "PARTIAL"):
+   774	                # a repeated ACK is not a second transition (Ch.16: exactly one
+   775	                # transition per adapter outcome) — poll again instead.
+   776	                applied = {"outcome": machine.state, "state": machine.state,
+   777	                           "classification": result.classification}
+   778	            else:
+   779	                applied = await machine.apply_adapter_result(result)
+   780	            if applied.get("outcome") in ("FILLED", "PARTIAL"):
+   781	                fill = fill_from_result(result, plan)
+   782	                if fill is None:
+   783	                    # The FSM knows it filled; the venue did not report the
+   784	                    # numbers, so nothing is recorded — protect, never invent.
+   785	                    return {"filled": False, "outcome": applied["outcome"],
+   786	                            "attempt": attempt + 1, "source": "VENUE_QUERY",
+   787	                            "reason": "FILL_DATA_INCOMPLETE"}
+   788	                await machine.record_fill(
+   789	                    fill_id=fill["fill_id"], price=fill["price"],
+   790	                    quantity=fill["quantity"], symbol=plan.symbol)
+   791	                return {"filled": True, "outcome": applied["outcome"],
+   792	                        "attempt": attempt + 1, "source": "VENUE_QUERY",
+   793	                        "fill_id": fill["fill_id"], "price": fill["price"],
+   794	                        "quantity": fill["quantity"]}
+   795	            if applied.get("outcome") in ("REJECTED", "CANCELLED"):
+   796	                return {"filled": False, "outcome": applied["outcome"],
+   797	                        "attempt": attempt + 1, "source": "VENUE_QUERY"}
+   798	            if self.fill_poll_delay:
+   799	                await asyncio.sleep(self.fill_poll_delay)
+   800	        return {"filled": False, "outcome": "ACKNOWLEDGED",
+   801	                "source": "VENUE_QUERY", "reason": "FILL_NOT_OBSERVED_YET"}
+   956	    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+   957	        moment = self.clock.now_ms() if now_ms is None else int(now_ms)
+   958	        as_of = _ms_to_iso(moment)
+   959	        self._budget_taken = 0
+   960	        self._cycle_proposals = {}
+   961	        if not self._cursor_loaded:
+   962	            await self._load_cursor()
+   963	        cycle: Dict[str, Any] = {"cycle": len(self.cycles) + 1, "as_of": as_of,
+   964	                                 "signal_source": self.signal_source,
+   965	                                 "trading_enabled": self.trading_enabled,
+   966	                                 "budget_limit": self.max_trades_per_cycle}
+   967	        cycle["catch_up"] = (await self.catch_up(moment) if self.catch_up else
+   968	                             {"cells_checked": 0, "cells_updated": 0,
+   969	                              "bars_ingested": 0, "failures": []})
+   970	        self._catch_up_failed = {row["cell"]: row
+   971	                                 for row in cycle["catch_up"]["failures"]}
+   972	        if self.watchdog is not None:
+   973	            cycle["heartbeat"] = await _maybe_await(self.watchdog.heartbeat())
+   974	        cycle["storage"] = await self._storage_guard()
+   975	        if self.gateway is not None:
+   976	            cycle["telegram"] = await self.gateway.run_once()
+   977	        # The scheduler's law is "on each TF close run the stages for THAT
+   978	        # cell": a cell runs once per close, and a cell whose close has not
+   979	        # advanced since the previous cycle is not run again.
+   980	        already = []
+   981	        due = []
+   982	        for item in self.scheduler.due_cells(now_ms=moment):
+   983	            recorded = self._last_close.get(item[0].cell_id)
+   984	            if recorded is not None and int(item[1]) <= int(recorded):
+   985	                already.append(item)
+   986	                continue
+   987	            due.append(item)
+   988	        cycle["cells_skipped_already_decided"] = len(already)
+   989	        if self.max_cells_per_cycle is not None:
+   990	            due = due[:self.max_cells_per_cycle]
+   991	        # G1: all expensive source preparation completes before run_cell
+   992	        # starts its latency clock. D22 failures never enter preparation;
+   993	        # a failed source must not fall back to its previous cached success.
+   994	        self._context_preparation_failed = {}
+   995	        preparation = {"cells_checked": 0, "cells_prepared": 0, "failures": []}
+   996	        receipt_ms = max(moment,self.clock.now_ms())
+   997	        self._decision_as_of = ({cell.cell_id:_ms_to_iso(max(close,receipt_ms))
+   998	                                for cell,close in due} if self.environment == "PAPER" else {})
+   999	        cycle["decision_as_of"] = dict(self._decision_as_of)
+  1000	        cycle["publishers"] = await self._refresh_publishers(due)
+  1001	        published = (cycle.get("catch_up") or {}).get("quality_publish") or {}
+  1002	        cycle["publishers"]["quality_facts_written"] = int(
+  1003	            cycle["publishers"].get("quality_facts_written") or 0) + int(
+  1004	                published.get("written") or 0)
+  1005	        cycle["publishers"]["failures"] = list(
+  1006	            cycle["publishers"].get("failures") or [])
+  1007	        cycle["publishers"]["failures"].extend(list(published.get("failures") or []))
+  1008	        prepare = getattr(self.plan_provider, "prepare", None)
+  1009	        if callable(prepare):
+  1010	            for cell, close in due:
+  1011	                if cell.cell_id in self._catch_up_failed:
+  1012	                    continue
+  1013	                preparation["cells_checked"] += 1
+  1014	                try:
+  1015	                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+  1016	                    preparation["cells_prepared"] += 1
+  1017	                except Exception as exc:
+  1018	                    failed = {"cell": cell.cell_id,
+  1019	                              "reason": getattr(exc, "reason", "ENGINE_CONTEXT_PREPARATION_FAILED"),
+  1020	                              "detail": getattr(exc, "detail", type(exc).__name__)}
+  1021	                    self._context_preparation_failed[cell.cell_id] = failed
+  1022	                    preparation["failures"].append(failed)
+  1023	        cycle["context_preparation"] = preparation
+  1024	        tasks = [asyncio.create_task(self.scheduler.run_cell(
+  1025	                    cell, close_ms=close, context={"cell_state": {}}))
+  1026	                 for cell, close in due]
+  1027	        runs = list(await asyncio.gather(*tasks)) if tasks else []
+=== Production run_apex _serve composition ===
+   695	async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
+   696	                 interval: float = 60.0, report_every: int = 1) -> int:
+   697	    if cfg.apex_env == "LIVE" and not cfg.economic_gate_signed:
+   698	        code = "LIVE_CAPITAL_LOCKED"
+   699	        _say(f"REFUSED: {code} — APEX_ENV=LIVE is not a capital switch; LIVE "
+   700	             "capital stays locked until APEX_ECONOMIC_GATE_SIGNED=1 (Y.1 "
+   701	             "L17093) and the owner's written approval. Run PAPER first.")
+   702	        return EXIT_DEGRADED
+   703	    if not cfg.allow_signed:
+   704	        _say("REFUSED: SIGNED_NOT_ALLOWED — PAPER orders require "
+   705	             "APEX_ALLOW_SIGNED=1 (Y.1 L17093). Re-run exactly:")
+   706	        _say("  APEX_ENV=PAPER APEX_ALLOW_SIGNED=1 TOOBIT_API_KEY=... "
+   707	             "TOOBIT_API_SECRET=... TELEGRAM_BOT_TOKEN=... "
+   708	             "TELEGRAM_OWNER_CHAT_ID=... python scripts/run_apex.py serve")
+   709	        return EXIT_DEGRADED
+   710
+   711	    runtime = await Runtime(cfg).start()
+   712	    service = BS.BootstrapService(config=cfg, store=runtime.store)  # one raw writer
+   713	    await service.open()
+   714	    gateway = None
+   715	    try:
+   716	        ledger, bus = runtime.ledger, runtime.bus
+   717	        clock = C.SystemClock()
+   718	        adapter = runtime.adapter()
+   719	        notifier = await _notifier_for(cfg)
+   720	        signaling = (SG.SignalingPlane(config=cfg, ledger=ledger, bus=bus,
+   721	                                       owner_chat_id=cfg.telegram_owner_chat_id
+   722	                                       or None)
+   723	                     if cfg.telegram_bot_token else None)
+   724	        control = CP.ControlPlane(
+   725	            signaling=signaling, config=cfg, clock=clock.monotonic,
+   726	            utc_now=clock.utc_now, bus=bus, environment=cfg.apex_env,
+   727	            paper_balance=(await EC.paper_balance(ledger)
+   728	                           if cfg.apex_env == "PAPER" else "0"))
+   729	        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+   730	        for name in ("EMERGENCY_PAUSE", "EMERGENCY_DISABLE_NEW",
+   731	                     "EMERGENCY_CANCEL_ALL", "EMERGENCY_CLOSE_ALL",
+   732	                     "EMERGENCY_SAFE_MODE", "EXPORT", "BACKTEST_RUN"):
+   733	            control.register(name, _noop_handler(name))
+   734	        if cfg.telegram_bot_token:
+   735	            gateway = GW.TelegramGateway(
+   736	                control=control, source=GW.AiogramUpdateSource(config=cfg),
+   737	                notifier=_telegram_reply(signaling),
+   738	                bootstrap=service, clock=clock.monotonic,
+   739	                utc_now=clock.utc_now, poll_timeout=5.0)
+   740	        watchdog = WD.Watchdog(telegram_plane=signaling,
+   741	                               recovery_log=WD.RecoveryLog(path=cfg.sqlite_path),
+   742	                               now=time.time)
+   743	        # CP-9 bridge: the provider is registered at the composition root, so
+   744	        # every PAPER cell now asks the governed store/context → pattern/setup
+   745	        # → gates → forecast → risk/decision chain for a real plan.  Missing
+   746	        # persisted engine context remains a named fail-closed refusal; the
+   747	        # provider never falls back to a hand-built plan.
+   748	        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+   749	                    environment="PAPER") if cfg.apex_env == "PAPER" else None)
+   750	        plan_bridge = PB.PaperPlanBridge(
+   751	            store=runtime.store, environment=cfg.apex_env,
+   752	            context_source=producer.get_bridge_context if producer is not None else None,
+   753	            context_preparer=producer.prepare if producer is not None else None)
+   754	        async def catch_up(now_ms: int) -> Dict[str, Any]:
+   755	            result = await service.catch_up(now_ms)
+   756	            if cfg.apex_env == "PAPER":
+   757	                control.paper_balance = CP.comma_format(await EC.paper_balance(ledger))
+   758	            return result
+   759
+   760	        driver = PL.PaperRuntime(
+   761	            config=cfg, store=runtime.store, ledger=ledger, bus=bus,
+   762	            adapter=adapter, signaling=signaling, control=control,
+   763	            gateway=gateway, watchdog=watchdog, clock=clock,
+   764	            environment=cfg.apex_env, notifier=notifier,
+   765	            plan_provider=plan_bridge, catch_up=catch_up)
+   766	        _say("APEX_GEN5 — 24/7 runtime (reconcile-first boot → the 140-cell "
+   767	             "scheduler → the SL-5 → SL-6 trade_plan queue → execution FSM)")
+   768	        drift = await C.measure_drift(
+   769	            _venue_server_time if adapter is not None else _no_venue_time, clock)
+   770	        boot = await driver.boot(drift_seconds=drift.get("drift_seconds"))
+   771	        try:
+   772	            EC.load_classifier()
+   773	            artifact_name = "E11_ARTIFACT"
+   774	        except EC.BridgeError as exc:
+   775	            artifact_name = exc.reason
+   776	        _say(f"  boot_state={boot['boot_state']} "
+   777	             f"new_trades_allowed={boot['new_trades_allowed']} "
+   778	             f"drift={drift['state']} ({drift.get('reason') or 'measured'}) "
+   779	             f"artifact={artifact_name}")
+   780	        if driver.plan_provider is None:
+   781	            _say("  plan seam: NO PLANS WIRED — every cell halts with the named "
+   782	                 "refusal NO_PLAN_PROVIDER")
+   783	        else:
+   784	            _say("  plan seam: WIRED — governed PAPER store bridge "
+   785	                 "(missing context refuses by name; no synthetic plan)")
+   786	        _say(f"  signal_source={driver.signal_source} · cells=140 · "
+   787	             f"max_trades_per_cycle={driver.max_trades_per_cycle} · "
+   788	             f"telegram={'WIRED' if gateway is not None else 'DISABLED (no token)'}")
+   789	        _say("  (Ctrl-C stops the loop; the ledger chain and the durable "
+   790	             "cursors stay consistent)")
+   791	        outcome = await driver.run(cycles=cycles, interval=interval)
+   792	        for cycle in driver.cycles[-3:]:
+   793	            _say(f"  cycle {cycle['cycle']}: cells={cycle['cells_due']} "
+   794	                 f"complete={cycle['cells_complete']} "
+   795	                 f"halted={cycle['cells_halted']} blocked={cycle['cells_blocked']} "
+   796	                 f"trades={len(cycle['trades'])} open={len(cycle['open_intents'])}")
+   797	            if cycle.get("halt_reasons"):
+   798	                _say(f"    named refusals: "
+   799	                     f"{json.dumps(cycle['halt_reasons'], sort_keys=True)}")
+   800	        _say(f"  cycles={outcome['cycles']} trades={outcome['trades']} "
+   801	             f"open={outcome['open_intents']} refusals={outcome['refusals']} "
+   802	             f"ledger_chain_intact={outcome['ledger_chain_intact']}")
+   803	        if as_json:
+   804	            _say(json.dumps({"boot": boot, "outcome": outcome,
+   805	                             "cycles": driver.cycles}, default=str, indent=2,
+   806	                            sort_keys=True))
+   807	        return EXIT_READY if boot["boot_state"] == "READY" else EXIT_DEGRADED
+   808	    finally:
+   809	        if gateway is not None:
+   810	            await gateway.aclose()
+   811	        await service.close()
+   812	        await runtime.stop()
+   813
+=== Normative execution/F3 PAPER simulator clauses ===
+ 16866	## 16. Execution, Venue Adapter, and Ledger
+ 16867
+ 16868	**Session-CP-14 (2026-09-18; D34 / ISSUE-044):** ADV is mean daily base-asset volume from CLOSED 1h bars over the previous 30 complete UTC days, costs use actual round-trip fees and side-specific nonnegative funding across publicly verified settlement intervals within the governed holding horizon, endpoint/schedule failure yields FUNDING_UNAVAILABLE for retry, and unavailable spread retains cost_R >= 0.05.
+ 16869
+ 16870	The execution state machine is the only path to Toobit. Identity is `intent_id` (UUIDv7) as `clientOrderId`. Unknown venue outcomes are reconciled, never blindly retried. The ledger is append-only.
+ 16871
+ 16872	### 16.1 State machine and adapter
+ 16873
+ 16874	- The execution FSM is exactly the frozen state list of the System Overview:
+ 16875	  `READY → SUBMITTING → ACKNOWLEDGED → PARTIAL → FILLED → PROTECTED →
+ 16876	  MANAGED → CLOSED → RECONCILED`, with `RECOVERY_REQUIRED` on fill timeout
+ 16877	  (Error Codes E-EXEC-001).
+ 16878	- **Reconciliation is a first-class invariant, not a background task:** no
+ 16879	  downstream state may advance to `RECONCILED` while ledger and exchange
+ 16880	  state disagree; divergence forces `RECOVERY_REQUIRED`.
+ 16881	- **Ledger is immutable and hash-chained** (the Data Plane `ledger` table:
+ 16882	  `payload_hash`, `parent_ids`, `until`); silent rewriting is forbidden —
+ 16883	  corrections append a revision.
+ 16884	- Idempotency: `intent_id / order_id / fill_id / cancel_id` identity per the
+ 16885	  ledger DDL; every submission carries a SHA-256-based idempotency key
+ 16886	  (pattern per Chapter 6 System Contract: `SHA-256(signal_id + timestamp_UTC
+ 16887	  + chat_id)` at the Telegram layer; execution-layer key formula is a design
+ 16888	  deliverable and MUST follow the same SHA-256 + TTL discipline).
+ 16889
+ 16890	Acceptance tests: `T_LEDGER` (covert insert/modify of a ledger record breaks
+ 16891	the hash chain) and `T_RECONCILE` (forced divergence ⇒ RECOVERY_REQUIRED).
+ 16892
+ 16893	**FSM state semantics.**
+ 16894
+ 16895	| State | Authorized meaning |
+ 16896	|---|---|
+ 16897	| READY | plan received, pre-submission validation |
+ 16898	| SUBMITTING | order submission in progress |
+ 16899	| ACKNOWLEDGED | exchange acknowledgement received |
+ 16900	| PARTIAL | partial fill |
+ 16901	| FILLED | full fill |
+ 16902	| PROTECTED | stop/target orders placed |
+ 16903	| MANAGED | Playbook management active (trailing, time exit) |
+ 16904	| CLOSED | position closed |
+ 16905	| RECONCILED | ledger ↔ exchange fully matched |
+ 16906	| RECOVERY_REQUIRED | divergence or fill timeout (E-EXEC-001); reconcile-first recovery |
+ 17020	**Session-A P3 (2026-09-17; D1/D2 — normative, owns the PAPER execution
+ 17021	transport):** in PAPER the venue wire above is replaced by the **PAPER
+ 17022	simulator**: the same five-operation surface (`submit_order`,
+ 17023	`cancel_order`, `query_order_state`, `query_open_positions`,
+ 17024	`query_account_margin_health`) off the same `fsm.submit`/`seal` path and
+ 17025	the same ledger, FSM, and reconcile-first law — but the `Transport` seam
+ 17026	is a simulator with **no network packet and no signature** (fills from
+ 17027	last-closed prices; the fake-responder path shape is the test double, not
+ 17028	the venue). The W.6 Phase-2 line "PAPER orders require
+ 17029	`APEX_ALLOW_SIGNED=1`" permits the PAPER loop to run; it **never**
+ 17030	authorizes a venue packet (ISSUE-SESSION-A-004). Constructing a signed
+ 17031	packet in PAPER is a defect; in LIVE the signed Wave-In wire above is the
+ 17032	only transport.
+ 17033
+ 17034	**Session-A F3 (2026-09-17 — normative PAPER simulator fill law, CP-15
+ 17035	builds it; nothing here is guessed):** (a) an entry fills at the last
+ 17036	CLOSED store bar's close at submit time, adjusted by the frozen cost
+ 17037	model — fee `0.02 %` per side (`apex/research/backtest.py`
+ 17038	`FEE_FRACTION = 0.0002`) plus `alpha_spread` slippage
+ 17039	(`alpha_spread = 0.25`, same file), the same constants the frozen
+ 17040	backtest cost model uses; (b) protective stop and target orders are
+ 17041	evaluated against each subsequent CLOSED bar with the X.4 precedence
+ 17042	hard stop → target → time stop (`_resolve_exit`: a bar touching the stop
+ 17043	is a stop-out, never a target fill), filled at the stop/target price —
+ 17044	a gap-through fills at the bar open; (c) `query_open_positions`,
+ 17045	`query_order_state` (scope `open` | `fills`), and
+ 17046	`query_account_margin_health` answer from the simulator's own durable
+ 17047	state, so `reconcile_boot` reaches READY without any network; (d) balance
+ 17048	= `params/paper_account_v1.yaml` `capital_usdt` + realised P/L from the
+ 17049	ledger; **Session-CP-14 (2026-09-17), D29, binding for CP-15:** the simulator's
+ 17050	`query_account_margin_health` must return exactly `(C-N)/C` from its durable
+ 17051	state, where C is that PAPER balance and N is gross marked open PAPER
+ 17052	notional plus full unfilled risk-increasing order notional, excluding
+ 17053	reduce-only reservations and filled-quantity double counting, with no
+ 17054	leverage discount. Apply P7's strictly-below 0.60 warning, 0.40 action/veto
+ 17055	14, and 0.20 liquidation-approach/Emergency L3 CANCEL_ALL thresholds;
+ 17056	missing marks/order state, C <= 0 or a fraction outside [0,1] fails closed,
+ 17057	never clipped. This is the PAPER reservation proxy, not exchange liquidation
+ 17058	distance; exposure caps remain independent and LIVE is unchanged; (e) simulator state is persisted in
+ 17059	the same SQLite file under the additive table `paper_sim_state`
+ 17060	(ADR-P2-003 additive migration; CP-15 defines its columns against the
+ 17061	five-op surface above), so a restart reconciles against it; (f) LIVE is
+ 17062	unchanged — the signed Wave-In wire stays the only LIVE transport.
+=== Owner decision / CP-15 cross-reference ===
+   206	- Programme: Session A = APEX_GEN5.md patch (D2/D9/D14 + design text for D1/D3/D4/D5/D6/D7). CP-14 = engine-context producer + E11 training + live catch-up + PAPER account inputs + freshness. CP-15 = PAPER simulator transport + Phase-2 replay CLI (G-PAPER-001). Then device go-live.
+   207
+   208	---
+   209
+   210	## C. Session A — DESIGN PATCH (2026-09-17; doc-only; the owner D1–D20 block above is untouched)
+   211
+   212	### ADR-SESSION-A (binding notes for CP-14 / CP-15; Session A created no code, no tests, no YAML, no new files)
+   213	- **ADR-SA-001 — PAPER capital is 10000.0.** The executor brief draft said `capital_usdt: 1000.0`; owner D4 says `10000`, corroborated by the control-plane constructor default `"10000"` (`apex/telegram/control_plane.py` L458). Owner decision wins: P7 specifies `capital_usdt: 10000.0`.
+   214	- **ADR-SA-002 — D9 is split: doc now, code later.** P6 adds `CIRCUIT_OPEN` to the Ch.7 registry; the matching `apex/errors.py` one-liner is deferred to CP-14 (Session A scope is doc-only per its brief).
+   215	- **ADR-SA-003 — Named-but-uncreated files.** `params/paper_account_v1.yaml` and `params/e11_classifier_v1.yaml` are named by P7/P2 as CP-14 additive files under ADR-P2-003; Session A created neither. (Session-A F2 2026-09-17: renamed from `e11_classifier_v4.json` — YAML-only parameter surface per ISSUE-CP2-006.)
+   216	- **ADR-SA-004 — No risk-threshold fork.** Per D8, `params/risk_defaults_v1.yaml` stays authoritative for `budget_per_trade`/`k_attn`/loss limits; P7's paper-account YAML holds only `capital_usdt` + simulated-margin inputs and references risk_defaults, never duplicates it.
+   217
+   218	### ISSUEs filed by Session A (doc-vs-code conflicts the patch had to resolve; doc line numbers are pre-patch)
+   219	- [ISSUE-SESSION-A-001] severity: MAJOR | status: CLOSED(doc-side; code follow-up = CP-14)
+   220	  A: "on each TF close, ingest→quality→features→engines→setup→gates→risk→decision→execution for **that** (symbol,TF)" (APEX_GEN5.md §9.5-14, L20246)
+   221	  B: `_stage_features`/`_stage_engines` return `DECLARED_SKIP signal_source=DECISION_BRIDGE`, and `setup` halts `NO_PLAN_PROVIDER` without a plan (apex/ops/paper_loop.py L340-364, L381-394)  # the code cannot satisfy the nine-stage law until the producer exists
+   222	  Rule applied: D2/D5 — P1 specifies the CP-14 engine-context producer contract (per-close catch-up, 38+23 keys, store seam).
+   223	  Interim behavior: loop still skips/halts exactly as before; no code changed this session.
+   224	  Needs from owner: none (CP-14 builds the producer).
+   225	- [ISSUE-SESSION-A-002] severity: MAJOR | status: CLOSED(doc-side; code follow-up = CP-14)
+   226	  A: "using initial weights trained with logistic regression over 6 months of delayed labels" (APEX_GEN5.md E11 §3.3, L11831)  # no artifact, no procedure, no seed
+   227	  B: `_validate_e11_context` hard-requires `classifier_W` shape (9,8) + `classifier_b` shape (9,) (apex/ops/plan_bridge.py L432-457); engine raises `CONFIGURATION_INVALID` without W/b (apex/engines/e11_regime/engine.py L409)
+   228	  Rule applied: D3 — P2 names `params/e11_classifier_v1.yaml` + the deterministic training procedure + degenerate-class refusal (renamed Session-A F2 2026-09-17).
+   229	  Interim behavior: bridge still raises `E11_CONTEXT_INVALID` until CP-14 trains the artifact.
+   230	  Needs from owner: none (CP-14 trains per P2).
+   231	- [ISSUE-SESSION-A-003] severity: MINOR | status: CLOSED(doc-side; code follow-up = CP-14 one-liner)
+   232	  A: vetoes 10–12 error-code column reads "CIRCUIT_OPEN (Alert Policy)" (APEX_GEN5.md Ch.15, L16659-16661)
+   233	  B: the Ch.7 registry (L14643-14671) has no CIRCUIT_OPEN row, and `apex/errors.py` ERROR_REGISTRY lacks the key  # vetoes cite a code that exists nowhere normative
+   234	  Rule applied: D9 — P6 adds the Ch.7 row; veto semantics stay Ch.15-owned.
+   235	  Interim behavior: doc resolved; `apex/errors.py` still lacks the key until CP-14.
+   236	  Needs from owner: none.
+   237	- [ISSUE-SESSION-A-004] severity: MAJOR | status: CLOSED
+   238	  A: "PAPER orders require `APEX_ALLOW_SIGNED=1`" (APEX_GEN5.md W.6 Phase 2, L17093)  # reads as authorizing signed orders in PAPER
+   239	  B: D1 — PAPER is the simulator; no venue packet is ever constructed in PAPER.
+   240	  Rule applied: D1/D2 — P3 reconciles: the flag permits the PAPER loop to run; it never authorizes a packet.
+   241	  Interim behavior: doc resolved; CP-15 builds the simulator transport.
+   242	  Needs from owner: none.
+   243	- [ISSUE-SESSION-A-005] severity: MINOR | status: CLOSED
+   244	  A: E01 output "consumed by E02 Liquidity, E09 Trend, and E11 Regime" + consumers list incl. `E02_Liquidity` (APEX_GEN5.md L1296, L1327)
+   245	  B: "Dependencies: none (zero inter-engine dependency)" (APEX_GEN5.md E02, L2792)
+   246	  Rule applied: each engine's own Dependencies declaration governs its inputs (P1 runtime order runs E02 on CLOSED OHLCV only).
+   455	D29 for ISSUE-CP14-018 (owner decision 2026-09-17, binding, record verbatim): Option 1 authorised. C = paper_account_v1.yaml capital_usdt + realised PAPER P/L from the ledger; N = gross marked notional of open PAPER positions + full notional of unfilled risk-increasing orders (reduce-only orders reserve nothing; no double count of filled quantity); margin_health_fraction = (C − N) / C, full notional reserved with no leverage discount. The P7 thresholds apply to this fraction: warning below 0.60, action (veto 14 MARGIN_HEALTH blocks new entries) below 0.40, liquidation-approach (Emergency L3 CANCEL_ALL) below 0.20. Missing marks or order state, C ≤ 0, or a result outside [0,1] fail closed with a named status — no clipping. Exposure caps stay separate. This is documented as the PAPER reservation proxy, not exchange liquidation distance, and it is BINDING for CP-15 too: the simulator's query_account_margin_health must return exactly this fraction from its durable state (write that into the P3 passage and HANDOFF_CP14 INTERFACES). LIVE unchanged (query_account_margin_health). Doc: one paragraph under the "Session-CP-14 (2026-09-17)" lead-in after the P7 YAML block in §9.5, plus one AJ row. Tests: no positions → 1.0; N = 0.5·C → 0.5 with warning; N = 0.65·C → action; C ≤ 0 → fail closed.
+   456
+   457	- ISSUE-CP14-018 is design-resolved by D29; implementation proceeds without further owner policy questions.
+   458	- [ISSUE-CP14-025] severity: MAJOR | status: IMPLEMENTING
+   459	  A: D29's PAPER reservation proxy specifies strictly-below 0.60/0.40/0.20 thresholds and leaves LIVE unchanged.
+   460	  B: Existing margin_health_state and veto 14 use inclusive threshold comparisons for the venue metric.
+   461	  Rule applied: owner D29 supersedes the boundary only for the explicitly identified PAPER reservation proxy. Keep the original default/LIVE comparisons and the same veto registry; no execution-stage edit.
+   462	  Interim behavior: add a PAPER-aware threshold projection and require the PAPER environment plus reservation-model marker for strict veto-14 evaluation. Decimal account/notional arithmetic rejects invalid/nonfinite/out-of-range measurements, without clipping or leverage discounts. Existing exposure-cap vetoes remain separate.
+   463	  Needs from owner: none; exact boundary regressions are required.
+   464	- D29 ledger projection contract: use existing public LedgerWriter reads, nested raw.payload, explicit FSM environment, and PaperRuntime's documented i-{proposal_id[-12:]} identity. Never associate an arbitrary fill with the latest trade. Missing/ambiguous order provenance or reconciliation-required state refuses. Current FSM SUBMIT_ORDER is the entry operation; its submitted quantity/price are authoritative, not a guessed leverage or native quantity. Count filled OPEN quantity once in positions and subtract it from pending entry quantity. Cancellation/rejection removes only the remaining reservation. No new table or execution transport.
+   465
+   466	- ISSUE-CP14-018 / ISSUE-CP14-025 D29 implementation: reservation proxy and public-ledger account readback added, with no schema/transport/execution-stage changes. Strict PAPER threshold boundaries are explicitly scoped by environment/model; LIVE behavior is unchanged. Complete context/risk regression suite: 169 passed in 3.28 s. D29 adds 14 parametrized cases, including a real mixed-environment LedgerWriter chain with partial fill, cancellation and realized P/L. P7/AJ updated and P3/HANDOFF_CP14 INTERFACES now bind the exact formula for CP-15. G1 integration remains pending; no simulator implementation claimed. Green milestone is checkpointed/pushed immediately per the owner instruction.
+   467
+   468	### OWNER ANSWERS to CP-14 issues — D26-B (verbatim recovered from owner archive)
+=== Baseline PaperRuntime fill extraction ===
+   272	    if value is None or value == "":
+   273	        return None
+   274	    try:
+   275	        return float(value)
+   276	    except (TypeError, ValueError):
+   277	        return None
+   278
+   279
+   280	def fill_from_result(result: Any, plan: F.TradePlan,
+   281	                     *, suffix: str = "") -> Optional[Dict[str, str]]:
+   282	    """Extract the EXECUTED price/quantity from a venue result.
+   283
+   284	    Returns ``None`` when the venue did not report both numbers — a fill is
+   285	    never inferred (fail-closed; the order then stays working and the next
+   286	    reconciliation owns it).
+   287	    """
+   288	    if getattr(result, "outcome", None) not in ("FILLED", "PARTIAL"):
+   289	        return None
+   290	    data = dict(getattr(result, "data", None) or {})
+   291	    inner = data.get("data")
+   292	    inner = dict(inner) if isinstance(inner, Mapping) else data
+   293	    price = inner.get("avgPrice") or inner.get("price") or inner.get("fillPrice")
+   294	    quantity = (inner.get("executedQty") or inner.get("quantity")
+   295	                or inner.get("filledQty"))
+   296	    if price is None or quantity is None:
+   297	        return None
+   298	    fill_id = str(inner.get("tradeId") or inner.get("fillId")
+   299	                  or getattr(result, "order_id", "") or plan.proposal_id)
+   300	    return {"fill_id": f"{fill_id}{suffix}", "price": str(price),
+   301	            "quantity": str(quantity), "order_id": str(getattr(result, "order_id",
+   302	                                                              "") or "")}
+   303
+   304
+   305	async def last_closed_price(store: Any, symbol: str, timeframe: str,
+   306	                            as_of: str) -> Optional[str]:
+   307	    """The PIT-safe reference price: the CLOSE of the last closed bar at
+   308	    ``as_of``. Never a live tick, never a fabricated number."""
+   309	    window = await store.get_window(symbol, timeframe, as_of, 1)
+   310	    if not window:
+   311	        return None
+   312	    close = window[-1].close
+   313	    return str(close) if close is not None else None
+   314
+=== Fake responder position update is fill-driven ===
+   284	    # -- venue state --------------------------------------------------------
+   285	    def _accept_order(self, params: Dict[str, str], note: str = "") -> Dict[str, Any]:
+   286	        client_order_id = params.get("clientOrderId", "")
+   287	        existing = self.orders.get(client_order_id)
+   288	        if existing is not None:
+   289	            existing["duplicate_submission"] = True
+   290	            return existing
+   291	        self._order_seq += 1
+   292	        order_id = f"{900000 + self._order_seq}"
+   293	        quantity = params.get("quantity", "0")
+   294	        price = params.get("price") or self.fill_price or "100.0"
+   295	        status = "NEW"
+   296	        executed = "0"
+   297	        order = {"orderId": order_id, "clientOrderId": client_order_id,
+   298	                 "symbol": params.get("symbol"), "side": params.get("side"),
+   299	                 "positionSide": params.get("positionSide", "BOTH"),
+   300	                 "type": params.get("type"), "timeInForce":
+   301	                 params.get("timeInForce"), "price": price,
+   302	                 "origQty": quantity, "executedQty": executed,
+   303	                 "status": status, "reduceOnly":
+   304	                 params.get("reduceOnly") in ("true", "True"),
+   305	                 "updateTime": self.server_time_ms, "note": note}
+   306	        self.orders[client_order_id] = order
+   307	        self.orders_by_id[order_id] = order
+   308	        if self.fill_mode == "immediate":
+   309	            self._fill(order, quantity, self.fill_price or price)
+   310	        elif self.fill_mode == "partial":
+   311	            partial = _half(quantity)
+   312	            self._fill(order, partial, self.fill_price or price)
+   313	        return order
+   314
+   315	    def _fill(self, order: Dict[str, Any], quantity: str, price: str) -> None:
+   316	        self._fill_seq += 1
+   317	        executed = _decimal_add(order["executedQty"], quantity)
+   318	        order["executedQty"] = executed
+   319	        from decimal import Decimal
+   320	        order["status"] = "FILLED" if Decimal(executed) == Decimal(
+   321	            str(order["origQty"])) else "PARTIALLY_FILLED"
+   322	        fill = {"id": str(700000 + self._fill_seq), "symbol": order["symbol"],
+   323	                "orderId": order["orderId"], "clientOrderId":
+   324	                order["clientOrderId"], "side": order["side"],
+   325	                "price": price, "qty": quantity, "quoteQty":
+   326	                _decimal_mul(price, quantity), "commission": "0.01000000",
+   327	                "commissionAsset": "USDT", "time": self.server_time_ms,
+   328	                "maker": False, "realizedPnl": "0.00000000"}
+   329	        self.fills.append(fill)
+   330	        self._update_position(order, quantity, price)
+   331
+   332	    def _update_position(self, order: Dict[str, Any], quantity: str,
+   333	                         price: str) -> None:
+   334	        symbol = order["symbol"]
+   335	        side = str(order.get("side", "")).upper()
+   336	        signed = quantity if side.startswith("BUY") else f"-{quantity}"
+   337	        current = self.positions.get(symbol)
+   338	        if current is None:
+   339	            self.positions[symbol] = {"symbol": symbol,
+   340	                                      "positionSide": order.get("positionSide",
+   341	                                                                "BOTH"),
+   342	                                      "positionAmt": signed,
+   343	                                      "entryPrice": price,
+   344	                                      "unRealizedProfit": "0.00000000",
+   345	                                      "leverage": self.leverage.get(symbol, "5")}
+   346	        else:
+   347	            current["positionAmt"] = _decimal_add(current["positionAmt"], signed)
+   348
+   349	    def _cancel(self, params: Dict[str, str], *, single: bool) -> Dict[str, Any]:
+   350	        if single:

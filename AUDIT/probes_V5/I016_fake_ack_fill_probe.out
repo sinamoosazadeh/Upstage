@@ -1,0 +1,12 @@
+adapter_outcome=ACKNOWLEDGED
+entry_order_status=NEW
+entry_order_executedQty=0
+fake_responder_fills=0
+fake_responder_positions=0
+ledger_fill_events=2
+ledger_outcome_events=1
+trade_record_filled=True
+trade_record_closed=True
+trade_record_reconciled=True
+reconcile_agree=True
+ledger_hash_chain_intact=True
