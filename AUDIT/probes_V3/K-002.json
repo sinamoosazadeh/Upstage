@@ -1,0 +1,35 @@
+{
+  "id": "K-002",
+  "probe": "k002",
+  "result": {
+    "after_correction_same_historical_as_of": [
+      "102"
+    ],
+    "before_correction": [
+      "101"
+    ],
+    "correction_record": [
+      "01a0e970-b5c4-77f2-9651-0afd74a449c1",
+      "01a0e970-b5d2-7f3f-937c-8bcc753f9778",
+      "2026-09-28T19:14:33.044Z"
+    ],
+    "historical_as_of": "2026-01-10T01:05:00.000Z",
+    "parser_availability_for_both_versions": [
+      "2026-01-10T01:00:00.000Z",
+      "2026-01-10T01:00:00.000Z"
+    ],
+    "raw_rows": [
+      [
+        "01a0e970-b5c4-77f2-9651-0afd74a449c1",
+        "101",
+        "2026-01-10T01:00:00.000Z"
+      ],
+      [
+        "01a0e970-b5d2-7f3f-937c-8bcc753f9778",
+        "102",
+        "2026-01-10T01:00:00.000Z"
+      ]
+    ],
+    "returned_new_event_id": "01a0e970-b5d2-7f3f-937c-8bcc753f9778"
+  }
+}

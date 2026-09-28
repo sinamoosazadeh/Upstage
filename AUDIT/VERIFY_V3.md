@@ -3,7 +3,7 @@
 | ID | Verdict | Auditor severity | Independent severity | Frozen? | Cross-ref (D/ISSUE) | Recommended option |
 |---|---|---:|---:|---|---|---|
 | K-001 | CONFIRMED | S1 | S1 | Yes — frozen data contract/store | — | A — fail closed on hash-colliding revisions; owner-approved versioned hash migration before acceptance |
-| K-002 | PENDING | S1 | — | — | — | — |
+| K-002 | CONFIRMED | S1 | S1 | Yes — frozen parser/store | ISSUE-CP1-012 (correction lifecycle only) | A — bind each revision to its recorded correction time; refuse historical reconstruction until version-aware reads exist |
 | K-003 | PENDING | S1 | — | — | — | — |
 | K-004 | PENDING | S2 | — | — | — | — |
 | K-005 | PENDING | S1 | — | — | — | — |
@@ -92,3 +92,41 @@ Use A now and fail closed; require an owner decision and migration plan before B
 
 #### Acceptance and regression tests
 Add high-only, low-only, and OI-only repair cases; each must either store a distinct, fully valued revision with original `SUPERSEDED`, new `CORRECTED`, non-self `raw_revision`, and correct active window, or return the named refusal under the current frozen hash. Assert byte-identical duplicates remain no-ops and that no false `VERIFIED_CLOSED`, `CORRECTED`, or self-revision is emitted. Run fault-injection/atomicity tests separately (K-005).
+
+### K-002
+
+#### Auditor claim (short quote)
+> “parser، availability کندل اصلاحی را close تاریخی می‌گذارد؛ `correct_raw` نسخهٔ فعال را جایگزین می‌کند، بی‌آنکه زمان دریافت اصلاح مبنای انتخاب باشد.” — “The parser stamps a corrected candle with its historical close time; the active version is replaced without version-time selection.”
+
+#### What I read (files, line ranges, functions, callers)
+Read `parse_kline_to_observation` (`apex/data_catalog/ingest/toobit_public.py:122–170`), its `ToobitPublicClient.get_klines` caller (`:294`) and the `ToobitKlineSource`/repair callers (`apex/ops/bootstrap_service.py`, `apex/ops/partial_bar_repair.py:389–449`); then `SQLiteStore.correct_raw` and `get_window` (`apex/data_catalog/store/sqlite_store.py:448–522`) and the full metadata/PIT path in `EngineContextProducer.window` (`apex/ops/engine_context.py:2367–2405`). `grep` found no additional production callers of the parser beyond public `get_klines` and partial-bar repair. `correct_raw` records `raw_revision.correction_timestamp`, but the historical window path does not use that timestamp to select a version.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONDONTWRITEBYTECODE=1 python3 -B AUDIT/probes_V3/store_probes.py K-002`. Probe: `store_probes.py::k002`; raw result: `AUDIT/probes_V3/K-002.json`. On a temporary DB, the real Toobit parser made both the original Jan-10 bar and a later corrected close (101→102) available at `2026-01-10T01:00:00Z`. Before correction, producer `window()` at `2026-01-10T01:05:00Z` returned 101. `correct_raw` recorded the new revision at `2026-09-28T19:14:33.044Z`; after the correction, the same historical `as_of` returned 102. No venue or device was contacted.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). The parser maps the venue’s candle-close field to `availability_time`, and the actual correction is admitted at a point in time months before `raw_revision.correction_timestamp`. The reproduction demonstrates a historical query changing after a later correction. It proves this code path, not that a live/device correction occurred.
+
+#### Root cause
+The parser uses `close_time` as availability for each received row. `correct_raw` globally marks the prior market row `SUPERSEDED`, adds a new current row, and records a later correction timestamp; both `SQLiteStore.get_window` and `EngineContextProducer.window` read the current status rather than reconstructing the revision that was available at the queried `as_of`. The producer then trusts the corrected raw row’s historical `availability_time`.
+
+#### Direct impact
+A correction fetched/stored in September can replace a January row for a January `as_of`; the corrected close is visible before the recorded revision time. If the corrected row instead receives a later availability timestamp without a version-aware reader, the superseded original is absent from the ordinary active window and the past query may lose the bar rather than correctly recover the old version.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, parsed klines flow through `ToobitPublicClient.get_klines`/`ToobitKlineSource` and the repair adapter. Downstream, window consumers include the producer feature timeline, quality/MTF, replay/training, and context inputs; the direct PAPER mark/price path also needs its own version-aware reader. No executed plan/order follows from this probe. Cross-reference `ISSUE-CP1-012` only for the correction lifecycle rule (old `SUPERSEDED`, new row appended); that closure does not settle version-specific PIT availability.
+
+#### Contract and decisions
+`APEX_GEN5.md:903–930` defines `as_of` from artifact availability and says this PIT rule prevents “future corrections” from leaking into calculations; `:18692–18699` requires corrections to be appended with a new event ID and lineage rather than rewriting history. `PHASE2_DECISION_LOG.md:51` (ISSUE-CP1-012) specifies the old/new status and append-only `raw_revision`/`retention_event` trace. Precedence: the AI.4 correction event and Ch.2.3 PIT rule must both hold; the status decision is not authority to backdate the new version’s availability.
+
+#### Frozen status and non-frozen alternative
+**Frozen:** the parser/store are in `apex/data_catalog/**`. `partial_bar_repair.py`, `EngineContextProducer`, and the PAPER price adapter are non-frozen. A non-frozen service can bind a corrected version to its actual receipt/correction time and add a version-aware as-of read over `raw_observation` plus `raw_revision`; until every relevant consumer uses that reader, refuse historical queries whose required version cannot be selected. Merely stamping a late time in the parser is insufficient because the frozen `get_window` exposes only the latest non-SUPERSEDED row.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — non-frozen, fail-closed bridge:** use the recorded correction receipt time and reconstruct the version valid at the requested `as_of` in the producer/price adapters; return a named refusal if the lineage cannot identify one unambiguously. Side effects: past queries may now return the original row or a refusal rather than the latest correction; context/snapshot/cache/replay identities and training labels must be regenerated for changed version selections. **B — owner-approved store/API migration:** add an explicit version-valid-time model and migrate historical rows/readers, then retire latest-status-only reads. Side effects: frozen schema/API change requires approval; migration must preserve existing raw event IDs, revision parents, retention manifests, and recalculate dependent hashes/caches/training artifacts. No such migration was performed.
+
+#### My recommendation
+Adopt A as containment: capture the actual correction receipt, serve only the version visible at `as_of`, and refuse when the frozen latest-only store cannot provide it. Seek owner approval for B if the version-aware read must be shared by all store consumers. Do not infer receipt time from candle close.
+
+#### Acceptance and regression tests
+With original value at `t0` and correction received at `t2`, query before `t2` must return the original version and query at/after `t2` the correction; both must carry matching raw lineage and availability. Verify unchanged time/version before and after restart, future version exclusion, correction chains, and an explicit refusal for ambiguous or missing revision timestamps. Add a direct test for `SQLiteStore.get_window`/`last_closed_price`, not only the producer path.

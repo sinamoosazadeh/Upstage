@@ -64,8 +64,45 @@ async def k001() -> dict:
             await store.close()
 
 
+async def k002() -> dict:
+    from apex.data_catalog.ingest.toobit_public import parse_kline_to_observation
+    from apex.ops.engine_context import EngineContextProducer
+    from datetime import datetime, timezone
+
+    with tempfile.TemporaryDirectory(prefix="v3-k002-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        try:
+            open_ms = int(datetime(2026, 1, 10, 0, 0, tzinfo=timezone.utc).timestamp() * 1000)
+            close_ms = open_ms + 3_600_000
+            as_of = "2026-01-10T01:05:00.000Z"
+            original = parse_kline_to_observation(
+                "BTCUSDT", "1h", [open_ms, "100", "105", "95", "101", "10", close_ms], 1)
+            original_id = await store.ingest_raw(original, "MISSING")
+            producer = EngineContextProducer(store, environment="PAPER")
+            before = await producer.window("BTCUSDT", "1h", as_of, 5)
+            corrected = parse_kline_to_observation(
+                "BTCUSDT", "1h", [open_ms, "100", "105", "95", "102", "10", close_ms], 1)
+            new_id = await store.correct_raw(original_id, corrected, "MISSING", "late correction", "V3-PROBE")
+            after = await producer.window("BTCUSDT", "1h", as_of, 5)
+            revision = await (await store.db.execute(
+                "SELECT original_event_id,new_event_id,correction_timestamp FROM raw_revision")).fetchone()
+            raw = await (await store.db.execute(
+                "SELECT event_id,close,availability_time FROM raw_observation ORDER BY rowid")).fetchall()
+            return {
+                "historical_as_of": as_of,
+                "parser_availability_for_both_versions": [original.availability_time, corrected.availability_time],
+                "before_correction": [str(o.close) for o in before],
+                "correction_record": list(revision) if revision else None,
+                "returned_new_event_id": new_id,
+                "raw_rows": [list(r) for r in raw],
+                "after_correction_same_historical_as_of": [str(o.close) for o in after],
+            }
+        finally:
+            await store.close()
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001}
+    probes = {"K-001": k001, "K-002": k002}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}
