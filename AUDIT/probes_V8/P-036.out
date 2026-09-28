@@ -1,0 +1,2 @@
+validated_ohlc_bars= 7 theta_min_range_parameter= absent origin_range= 0.021000000000000796 ATR= 10.0 R_origin_over_ATR= 0.0021000000000000797 body_ratio= 0.6666666666664411
+native_result= ('Q3', 'BOS', 2.0, 98.479, 101.486, 'ACTIVE')

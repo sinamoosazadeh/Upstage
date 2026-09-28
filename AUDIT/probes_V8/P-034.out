@@ -1,0 +1,3 @@
+direct result= ('Q3', 'BOS', 1767236400000, 1.95, 'ACTIVE')
+batch result= ('Q2', 'NONE', 1767229200000, 3.25, 'CANDIDATE')
+BOS_valid_at_idx= 3 validated_bars= 7 batch_origin0_event_indices= [0, 1, 2]

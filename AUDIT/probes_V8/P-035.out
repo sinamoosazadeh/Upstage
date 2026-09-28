@@ -1,0 +1,2 @@
+validated_ohlc_bars= 3 fvg_index=2 inverse_enabled= True future_BOS_idx= 4 event_types= ['EV_FVG_001_Zone_Created']
+result= ('INVERSE', 'Q3_Experimental', 2, 3000, '6b9a76f812885b0b09386217d6b40540567c1146e4696fdfe0904d7080793f5a')

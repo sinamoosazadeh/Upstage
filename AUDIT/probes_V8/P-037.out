@@ -1,0 +1,3 @@
+validated_bar_ts= 1767229200000 structural_feed_supplied=False
+parent_fate= MERGED parent_in_history= True
+reactivation= ('MITIGATION_BLOCK', 'Q2', 'ACTIVE', 'BOS', 0, 1767229200000, 'ob_parent_mitblock')

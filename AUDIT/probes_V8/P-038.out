@@ -1,0 +1,2 @@
+object_only_probe_no_candle_ingress=True IoU= 0.73913 threshold= 0.7 event_types= ['EV_FVG_007_FVG_Confluence_MTF']
+merged_bounds= (100.0, 102.3) retained_fid= fid_older retained_age= 10 expected_min_age= 1 retained_snapshot= e6464e2945c4f3da60233dd0aef9ded1ea3730f3c9a30cd95015eca552ba20b3 recomputed_snapshot= 8be6987d534238ea4146e7329f8bf6ec846da8834b14c40315363525c2b3abdc snapshot_was_stale= True source_A_snapshot= e6464e2945c4f3da60233dd0aef9ded1ea3730f3c9a30cd95015eca552ba20b3 removed_B_still_in_active= False
