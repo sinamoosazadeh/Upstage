@@ -1,0 +1,29 @@
+{
+  "id": "K-006",
+  "probe": "k006",
+  "result": {
+    "adv_all_closed_control_value": 24.0,
+    "catalog_body_ratio_exception": "ValueError: 'CANDIDATE' is not a valid CatalogStatus",
+    "catalog_body_ratio_result": null,
+    "closed_engine_window_status": "CLOSED",
+    "corrected_event_id": "01a0e979-8daa-7438-8fb7-b12e16d81b7e",
+    "corrected_status_from_store": "CORRECTED",
+    "original_event_id": "01a0e979-8da9-74cc-9527-026be10df8be",
+    "paper_runtime_ingest_rows": 300,
+    "paper_runtime_quality_refusal": {
+      "detail": "1 non-CLOSED bars in the window",
+      "reason": "DATA_QUALITY_QX"
+    },
+    "plan_bridge_normalized_producer_window_accepted": true,
+    "plan_bridge_raw_store_window_refusal": {
+      "detail": "bar index=299",
+      "reason": "DATA_QUALITY_QX"
+    },
+    "producer_adv_refusal": {
+      "detail": "duplicate/nonclosed/non-PIT 1h volume",
+      "reason": "ADV_UNAVAILABLE"
+    },
+    "producer_adv_result": null,
+    "scope_note": "720 market rows and synthetic public facts are isolated SQLite inputs; producer/loop/bridge/catalog code is real; no network, device data, trade, or native engine bundle was used"
+  }
+}

@@ -277,8 +277,120 @@ async def k005() -> dict:
             await store.close()
 
 
+async def k006() -> dict:
+    import hashlib
+    import datetime as dt
+    from apex.data_catalog.catalog import Catalog
+    from apex.identity.canonical_json import canonical_json
+    from apex.ops.engine_context import EngineContextProducer, closed_engine_window, adv_base_volume, BridgeError
+    from apex.ops.paper_loop import PaperRuntime, CellRefusal
+    from apex.ops.plan_bridge import PaperPlanBridge
+
+    with tempfile.TemporaryDirectory(prefix="v3-k006-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        try:
+            start = dt.datetime(2026, 8, 29, tzinfo=dt.timezone.utc)
+            as_of_dt = dt.datetime(2026, 9, 28, 1, tzinfo=dt.timezone.utc)
+            as_of = as_of_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            original_id = None
+            original_last = None
+            for i in range(720):
+                opening = start + dt.timedelta(hours=i)
+                closing = opening + dt.timedelta(hours=1)
+                stamp = opening.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                available = closing.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                obs = MarketObservation(symbol="BTCUSDT", timeframe="1h", open=Decimal("100"),
+                    high=Decimal("101"), low=Decimal("99"), close=Decimal("100"), volume=Decimal("1"),
+                    oi=None, timestamp=stamp, sequence=i+1, status="CLOSED", source="V3-SYNTHETIC",
+                    availability_time=available, oi_timestamp=None)
+                original_id = await store.ingest_raw(obs, "MISSING")
+                if i == 719:
+                    original_last = obs
+            corrected = MarketObservation(symbol="BTCUSDT", timeframe="1h", open=Decimal("100"),
+                high=Decimal("101"), low=Decimal("99"), close=Decimal("100.5"), volume=Decimal("1"),
+                oi=None, timestamp=original_last.timestamp, sequence=721, status="CLOSED", source="V3-SYNTHETIC",
+                availability_time=as_of, oi_timestamp=None)
+            corrected_id = await store.correct_raw(original_id, corrected, "MISSING", "K-006 probe", "V3-PROBE")
+            raw_window = await store.get_window("BTCUSDT", "1h", as_of, 300)
+            producer = EngineContextProducer(store, environment="PAPER")
+            normalized = closed_engine_window(raw_window, "1h")
+
+            runtime = object.__new__(PaperRuntime)
+            runtime.store = store
+            payload = {"symbol": "BTCUSDT", "timeframe": "1h", "cell_id": "BTCUSDT:1h",
+                "as_of": as_of, "context": {"cell_state": {}}}
+            await runtime._stage_ingest(payload)
+            paper_quality_error = None
+            try:
+                await runtime._stage_quality(payload)
+            except CellRefusal as exc:
+                paper_quality_error = {"reason": exc.reason, "detail": exc.detail}
+
+            bridge = PaperPlanBridge(store=store, environment="PAPER")
+            bridge_raw_error = None
+            try:
+                await bridge._window({}, symbol="BTCUSDT", timeframe="1h", as_of=as_of)
+            except BridgeError as exc:
+                bridge_raw_error = {"reason": exc.reason, "detail": exc.detail}
+            normalized_bridge_bars = await bridge._window({"bars": normalized},
+                symbol="BTCUSDT", timeframe="1h", as_of=as_of)
+
+            catalog = Catalog(provider=store)
+            catalog_error = None
+            catalog_result = None
+            try:
+                result = await catalog.get("body_ratio", "BTCUSDT", "1h", as_of, lookback=1)
+                catalog_result = {"status": result.status.value, "reason": result.reason, "value": str(result.value)}
+            except ValueError as exc:
+                catalog_error = f"{type(exc).__name__}: {exc}"
+
+            venue_sources = {
+                "exchange_info": {"endpoint": "/synthetic/exchangeInfo", "record": {
+                    "symbol": "BTCUSDT", "volumeUnit": "BASE", "contractType": "PERPETUAL",
+                    "contractMultiplier": "1", "takerCommissionRate": "0.001"}},
+                "funding": {"endpoint": "/synthetic/fundingRate", "rate": "0"},
+            }
+            facts = {"symbol": "BTCUSDT", "observed_at": as_of, "commission_rate": "0.001",
+                "funding_rate": "0", "contract_multiplier": "1", "contract_type": "PERPETUAL",
+                "expiry_time": None, "commission_field": "takerCommissionRate", "sources": venue_sources,
+                "source_sha256": hashlib.sha256(canonical_json(venue_sources).encode()).hexdigest()}
+            payload_facts = {"venue_facts": facts}
+            package_id = "V3-SYNTHETIC-PUBLIC-FACTS"
+            bound = {"source_state": "PUBLIC_VENUE_FACTS", **payload_facts, "parameter_package_id": package_id}
+            snapshot_id = hashlib.sha256(canonical_json(bound).encode()).hexdigest()
+            await store.insert_snapshot({"snapshot_id": snapshot_id, "as_of": as_of,
+                "symbol_scope": ["BTCUSDT"], "source_state": "PUBLIC_VENUE_FACTS",
+                "parameter_package_id": package_id, "code_version": "V3-PROBE", "quality_state": payload_facts})
+            adv_error = None
+            adv_result = None
+            try:
+                adv_result = await producer.adv_input("BTCUSDT", as_of)
+            except BridgeError as exc:
+                adv_error = {"reason": exc.reason, "detail": exc.detail}
+            all_closed = [{"open_time_ms": int((start + dt.timedelta(hours=i)).timestamp()*1000),
+                "timeframe": "1h", "status": "CLOSED", "availability_ms": int(((start + dt.timedelta(hours=i+1)).timestamp())*1000),
+                "volume": 1.0} for i in range(720)]
+            adv_closed_control = adv_base_volume(all_closed, as_of_ms=int(as_of_dt.timestamp()*1000), volume_unit="BASE")
+            return {
+                "original_event_id": original_id, "corrected_event_id": corrected_id,
+                "corrected_status_from_store": raw_window[-1].status,
+                "closed_engine_window_status": normalized[-1].status,
+                "paper_runtime_ingest_rows": len(payload["context"]["cell_state"]["window"]),
+                "paper_runtime_quality_refusal": paper_quality_error,
+                "plan_bridge_raw_store_window_refusal": bridge_raw_error,
+                "plan_bridge_normalized_producer_window_accepted": len(normalized_bridge_bars) == len(normalized),
+                "catalog_body_ratio_result": catalog_result,
+                "catalog_body_ratio_exception": catalog_error,
+                "producer_adv_result": adv_result, "producer_adv_refusal": adv_error,
+                "adv_all_closed_control_value": adv_closed_control,
+                "scope_note": "720 market rows and synthetic public facts are isolated SQLite inputs; producer/loop/bridge/catalog code is real; no network, device data, trade, or native engine bundle was used",
+            }
+        finally:
+            await store.close()
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005}
+    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005, "K-006": k006}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}
