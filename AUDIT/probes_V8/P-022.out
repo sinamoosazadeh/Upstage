@@ -1,0 +1,4 @@
+all_initial_and_corrected_OHLC_valid=True; first_events= ['EV_FVG_001_Zone_Created']
+initial_fvg_bounds= (101, 102.5)
+corrected_valid_same_index_ts_return= [] retained_bounds= (101, 102.5)
+processed_identity= (2, 3000) cached= True

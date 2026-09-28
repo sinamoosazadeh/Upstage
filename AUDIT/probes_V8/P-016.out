@@ -1,0 +1,3 @@
+validated_bars=55; garch_status= insufficient
+state_garch_equals_ewma= True fields_has_garch_status= False
+evidence_validity= VALID resolution= Q2 explanation= E04 volatility state: regime=NORMAL atr14=1.0999999999999943 vr=1.0 q=Q2

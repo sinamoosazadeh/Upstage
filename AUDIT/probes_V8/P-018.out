@@ -1,0 +1,4 @@
+none type= CONVENTIONAL role= 0.5 salience0= 0.4096153846153844
+up type= CONVENTIONAL role= 0.5 salience0= 0.4096153846153844
+down type= CONVENTIONAL role= 0.5 salience0= 0.4096153846153844
+validated_fixture_OHLC_count= 3 mtf_required_default= False

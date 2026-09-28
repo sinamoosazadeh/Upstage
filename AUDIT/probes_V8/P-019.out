@@ -1,0 +1,3 @@
+event_types= ['EV_FVG_002_Zone_Touched', 'EV_FVG_003_Zone_Mitigated', 'EV_FVG_004_Zone_Filled', 'EV_FVG_006_Zone_Expired']
+history_fate= EXPIRED age= 1
+snapshot_old= acb919c2f19866baed71cc10f9f71ebf61716a05b3d0bd1b65444e6e79653438 snapshot_recomputed= c9b15817f9a206a2274e2324b8b6f59f945a27783a66218c7a381db49fb8220a
