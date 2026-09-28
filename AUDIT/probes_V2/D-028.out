@@ -1,0 +1,53 @@
+{
+  "boot_state": "READY",
+  "checks": [
+    {
+      "blocking": true,
+      "detail": "nine SBOM pins import cleanly",
+      "name": "dependencies",
+      "passed": true,
+      "status": "PASS"
+    },
+    {
+      "blocking": true,
+      "detail": "applied=8",
+      "name": "schema_version",
+      "passed": true,
+      "status": "PASS"
+    },
+    {
+      "blocking": true,
+      "detail": "drift 0.0s within tolerance 5.0s",
+      "name": "clock_sync",
+      "passed": true,
+      "status": "PASS"
+    },
+    {
+      "blocking": true,
+      "detail": "restored state=HighRisk emergency=L3_CANCEL_ALL multiplier=0.5 revision=r2",
+      "name": "ladder_state",
+      "passed": true,
+      "status": "PASS"
+    },
+    {
+      "blocking": true,
+      "detail": "0 exchange position row(s), 0 working order(s), 0 divergence(s)",
+      "name": "broker_reconciliation",
+      "passed": true,
+      "status": "PASS"
+    }
+  ],
+  "drift_blocks_new_trades": false,
+  "drift_seconds": 0.0,
+  "environment": "PAPER",
+  "new_trades_allowed": true,
+  "open_intents": [],
+  "ready": true,
+  "reconciliation": {
+    "agree": true,
+    "deltas": [],
+    "ledger_positions": {},
+    "open_intents": []
+  },
+  "rule": "Ch.23 L18242\u201318251 \u2014 no new trade before READY; ladder actions available in every state except STARTING"
+}

@@ -1,0 +1,55 @@
+{
+  "adjudicate_proxy": {
+    "decision": "REJECT",
+    "reason": "HARD_VETO",
+    "selected_parameter_package": null,
+    "sized_after_all_vetoes": false,
+    "sized_quantity": 0.0,
+    "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "veto_detail": [
+      {
+        "error_code": null,
+        "measured": 0.19,
+        "name": "VETO_MARGIN_HEALTH",
+        "number": 14
+      }
+    ],
+    "veto_evaluation_order": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14
+    ],
+    "vetoes_applied": [
+      14
+    ]
+  },
+  "capital": 10000.0,
+  "health": 0.19,
+  "margin_status": {
+    "action": "EMERGENCY_L3_CANCEL_ALL",
+    "level": "LIQUIDATION_APPROACH",
+    "threshold": 0.2,
+    "veto": 14
+  },
+  "observation": "margin_status is not a cancel-all execution",
+  "open_notional": 8100.0,
+  "paper_yaml": {
+    "capital_usdt": 10000.0,
+    "simulated_margin": {
+      "action_fraction": 0.4,
+      "liquidation_approach_fraction": 0.2,
+      "warning_fraction": 0.6
+    }
+  }
+}

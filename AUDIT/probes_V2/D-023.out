@@ -1,0 +1,10 @@
+{
+  "integrity_ok": false,
+  "restored": true,
+  "rto_limit_seconds": 1800,
+  "rto_seconds": 0.00021266937255859375,
+  "rto_within_limit": true,
+  "sha256": "e2772141cdd3f05ee2b084eb0b741f2cd96aaca489005bfeb8cb0ce9782264e8",
+  "source_sha256": "e2772141cdd3f05ee2b084eb0b741f2cd96aaca489005bfeb8cb0ce9782264e8",
+  "target": "/tmp/audit-d023-ll5xizzr/restored.sqlite3"
+}

@@ -1,0 +1,18 @@
+{
+  "after_r3": {
+    "error": "BridgeError:CIRCUIT_RESET_UNAVAILABLE: emergency downgrade lacks authenticated durable review"
+  },
+  "after_r4": {
+    "applied_at": "2026-09-28T00:03:00.000Z",
+    "consumed_budget": 0.0,
+    "emergency_state": "NORMAL",
+    "multiplier": 1.0,
+    "parent_revision_id": "r3",
+    "reason": "audit",
+    "revision_id": "r4",
+    "snapshot_id": "r4",
+    "state": "NoRisk"
+  },
+  "r3_append": "accepted",
+  "r4_append": "accepted"
+}

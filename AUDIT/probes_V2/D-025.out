@@ -1,0 +1,16 @@
+{
+  "encrypted_request": {
+    "error": "BackupError:ENCRYPTION_UNAVAILABLE_IN_SBOM: the nine runtime pins carry no crypto primitive; a plaintext copy is never labelled encrypted (G16)"
+  },
+  "plain": {
+    "backup_path": "/tmp/audit-d025-panp5cnj/backups/live-plain-19700101T000000Z.sqlite3",
+    "bytes": 8192,
+    "contract_version": "4.0.0",
+    "duration_seconds": 0,
+    "encrypted": false,
+    "integrity_ok": true,
+    "interval_minutes": 15,
+    "sha256": "679f847824e2a026ab5a8007b9b2801337519bff0ab2ec50563f87fab428202f",
+    "source_path": "/tmp/audit-d025-panp5cnj/live.sqlite3"
+  }
+}

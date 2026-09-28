@@ -1,0 +1,15 @@
+{
+  "after_exists": true,
+  "before_exists": false,
+  "verdict": {
+    "breaks": [],
+    "event_ids_unique": true,
+    "head": null,
+    "intact": true,
+    "positions": 0,
+    "records": 0,
+    "rule": "Ch.16 L16757 hash-chained, append-only; T_LEDGER",
+    "sequence_monotonic": true,
+    "source": "apex.ledger.store.LedgerWriter.verify_chain"
+  }
+}

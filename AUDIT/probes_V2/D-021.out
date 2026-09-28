@@ -1,0 +1,22 @@
+{
+  "next_drill_due_90d": {
+    "due": true,
+    "elapsed_days": 90.0,
+    "period_days": 90
+  },
+  "next_drill_due_none": {
+    "due": true,
+    "period_days": 90,
+    "reason": "NO_DRILL_ON_RECORD"
+  },
+  "summary": {
+    "contract_version": "4.0.0",
+    "drill_period_days": 90,
+    "encryption": "unavailable in the frozen SBOM \u2014 requesting it fails closed (never mislabelled)",
+    "interval_minutes": 15,
+    "rpo_seconds": 300,
+    "rto_seconds": 1800,
+    "storage_alert_fraction": 0.8,
+    "storage_floor": 0.15
+  }
+}

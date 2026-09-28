@@ -1,0 +1,131 @@
+[
+  {
+    "override": {
+      "daily_loss_cap": 0.9,
+      "realized_daily_loss_fraction": 0.05
+    },
+    "result": {
+      "decision": "ALLOW",
+      "reason": "SIZED",
+      "selected_parameter_package": null,
+      "sized_after_all_vetoes": true,
+      "sized_quantity": 2.5,
+      "sizing": {
+        "R_allowed": 50.0,
+        "correlation": {},
+        "decision": "ALLOW",
+        "min_quantity": 0.001,
+        "multiplier": 1.0,
+        "notes": [],
+        "q_attention_bound": null,
+        "q_risk_bound": 2.5,
+        "risk_state": "LowRisk",
+        "sized_quantity": 2.5
+      },
+      "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "veto_evaluation_order": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "vetoes_applied": []
+    }
+  },
+  {
+    "override": {
+      "consecutive_loss_halt": 99,
+      "consecutive_losses": 5
+    },
+    "result": {
+      "decision": "ALLOW",
+      "reason": "SIZED",
+      "selected_parameter_package": null,
+      "sized_after_all_vetoes": true,
+      "sized_quantity": 2.5,
+      "sizing": {
+        "R_allowed": 50.0,
+        "correlation": {},
+        "decision": "ALLOW",
+        "min_quantity": 0.001,
+        "multiplier": 1.0,
+        "notes": [],
+        "q_attention_bound": null,
+        "q_risk_bound": 2.5,
+        "risk_state": "LowRisk",
+        "sized_quantity": 2.5
+      },
+      "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "veto_evaluation_order": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "vetoes_applied": []
+    }
+  },
+  {
+    "override": {
+      "margin_health_action_fraction": 0.01,
+      "margin_health_fraction": 0.2
+    },
+    "result": {
+      "decision": "ALLOW",
+      "reason": "SIZED",
+      "selected_parameter_package": null,
+      "sized_after_all_vetoes": true,
+      "sized_quantity": 2.5,
+      "sizing": {
+        "R_allowed": 50.0,
+        "correlation": {},
+        "decision": "ALLOW",
+        "min_quantity": 0.001,
+        "multiplier": 1.0,
+        "notes": [],
+        "q_attention_bound": null,
+        "q_risk_bound": 2.5,
+        "risk_state": "LowRisk",
+        "sized_quantity": 2.5
+      },
+      "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "veto_evaluation_order": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "vetoes_applied": []
+    }
+  }
+]
