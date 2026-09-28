@@ -4,7 +4,7 @@ from common import scenario
 import apex.identity.uuid_v7 as u
 from apex.ledger import store as ls
 async def main(store,w,path):
-    with patch.object(u.time,'time',return_value=1780000000.123),patch.object(u.secrets,'randbits',side_effect=[4095,(1<<62)-1,0,0]):
+    with patch.object(u.time,'time_ns',return_value=1780000000123000000),patch.object(u.secrets,'randbits',side_effect=[4095,(1<<62)-1,0,0]):
         a,b=u.uuid_v7(),u.uuid_v7()
     print('uuid_a=',a,'uuid_b=',b,'strictly_ascending=',a<b)
     # Save deterministic event-id sequence using the actual writer (UUID source only patched).

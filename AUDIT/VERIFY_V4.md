@@ -1,6 +1,6 @@
 # V4 independent verification — baseline 85b2c155d7b054a468379ddfd802eb239d0801f9
 
-Read-only source/contract examination; probes used synthetic identities, injected faults and disposable SQLite with the repository migrations and triggers. No venue, Telegram, device database, secrets, or `.env` were accessed deliberately. Baseline command `git rev-parse HEAD && git log -1 --oneline` returned the full baseline SHA and `85b2c15 Merge pull request #25 ...`. Report source: `/tmp/AUDIT.md` (fetched 690e2d88); index is not evidence. Commands below assume `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1`. All measured results are **fixture-only**, not evidence of trades or device latency. A green test suite does not discharge the counterexamples.
+Read-only source/contract examination; probes used synthetic identities, injected faults and disposable SQLite with the repository migrations and triggers. No venue, Telegram, device database, or secret value was intentionally accessed. **Protocol limitation:** an early exploratory G-009 invocation constructed default `Config()` before the committed probe was corrected; this could have parsed a local `.env` if one existed. No value was printed, retained or used intentionally; the logs cannot establish whether that file existed. All committed probes inject synthetic configuration. This possible accidental access does not meet the requested no-`.env` assurance. Baseline command `git rev-parse HEAD && git log -1 --oneline` returned the full baseline SHA and `85b2c15 Merge pull request #25 ...`. Report source: `/tmp/AUDIT.md` (fetched 690e2d88); index is not evidence. Commands below assume `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1`. All measured results are **fixture-only**, not evidence of trades or device latency. A green test suite does not discharge the counterexamples.
 
 | ID | Verdict | Auditor severity | Independent severity | Frozen? | Cross-ref (D/ISSUE) | Recommended option |
 |---|---|---|---|---|---|---|
@@ -8,7 +8,7 @@ Read-only source/contract examination; probes used synthetic identities, injecte
 | F-001 | CONFIRMED | S1 | S1 | No | D58 PAPER simulator pending | A: actual-fill accounting |
 | F-002 | CONFIRMED (conditional shared DB) | S1 | S1 | No | D4 separate PAPER/LIVE | A: scoped projection |
 | F-003 | CONFIRMED | S1 | S1 | No | — | A: current cost basis |
-| F-004 | CONFIRMED | S1 | S1 | DDL frozen | A: atomic writer envelope |
+| F-004 | CONFIRMED | S1 | S1 | DDL frozen | — | A: atomic writer envelope |
 | F-005 | CONFIRMED | S1 | S1 | DDL frozen | — | A: queue-side dedup + ownership |
 | F-006 | CONFIRMED | S1 | S1 | DDL frozen | — | A: rollback and poison writer |
 | F-007 | CONFIRMED (tamper precondition) | S1 | S1 | DDL frozen | — | A: stronger verifier |
@@ -19,12 +19,13 @@ Read-only source/contract examination; probes used synthetic identities, injecte
 | F-012 | PARTIAL | S2 | S2 | No | — | A: owner resolves conflicting ID contract |
 | G-002 | CONFIRMED | S1 | S1 | No | = ISSUE-073 (no additional owner item) | A: explicit refusal until wired |
 | G-021 | PARTIAL | S2 | S2 | No | D30: training 20, not coverage 140 | A: distinguish capacity from observed status |
+| G-022 | CONFIRMED (latent writer impact) | S2 | S2 | No | = ISSUE-073 for noop only | A: canonical contained path |
 | G-015 | CONFIRMED | S1 | S1 | No | — | A: rolling window |
 | G-016 | CONFIRMED | S1 | S1 | No | — | A: atomic in-flight reservation |
 | G-017 | CONFIRMED | S1 | S1 | No | — | A: delivery-aware dedup |
 | G-018 | PARTIAL | S1 | S1 | No | — | A: separate delivery from protection |
 | G-023 | CONFIRMED (synthetic timing) | S1 | S1 | No | — | A: priority admission |
-| G-001, G-003..G-008, G-010..G-014, G-019..G-020, G-022, G-024..G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
+| G-001, G-003..G-008, G-010..G-014, G-019..G-020, G-024..G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
 
 **Shared test execution:** `PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/unit/test_ledger_store.py tests/unit/test_telegram_control_plane.py tests/unit/test_ops_telegram_gateway.py tests/unit/test_telegram_signaling.py tests/unit/test_identity.py > AUDIT/probes_V4/TARGETED_TESTS.out 2>&1`: **286 passed, 13 warnings**. For individual probes use `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V4/<ID>.py`; output is the sibling `.out`. `QUERY-PLAN.py/.out` run against the real schema with/without the two device-only indexes. Scope of assertions below is the cited implementation behavior, not end-to-end or device acceptance. Owner decisions in PHASE2_DECISION_LOG.md supersede conflicting blueprint prose. No source changes proposed here are authorized.
 
@@ -70,7 +71,7 @@ Wrong booked P/L on partial exits or non-unit multiplier.
 ### Secondary effects and interactions (upstream/downstream)
 Upstream price comes from last CLOSED bar, actual exit result from adapter; `fsm.close_position` writes `outcome` and ledger; downstream PAPER balance/risk/realized loss and research outcome may be wrong once wired. D58 pending simulator is not a waiver for accounting correctness; no real training or account consequence demonstrated.
 ### Contract and decisions
-`APEX_GEN5.md:16875-16883`: reconciliation invariant and immutable ledger; `16915-16921`: unique fill identities and partial fills permitted. D4 (`PHASE2_DECISION_LOG.md:197`) binds PAPER exposure/realized loss to ledger, overriding any interpretation that the displayed balance alone is accounting. No owner decision authorizes using plan size as filled size.
+`APEX_GEN5.md:16875-16883`: reconciliation invariant and immutable ledger; `16915-16923`: unique fill identities and partial fills permitted. D4 (`PHASE2_DECISION_LOG.md:197`) binds PAPER exposure/realized loss to ledger, overriding any interpretation that the displayed balance alone is accounting. No owner decision authorizes using plan size as filled size.
 ### Frozen status and non-frozen alternative
 Execution FSM and runtime are non-frozen. Cost model parameter changes in original YAML or engines would be frozen; compute fill attribution in a non-frozen accounting producer instead.
 ### Fix options (A/B/C… each with side effects, or "single path" with justification)
@@ -122,7 +123,7 @@ Current-position reported entry price is wrong after close/reopen.
 ### Secondary effects and interactions (upstream/downstream)
 Upstream historical fills remain immutable; downstream projection/backup and any future margin or risk consumer would inherit wrong basis. F-010 malformed CLOSE is independent, so do not mask it by only resetting at net zero.
 ### Contract and decisions
-`APEX_GEN5.md:16919-16921`: “SINGLE SOURCE OF TRUTH for position state — the ledger, reconciled against the exchange”; D4 `PHASE2_DECISION_LOG.md:197` ledger-fed exposure/loss. Owner D4 has precedence over generic prose if inconsistent; neither specifies stale lot basis.
+`APEX_GEN5.md:17085-17090`: “single source of truth for position state (the ledger, reconciled against exchange)”; D4 `PHASE2_DECISION_LOG.md:197` ledger-fed exposure/loss. Owner D4 has precedence over generic prose if inconsistent; neither specifies stale lot basis.
 ### Frozen status and non-frozen alternative
 Non-frozen ledger projection; use adapter-side lot accounting if changing any frozen execution kernel were contemplated.
 ### Fix options (A/B/C… each with side effects, or "single path" with justification)
@@ -226,7 +227,7 @@ Verifier can report green on financially inconsistent rows and unaudited inserts
 ### Secondary effects and interactions (upstream/downstream)
 FSM recovery, backups, ledger projection and downstream account/risk may trust `intact` and wrong quantity; distinguishing immutability prevention from detection matters.
 ### Contract and decisions
-`APEX_GEN5.md:16879-16885`: “T_LEDGER (covert insert/modify ... breaks hash chain)”; `19075-19083` integrity gate includes event sequence and parents; `19106-19107` IDs/parents acceptance. No owner decision in `PHASE2_DECISION_LOG.md` explicitly weakens these checks; later decisions override prose if any are adopted.
+`APEX_GEN5.md:16879-16891`: “T_LEDGER (covert insert/modify ... breaks hash chain)”; `19075-19083` integrity gate includes event sequence and parents; `19106-19107` IDs/parents acceptance. No owner decision in `PHASE2_DECISION_LOG.md` explicitly weakens these checks; later decisions override prose if any are adopted.
 ### Frozen status and non-frozen alternative
 Frozen CP-1 schema/triggers retain protection. Add verification/sidecar metadata in non-frozen ledger or backup layer; do not silently alter frozen columns.
 ### Fix options (A/B/C… each with side effects, or "single path" with justification)
@@ -434,7 +435,7 @@ Loss of retry opportunity inside 30-minute window.
 ### Secondary effects and interactions (upstream/downstream)
 Storage/feed monitoring and operator escalation can be silent; exempt EXEC_RECOVERY/CIRCUIT_OPEN are not suppressed by this rule, but may fail for other reasons. Outbox durability separate.
 ### Contract and decisions
-`APEX_GEN5.md:18168-18173`: P0 never drop; `18304-18309`: dedup except EXEC_RECOVERY and CIRCUIT_OPEN with logged alerts; `PHASE2_DECISION_LOG.md:194-210` has no authorization to mark failed delivery successful.
+`APEX_GEN5.md:18168-18173`: P0 never drop; `18476-18480`: dedup except EXEC_RECOVERY and CIRCUIT_OPEN with logged alerts; `PHASE2_DECISION_LOG.md:194-210` has no authorization to mark failed delivery successful.
 ### Frozen status and non-frozen alternative
 Non-frozen signaling; persistence can be additive migration outside frozen DDL.
 ### Fix options (A/B/C… each with side effects, or "single path" with justification)
@@ -512,7 +513,7 @@ Accepted operator action has no product.
 ### Secondary effects and interactions (upstream/downstream)
 Research/backtest and export are not called; downstream report/replay absent, but no exchange/order path. G-022 unsafe path validation becomes consequential only after real exporter wired.
 ### Contract and decisions
-`APEX_GEN5.md:17837-17848`: Export path → “Send/Share the resulting file”; `17892-17904` Lab Backtest stays active. `PHASE2_DECISION_LOG.md:194-210` D4 separates PAPER/LIVE displayed/exported balances; no later owner authorization for noop-success. ISSUE-073 schedules CP-16; owner decision/log takes precedence over generic promise of readiness.
+`APEX_GEN5.md:17835-17840`: Export path → “Send/Share the resulting file”; `17892-17895` Lab Backtest stays active. `PHASE2_DECISION_LOG.md:194-210` D4 separates PAPER/LIVE displayed/exported balances; no later owner authorization for noop-success. ISSUE-073 schedules CP-16; owner decision/log takes precedence over generic promise of readiness.
 ### Frozen status and non-frozen alternative
 Run composition/control-plane non-frozen; backtest engine frozen and need not be changed to report NOT_WIRED or call existing read-only job API.
 ### Fix options (A/B/C… each with side effects, or "single path" with justification)
@@ -547,3 +548,67 @@ A: show “capacity 140” separately from measured cells/boot state with timest
 A after owner clarifies §5.5 literal; B until a measured status producer exists.
 ### Acceptance and regression tests
 Store absent, 0/partial/140 measured cells, DEGRADED boot and stale feed: accurate labels and timestamps; no implication 20 trained cells equals 140 data cells; device coverage still needs read-only evidence.
+
+## G-022
+### Auditor claim (short quote)
+Path validator accepts sibling prefix and `..` escape although EXPORT currently noop.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:360-390,879-891` (`validate_export_request`, callback/dispatch), `scripts/run_apex.py:728-733,827-838` (noop composition), `test_telegram_control_plane.py:391-430,775-792`; grep `validate_export_request` in apex/scripts/tests.
+### Reproduction (command, probe file, actual result)
+`G-022.py/.out`: actual validator returns valid=True/errors=() for `/Download/APEX_Reports_evil/x.csv` and `/Download/APEX_Reports/../escape.csv`, as well as a valid in-root path. No file is created and no export is executed.
+### Verdict and reasoning
+CONFIRMED S2 for validator boundary defect; actual out-of-root write is **not** confirmed, because runtime EXPORT uses noop (= ISSUE-073). Its future impact is conditional on wiring a real exporter.
+### Root cause
+Raw `str(path).startswith(root.rstrip('/'))` rather than normalized ancestor validation and writer-bound file descriptor.
+### Direct impact
+Validator's alleged export-root guarantee is false.
+### Secondary effects and interactions (upstream/downstream)
+Upstream Telegram export request may include malformed path; downstream real writer is presently absent, so no proven file leak; future exporter/replay identity must consume validated canonical path, not unvalidated input. Symlink and TOCTOU concerns require separate filesystem policy.
+### Contract and decisions
+`APEX_GEN5.md:17837-17844`: “Browse to path `/Download/APEX_Reports/` ... Send/Share the resulting file”; D17 `PHASE2_DECISION_LOG.md:205` forbids printing/committing secrets. No owner decision allows writing outside export root. ISSUE-073 covers noop handler only and does not excuse validation; owner decisions take precedence.
+### Frozen status and non-frozen alternative
+Non-frozen control-plane/export adapter; frozen research/store untouched.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: canonicalize root and candidate, use relative-to-root/path-handle safe writer (symlinks refused or constrained); tests currently accepting raw prefix change, future export metadata/hash and replay path IDs may change; migration of existing export metadata only if any exists, no model retraining. B: reject all caller-supplied paths and write generated files solely under root; simpler but changes wizard UX and still must prevent symlink escapes.
+### My recommendation
+B until an approved filesystem-safe writer can implement A; keep G-002 explicit refusal meanwhile.
+### Acceptance and regression tests
+Sibling root, `..`, absolute/relative, Unicode, symlink and directory swap before write all refused/contained; valid path generated and atomically opened under root, not merely validated; real device path policy still needs confirmation.
+
+## New findings not in the audit
+
+### X-V4-001 — repeated ledger queries have no selective indexes (S2, CONFIRMED plan shape; latency DEVICE-EVIDENCE-NEEDED)
+#### Auditor claim (short quote)
+Not an audit row: independently discovered via required query-plan check.
+#### What I read (files, line ranges, functions, callers)
+`ledger/store.py:435-446,492-525,525-571,633-641,645-679` (find_by_fill, find_by_intent, read_ledger, trade_plans, verify_chain, head); `data_catalog/store/sqlite_store.py:46-92,165-180,290-340` real DDL and migrations; `fsm.py:671-693,1302-1324`, `paper_loop.py:106-160`, `ops/engine_context.py:645-650,746-750,2197-2201`. `grep -Rn` of all these query methods in apex/scripts shows per-fill lookup and repeated per-intent/per-cycle projection and boot scans. `QUERY-PLAN.py` uses repository DDL; no device database touched.
+#### Reproduction (command, probe file, actual result)
+`python3 AUDIT/probes_V4/QUERY-PLAN.py` → `.out`: before and after adding exactly `idx_mo_sym_tf_open` and `idx_pit_scope_asof`, `find_by_fill: SCAN ledger`, `find_by_intent: SCAN ledger`, `trade_plans: SCAN trade_plan; USE TEMP B-TREE FOR ORDER BY`. `read_ledger/head: SCAN ledger` are full-history operations (head can reverse-walk without sorting). The two device indexes make their *own* market/PIT scope queries SEARCH, but do not index the ledger. Plan on empty fixture is structural, not a device p95 proof.
+#### Verdict and reasoning
+CONFIRMED S2 for missing selective indexes on frequently invoked lookups; severity only S2 until row counts/latency measured. Full-history scans are deliberate for verification/projection, not all defects; per-fill/per-intent scans scale poorly as ledger grows.
+#### Root cause
+Frozen CP-1 ledger has PK only on ledger_id; no index on fill_id or intent_id; CP-7 trade_plan PK only on proposal_id.
+#### Direct impact
+Linear per-fill and per-intent reads and sort cost in trade-plan listing as history grows.
+#### Secondary effects and interactions (upstream/downstream)
+Upstream F-005 race becomes slower; downstream FSM reconciliation and repeated positions/replay may delay admission or recovery. G-023 Telegram rate is unrelated; ISSUE-079 market/raw join is separate. No device stall inferred. Read-only evidence command **for owner only**, pointed at device file without running here: `python3 -c "import sqlite3; c=sqlite3.connect('file:data/apex.sqlite3?mode=ro',uri=True); print(c.execute('SELECT count(*) FROM ledger').fetchone()); print(c.execute('EXPLAIN QUERY PLAN SELECT ledger_id FROM ledger WHERE fill_id=?',('synthetic',)).fetchall()); print(c.execute('EXPLAIN QUERY PLAN SELECT ledger_id FROM ledger WHERE intent_id=? ORDER BY rowid',('synthetic',)).fetchall())"` plus device p95 measured on authorized read-only copy. Do not copy data into Git.
+#### Contract and decisions
+`APEX_GEN5.md:18438-18447`: single writer and pre-LIVE target-device load test with CPU/RAM headroom; `18922-18933`: p50/p95/p99 per station and fail-closed on failed measured SLO. `PHASE2_DECISION_LOG.md:194-210` D1 PAPER same FSM/ledger path; no owner override of lookup performance; decisions take precedence. ISSUE-076 two device indexes are market/PIT, **not ledger**.
+#### Frozen status and non-frozen alternative
+Store schema file is frozen; additive `CREATE INDEX IF NOT EXISTS` migration in non-frozen ledger module, after duplicate cleanup (F-005) and owner review, avoids modifying frozen DDL.
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: non-frozen additive partial/unique index on `(fill_id)` (after duplicate reconciliation), index on `(intent_id)`, `(environment,created_utc,proposal_id)` for trade plans; migration adds disk/storage/write amplification, changes query plans and could fail on existing duplicates, no change to chain hashes/training, but derived caches may need revalidation after duplicate cleanup. B: batch/read cache for fill lookup; stale/racing cache risks F-005 and needs durable invalidation; not sufficient alone.
+#### My recommendation
+A after device read-only count/plan and duplicate scan; use queue-side correctness (F-005) independently of indexes.
+#### Acceptance and regression tests
+EXPLAIN on real DDL before/after migration with device indexes both absent/present; collision scan, unique enforcement and transaction fault/restart tests; device p95 on read-only snapshot, real dataset size and concurrency required to assert SLO.
+
+## Rows not verified or incomplete
+
+**Not verified (20 IDs; no verdict/severity assignment, no coverage claim):** G-001, G-003, G-004, G-005, G-006, G-007, G-008, G-010, G-011, G-012, G-013, G-014, G-019, G-020, G-024, G-025, G-026, G-027, G-028, G-029. Their unquoted full report rows and their complete referenced functions/caller/callee graphs were **not** independently reviewed to the mandatory depth; targeted suite success does not verify any of them. G-001 would also require strict synthetic config isolation before a safe probe. Known ISSUE-073 overlaps G-002, not a blanket verdict on other G rows. Device-specific facts for all rows remain unavailable. Do not extrapolate this report to 41-row coverage.
+
+**Depth limits for the 21 bounded findings above:** code slices and grep consumers are recorded, but full-file end-to-end semantic review of every referenced file (especially the entire 21k-line contract, `fsm.py`, `gateway.py`, `signaling.py`, `control_plane.py`, all five complete test files, and every transitive caller/callee) was not completed. Thus these are **bounded direct-behavior conclusions, not complete mandatory-depth closure**. The source report's Persian rows cited in their individual sections were read, but no real DB/model/device/transport was available. Query plans were on empty real schema with/without the two specified indexes; optimizer choices and p95 on device are unverified. No L1/L2 risk ladder or order placements were executed. A source-file review must precede any patch; this report is not approval to trade or change frozen files.
+
+## Final counts
+
+Of 41 requested audit IDs: **17 CONFIRMED** (bounded direct behavior), **4 PARTIAL**, **0 REJECTED**, **0 DEVICE-EVIDENCE-NEEDED as sole verdict**, **20 NOT VERIFIED**. One additional finding X-V4-001: plan shape CONFIRMED, device impact pending. No row is claimed fully closed at the mandatory exhaustive-depth standard. These counts exclude tests and known-owner items outside the 41-ID scope.
