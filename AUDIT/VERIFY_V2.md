@@ -66,6 +66,30 @@ All rows below state the applicable precedence again, along with frozen-file imp
 
 ## D-001 — PAPER simulator isolation
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** PAPER execution should be an in-process deterministic simulator with durable `paper_sim_state`, while the signed Toobit adapter must not construct or send private venue requests. The current composition instead permits the adapter path and has no wired simulator.
 
 **Independent evidence and result.** **CONFIRMED, S0.** `D-001.out` shows the real `ToobitAdapter.submit_order` captured `POST /api/v1/futures/order`, a signed request, and private-operation query fields using synthetic credentials. No network call was made. `PHASE2_DECISION_LOG.md:194` is binding and says PAPER sends no packet; `APEX_GEN5.md` also separates PAPER/LIVE. This is a code/composition confirmation, not a claim that the owner’s device currently sends packets.
@@ -81,6 +105,30 @@ All rows below state the applicable precedence again, along with frozen-file imp
 **Acceptance tests.** Assert every private adapter operation raises a named PAPER network-deny or uses only the simulator; run restart with durable fills/pending orders; reconcile simulator positions/orders/fills through the same FSM and ledger; prove no socket/session/private packet is created. LIVE must retain its separate signed path.
 
 ## D-002 — emergency handler effects
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** L1–L5 Telegram emergency effects are no-ops or memory flags, and the gateway does not supply L3 open orders, so a successful response can falsely imply cancel/close/safe-mode execution.
 
@@ -98,6 +146,30 @@ All rows below state the applicable precedence again, along with frozen-file imp
 
 ## D-003 — pause/disable-new stops protection
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** `PaperRuntime.run` skips the whole cycle when paused or new positions are disabled, stopping gateway, heartbeat, position management, and recovery work rather than only new-entry admission.
 
 **Independent evidence and result.** **CONFIRMED, S1.** The real runtime control predicate returned true for `new_positions_disabled=True`, and the source loop sleeps before `run_cycle`. The existing integration test also proves paused runtime has zero cycles. This is code/fixture evidence, not a device uptime claim.
@@ -113,6 +185,30 @@ All rows below state the applicable precedence again, along with frozen-file imp
 **Acceptance tests.** Inject L1 and L2 between cycles and during a cycle; assert no new entry, but heartbeat, gateway polling, protection, reconciliation, and emergency handling continue; verify durable cursor and ledger behavior after restart.
 
 ## D-004 — control race before execution
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** A control command can set pause/disable-new during a cycle, but `_stage_execution` checks only the boot verdict and can submit in the same cycle.
 
@@ -130,6 +226,30 @@ All rows below state the applicable precedence again, along with frozen-file imp
 
 ## D-005 — storage guard admission/order
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** `storage_guard` reports PAUSE below 15% free space but `run_cycle` runs catch-up first and stores/alerts the result without stopping admission or prior writes.
 
 **Independent evidence and result.** **CONFIRMED, S1.** The real guard returns `PAUSE` at 10% free, while `run_cycle` source order is catch-up, heartbeat, then storage guard. No early hard gate exists before catch-up or entry.
@@ -145,6 +265,30 @@ All rows below state the applicable precedence again, along with frozen-file imp
 **Acceptance tests.** Inject 10%, 15%, and 20% free space; prove no nonessential write or entry below the strict boundary, while the protective path remains available; restart after refusal and verify chain integrity.
 
 ## D-006 — periodic drift propagation
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** Clock drift is measured at boot but not refreshed or propagated to the scheduler/admission during a long-running serve process.
 
@@ -162,6 +306,30 @@ All rows below state the applicable precedence again, along with frozen-file imp
 
 ## D-007 — watchdog wiring/independence
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** `serve` constructs a watchdog and records heartbeat but does not schedule `check`/observe or inject an independent channel; an object in the same process cannot independently detect host death.
 
 **Independent evidence and result.** **CONFIRMED, S1.** A real watchdog with no heartbeat at a far-future observation returned `missed=0, host_down=False`; source search found no `check` schedule in `serve`. External phone monitoring was not tested.
@@ -177,6 +345,30 @@ All rows below state the applicable precedence again, along with frozen-file imp
 **Acceptance tests.** Kill/hang the runtime, stop Telegram, and stop before first heartbeat; an independent monitor must alert with durable evidence, bounded retries, and no false normal baseline.
 
 ## D-008 — stale/non-atomic exposure admission
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** Context preparation is concurrent and risk is not re-adjudicated against exposure created by other plans, allowing multiple plans to exceed capital/reservation ceilings.
 
@@ -196,6 +388,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-009 — post-plan symbol cap
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** Veto 5 tests prior per-symbol exposure, not the exposure after adding the proposed order, so a plan can exceed the 20% symbol cap.
 
 **Independent evidence and result.** **CONFIRMED, S1.** The real `adjudicate` with 4,000 proposed notional, prior symbol exposure 0, symbol cap 2,000, and hard cap 6,000 returned `ALLOW` with quantity 40. The post-plan 4,000 is above the symbol cap. This is direct kernel behavior; no device/venue claim is made.
@@ -211,6 +427,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** Test current + pending + proposed exposure at below, equal, and above cap, including partial fills, reduce-only orders, symbol aliases, restart, and replay. Require rejection/reduction before any adapter/simulator call.
 
 ## D-010 — correlation wiring and units
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** The native producer does not pass correlation into risk; naively connecting it would mix notional units with a dimensionless cap and can reject valid trades.
 
@@ -228,6 +468,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-011 — equal opposing evidence
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** Opposing same-group evidence can cancel to zero; the reducer skips the zero dominant direction and reports perfect agreement/consensus.
 
 **Independent evidence and result.** **CONFIRMED, S1.** Two real ACTIVE E05 refs with equal quality and opposite direction returned agreement `1.0`, disagreement `0.0`, and `resolve(...)=CONSENSUS`. This confirms the reducer defect only; all gates and an order were not claimed.
@@ -243,6 +507,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** Property-test equal and near-equal opposing votes, same-engine duplicates, multi-engine groups, zero members, and MTF conflict. No balanced opposition may yield CONSENSUS or a permission.
 
 ## D-012 — weekly circuit-breaker reset
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** The reset helper returns weekly reset true on UTC rollover without requiring the owner review it declares required; the current PAPER account path has a separate guard.
 
@@ -260,6 +548,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-013 — fabric HARD conflict reachability
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** With nonnegative weights, a purely two-sided fabric disagreement cannot reach the 0.60 HARD threshold; ties are separately mishandled by D-011, while explicit MTF conflict can still be HARD.
 
 **Independent evidence and result.** **CONFIRMED, S1.** Real E05-positive/E06-negative evidence returned disagreement `0.454545...` and `MATERIAL_CONFLICT`, not HARD. The mathematical maximum for this reducer is at most one-half for a two-sided tie/opposition; `mtf_conflict=CONFLICTING` remains an independent HARD route.
@@ -275,6 +587,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** Property-test all nonnegative engine weights and group combinations, verify the maximum reachable disagreement against the governing table, test the corrected severe state, and retain MTF HARD behavior.
 
 ## D-014 — conflict/redundancy hard gates
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** The producer emits conflict 0.4 and redundancy 0.3, while Gate 3 blocks only above 0.5 and Gate 4 only above 0.3; the traceability matrix says conflict above 0.4 blocks and gives 0.5 as failing.
 
@@ -292,6 +628,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-015 — collapsed context propagation
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** Family and bridge carry scalar confidence but do not enforce `COLLAPSED`/confidence below 0.40 as a no-emission condition.
 
 **Independent evidence and result.** **CONFIRMED, S1.** A real `evaluate_cell` call with confidence `0.39951172547`, propagation explicitly reported as `COLLAPSED`, required synthetic ACTIVE refs, valid close-shaped bars, and otherwise passing inputs returned `status=EMITTED`, `reason=ALL_GATES_PASS`, final score 0.9000000000000002. No missing-close excuse applies to this probe. Native full producer/venue wiring was not claimed.
@@ -307,6 +667,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** With all required closes present, test confidence below 0.40, exactly 0.40, 0.399999, and data trust below 0.30; collapsed must not emit, confirmatory must be non-permission, and admissible may proceed only with complete lineage.
 
 ## D-016 — watchdog state transitions
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** `Watchdog.resolve` changes state based mainly on a target enum and does not require cause resolution, reconciliation, owner authorization, or a durable success log.
 
@@ -324,6 +708,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-017 — independent alert delivery
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** `SendOnlyGmailChannel` reports successful delivery when a credential exists but no transport is injected; current serve does not inject the channel.
 
 **Independent evidence and result.** **CONFIRMED, S1.** With synthetic credentials and `transport=None`, real `send` returned `delivered=True` and appended to `sent`; no SMTP/network evidence exists. This is an API false positive, not a device-delivery claim.
@@ -339,6 +747,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** Transport success must return an authenticated delivery/ACK; transport missing, timeout, rejection, and invalid recipient must fail closed with bounded retries and durable evidence.
 
 ## D-018 — logging before alert
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** `Watchdog.check` and `enter_fail_closed` append to the recovery log before attempting independent/Telegram alerts, so a log exception can suppress the alert.
 
@@ -356,6 +788,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-019 — recovery-log atomicity and verification
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** `RecoveryLog.append` advances RAM rows/head before SQLite INSERT/commit, and verification does not compare stored parent hash to the recomputed parent.
 
 **Independent evidence and result.** **CONFIRMED, S1.** With a real temporary SQLite file, a row appended while the DB handle was unavailable appeared in RAM/head but disappeared after reopen. Source review also confirms memory mutation precedes commit and `verify` recomputes from its in-memory parent rather than validating the stored `parent_hash` field.
@@ -371,6 +827,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** Fail first INSERT, fail commit, restart, mutate parent/hash, and attempt UPDATE/DELETE. Only committed rows advance memory; verification must reject mismatch before recovery.
 
 ## D-020 — serve recovery-log lifecycle
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** `serve` constructs a path-bearing `RecoveryLog` but does not open/close it; fail-closed records stay RAM-only.
 
@@ -388,6 +868,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-021 — backup/drill scheduling
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** Backup interval and 90-day drill helpers are constants/functions only; no periodic backup or restore-drill scheduler is wired to serve.
 
 **Independent evidence and result.** **CONFIRMED, S1.** Real helpers reported 15-minute/90-day policy, but repository consumer search found no `SQLiteBackupManager`/`restore_drill` scheduler in serve. Owner device scheduling is unknown.
@@ -403,6 +907,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** Use a real temporary SQLite file for interval, FSM-transition, failure, restart, retention, and quarterly-drill simulations; then obtain separate device evidence for the actual scheduler and off-device destination.
 
 ## D-022 — restore-drill verdict
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** `restore_drill` fixes RPO at zero, checks counts/breaks only, and does not make RPO or backup integrity a pass criterion.
 
@@ -420,6 +948,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-023 — restore integrity gate
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** `restore` copies a source even when its integrity flag/SHA is bad and reports restored success without a pre-restore trust gate or atomic staging.
 
 **Independent evidence and result.** **CONFIRMED, S1.** A real temporary file containing non-SQLite bytes returned `restored=true` and `integrity_ok=false`; source and target SHA matched only because the invalid bytes were copied. No live resume consumer was claimed.
@@ -435,6 +987,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** Bad SQLite, SHA mismatch, failed integrity, target exists, mid-copy fault, and power-loss simulations must preserve the prior good target and report failure; valid restore must verify chain/state before resumption.
 
 ## D-024 — missing/empty restore verification
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** `verify_restored_ledger` can create a missing/new SQLite DB through writable migrations and regard zero records as an intact chain.
 
@@ -452,6 +1028,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-025 — encryption at rest
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** Default backup is plaintext and encryption is unavailable in the supplied dependency set; the actual device’s at-rest encryption is unknown.
 
 **Independent evidence and result.** **CONFIRMED, S1.** A real temporary SQLite backup returned `encrypted=false`; `encrypt=True` failed with `ENCRYPTION_UNAVAILABLE_IN_SBOM`. This proves the API does not provide encryption, not that the owner’s filesystem lacks it.
@@ -467,6 +1067,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** On the target device, prove file and backup ciphertext/permissions, key-unavailable failure, rotation, restore, and off-device transport; temporary fixture success is insufficient.
 
 ## D-026 — nonfinite/missing risk carriers
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** Direct `adjudicate` accepts missing or NaN quality, staleness, and proposed-notional values because comparisons with `None`/NaN do not fire the relevant vetoes.
 
@@ -484,6 +1108,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-027 — caller-controlled governed thresholds
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** `adjudicate` accepts daily-loss, consecutive-loss, and margin action thresholds from the risk input, allowing the caller to soften governed vetoes; the native producer does not currently emit the override keys.
 
 **Independent evidence and result.** **CONFIRMED, S1.** Real direct calls changed daily 0.05 from REJECT to ALLOW with cap 0.9, five losses from REJECT to ALLOW with halt 99, and margin 0.2 from veto 14 to ALLOW with action threshold 0.01 on the non-PAPER-proxy path. No live/native bypass was claimed.
@@ -499,6 +1147,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** Same violation with untrusted override must remain REJECT; only a valid versioned/owner-approved package may change it, with provenance, range, identity, restart, and replay tests.
 
 ## D-028 — READY while L3 is active
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** Boot reads and passes an active `HighRisk/L3_CANCEL_ALL` ladder revision and returns READY/new-trades-allowed, rather than preserving the emergency restriction; native submit does not re-adjudicate.
 
@@ -516,6 +1188,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-029 — ladder write/read ratchet bypass
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** `ladder_revision` can omit `previous_state`, `append_ladder_revision` does not validate current state/owner, and `EngineContextProducer.ladder_input` reads only the latest two rows, allowing an invalid downgrade to be hidden by a later NORMAL row.
 
 **Independent evidence and result.** **CONFIRMED, S1.** Real SQLite migration/append calls accepted r3 NORMAL with parent r2 but no previous state. The real producer reader rejected after r3 with `CIRCUIT_RESET_UNAVAILABLE`; after another accepted r4 NORMAL parented to r3, the two-row reader returned r4. This is a full real-code probe, not AST extraction.
@@ -532,6 +1228,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 
 ## D-030 — PAPER margin action is not an L3 consumer
 
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
+
 **Audit hypothesis (English translation).** With real PAPER capital/notional values, the proxy reports Emergency L3 at health below 0.20, but the computed `margin_status` is not consumed by reconciliation/emergency execution, and veto 14 is not cancel-all.
 
 **Independent evidence and result.** **CONFIRMED, S1.** The real YAML loaded `capital_usdt=10000.0` and strict PAPER fractions warning 0.60/action 0.40/liquidation 0.20. With open notional 8,100, `(10,000−8,100)/10,000=0.19`; real `margin_health_state(..., environment="PAPER")` returned `EMERGENCY_L3_CANCEL_ALL`, while real proxy `adjudicate` returned only `REJECT` with veto 14. Consumer search/source tracing found no cancel-all call from `margin_status`, no FSM margin query in boot reconciliation, and context computation occurs only along setup/due-cell work. This is not device or simulator evidence.
@@ -547,6 +1267,30 @@ The SQLite planner probe is additional evidence. Without the two requested devic
 **Acceptance tests.** With no due setup/cell, health below 0.20 must persist L3, cancel all pending orders through a real simulator/venue adapter, verify results and reconcile. Health below 0.40 must independently block new entries; missing marks/order state/C≤0/out-of-range must fail closed.
 
 ## D-031 — CVaR helper not connected to runtime risk
+
+### Auditor claim
+
+### What I read
+
+### Reproduction
+
+### Verdict and reasoning
+
+### Root cause
+
+### Direct impact
+
+### Secondary effects and interactions
+
+### Contract and decisions
+
+### Frozen status and non-frozen alternative
+
+### Fix options
+
+### My recommendation
+
+### Acceptance and regression tests
 
 **Audit hypothesis (English translation).** Ch.15 requires weekly portfolio CVaR from a 1000-path Monte Carlo for a one-level advisory downgrade, but the runtime risk input does not carry it and execution code never calls the research helper.
 

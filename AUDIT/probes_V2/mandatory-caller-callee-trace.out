@@ -1,0 +1,889 @@
+TRACE_VERSION=caller-callee-grep-v1
+ROOT=/home/user/Upstage
+FILES_READ=apex/ops/paper_loop.py apex/ops/engine_context.py scripts/run_apex.py tests/unit/test_ops_backup.py tests/unit/test_fabric_context.py
+
+### paper_loop public/runtime symbols
+apex/ops/paper_loop.py:106:class PlanQueue:
+apex/ops/paper_loop.py:143:def normalize_plan(source: Mapping[str, Any]) -> F.TradePlan:
+apex/ops/paper_loop.py:203:def intent_id_for(plan: F.TradePlan, close_ms: int) -> str:
+apex/ops/paper_loop.py:280:def fill_from_result(result: Any, plan: F.TradePlan,
+apex/ops/paper_loop.py:305:async def last_closed_price(store: Any, symbol: str, timeframe: str,
+apex/ops/paper_loop.py:351:class PaperRuntime:
+apex/ops/paper_loop.py:396:        self.plans = PlanQueue(store, ledger, environment=environment)
+apex/ops/paper_loop.py:458:            "ingest": self._stage_ingest,
+apex/ops/paper_loop.py:459:            "quality": self._stage_quality,
+apex/ops/paper_loop.py:460:            "features": self._stage_features,
+apex/ops/paper_loop.py:461:            "engines": self._stage_engines,
+apex/ops/paper_loop.py:462:            "setup": self._stage_setup,
+apex/ops/paper_loop.py:463:            "gates": self._stage_gates,
+apex/ops/paper_loop.py:464:            "risk": self._stage_risk,
+apex/ops/paper_loop.py:465:            "decision": self._stage_decision,
+apex/ops/paper_loop.py:466:            "execution": self._stage_execution,
+apex/ops/paper_loop.py:479:    async def _stage_ingest(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:490:    async def _stage_quality(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:500:    async def _stage_features(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:518:    async def _stage_engines(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:545:    async def _stage_setup(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:555:        plan = await self._resolve_plan(payload)
+apex/ops/paper_loop.py:563:    async def _stage_gates(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:598:    async def _stage_risk(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:614:    async def _stage_decision(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:615:        plan = normalize_plan(self._state(payload).get("plan") or {})
+apex/ops/paper_loop.py:620:    async def _stage_execution(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+apex/ops/paper_loop.py:629:        price = await last_closed_price(self.store, plan.symbol, plan.timeframe,
+apex/ops/paper_loop.py:638:        record = await self.execute_plan(
+apex/ops/paper_loop.py:648:    async def _resolve_plan(self, payload: Mapping[str, Any]
+apex/ops/paper_loop.py:692:    async def execute_plan(self, plan: F.TradePlan, *, price: Any,
+apex/ops/paper_loop.py:701:            intent_id=intent_id_for(plan, int(close_ms)), ledger=self.ledger,
+apex/ops/paper_loop.py:752:        fill = fill_from_result(result, plan) if result is not None else None
+apex/ops/paper_loop.py:781:                fill = fill_from_result(result, plan)
+apex/ops/paper_loop.py:803:    async def manage_positions(self, *, as_of: str) -> List[Dict[str, Any]]:
+apex/ops/paper_loop.py:811:            price = await last_closed_price(self.store, plan.symbol,
+apex/ops/paper_loop.py:839:            fill = fill_from_result(exit_result, plan, suffix="-exit")
+apex/ops/paper_loop.py:956:    async def run_cycle(self, *, now_ms: Optional[int] = None) -> Dict[str, Any]:
+apex/ops/paper_loop.py:974:        cycle["storage"] = await self._storage_guard()
+apex/ops/paper_loop.py:1059:        cycle["managed"] = await self.manage_positions(as_of=as_of)
+apex/ops/paper_loop.py:1066:    async def _storage_guard(self) -> Dict[str, Any]:
+apex/ops/paper_loop.py:1119:            await self.run_cycle()
+apex/ops/paper_loop.py:1187:    "PaperRuntime", "PlanQueue", "SIGNAL_SOURCE_DECISION_BRIDGE",
+apex/ops/paper_loop.py:1190:    "fill_from_result", "intent_id_for", "last_closed_price",
+apex/ops/paper_loop.py:1191:    "load_cell_cursor", "normalize_plan", "upsert_cell_cursor",
+apex/ops/plan_bridge.py:3:This module is the concrete producer for ``PaperRuntime.plan_provider``.  It
+scripts/run_apex.py:760:        driver = PL.PaperRuntime(
+tests/integration/paper_harness.py:42:    runtime = PL.PaperRuntime(
+tests/integration/test_cp14_producer.py:234:    from apex.ops.paper_loop import PaperRuntime
+tests/integration/test_cp14_producer.py:252:        runtime=PaperRuntime(config=Config(),store=store,ledger=source.ledger,bus=bus,
+tests/integration/test_ops_paper_loop.py:203:    runtime: PL.PaperRuntime
+tests/integration/test_ops_paper_loop.py:372:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:392:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:407:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:430:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:453:            again = await h.runtime.run_cycle(now_ms=START_MS + 2 * HOUR)
+tests/integration/test_ops_paper_loop.py:461:            actions = await h.runtime.manage_positions(
+tests/integration/test_ops_paper_loop.py:488:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:517:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:533:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:549:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:566:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:583:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:606:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:626:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:654:            cycle = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:710:            await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:728:    def test_normalize_plan_accepts_the_frozen_shapes(self):
+tests/integration/test_ops_paper_loop.py:729:        plan = PL.normalize_plan(plan_mapping())
+tests/integration/test_ops_paper_loop.py:733:        assert PL.normalize_plan(row).vetoes_applied == (3,)
+tests/integration/test_ops_paper_loop.py:735:            PL.normalize_plan(plan_mapping(proposal_id=""))
+tests/integration/test_ops_paper_loop.py:738:    def test_fill_from_result_never_invents_numbers(self):
+tests/integration/test_ops_paper_loop.py:739:        plan = PL.normalize_plan(plan_mapping())
+tests/integration/test_ops_paper_loop.py:740:        assert PL.fill_from_result(adapter_result(outcome="ACKNOWLEDGED"), plan) is None
+tests/integration/test_ops_paper_loop.py:741:        assert PL.fill_from_result(adapter_result(outcome="FILLED", data={}), plan) is None
+tests/integration/test_ops_paper_loop.py:742:        filled = PL.fill_from_result(adapter_result(
+tests/integration/test_ops_paper_loop.py:748:def test_last_closed_price_is_pit_safe(harness):
+tests/integration/test_ops_paper_loop.py:753:            price = await PL.last_closed_price(h.store, SYMBOL, TF,
+tests/integration/test_ops_paper_loop.py:756:            price = await PL.last_closed_price(h.store, SYMBOL, TF,
+tests/integration/test_ops_paper_loop.py:759:            assert await PL.last_closed_price(h.store, "ETHUSDT", TF, START) is None
+tests/integration/test_ops_paper_loop.py:784:            first = await h.runtime.run_cycle(now_ms=START_MS + 24 * HOUR)
+tests/integration/test_ops_paper_loop.py:819:            actions = await h.runtime.manage_positions(
+tests/integration/test_ops_paper_loop.py:880:            cycle = await h.runtime.run_cycle(now_ms=START_MS + 24 * HOUR)
+tests/integration/test_ops_paper_loop.py:909:            first = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/integration/test_ops_paper_loop.py:916:            second = await h.runtime.run_cycle(now_ms=START_MS + HOUR)
+tests/unit/test_cp146.py:126:    from apex.ops.paper_loop import intent_id_for
+tests/unit/test_cp146.py:137:    intent = intent_id_for(plan, close_ms)
+tests/unit/test_cp146.py:140:    assert intent == intent_id_for(plan, close_ms)
+tests/unit/test_cp146.py:141:    assert intent != intent_id_for(plan, close_ms + 1)
+tests/unit/test_cp146.py:431:                cycle = await h.runtime.run_cycle(now_ms=START_MS + (index + 1) * HOUR)
+tests/unit/test_cp146.py:440:            replay = await h.runtime.run_cycle(now_ms=START_MS + 6 * HOUR)
+tests/unit/test_cp146.py:517:            cycle = await h.runtime.run_cycle(now_ms=START_MS)
+tests/unit/test_engine_context.py:269:        driver = PL.PaperRuntime(store=store, ledger=Ledger(), clock=clock,
+tests/unit/test_engine_context.py:274:            cycle = await driver.run_cycle()
+
+### engine_context producer/projection symbols
+apex/ops/engine_context.py:119:def paper_close_marks(held_symbols: Any, observations: Mapping[str, Mapping], *, as_of_ms: int) -> dict:
+apex/ops/engine_context.py:527:def validate_classifier(artifact: Mapping[str, Any]) -> dict[str, Any]:
+apex/ops/engine_context.py:601:    return validate_classifier(artifact)
+apex/ops/engine_context.py:680:def paper_reservation_proxy(*, capital: Any, positions: list[dict], orders: list[dict],
+apex/ops/engine_context.py:734:async def paper_account_state(ledger: Any, *, marks: Mapping[str, Any],
+apex/ops/engine_context.py:830:    result = paper_reservation_proxy(capital=capital, positions=positions, orders=orders, environment=environment)
+apex/ops/engine_context.py:871:def load_decision_runtime(*, environment: str | None = None) -> dict[str, Any]:
+apex/ops/engine_context.py:994:            validate_classifier(documents["e11_classifier_v1.yaml"])
+apex/ops/engine_context.py:1174:async def persist_public_venue_facts(store: Any, symbol: str, *, environment: str,
+apex/ops/engine_context.py:1205:async def read_public_venue_facts(store: Any, symbol: str, as_of: str) -> dict:
+apex/ops/engine_context.py:1566:    artifact = validate_classifier(artifact)
+apex/ops/engine_context.py:1759:class EngineContextProducer:
+apex/ops/engine_context.py:1798:    async def prepare(self, symbol: str, timeframe: str, as_of: str) -> None:
+apex/ops/engine_context.py:1811:            saved = await read_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,exact=True)
+apex/ops/engine_context.py:1816:                context = await self._compose_bridge_context(symbol,timeframe,as_of)
+apex/ops/engine_context.py:1817:                await append_context_fact(self.store,"BRIDGE_CONTEXT",symbol,timeframe,as_of,
+apex/ops/engine_context.py:1829:    async def get_bridge_context(self, symbol: str, timeframe: str, as_of: str) -> dict:
+apex/ops/engine_context.py:1840:            await self.prepare(symbol,timeframe,as_of)
+apex/ops/engine_context.py:1843:    async def _compose_bridge_context(self, symbol: str, timeframe: str, as_of: str) -> dict:
+apex/ops/engine_context.py:1856:        bundle = await self.prepare_engine_bundle(symbol,timeframe,as_of)
+apex/ops/engine_context.py:1882:        await append_context_fact(self.store,"SL14_ADMISSION",symbol,timeframe,as_of,{"transitions":admission})
+apex/ops/engine_context.py:1909:        previous = await read_context_fact(self.store,"UNCERTAINTY",symbol,timeframe,_ms_to_iso(close-1))
+apex/ops/engine_context.py:1910:        await append_context_fact(self.store,"UNCERTAINTY",symbol,timeframe,as_of,current)
+apex/ops/engine_context.py:1934:        account = await self.paper_account_inputs(as_of)
+apex/ops/engine_context.py:1935:        ladder = await self.ladder_input(as_of)
+apex/ops/engine_context.py:1946:        adv = await self.adv_input(symbol,as_of)
+apex/ops/engine_context.py:1970:        cfg = load_decision_runtime(environment="PAPER")
+apex/ops/engine_context.py:2021:        await append_context_fact(self.store,"COMPONENTS",symbol,timeframe,as_of,
+apex/ops/engine_context.py:2030:    async def quality_window(self, symbol: str, timeframe: str, as_of: str,
+apex/ops/engine_context.py:2046:            fact = await read_context_fact(self.store, "QUALITY_"+identity, symbol, timeframe, as_of)
+apex/ops/engine_context.py:2090:        latest = await read_context_fact(self.store, "QUALITY_"+identity, symbol, timeframe, as_of)
+apex/ops/engine_context.py:2095:    async def mtf_inputs(self, symbol: str, timeframe: str, as_of: str) -> dict:
+apex/ops/engine_context.py:2105:                quality = await self.quality_window(symbol, tf, as_of)
+apex/ops/engine_context.py:2133:                quality = await self.quality_window(symbol, "1m", as_of, 1)
+apex/ops/engine_context.py:2140:        return paper_close_marks(held_symbols, rows, as_of_ms=_iso_to_ms(as_of))
+apex/ops/engine_context.py:2142:    async def adv_input(self, symbol: str, as_of: str) -> dict:
+apex/ops/engine_context.py:2145:        venue = await read_public_venue_facts(self.store, symbol, as_of)
+apex/ops/engine_context.py:2163:    async def ladder_input(self, as_of: str) -> dict:
+apex/ops/engine_context.py:2186:    async def paper_account_inputs(self, as_of: str) -> dict:
+apex/ops/engine_context.py:2276:            fact = await read_public_venue_facts(self.store,symbol,as_of)
+apex/ops/engine_context.py:2278:        account = await paper_account_state(PITView(), marks=marks["marks"], contract_specs=specs,environment="PAPER")
+apex/ops/engine_context.py:2283:    async def prepare_engine_bundle(self, symbol: str, timeframe: str, as_of: str,
+apex/ops/engine_context.py:2294:            measured = await self.quality_window(symbol, timeframe, as_of)
+apex/ops/engine_context.py:2295:            mtf = await self.mtf_inputs(symbol, timeframe, as_of)
+apex/ops/engine_context.py:2305:        async for item in self.feature_timeline(symbol, timeframe, window, incremental=True):
+apex/ops/engine_context.py:2344:        venue = await read_public_venue_facts(self.store, symbol, as_of)
+apex/ops/engine_context.py:2444:    async def feature_timeline(self, symbol: str, timeframe: str, window: list[Any], *,
+apex/ops/engine_context.py:3148:    producer = EngineContextProducer(store, now=now)
+apex/ops/engine_context.py:3212:        async for item in producer.feature_timeline(symbol, timeframe, window, dep_rows=serving,
+apex/ops/engine_context.py:3271:    validate_classifier(artifact)
+apex/ops/engine_context.py:3313:async def train_classifier_bounded(sqlite: str, *, seed=DEFAULT_TRAINING_SEED,
+apex/ops/engine_context.py:3380:                validate_classifier(message["artifact"])
+apex/ops/engine_context.py:3400:    validate_classifier(artifact)
+apex/ops/engine_context.py:3544:async def append_context_fact(store: Any, kind: str, symbol: str, timeframe: str,
+apex/ops/engine_context.py:3564:async def read_context_fact(store: Any, kind: str, symbol: str, timeframe: str,
+apex/ops/engine_context.py:3695:        existing = await read_context_fact(
+apex/ops/engine_context.py:3758:        fact = await read_context_fact(store, "QUALITY_" + obs_id, symbol, timeframe, as_of)
+apex/ops/engine_context.py:3793:        existing = await read_context_fact(
+apex/ops/engine_context.py:3854:    return await append_context_fact(store, "QUALITY_"+rows[0][0], obs.symbol, obs.timeframe, measured_at, payload)
+apex/ops/engine_context.py:3882:    await append_context_fact(store,"PUBLIC_FUNDING_SCHEDULE",symbol,"",stamp,value)
+apex/ops/engine_context.py:3888:    value = await read_context_fact(store,"PUBLIC_FUNDING_SCHEDULE",symbol,"",as_of)
+apex/ops/paper_loop.py:890:            persist_public_venue_facts,
+apex/ops/paper_loop.py:930:                    await persist_public_venue_facts(
+apex/ops/paper_loop.py:1015:                    await _maybe_await(prepare(cell.symbol, cell.timeframe, self._decision_as_of.get(cell.cell_id,_ms_to_iso(close))))
+apex/ops/plan_bridge.py:27:store's explicitly named ``get_bridge_context``/``get_engine_context`` reader
+apex/ops/plan_bridge.py:530:    async def prepare(self, symbol: str, timeframe: str, as_of: str) -> None:
+apex/ops/plan_bridge.py:580:        for name in ("get_bridge_context", "get_engine_context",
+scripts/run_apex.py:748:        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+scripts/run_apex.py:752:            context_source=producer.get_bridge_context if producer is not None else None,
+scripts/run_apex.py:973:        artifact, report = await EC.train_classifier_bounded(sqlite or cfg.sqlite_path, seed=seed,
+tests/integration/test_cp14_producer.py:41:  source=E.EngineContextProducer(store,ledger=ledger,classifier_path=artifact,environment='PAPER')
+tests/integration/test_cp14_producer.py:68:  await E.persist_public_venue_facts(store,'BTCUSDT',environment='PAPER',client=venue.client,now=now)
+tests/integration/test_cp14_producer.py:73:   await source.get_bridge_context('BTCUSDT','1d','2026-01-07T00:00:00.001Z')
+tests/integration/test_cp14_producer.py:74:  ctx=await source.get_bridge_context('BTCUSDT','1d',ASOF)
+tests/integration/test_cp14_producer.py:76:  assert E.canonical_json(ctx)==E.canonical_json(await source.get_bridge_context('BTCUSDT','1d',ASOF))
+tests/integration/test_cp14_producer.py:131:        source=E.EngineContextProducer(store,ledger=ledger,classifier_path=classifier,environment='PAPER')
+tests/integration/test_cp14_producer.py:184:        a=await source.get_bridge_context('BTCUSDT','1d',ASOF)
+tests/integration/test_cp14_producer.py:185:        await source.prepare('BTCUSDT','1d',ASOF)
+tests/integration/test_cp14_producer.py:186:        b=await source.get_bridge_context('BTCUSDT','1d',ASOF)
+tests/integration/test_cp14_producer.py:201:        assert E.canonical_json(await source.get_bridge_context('BTCUSDT','1d',ASOF))==E.canonical_json(context)
+tests/integration/test_cp14_producer.py:206:        bridge=PaperPlanBridge(store=store,environment='PAPER',context_source=source.get_bridge_context)
+tests/integration/test_cp14_producer.py:218:        bridge=PaperPlanBridge(store=store,environment='PAPER',context_source=source.get_bridge_context)
+tests/integration/test_cp14_producer.py:222:            await source.prepare('UNKNOWN','1d',ASOF)
+tests/integration/test_cp14_producer.py:225:            await source.prepare('BTCUSDT','1d',ASOF)
+tests/integration/test_cp14_producer.py:250:        bridge=PaperPlanBridge(store=store,environment='PAPER',context_source=source.get_bridge_context,
+tests/integration/test_cp14_producer.py:277:    policy=E.load_decision_runtime(environment='PAPER')
+tests/integration/test_cp14_producer.py:296:        fact=await E.read_context_fact(store,'COMPONENTS','BTCUSDT','1d',ASOF)
+tests/integration/test_ops_paper_loop.py:871:            async def prepare(symbol, timeframe, as_of):
+tests/integration/test_ops_paper_loop.py:901:            async def prepare(symbol, timeframe, as_of):
+tests/unit/test_cp146.py:338:            producer = EC.EngineContextProducer(store, environment="PAPER")
+tests/unit/test_cp146.py:343:                await producer.quality_window("BTCUSDT", "1h", closed, bars=5)
+tests/unit/test_engine_context.py:51:        EC.validate_classifier(artifact)
+tests/unit/test_engine_context.py:405:    policy = EC.load_decision_runtime()
+tests/unit/test_engine_context.py:418:    policy = copy.deepcopy(EC.load_decision_runtime())
+tests/unit/test_engine_context.py:434:        EC.load_decision_runtime()
+tests/unit/test_engine_context.py:648:            producer = EC.EngineContextProducer(store)
+tests/unit/test_engine_context.py:670:        producer = EC.EngineContextProducer(None)
+tests/unit/test_engine_context.py:671:        first = [row async for row in producer.feature_timeline("BTCUSDT", "1h", window)]
+tests/unit/test_engine_context.py:675:        _ = [row async for row in producer.feature_timeline("ETHUSDT", "1h", window)]
+tests/unit/test_engine_context.py:768:    assert EC.EngineContextProducer(None).environment == "LIVE"
+tests/unit/test_engine_context.py:771:        asyncio.run(EC.EngineContextProducer(None, environment=live).decision_inputs("BTCUSDT", "1h", "2026-01-01T00:00:00.000Z"))
+tests/unit/test_engine_context.py:775:    params = {"decision_runtime": copy.deepcopy(EC.load_decision_runtime())}
+tests/unit/test_engine_context.py:778:    assert "paper_bootstrap" not in EC.load_decision_runtime(environment="LIVE")
+tests/unit/test_engine_context.py:779:    assert EC.load_decision_runtime(environment="LIVE")["capital_hard_cap_fraction"] == .60
+tests/unit/test_engine_context.py:781:        EC.load_decision_runtime(environment="PAPER")
+tests/unit/test_engine_context.py:866:            facts = await EC.persist_public_venue_facts(store, "BTCUSDT", environment="PAPER", client=fixture.client, now=now)
+tests/unit/test_engine_context.py:871:                await EC.read_public_venue_facts(store, "BTCUSDT", "2025-12-31T23:59:59.999Z")
+tests/unit/test_engine_context.py:872:            restored = await EC.read_public_venue_facts(store, "BTCUSDT", stamp)
+tests/unit/test_engine_context.py:874:            await EC.persist_public_venue_facts(store, "BTCUSDT", environment="PAPER", client=fixture.client, now=now)
+tests/unit/test_engine_context.py:877:            producer = EC.EngineContextProducer(store, environment="PAPER")
+tests/unit/test_engine_context.py:925:            await EC.persist_public_venue_facts(store, "BTCUSDT", environment="PAPER", client=fixture.client, now=lambda: t0)
+tests/unit/test_engine_context.py:927:            await EC.persist_public_venue_facts(store, "ETHUSDT", environment="PAPER", client=fixture.client, now=lambda: t0)
+tests/unit/test_engine_context.py:931:                await EC.persist_public_venue_facts(store, "BTCUSDT", environment="PAPER", client=fixture.client, now=lambda: t0 + 1)
+tests/unit/test_engine_context.py:933:                await EC.read_public_venue_facts(store, "BTCUSDT", "2026-01-01T00:00:01.000Z")
+tests/unit/test_engine_context.py:934:            assert (await EC.read_public_venue_facts(store, "BTCUSDT", "2026-01-01T00:00:00.000Z"))["commission_rate"] == "0.0005"
+tests/unit/test_engine_context.py:935:            assert (await EC.read_public_venue_facts(store, "ETHUSDT", "2026-01-01T00:00:01.000Z"))["symbol"] == "ETHUSDT"
+tests/unit/test_engine_context.py:946:    result = EC.paper_reservation_proxy(capital=10000, positions=positions, orders=[], environment="PAPER")
+tests/unit/test_engine_context.py:978:        EC.paper_reservation_proxy(capital=capital, positions=[], orders=[], environment="PAPER")
+tests/unit/test_engine_context.py:986:        return EC.paper_reservation_proxy(capital=10000, positions=positions, orders=orders, environment="PAPER")
+tests/unit/test_engine_context.py:1001:        EC.paper_reservation_proxy(capital=10000, positions=[], orders=[], environment="LIVE")
+tests/unit/test_engine_context.py:1025:            got = await EC.paper_account_state(ledger, **kwargs)
+tests/unit/test_engine_context.py:1031:            cancelled = await EC.paper_account_state(ledger, **kwargs)
+tests/unit/test_engine_context.py:1036:                await EC.paper_account_state(ledger, **kwargs)
+tests/unit/test_engine_context.py:1092:            producer = EC.EngineContextProducer(store)
+tests/unit/test_engine_context.py:1125:        rows = [r async for r in EC.EngineContextProducer(None).feature_timeline("BTCUSDT", "1h", window)]
+tests/unit/test_engine_context.py:1358:            producer = EC.EngineContextProducer(store, classifier_path=classifier, environment="PAPER")
+tests/unit/test_engine_context.py:1361:            bundle = await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-04T18:00:00.000Z",
+tests/unit/test_engine_context.py:1383:            later = await producer.prepare_engine_bundle("ETHUSDT", "1h", "2026-01-08T12:00:00.000Z",
+tests/unit/test_engine_context.py:1656:def test_d34_shared_paper_close_marks_and_stale_future_refusal():
+tests/unit/test_engine_context.py:1660:    result = EC.paper_close_marks(["BTCUSDT"], {"BTCUSDT": row}, as_of_ms=opening+62000)
+tests/unit/test_engine_context.py:1663:    assert EC.paper_close_marks([], {}, as_of_ms=opening)["marks"] == {}
+tests/unit/test_engine_context.py:1666:            EC.paper_close_marks(["BTCUSDT"], {"BTCUSDT": {**row, **over}}, as_of_ms=opening+62000)
+tests/unit/test_engine_context.py:1668:        EC.paper_close_marks(["BTCUSDT"], {"BTCUSDT": row}, as_of_ms=opening+3600000)
+tests/unit/test_engine_context.py:1944:            producer = EC.EngineContextProducer(store)
+tests/unit/test_engine_context.py:2380:def _d36_fake_feature_timeline(rule0_cycle):
+tests/unit/test_engine_context.py:2402:    monkeypatch.setattr(EC.EngineContextProducer, "feature_timeline",
+tests/unit/test_engine_context.py:2403:                        _d36_fake_feature_timeline(required))
+tests/unit/test_engine_context.py:2419:    assert EC.validate_classifier(artifact) == artifact  # schema includes fit_protocol per D47
+tests/unit/test_engine_context.py:2438:    monkeypatch.setattr(EC.EngineContextProducer, "feature_timeline",
+tests/unit/test_engine_context.py:2439:                        _d36_fake_feature_timeline(cycle))
+tests/unit/test_engine_context.py:2550:                producer = EC.EngineContextProducer(store)
+tests/unit/test_engine_context.py:2637:    policy = EC.load_decision_runtime(environment="PAPER")
+tests/unit/test_engine_context.py:2664:    live = EC.load_decision_runtime(environment="LIVE")
+tests/unit/test_engine_context.py:2683:    assert EC.load_decision_runtime(environment="LIVE")["p_min_tf"]["1h"] == 0.55
+tests/unit/test_engine_context.py:2685:        EC.load_decision_runtime(environment="PAPER")
+tests/unit/test_engine_context.py:3063:    assert EC.validate_classifier(artifact) == artifact
+tests/unit/test_engine_context.py:3068:        EC.validate_classifier(artifact_no_fp)
+tests/unit/test_engine_context.py:3073:        EC.validate_classifier(artifact_bad)
+tests/unit/test_engine_context_store_sources.py:42:            source = EC.EngineContextProducer(store, environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:45:                await source.quality_window(obs.symbol, obs.timeframe, asof)
+tests/unit/test_engine_context_store_sources.py:49:            first = await source.quality_window(obs.symbol, obs.timeframe, asof)
+tests/unit/test_engine_context_store_sources.py:50:            second = await EC.EngineContextProducer(store, environment="PAPER").quality_window(obs.symbol, obs.timeframe, asof)
+tests/unit/test_engine_context_store_sources.py:60:                await source.quality_window(obs.symbol, obs.timeframe, EC._ms_to_iso(receipt-1))
+tests/unit/test_engine_context_store_sources.py:72:            source = EC.EngineContextProducer(store, environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:75:            fact = await EC.read_context_fact(store, "QUALITY_"+identity, obs.symbol, obs.timeframe, EC._ms_to_iso(receipt))
+tests/unit/test_engine_context_store_sources.py:87:            await EC.append_context_fact(store, "QUALITY_"+identity, obs.symbol, obs.timeframe, EC._ms_to_iso(receipt+1), fact)
+tests/unit/test_engine_context_store_sources.py:90:                await source.quality_window(obs.symbol, obs.timeframe, EC._ms_to_iso(receipt+1))
+tests/unit/test_engine_context_store_sources.py:103:                await EC.EngineContextProducer(store).quality_window(obs.symbol, obs.timeframe, EC._ms_to_iso(receipt))
+tests/unit/test_engine_context_store_sources.py:117:            result = await EC.EngineContextProducer(store).quality_window(obs.symbol, obs.timeframe, "2026-01-01T02:00:00.000Z")
+tests/unit/test_engine_context_store_sources.py:129:            source = EC.EngineContextProducer(store, environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:131:                await source.mtf_inputs("BTCUSDT", "1h", EC._ms_to_iso(end+2000))
+tests/unit/test_engine_context_store_sources.py:135:            result = await source.mtf_inputs("BTCUSDT", "1h", EC._ms_to_iso(end+2000))
+tests/unit/test_engine_context_store_sources.py:202:            source = EC.EngineContextProducer(store, environment="PAPER", classifier_path=FIXTURE)
+tests/unit/test_engine_context_store_sources.py:225:            bundle = await source.prepare_engine_bundle("ETHUSDT","1h",asof)
+tests/unit/test_engine_context_store_sources.py:252:            source = EC.EngineContextProducer(store,environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:255:                await source.ladder_input(asof)
+tests/unit/test_engine_context_store_sources.py:258:                await source.ladder_input(asof)
+tests/unit/test_engine_context_store_sources.py:263:            got = await source.ladder_input(asof)
+tests/unit/test_engine_context_store_sources.py:268:                await source.ladder_input("2025-12-31T23:59:59.999Z")
+tests/unit/test_engine_context_store_sources.py:281:            source = EC.EngineContextProducer(store,environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:282:            await EC.persist_public_venue_facts(store,"BTCUSDT",environment="PAPER",
+tests/unit/test_engine_context_store_sources.py:285:                await source.adv_input("BTCUSDT",asof)
+tests/unit/test_engine_context_store_sources.py:287:            await EC.persist_public_venue_facts(store,"BTCUSDT",environment="PAPER",
+tests/unit/test_engine_context_store_sources.py:290:                await source.adv_input("BTCUSDT",asof)
+tests/unit/test_engine_context_store_sources.py:295:            result = await source.adv_input("BTCUSDT",asof)
+tests/unit/test_engine_context_store_sources.py:300:            assert canonical_json(await source.adv_input("BTCUSDT",asof)) == canonical_json(result)
+tests/unit/test_engine_context_store_sources.py:316:            source = EC.EngineContextProducer(store,ledger=ledger,environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:318:            empty = await source.paper_account_inputs(asof)
+tests/unit/test_engine_context_store_sources.py:323:            await EC.persist_public_venue_facts(store,"BTCUSDT",environment="PAPER",
+tests/unit/test_engine_context_store_sources.py:337:                await source.paper_account_inputs(asof)
+tests/unit/test_engine_context_store_sources.py:344:            actual = await source.paper_account_inputs(asof)
+tests/unit/test_engine_context_store_sources.py:354:            assert canonical_json(await source.paper_account_inputs(asof)) == canonical_json(actual)
+tests/unit/test_engine_context_store_sources.py:356:                await source.paper_account_inputs(clock["now"])
+tests/unit/test_engine_context_store_sources.py:372:            source = EC.EngineContextProducer(store,ledger=ledger,environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:389:            with pytest.raises(BridgeError,match=reason): await source.paper_account_inputs(stamp)
+tests/unit/test_engine_context_store_sources.py:401:            source=EC.EngineContextProducer(store,environment='PAPER')
+tests/unit/test_engine_context_store_sources.py:444:    source=EC.EngineContextProducer(None,environment='PAPER')
+
+### run_apex composition/root symbols
+apex/data_catalog/catalog.py:219:class AtomTierFailure(RuntimeError):
+apex/data_catalog/ingest/toobit_public.py:62:class ToobitPublicError(RuntimeError):
+apex/data_catalog/store/sqlite_store.py:361:            raise RuntimeError("store not open — call await store.open()")
+apex/engines/base.py:65:class EngineStateError(RuntimeError):
+apex/engines/e03_volume/engine.py:1073:            except RuntimeError:
+apex/engines/e01_structure/engine.py:1390:            except RuntimeError:
+apex/engines/e02_liquidity/engine.py:1607:            except RuntimeError:
+apex/engines/e04_volatility/engine.py:1275:            except RuntimeError:
+apex/engines/e05_fvg/engine.py:819:            except RuntimeError:
+apex/engines/e06_orderblock/engine.py:197:    p-value < 0.5… < 0.05 → Q4. (Runtime never fabricates OOS statistics;
+apex/engines/e06_orderblock/engine.py:862:            except RuntimeError:
+apex/engines/e07_rtm/engine.py:1262:            except RuntimeError:
+apex/engines/e08_wyckoff/engine.py:1255:            except RuntimeError:
+apex/engines/e09_trend/engine.py:1144:            except RuntimeError:
+apex/engines/e10_momentum/engine.py:1472:            except RuntimeError:
+apex/engines/e11_regime/engine.py:1532:                except RuntimeError:
+apex/engines/e12_temporal/engine.py:926:    conforming).  Runtime-only fields (``reason``, ``fate``,
+apex/engines/e12_temporal/engine.py:1448:                except RuntimeError:
+apex/errors.py:92:class WaveOutError(RuntimeError):
+apex/execution/fsm.py:197:class FsmError(RuntimeError):
+apex/execution/fsm.py:374:class ExecutionFSM:
+apex/execution/fsm.py:964:class StartupReconciliation:
+apex/execution/fsm.py:1035:            recon = await self.reconcile_boot()
+apex/execution/fsm.py:1163:    async def reconcile_boot(self) -> Dict[str, Any]:
+apex/execution/fsm.py:1228:        boot_recon = await self.reconcile_boot()
+apex/execution/fsm.py:1355:    "E12_DRIFT_DEGRADED_SECONDS", "ExecutionFSM", "FILL_TIMEOUT_SECONDS",
+apex/execution/fsm.py:1358:    "SUBMISSION_TIMEOUT_SECONDS", "StartupReconciliation",
+apex/execution/toobit_adapter.py:91:class AdapterError(RuntimeError):
+apex/fabric/conflict.py:62:class InvariantViolation(RuntimeError):
+apex/ledger/store.py:118:class LedgerError(RuntimeError):
+apex/ops/backup.py:41:class BackupError(RuntimeError):
+apex/ops/bootstrap_service.py:232:class BootstrapServiceError(RuntimeError):
+apex/ops/bootstrap_service.py:933:    async def save_bootstrap(
+apex/ops/bootstrap_service.py:949:                old_row = await self._checkpoints.load_bootstrap(cell_id)
+apex/ops/bootstrap_service.py:1002:                old_row = await self._checkpoints.load_bootstrap(cell_id)
+apex/ops/bootstrap_service.py:1009:        await self._checkpoints.save_bootstrap(
+apex/ops/engine_context.py:839:    The 15.5 training threshold is explicitly owner-governed by D21. Runtime
+apex/ops/engine_context.py:887:            core["paper_bootstrap"] = validate_paper_bootstrap(p["paper_bootstrap"])
+apex/ops/engine_context.py:893:def validate_paper_bootstrap(section: Any) -> dict[str, Any]:
+apex/ops/engine_context.py:992:        policy = validate_paper_bootstrap(documents["decision_runtime_v1.yaml"]["paper_bootstrap"])
+apex/ops/engine_context.py:1759:class EngineContextProducer:
+apex/ops/engine_context.py:2417:        calls exactly (parity-tested). Runtime (G1) never uses this path.
+apex/ops/engine_context.py:3148:    producer = EngineContextProducer(store, now=now)
+apex/ops/paper_loop.py:91:class PaperLoopError(RuntimeError):
+apex/ops/paper_loop.py:351:class PaperRuntime:
+apex/ops/paper_loop.py:402:        self.working: Dict[str, F.ExecutionFSM] = {}
+apex/ops/paper_loop.py:414:        machine = F.StartupReconciliation(
+apex/ops/paper_loop.py:700:        machine = F.ExecutionFSM(
+apex/ops/paper_loop.py:747:    async def _record_submission_fill(self, machine: F.ExecutionFSM,
+apex/ops/paper_loop.py:762:    async def _observe_fill(self, machine: F.ExecutionFSM,
+apex/ops/paper_loop.py:1187:    "PaperRuntime", "PlanQueue", "SIGNAL_SOURCE_DECISION_BRIDGE",
+apex/ops/partial_bar_repair.py:308:        except (ValueError, RuntimeError):
+apex/ops/plan_bridge.py:3:This module is the concrete producer for ``PaperRuntime.plan_provider``.  It
+apex/ops/plan_bridge.py:186:class BridgeError(RuntimeError):
+apex/ops/watchdog.py:75:class WatchdogError(RuntimeError):
+apex/ops/watchdog.py:100:class GmailChannelUnavailable(WatchdogError):
+apex/ops/watchdog.py:147:            raise WatchdogError("GMAIL_SEVERITY_REFUSED",
+apex/ops/watchdog.py:301:        raise WatchdogError("WATCHDOG_STATE_QX", state)
+apex/ops/watchdog.py:323:class WatchdogVerdict:
+apex/ops/watchdog.py:335:class Watchdog:
+apex/ops/watchdog.py:405:                except WatchdogError as exc:
+apex/ops/watchdog.py:419:        verdict = WatchdogVerdict(state=self.state, missed=missed,
+apex/ops/watchdog.py:443:            except WatchdogError as exc:
+apex/ops/watchdog.py:452:            raise WatchdogError("WATCHDOG_STATE_QX", self.state)
+apex/ops/watchdog.py:455:            raise WatchdogError("WATCHDOG_TARGET_QX", to_state)
+apex/research/backtest.py:354:def cvar_bootstrap(returns: Sequence[float], *, paths: int = MC_PATHS,
+apex/research/bootstrap.py:63:class BootstrapError(RuntimeError):
+apex/research/bootstrap.py:267:            saved = await self.store.load_bootstrap(cell_id)
+apex/research/bootstrap.py:270:            await self.store.save_bootstrap(
+apex/research/bootstrap.py:298:                await self.store.save_bootstrap(
+apex/research/bootstrap.py:304:                await self.store.save_bootstrap(
+apex/research/bootstrap.py:319:            await self.store.save_bootstrap(
+apex/research/checkpoints.py:99:class CheckpointError(RuntimeError):
+apex/research/checkpoints.py:148:    async def save_bootstrap(self, *, cell_id: str, symbol: str,
+apex/research/checkpoints.py:174:    async def load_bootstrap(self, cell_id: str) -> Optional[Dict[str, Any]]:
+apex/research/governance.py:165:       owner="apex.execution.fsm.StartupReconciliation"),
+apex/scheduler/clock.py:63:class SchedulerError(RuntimeError):
+apex/telegram/control_plane.py:125:class ControlPlaneError(RuntimeError):
+apex/telegram/control_plane.py:655:    def screen_running_status(self, *, uptime_seconds: float = 0.0,
+apex/telegram/control_plane.py:668:            "RUNNING_STATUS": lambda: self.screen_running_status(**kwargs),
+apex/telegram/gateway.py:10:        → TelegramGateway.handle_update
+apex/telegram/gateway.py:54:class GatewayError(RuntimeError):
+apex/telegram/gateway.py:234:class TelegramGateway:
+apex/telegram/gateway.py:298:            record = {**base, "route": "BOOTSTRAP", **await self._bootstrap(
+apex/telegram/gateway.py:311:    async def _bootstrap(self, chat_id: Any, command: str,
+apex/telegram/gateway.py:450:    "CONTRACT_VERSION", "GatewayError", "REPLY_MAX_CHARS", "TelegramGateway",
+apex/telegram/signaling.py:147:class SignalingError(RuntimeError):
+scripts/run_apex.py:140:    raise RuntimeError("venue credentials absent (APEX_ALLOW_SIGNED / "
+scripts/run_apex.py:145:class Runtime:
+scripts/run_apex.py:158:    async def start(self) -> "Runtime":
+scripts/run_apex.py:195:async def _boot(cfg: Config, *, as_json: bool) -> int:
+scripts/run_apex.py:200:    runtime = await Runtime(cfg).start()
+scripts/run_apex.py:213:        machine = F.StartupReconciliation(
+scripts/run_apex.py:274:async def _demo(cfg: Config, *, as_json: bool) -> int:
+scripts/run_apex.py:293:    runtime = await Runtime(cfg, str(tmp / "apex.sqlite3")).start()
+scripts/run_apex.py:310:        boot = F.StartupReconciliation(ledger=ledger, adapter=adapter, bus=bus,
+scripts/run_apex.py:344:        machine = F.ExecutionFSM(intent_id="i-demo-0001", ledger=ledger,
+scripts/run_apex.py:504:async def _bootstrap(cfg: Config, *, as_json: bool, cells: Optional[str] = None,
+scripts/run_apex.py:577:async def _status(cfg: Config, *, as_json: bool) -> int:
+scripts/run_apex.py:613:async def _repair_partial(cfg: Config, *, as_json: bool,
+scripts/run_apex.py:695:async def _serve(cfg: Config, *, as_json: bool, cycles: Optional[int] = None,
+scripts/run_apex.py:711:    runtime = await Runtime(cfg).start()
+scripts/run_apex.py:729:        control.register("BOOTSTRAP_CONTROL", _bootstrap_handler(service))
+scripts/run_apex.py:733:            control.register(name, _noop_handler(name))
+scripts/run_apex.py:735:            gateway = GW.TelegramGateway(
+scripts/run_apex.py:740:        watchdog = WD.Watchdog(telegram_plane=signaling,
+scripts/run_apex.py:748:        producer = (EC.EngineContextProducer(runtime.store, ledger=ledger,
+scripts/run_apex.py:760:        driver = PL.PaperRuntime(
+scripts/run_apex.py:815:def _bootstrap_handler(service: "BS.BootstrapService"):
+scripts/run_apex.py:827:def _noop_handler(name: str):
+scripts/run_apex.py:1144:            return asyncio.run(_bootstrap(cfg, as_json=args.json,
+scripts/run_apex.py:1148:            return asyncio.run(_serve(cfg, as_json=args.json,
+scripts/run_apex.py:1156:            return asyncio.run(_repair_partial(
+tests/integration/paper_harness.py:42:    runtime = PL.PaperRuntime(
+tests/integration/test_cp14_producer.py:41:  source=E.EngineContextProducer(store,ledger=ledger,classifier_path=artifact,environment='PAPER')
+tests/integration/test_cp14_producer.py:131:        source=E.EngineContextProducer(store,ledger=ledger,classifier_path=classifier,environment='PAPER')
+tests/integration/test_cp14_producer.py:234:    from apex.ops.paper_loop import PaperRuntime
+tests/integration/test_cp14_producer.py:252:        runtime=PaperRuntime(config=Config(),store=store,ledger=source.ledger,bus=bus,
+tests/integration/test_cp4_engines.py:138:            raise RuntimeError("E12 unavailable")
+tests/integration/test_cp5_engines.py:144:        raise RuntimeError("E12 unavailable")
+tests/integration/test_cp7_paper_loop.py:7:      → StartupReconciliation: STARTING → SELF_TEST → RECONCILING → READY
+tests/integration/test_cp7_paper_loop.py:13:        build_trade_plan → ExecutionFSM.submit → ToobitAdapter (5 operations,
+tests/integration/test_cp7_paper_loop.py:276:        machine = F.StartupReconciliation(ledger=self.ledger,
+tests/integration/test_cp7_paper_loop.py:303:        machine = F.ExecutionFSM(
+tests/integration/test_cp7_paper_loop.py:589:    def test_the_bus_carried_the_transitions_and_the_boot(self, store, tmp_path):
+tests/integration/test_cp7_paper_loop.py:717:    def test_drift_beyond_tolerance_degrades_the_boot(self, store, tmp_path):
+tests/integration/test_cp7_paper_loop.py:788:            machine = F.StartupReconciliation(
+tests/integration/test_cp7_paper_loop.py:817:            machine = F.ExecutionFSM(intent_id="i-prot", ledger=p.ledger,
+tests/integration/test_ops_paper_loop.py:203:    runtime: PL.PaperRuntime
+tests/unit/test_cp146.py:292:def test_d59_live_without_a_package_does_not_bootstrap():
+tests/unit/test_cp146.py:338:            producer = EC.EngineContextProducer(store, environment="PAPER")
+tests/unit/test_e07_rtm.py:147:            raise RuntimeError("E12 provider failure")
+tests/unit/test_e12_temporal.py:1089:                raise RuntimeError("E12 unavailable")
+tests/unit/test_engine_context.py:269:        driver = PL.PaperRuntime(store=store, ledger=Ledger(), clock=clock,
+tests/unit/test_engine_context.py:332:                raise RuntimeError("injected ingestion failure")
+tests/unit/test_engine_context.py:648:            producer = EC.EngineContextProducer(store)
+tests/unit/test_engine_context.py:670:        producer = EC.EngineContextProducer(None)
+tests/unit/test_engine_context.py:768:    assert EC.EngineContextProducer(None).environment == "LIVE"
+tests/unit/test_engine_context.py:771:        asyncio.run(EC.EngineContextProducer(None, environment=live).decision_inputs("BTCUSDT", "1h", "2026-01-01T00:00:00.000Z"))
+tests/unit/test_engine_context.py:877:            producer = EC.EngineContextProducer(store, environment="PAPER")
+tests/unit/test_engine_context.py:1092:            producer = EC.EngineContextProducer(store)
+tests/unit/test_engine_context.py:1125:        rows = [r async for r in EC.EngineContextProducer(None).feature_timeline("BTCUSDT", "1h", window)]
+tests/unit/test_engine_context.py:1358:            producer = EC.EngineContextProducer(store, classifier_path=classifier, environment="PAPER")
+tests/unit/test_engine_context.py:1501:def test_d33_gate10_categorical_and_live_bootstrap():
+tests/unit/test_engine_context.py:1944:            producer = EC.EngineContextProducer(store)
+tests/unit/test_engine_context.py:2402:    monkeypatch.setattr(EC.EngineContextProducer, "feature_timeline",
+tests/unit/test_engine_context.py:2438:    monkeypatch.setattr(EC.EngineContextProducer, "feature_timeline",
+tests/unit/test_engine_context.py:2550:                producer = EC.EngineContextProducer(store)
+tests/unit/test_engine_context.py:2706:        EC.validate_paper_bootstrap(section)
+tests/unit/test_engine_context.py:2708:        EC.validate_paper_bootstrap(dict(section, extra=1.0))
+tests/unit/test_engine_context.py:2710:    governed = EC.validate_paper_bootstrap(
+tests/unit/test_engine_context_store_sources.py:42:            source = EC.EngineContextProducer(store, environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:50:            second = await EC.EngineContextProducer(store, environment="PAPER").quality_window(obs.symbol, obs.timeframe, asof)
+tests/unit/test_engine_context_store_sources.py:72:            source = EC.EngineContextProducer(store, environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:103:                await EC.EngineContextProducer(store).quality_window(obs.symbol, obs.timeframe, EC._ms_to_iso(receipt))
+tests/unit/test_engine_context_store_sources.py:117:            result = await EC.EngineContextProducer(store).quality_window(obs.symbol, obs.timeframe, "2026-01-01T02:00:00.000Z")
+tests/unit/test_engine_context_store_sources.py:129:            source = EC.EngineContextProducer(store, environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:202:            source = EC.EngineContextProducer(store, environment="PAPER", classifier_path=FIXTURE)
+tests/unit/test_engine_context_store_sources.py:252:            source = EC.EngineContextProducer(store,environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:281:            source = EC.EngineContextProducer(store,environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:316:            source = EC.EngineContextProducer(store,ledger=ledger,environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:372:            source = EC.EngineContextProducer(store,ledger=ledger,environment="PAPER")
+tests/unit/test_engine_context_store_sources.py:401:            source=EC.EngineContextProducer(store,environment='PAPER')
+tests/unit/test_engine_context_store_sources.py:444:    source=EC.EngineContextProducer(None,environment='PAPER')
+tests/unit/test_execution_fsm.py:178:    def fsm(self, **kwargs) -> F.ExecutionFSM:
+tests/unit/test_execution_fsm.py:185:        return F.ExecutionFSM(**kwargs)
+tests/unit/test_execution_fsm.py:187:    def boot(self, **kwargs) -> F.StartupReconciliation:
+tests/unit/test_execution_fsm.py:195:        return F.StartupReconciliation(**kwargs)
+tests/unit/test_execution_fsm.py:1270:    def test_e12_drift_over_500ms_degrades_the_boot(self, store):
+tests/unit/test_ledger_store.py:400:        async def first_boot():
+tests/unit/test_ledger_store.py:410:        head, entry_hash = run(first_boot())
+tests/unit/test_ledger_store.py:412:        async def second_boot():
+tests/unit/test_ledger_store.py:423:        recovered, parents, intact = run(second_boot())
+tests/unit/test_ops_bootstrap_service.py:1698:                row = await service._checkpoints.load_bootstrap("BTCUSDT:1d")
+tests/unit/test_ops_bootstrap_service.py:1753:                row = await service._checkpoints.load_bootstrap("BTCUSDT:1d")
+tests/unit/test_ops_bootstrap_service.py:1790:                row = await svc2._checkpoints.load_bootstrap("BTCUSDT:1d")
+tests/unit/test_ops_partial_bar_repair.py:489:            code = await run_apex._repair_partial(
+tests/unit/test_ops_partial_bar_repair.py:511:            code = await run_apex._repair_partial(
+tests/unit/test_ops_partial_bar_repair.py:528:            code = await run_apex._repair_partial(
+tests/unit/test_ops_partial_bar_repair.py:545:            code = await run_apex._repair_partial(
+tests/unit/test_ops_partial_bar_repair.py:558:            code = await run_apex._repair_partial(
+tests/unit/test_ops_partial_bar_repair.py:747:            code = await run_apex._repair_partial(
+tests/unit/test_ops_telegram_gateway.py:105:    return GW.TelegramGateway(control=plane, source=source, notifier=notifier,
+tests/unit/test_ops_watchdog.py:78:        with pytest.raises(wd.WatchdogError) as err:
+tests/unit/test_ops_watchdog.py:88:        with pytest.raises(wd.WatchdogError) as err:
+tests/unit/test_ops_watchdog.py:228:        with pytest.raises(wd.WatchdogError) as err:
+tests/unit/test_ops_watchdog.py:237:class TestWatchdogHeartbeat:
+tests/unit/test_ops_watchdog.py:239:        return wd.Watchdog(independent=channel, telegram_plane=plane,
+tests/unit/test_ops_watchdog.py:319:        dog = wd.Watchdog(interval_seconds=10, miss_limit=2)
+tests/unit/test_ops_watchdog.py:324:class TestWatchdogStates:
+tests/unit/test_ops_watchdog.py:328:        dog = wd.Watchdog(independent=channel, recovery_log=log)
+tests/unit/test_ops_watchdog.py:340:        dog = wd.Watchdog(recovery_log=log)
+tests/unit/test_ops_watchdog.py:348:        dog = wd.Watchdog()
+tests/unit/test_ops_watchdog.py:349:        with pytest.raises(wd.WatchdogError) as err:
+tests/unit/test_ops_watchdog.py:354:        dog = wd.Watchdog()
+tests/unit/test_research_backtest.py:152:        out = bt.cvar_bootstrap([0.01, -0.02, 0.03, -0.01, 0.02], paths=300,
+tests/unit/test_research_bootstrap.py:252:                return await store.load_bootstrap("BTCUSDT:15m")
+tests/unit/test_research_bootstrap.py:261:                return await store.load_bootstrap("BTCUSDT:15m")
+tests/unit/test_research_bootstrap.py:404:                await store.save_bootstrap(cell_id="BTCUSDT:15m",
+tests/unit/test_research_checkpoints.py:73:                await opened.save_bootstrap(
+tests/unit/test_research_checkpoints.py:95:                await opened.save_bootstrap(
+tests/unit/test_research_checkpoints.py:100:                return await opened.load_bootstrap("BTCUSDT-15m")
+tests/unit/test_research_checkpoints.py:110:                return await opened.load_bootstrap("nope")
+tests/unit/test_research_checkpoints.py:117:                await opened.save_bootstrap(
+tests/unit/test_research_checkpoints.py:120:                await opened.save_bootstrap(
+tests/unit/test_research_checkpoints.py:123:                return await opened.load_bootstrap("c1")
+tests/unit/test_research_checkpoints.py:133:                    await opened.save_bootstrap(
+tests/unit/test_research_checkpoints.py:143:                    await opened.save_bootstrap(
+tests/unit/test_research_optimizer.py:311:            raise RuntimeError("simulated process kill")
+tests/unit/test_research_optimizer.py:326:                except RuntimeError:
+tests/unit/test_scheduler_clock.py:35:            raise RuntimeError(f"{label} exploded")
+tests/unit/test_scheduler_clock.py:171:            raise RuntimeError("no route to host")
+tests/unit/test_telegram_control_plane.py:73:            raise RuntimeError(f"{name} exploded")
+tests/unit/test_telegram_control_plane.py:619:        screen = plane().screen_running_status(uptime_seconds=3600, signals=2,
+tests/unit/test_telegram_control_plane.py:772:        assert result["reason"] == "RuntimeError"
+tests/unit/test_telegram_signaling.py:76:            raise RuntimeError("TelegramServerError: 429 Too Many Requests")
+tests/unit/test_toobit_adapter.py:534:            raise RuntimeError("connection reset by peer")
+
+### backup test/direct consumers
+apex/ops/backup.py:6:§17.1   ``backup_interval = 15 min`` · ``restore_drill_period = 90 days`` ·
+apex/ops/backup.py:32:BACKUP_INTERVAL_MINUTES = 15             # Ch.17 §17.1
+apex/ops/backup.py:36:RTO_SECONDS = 1800                       # AI.7: ≤ 30 min
+apex/ops/backup.py:37:RPO_SECONDS = 300                        # AI.7: ≤ 5 min
+apex/ops/backup.py:60:def storage_guard(*, free_fraction: float, used_fraction: Optional[float] = None
+apex/ops/backup.py:99:                "interval_minutes": BACKUP_INTERVAL_MINUTES,
+apex/ops/backup.py:103:class SQLiteBackupManager:
+apex/ops/backup.py:178:    integrity = SQLiteBackupManager.integrity_check(target)
+apex/ops/backup.py:184:            "rto_limit_seconds": RTO_SECONDS,
+apex/ops/backup.py:185:            "rto_within_limit": (finished - started) <= RTO_SECONDS}
+apex/ops/backup.py:188:async def verify_restored_ledger(path: str) -> Dict[str, Any]:
+apex/ops/backup.py:207:async def restore_drill(*, workdir: str, records: int = 25,
+apex/ops/backup.py:208:                        rpo_limit_seconds: float = RPO_SECONDS
+apex/ops/backup.py:239:    live_chain = await verify_restored_ledger(str(live_path))
+apex/ops/backup.py:240:    manager = SQLiteBackupManager(db_path=str(live_path),
+apex/ops/backup.py:245:    restored_chain = await verify_restored_ledger(str(restored_path))
+apex/ops/backup.py:263:        "rto_limit_seconds": RTO_SECONDS,
+apex/ops/backup.py:282:def next_drill_due(*, last_drill_at: Optional[float],
+apex/ops/backup.py:295:def backup_summary() -> Dict[str, Any]:
+apex/ops/backup.py:296:    return {"interval_minutes": BACKUP_INTERVAL_MINUTES,
+apex/ops/backup.py:300:            "rto_seconds": RTO_SECONDS, "rpo_seconds": RPO_SECONDS,
+apex/ops/paper_loop.py:974:        cycle["storage"] = await self._storage_guard()
+apex/ops/paper_loop.py:1066:    async def _storage_guard(self) -> Dict[str, Any]:
+apex/ops/paper_loop.py:1071:        from apex.ops.backup import storage_guard
+apex/ops/paper_loop.py:1074:        verdict = storage_guard(free_fraction=usage.free / total)
+apex/research/governance.py:167:       owner="apex.ops.backup.BACKUP_INTERVAL_MINUTES"),
+apex/research/governance.py:168:    _g("restore_drill_period", 90, "days", "static/architecture", 1.0, 365.0,
+tests/unit/test_ops_backup.py:22:        assert bk.BACKUP_INTERVAL_MINUTES == 15
+tests/unit/test_ops_backup.py:24:        assert bk.RTO_SECONDS == 1800
+tests/unit/test_ops_backup.py:25:        assert bk.RPO_SECONDS == 300
+tests/unit/test_ops_backup.py:33:        summary = bk.backup_summary()
+tests/unit/test_ops_backup.py:39:        out = bk.storage_guard(free_fraction=0.10)
+tests/unit/test_ops_backup.py:44:        assert bk.storage_guard(free_fraction=0.15)["pause_below_floor"] is False
+tests/unit/test_ops_backup.py:47:        out = bk.storage_guard(free_fraction=0.10, used_fraction=0.85)
+tests/unit/test_ops_backup.py:54:        out = bk.storage_guard(free_fraction=0.05)
+tests/unit/test_ops_backup.py:58:        out = bk.storage_guard(free_fraction=0.50)
+tests/unit/test_ops_backup.py:79:        manager = bk.SQLiteBackupManager(db_path=str(live_db),
+tests/unit/test_ops_backup.py:92:        manager = bk.SQLiteBackupManager(db_path=str(live_db),
+tests/unit/test_ops_backup.py:99:        manager = bk.SQLiteBackupManager(db_path=str(tmp_path / "nope.sqlite3"),
+tests/unit/test_ops_backup.py:107:        manager = bk.SQLiteBackupManager(db_path=str(live_db),
+tests/unit/test_ops_backup.py:116:        assert bk.SQLiteBackupManager.integrity_check(bad) is False
+tests/unit/test_ops_backup.py:121:        manager = bk.SQLiteBackupManager(db_path=str(live_db),
+tests/unit/test_ops_backup.py:128:        manager = bk.SQLiteBackupManager(db_path=str(live_db),
+tests/unit/test_ops_backup.py:135:        manager = bk.SQLiteBackupManager(db_path=str(live_db),
+tests/unit/test_ops_backup.py:142:        assert restored["rto_seconds"] <= bk.RTO_SECONDS
+tests/unit/test_ops_backup.py:151:        manager = bk.SQLiteBackupManager(db_path=str(live_db),
+tests/unit/test_ops_backup.py:169:        assert bk.next_drill_due(last_drill_at=None)["due"] is True
+tests/unit/test_ops_backup.py:170:        assert bk.next_drill_due(last_drill_at=1_000.0, now=1_000.0)["due"] is False
+tests/unit/test_ops_backup.py:172:        assert bk.next_drill_due(last_drill_at=1_000.0,
+tests/unit/test_ops_backup.py:175:        assert bk.next_drill_due(last_drill_at=1_000.0,
+tests/unit/test_ops_backup.py:181:        verdict = _run(bk.restore_drill(workdir=str(tmp_path / "drill"),
+tests/unit/test_ops_backup.py:198:        _run(bk.restore_drill(workdir=str(workdir), records=5))
+tests/unit/test_ops_backup.py:205:        verdict = _run(bk.restore_drill(workdir=str(tmp_path / "d2"), records=3))
+tests/unit/test_ops_backup.py:209:    def test_verify_restored_ledger_reads_the_chain(self, tmp_path):
+tests/unit/test_ops_backup.py:226:        verdict = _run(bk.verify_restored_ledger(str(path)))
+
+### fabric context/conflict test/direct consumers
+apex/config.py:62:REPO_ROOT = Path(__file__).resolve().parent.parent
+apex/data_catalog/store/sqlite_store.py:131:    setup_score_contribution_class TEXT NOT NULL CHECK(setup_score_contribution_class IN ('s_i_component','q_i_component','convergence_weight','advisory')),
+apex/decision/pipeline.py:38:from apex.fabric.context import data_trust_floor, q_min_tf
+apex/decision/pipeline.py:57:    "direction_conflict_threshold", "min_rr", "context_confidence_gain",
+apex/decision/pipeline.py:96:    if out["context_confidence_gain"] <= 0:
+apex/decision/pipeline.py:97:        raise DecisionError("CONFIGURATION_INVALID", "context_confidence_gain")
+apex/decision/pipeline.py:111:            "data_trust_floor": data_trust_floor(),
+apex/decision/pipeline.py:197:    q_min = q_min_tf(checks["timeframe"])
+apex/decision/pipeline.py:202:    if float(checks["data_trust"]) < data_trust_floor():
+apex/decision/pipeline.py:212:            "q_min_tf": q_min, "note": "a failed condition never becomes a "
+apex/fabric/__init__.py:16:    EvidenceFabric,
+apex/fabric/__init__.py:37:    build_context,
+apex/fabric/__init__.py:45:    context_confidence,
+apex/fabric/__init__.py:48:    data_trust_floor,
+apex/fabric/__init__.py:57:    q_min_tf,
+apex/fabric/__init__.py:58:    raw_setup_score,
+apex/fabric/__init__.py:60:    redundancy_rho,
+apex/fabric/__init__.py:61:    redundancy_rho_threshold,
+apex/fabric/__init__.py:62:    setup_score,
+apex/fabric/__init__.py:68:    GATE3_CONFLICT_THRESHOLD,
+apex/fabric/__init__.py:69:    GATE4_REDUNDANCY_THRESHOLD,
+apex/fabric/__init__.py:79:    ConflictRecord,
+apex/fabric/__init__.py:82:    assert_permission_monotone,
+apex/fabric/conflict.py:37:from apex.fabric.context import q_min_tf
+apex/fabric/conflict.py:58:GATE3_CONFLICT_THRESHOLD = 0.5
+apex/fabric/conflict.py:59:GATE4_REDUNDANCY_THRESHOLD = 0.3
+apex/fabric/conflict.py:94:class ConflictRecord:
+apex/fabric/conflict.py:165:def penalties(conflict_state: str, *, redundancy_rho: Optional[float] = None
+apex/fabric/conflict.py:180:    red_active = (redundancy_rho is not None
+apex/fabric/conflict.py:181:                  and abs(redundancy_rho) > float(s["redundancy_rho_threshold"]))
+apex/fabric/conflict.py:186:def resolve(*, disagreement: float, data_trust: float, q_raw: Optional[float],
+apex/fabric/conflict.py:191:            redundancy_rho: Optional[float] = None,
+apex/fabric/conflict.py:196:    """Terminal mapping (§8.1) + the ConflictRecord. Exactly one output.
+apex/fabric/conflict.py:204:    q_min = q_min_tf(timeframe)              # raises for a TF outside the 14
+apex/fabric/conflict.py:205:    rec = ConflictRecord(
+apex/fabric/conflict.py:230:    pen = penalties(out, redundancy_rho=redundancy_rho)
+apex/fabric/conflict.py:237:            "gate3_block": pen["conflict_penalty"] > GATE3_CONFLICT_THRESHOLD,
+apex/fabric/conflict.py:238:            "gate4_block": pen["redundancy_penalty"] > GATE4_REDUNDANCY_THRESHOLD,
+apex/fabric/conflict.py:253:def assert_permission_monotone(before: Mapping[str, Any], after: Mapping[str, Any]
+apex/fabric/conflict.py:374:    return {"gate3_conflict_penalty_max": GATE3_CONFLICT_THRESHOLD,
+apex/fabric/conflict.py:375:            "gate4_redundancy_penalty_max": GATE4_REDUNDANCY_THRESHOLD}
+apex/fabric/context.py:1:"""APEX_GEN5 — Context Fabric + context_confidence combiner (Ch.8 §8.0).
+apex/fabric/context.py:13:* ``context_confidence = sigmoid(Σ_k w_c[k]·x[k])`` with ``Σ_k w_c[k] = 1``
+apex/fabric/context.py:24:  ``context_confidence = 0`` — full removal of the affected evidence, never
+apex/fabric/context.py:29:  Ch.10 §10.1): ``raw_setup_score = Σ(w_i·s_i·q_i·f_i)``, then
+apex/fabric/context.py:35:  pass. ``raw_setup_score`` of zero inputs is 0.0 with reason
+apex/fabric/context.py:53:from apex.fabric.evidence import EvidenceFabric, FabricEvidenceRef, engine_group_of
+apex/fabric/context.py:89:def data_trust_floor() -> float:
+apex/fabric/context.py:90:    return float(_setup_cfg()["data_trust_floor"])
+apex/fabric/context.py:169:def q_min_tf(timeframe: str) -> float:
+apex/fabric/context.py:184:    if data_trust < data_trust_floor():
+apex/fabric/context.py:186:    if q_raw is not None and q_raw < q_min_tf(timeframe):
+apex/fabric/context.py:213:    The third row ("``context_confidence < 0.40`` **or** ``data_trust < 0.30``
+apex/fabric/context.py:216:    if data_trust < data_trust_floor():
+apex/fabric/context.py:264:    """The seven documented ``x[k]`` slots of the context_confidence combiner."""
+apex/fabric/context.py:302:def context_confidence(inp: CombinerInputs, *, timeframe: str,
+apex/fabric/context.py:304:    """Bounded, versioned, calibrated context_confidence (Ch.8 §8.0)."""
+apex/fabric/context.py:311:            "context_confidence": 0.0,
+apex/fabric/context.py:331:    gain = float(load_decision_v1()["context_confidence_gain"])
+apex/fabric/context.py:334:        "context_confidence": conf,
+apex/fabric/context.py:369:    context_confidence: float
+apex/fabric/context.py:376:                "data_trust", "conflict_state", "context_confidence", "as_of")
+apex/fabric/context.py:384:                "data_trust", "conflict_state", "context_confidence", "as_of")
+apex/fabric/context.py:397:def build_context(fabric: EvidenceFabric, *, market_regime: str,
+apex/fabric/context.py:420:    res = context_confidence(inp, timeframe=fabric.timeframe, q_raw=q_raw)
+apex/fabric/context.py:430:        context_confidence=res["context_confidence"], as_of=fabric.as_of,
+apex/fabric/context.py:450:def raw_setup_score(s_i: Mapping[str, float], *,
+apex/fabric/context.py:453:    """``raw_setup_score = Σ(w_i·s_i·q_i·f_i)`` over the twelve frozen weights.
+apex/fabric/context.py:503:def redundancy_rho_threshold() -> float:
+apex/fabric/context.py:504:    return float(_setup_cfg()["redundancy_rho_threshold"])
+apex/fabric/context.py:511:def redundancy_rho(s_a: Sequence[float], s_b: Sequence[float], *,
+apex/fabric/context.py:562:        thr = redundancy_rho_threshold()
+apex/fabric/context.py:576:    if rho is None or abs(rho) <= redundancy_rho_threshold():
+apex/fabric/context.py:594:def setup_score(fabric: EvidenceFabric, *, s_i: Mapping[str, float],
+apex/fabric/context.py:599:                redundancy_rho: Optional[float] = None,
+apex/fabric/context.py:616:        # "absent components contribute nothing" (raw_setup_score law): an
+apex/fabric/context.py:625:            raw_res = raw_setup_score(
+apex/fabric/context.py:634:                           redundancy_rho, pairs=redundancy_pairs)
+apex/fabric/evidence.py:313:class EvidenceFabric:
+apex/fabric/evidence.py:344:                 raw_observation_ids: Optional[Iterable[str]] = None) -> "EvidenceFabric":
+apex/fabric/evidence.py:435:                       state_key: str = "fate_state") -> EvidenceFabric:
+apex/fabric/evidence.py:468:    return EvidenceFabric.assemble(
+apex/forecast/registry.py:14:  ``raw_setup_score = Σ(w_i·s_i·q_i·f_i)`` — never to ``s_i`` (presence stays a
+apex/ledger/store.py:204:    return _ACTIVE_WRITERS.get(_resolve(db_path))
+apex/ledger/store.py:207:def _resolve(db_path: str) -> str:
+apex/ledger/store.py:209:    return str(Path(db_path).resolve())
+apex/ledger/store.py:225:        self.path = _resolve(getattr(store, "path", ":memory:"))
+apex/ops/engine_context.py:1846:        from apex.fabric.evidence import EvidenceFabric, expiry_age_bars
+apex/ops/engine_context.py:1848:        from apex.fabric.context import COMPONENT_ENGINE, redundancy_rho
+apex/ops/engine_context.py:1883:        fabric = EvidenceFabric.assemble(symbol=symbol,timeframe=timeframe,as_of=end,evidence=refs,
+apex/ops/engine_context.py:1895:        rho_records = [redundancy_rho(series[a],series[b]) for i,a in enumerate(series)
+apex/ops/engine_context.py:1899:        redundancy = penalties("CONSENSUS",redundancy_rho=rho)["redundancy_penalty"]
+apex/ops/engine_context.py:1900:        conflict = resolve(disagreement=disagreement_of(fabric.members),data_trust=q["data_trust"],q_raw=q["q_raw"],
+apex/ops/engine_context.py:1903:            redundancy=redundancy,redundancy_rho=rho,quality_asymmetry=quality_asymmetry_of([r.quality for r in fabric.members]),
+apex/ops/engine_context.py:2008:        if rho is not None: transport["redundancy_rho"] = rho
+apex/ops/plan_bridge.py:71:from apex.fabric.context import build_context
+apex/ops/plan_bridge.py:73:    EvidenceFabric,
+apex/ops/plan_bridge.py:684:        fabric0 = EvidenceFabric.assemble(
+apex/ops/plan_bridge.py:697:        conflict = resolve(
+apex/ops/plan_bridge.py:706:            redundancy_rho=(None if context.get("redundancy_rho") is None else
+apex/ops/plan_bridge.py:707:                            _finite_float(context["redundancy_rho"], "redundancy_rho")),
+apex/ops/plan_bridge.py:713:        fabric = EvidenceFabric.assemble(
+apex/ops/plan_bridge.py:721:        # context_confidence is intentionally ignored; confidence is produced,
+apex/ops/plan_bridge.py:723:        ctx = build_context(
+apex/ops/plan_bridge.py:746:        context_confidence = float(ctx["context_confidence"])
+apex/ops/plan_bridge.py:813:            context_confidence=context_confidence,
+apex/ops/watchdog.py:448:    async def resolve(self, *, to_state: str, snapshot_id: str = "") -> Dict[str, Any]:
+apex/pattern/detect.py:91:    "lifecycle_status", "setup_score_contribution_class",
+apex/pattern/detect.py:120:    setup_score_contribution_class: str
+apex/pattern/detect.py:149:        if self.setup_score_contribution_class not in CONTRIBUTION_CLASSES:
+apex/pattern/detect.py:151:                f"PATTERN_CONTRIBUTION_QX: {self.setup_score_contribution_class!r}"
+apex/pattern/detect.py:161:                self.setup_score_contribution_class in (
+apex/pattern/detect.py:182:            "setup_score_contribution_class": self.setup_score_contribution_class,
+apex/pattern/detect.py:206:    if entity.setup_score_contribution_class == "advisory":
+apex/pattern/detect.py:364:        setup_score_contribution_class=contribution,
+apex/quality/vector.py:157:    q_min_tf = _q_min().get(tf, 0.5)
+apex/quality/vector.py:158:    if q_raw < q_min_tf:
+apex/research/governance.py:545:    resolved = Path(target).resolve()
+apex/research/governance.py:546:    allowed = Path(research_root).resolve() if research_root is not None \
+apex/research/governance.py:547:        else SUGGESTIONS_DIR.resolve()
+apex/research/governance.py:548:    live = LIVE_PARAMS_DIR.resolve()
+apex/research/proxies.py:50:REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+apex/risk/kernel.py:47:from apex.fabric.context import q_min_tf
+apex/risk/kernel.py:230:    q_min = q_min_tf(risk_input["timeframe"])
+apex/risk/kernel.py:234:          {"q_raw": q_raw, "q_min_tf": q_min})
+apex/setup/family_sf_fvg_sweep_rev.py:52:from apex.fabric.context import q_min_setup, setup_score
+apex/setup/family_sf_fvg_sweep_rev.py:53:from apex.fabric.evidence import EvidenceFabric
+apex/setup/family_sf_fvg_sweep_rev.py:134:def _fabric_penalties(fabric: EvidenceFabric, rho: Optional[float]) -> Dict[str, float]:
+apex/setup/family_sf_fvg_sweep_rev.py:136:    return penalties(fabric.conflict_state, redundancy_rho=rho)
+apex/setup/family_sf_fvg_sweep_rev.py:329:    context_confidence: Optional[float] = None
+apex/setup/family_sf_fvg_sweep_rev.py:359:            "confidence": self.context_confidence,
+apex/setup/family_sf_fvg_sweep_rev.py:386:def _evidence_directions(fabric: EvidenceFabric) -> Tuple[Dict[int, List[str]],
+apex/setup/family_sf_fvg_sweep_rev.py:397:                  fabric: EvidenceFabric,
+apex/setup/family_sf_fvg_sweep_rev.py:414:                  context_confidence: Optional[float] = None,
+apex/setup/family_sf_fvg_sweep_rev.py:455:                       context_confidence=context_confidence)
+apex/setup/family_sf_fvg_sweep_rev.py:461:                       context_confidence=context_confidence)
+apex/setup/family_sf_fvg_sweep_rev.py:466:                       context_confidence=context_confidence)
+apex/setup/family_sf_fvg_sweep_rev.py:471:                       context_confidence=context_confidence)
+apex/setup/family_sf_fvg_sweep_rev.py:476:                       context_confidence=context_confidence)
+apex/setup/family_sf_fvg_sweep_rev.py:481:                       context_confidence=context_confidence)
+apex/setup/family_sf_fvg_sweep_rev.py:501:                       context_confidence=context_confidence,
+apex/setup/family_sf_fvg_sweep_rev.py:515:        from apex.fabric.context import redundancy_rho as _rho_fn
+apex/setup/family_sf_fvg_sweep_rev.py:526:    score = setup_score(fabric,
+apex/setup/family_sf_fvg_sweep_rev.py:530:                        redundancy_rho=rho,
+apex/setup/family_sf_fvg_sweep_rev.py:579:            fabric_hash=snap_id, context_confidence=context_confidence,
+apex/setup/family_sf_fvg_sweep_rev.py:591:        context_confidence=context_confidence, horizon_bars=p["horizon_bars"],
+apex/setup/family_sf_fvg_sweep_rev.py:603:            fabric: EvidenceFabric, steps: Dict[str, Any], *, reason: str,
+apex/setup/family_sf_fvg_sweep_rev.py:604:            p: Dict[str, Any], context_confidence: Optional[float],
+apex/setup/family_sf_fvg_sweep_rev.py:616:        context_confidence=context_confidence, horizon_bars=p["horizon_bars"],
+apex/setup/gates.py:53:from apex.fabric.context import q_min_tf
+apex/setup/gates.py:479:        "q_min_tf": q_min_tf(context["timeframe"])
+scripts/run_adapter_conformance.py:34:REPO_ROOT = Path(__file__).resolve().parents[1]
+scripts/run_apex.py:66:REPO_ROOT = Path(__file__).resolve().parents[1]
+scripts/run_nfr_harness.py:39:REPO_ROOT = Path(__file__).resolve().parents[1]
+tests/conftest.py:20:_ROOT = Path(__file__).resolve().parent.parent
+tests/conftest.py:21:_TESTS = Path(__file__).resolve().parent
+tests/integration/test_cp14_producer.py:275:    from apex.decision.pipeline import eligibility, q_min_tf
+tests/integration/test_cp14_producer.py:285:        'conflict_state':'NONE','q_raw':q_min_tf('1d'),'timeframe':'1d','freshness_ok':True,
+tests/integration/test_context_to_trade_paper.py:70:    build_context,
+tests/integration/test_context_to_trade_paper.py:72:    setup_score,
+tests/integration/test_context_to_trade_paper.py:75:    EvidenceFabric,
+tests/integration/test_context_to_trade_paper.py:110:FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures"
+tests/integration/test_context_to_trade_paper.py:226:    fabric = EvidenceFabric.assemble(
+tests/integration/test_context_to_trade_paper.py:231:    ctx = build_context(
+tests/integration/test_context_to_trade_paper.py:280:        context_confidence=ctx["context_confidence"], environment="PAPER")
+tests/integration/test_context_to_trade_paper.py:419:        assert chain["pattern_entity"].setup_score_contribution_class == \
+tests/integration/test_context_to_trade_paper.py:428:        cc = ctx["context_confidence"]
+tests/integration/test_context_to_trade_paper.py:434:            ["data_trust", "conflict_state", "context_confidence"])
+tests/integration/test_context_to_trade_paper.py:540:        empty = EvidenceFabric.assemble(symbol=SYMBOL, timeframe=TIMEFRAME,
+tests/integration/test_context_to_trade_paper.py:544:        score = setup_score(empty, s_i={}, q_i={})
+tests/integration/test_context_to_trade_paper.py:546:        out = resolve(disagreement=disagreement_of([]), data_trust=0.9,
+tests/integration/test_store_integration.py:75:                                 "setup_score_contribution_class",
+tests/unit/test_ai10_harness.py:14:REPO_ROOT = Path(__file__).resolve().parents[2]
+tests/unit/test_ai10_nfr_harness.py:14:REPO_ROOT = Path(__file__).resolve().parents[2]
+tests/unit/test_cp146.py:66:    from apex.fabric.evidence import EvidenceFabric, FabricEvidenceRef, make_fabric_id
+tests/unit/test_cp146.py:73:    a = EvidenceFabric.assemble(
+tests/unit/test_cp146.py:77:    b = EvidenceFabric.assemble(
+tests/unit/test_cp146.py:279:    assert decision["context_confidence_gain"] == pytest.approx(8.0)
+tests/unit/test_cp1_foundations.py:15:REPO = pathlib.Path(__file__).resolve().parent.parent.parent
+tests/unit/test_cp1_foundations.py:201:        assert s["redundancy_rho_threshold"] == 0.85
+tests/unit/test_decision_pipeline.py:107:        assert got["q_min_tf"] == 0.50
+tests/unit/test_e01_structure.py:72:    (Path(__file__).resolve().parent.parent / "fixtures"
+tests/unit/test_e02_liquidity.py:69:    (Path(__file__).resolve().parent.parent / "fixtures"
+tests/unit/test_e03_volume.py:67:    (Path(__file__).resolve().parent.parent / "fixtures"
+tests/unit/test_e07_rtm.py:74:    (pathlib.Path(__file__).resolve().parent.parent / "fixtures"
+tests/unit/test_e07_rtm.py:1017:        src = (pathlib.Path(__file__).resolve().parents[2]
+tests/unit/test_e08_wyckoff.py:88:    (pathlib.Path(__file__).resolve().parent.parent / "fixtures"
+tests/unit/test_e08_wyckoff.py:632:        src = (pathlib.Path(__file__).resolve().parents[2] / "apex" / "engines"
+tests/unit/test_e09_trend.py:74:    (pathlib.Path(__file__).resolve().parent.parent / "fixtures"
+tests/unit/test_e09_trend.py:653:        src = (pathlib.Path(__file__).resolve().parents[2] / "apex" / "engines"
+tests/unit/test_e10_momentum.py:71:    (pathlib.Path(__file__).resolve().parent.parent / "fixtures"
+tests/unit/test_e11_regime.py:79:    (pathlib.Path(__file__).resolve().parent.parent / "fixtures"
+tests/unit/test_e12_temporal.py:80:FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" \
+tests/unit/test_engine_context.py:696:    from apex.fabric.context import CombinerInputs, context_confidence, DEFAULT_COMBINER_WEIGHTS
+tests/unit/test_engine_context.py:703:    combined = context_confidence(CombinerInputs(**produced), timeframe="1h", q_raw=1.)
+tests/unit/test_engine_context.py:704:    assert 0 < combined["context_confidence"] <= 1
+tests/unit/test_engine_context.py:2636:    from apex.decision.pipeline import eligibility, q_min_tf
+tests/unit/test_engine_context.py:2647:              "q_raw": q_min_tf("1h"), "timeframe": "1h", "freshness_ok": True,
+tests/unit/test_fabric_context.py:18:    GATE3_CONFLICT_THRESHOLD,
+tests/unit/test_fabric_context.py:19:    GATE4_REDUNDANCY_THRESHOLD,
+tests/unit/test_fabric_context.py:26:    ConflictRecord,
+tests/unit/test_fabric_context.py:29:    assert_permission_monotone,
+tests/unit/test_fabric_context.py:49:    build_context,
+tests/unit/test_fabric_context.py:52:    context_confidence,
+tests/unit/test_fabric_context.py:55:    data_trust_floor,
+tests/unit/test_fabric_context.py:64:    q_min_tf,
+tests/unit/test_fabric_context.py:65:    raw_setup_score,
+tests/unit/test_fabric_context.py:67:    redundancy_rho,
+tests/unit/test_fabric_context.py:68:    redundancy_rho_threshold,
+tests/unit/test_fabric_context.py:69:    setup_score,
+tests/unit/test_fabric_context.py:72:from apex.fabric.evidence import EvidenceFabric, FabricEvidenceRef, expiry_age_bars
+tests/unit/test_fabric_context.py:87:    return EvidenceFabric.assemble(symbol="BTCUSDT", timeframe=TF, as_of=1000,
+tests/unit/test_fabric_context.py:140:        assert data_trust_floor() == 0.30
+tests/unit/test_fabric_context.py:145:        assert redundancy_rho_threshold() == 0.85
+tests/unit/test_fabric_context.py:151:# context_confidence combiner (Ch.8 §8.0)
+tests/unit/test_fabric_context.py:168:        res = context_confidence(inp, timeframe=TF, q_raw=1.0)
+tests/unit/test_fabric_context.py:172:        gain = load_decision_v1()["context_confidence_gain"]
+tests/unit/test_fabric_context.py:173:        assert math.isclose(res["context_confidence"],
+tests/unit/test_fabric_context.py:177:        hi = context_confidence(ci(), timeframe=TF, q_raw=1.0)
+tests/unit/test_fabric_context.py:178:        lo = context_confidence(ci(data_trust=0.3, mtf_state="STALE",
+tests/unit/test_fabric_context.py:186:        assert 0.0 < lo["context_confidence"] < hi["context_confidence"] < 1.0
+tests/unit/test_fabric_context.py:187:        assert lo["context_confidence"] < 0.5 < hi["context_confidence"]
+tests/unit/test_fabric_context.py:201:        r = context_confidence(ci(data_trust=0.2999), timeframe=TF)
+tests/unit/test_fabric_context.py:202:        assert r["context_confidence"] == 0.0
+tests/unit/test_fabric_context.py:211:        assert q_min_tf("1h") == 0.50
+tests/unit/test_fabric_context.py:221:            q_min_tf("2d")
+tests/unit/test_fabric_context.py:229:        r = context_confidence(ci(data_trust=0.9), timeframe=TF, q_raw=None)
+tests/unit/test_fabric_context.py:230:        assert 0.0 < r["context_confidence"] < 1.0     # not zero-substituted
+tests/unit/test_fabric_context.py:299:            "data_trust", "conflict_state", "context_confidence", "as_of"}
+tests/unit/test_fabric_context.py:301:    def test_build_context_recomputes_and_round_trips(self):
+tests/unit/test_fabric_context.py:303:        out = build_context(fab, market_regime="TREND_EXPANSION",
+tests/unit/test_fabric_context.py:311:        assert rec.context_confidence == out["context_confidence"]
+tests/unit/test_fabric_context.py:313:        assert rec.context_confidence != 0.0
+tests/unit/test_fabric_context.py:324:        a = build_context(fabric(ref("a", "E01")), **kw)
+tests/unit/test_fabric_context.py:325:        b = build_context(fabric(ref("a", "E01")), **kw)
+tests/unit/test_fabric_context.py:327:        assert a["context_confidence"] == b["context_confidence"]
+tests/unit/test_fabric_context.py:338:        r = setup_score(fab, s_i={"structure": 1.0, "fvg": 1.0},
+tests/unit/test_fabric_context.py:345:        r = setup_score(fab, s_i={"structure": 1.0}, q_i={"structure": 1.0})
+tests/unit/test_fabric_context.py:353:        gains a fabricated zero-weighted term (the raw_setup_score law)."""
+tests/unit/test_fabric_context.py:355:        r = setup_score(fab, s_i={"structure": 1.0}, q_i={"structure": 1.0})
+tests/unit/test_fabric_context.py:359:        with_s_i = setup_score(fab, s_i={"structure": 1.0, "wyckoff": 1.0},
+tests/unit/test_fabric_context.py:373:        r = setup_score(empty, s_i={}, q_i={})
+tests/unit/test_fabric_context.py:380:        out = resolve(disagreement=disagreement_of([]), data_trust=0.9,
+tests/unit/test_fabric_context.py:391:        guarded = setup_score(fabric(), s_i={}, q_i={})["final"]
+tests/unit/test_fabric_context.py:397:            raw_setup_score({"sentiment": 1.0}, q_i={"sentiment": 1.0})
+tests/unit/test_fabric_context.py:401:            raw_setup_score({"structure": 1.0}, q_i={})
+tests/unit/test_fabric_context.py:405:            raw_setup_score({"structure": 1.7}, q_i={"structure": 1.0})
+tests/unit/test_fabric_context.py:409:        plain = setup_score(fab, s_i={"structure": 1.0, "fvg": 1.0},
+tests/unit/test_fabric_context.py:411:        conflicted = setup_score(fab, s_i={"structure": 1.0, "fvg": 1.0},
+tests/unit/test_fabric_context.py:418:        base = setup_score(fab, s_i={"structure": 1.0}, q_i={"structure": 1.0})
+tests/unit/test_fabric_context.py:419:        opt = setup_score(fab, s_i={"structure": 1.0}, q_i={"structure": 1.0},
+tests/unit/test_fabric_context.py:427:        r = redundancy_rho(a, b)
+tests/unit/test_fabric_context.py:431:        r = redundancy_rho([1.0, 2.0, 3.0], [2.0, 4.0, 6.0])
+tests/unit/test_fabric_context.py:436:        assert redundancy_rho_threshold() == 0.85
+tests/unit/test_fabric_context.py:468:        assert resolve(disagreement=0.60, data_trust=0.9, q_raw=0.9,
+tests/unit/test_fabric_context.py:470:        assert resolve(disagreement=0.599, data_trust=0.9, q_raw=0.9,
+tests/unit/test_fabric_context.py:472:        assert resolve(disagreement=0.35, data_trust=0.9, q_raw=0.9,
+tests/unit/test_fabric_context.py:474:        assert resolve(disagreement=0.349, data_trust=0.9, q_raw=0.9,
+tests/unit/test_fabric_context.py:477:        assert resolve(disagreement=0.0, data_trust=0.9, q_raw=0.9,
+tests/unit/test_fabric_context.py:481:        assert resolve(disagreement=0.1, data_trust=0.29, q_raw=0.9,
+tests/unit/test_fabric_context.py:483:        assert resolve(disagreement=0.1, data_trust=0.9, q_raw=0.49,
+tests/unit/test_fabric_context.py:487:        assert GATE3_CONFLICT_THRESHOLD == 0.5      # conflict_penalty > 0.5
+tests/unit/test_fabric_context.py:488:        assert GATE4_REDUNDANCY_THRESHOLD == 0.3    # redundancy_penalty > 0.3
+tests/unit/test_fabric_context.py:492:        r = resolve(disagreement=0.5, data_trust=0.9, q_raw=0.9, timeframe=TF)
+tests/unit/test_fabric_context.py:497:        r2 = resolve(disagreement=0.5, data_trust=0.9, q_raw=0.9,
+tests/unit/test_fabric_context.py:498:                     timeframe=TF, redundancy_rho=0.9)
+tests/unit/test_fabric_context.py:503:        p = penalties(MATERIAL_CONFLICT, redundancy_rho=0.9)
+tests/unit/test_fabric_context.py:505:        assert penalties(CONSENSUS, redundancy_rho=0.1) == {
+tests/unit/test_fabric_context.py:509:        out = resolve(disagreement=0.2, data_trust=0.9, q_raw=0.9, timeframe=TF)
+tests/unit/test_fabric_context.py:511:        assert isinstance(rec, ConflictRecord)
+tests/unit/test_fabric_context.py:513:        assert [f.name for f in _dc.fields(ConflictRecord)] == [
+tests/unit/test_fabric_context.py:520:            resolve(disagreement=1.2, data_trust=0.9, q_raw=0.9, timeframe=TF)
+tests/unit/test_fabric_context.py:522:            resolve(disagreement=0.1, data_trust=0.9, q_raw=0.9, timeframe=TF,
+tests/unit/test_fabric_context.py:525:            resolve(disagreement=0.1, data_trust=0.9, q_raw=0.9, timeframe="5s")
+tests/unit/test_fabric_context.py:549:        base = resolve(data_trust=0.9, q_raw=0.9, timeframe=TF,
+tests/unit/test_fabric_context.py:551:        worse = resolve(data_trust=0.9, q_raw=0.9, timeframe=TF,
+tests/unit/test_fabric_context.py:556:        assert_permission_monotone(base, worse)
+tests/unit/test_fabric_context.py:564:            assert_permission_monotone({"output": HARD_CONFLICT},
+tests/unit/test_fabric_context.py:584:        fab = EvidenceFabric.assemble(symbol="BTCUSDT", timeframe=TF, as_of=5,
+tests/unit/test_fabric_context.py:590:        out = resolve(disagreement=0.0, data_trust=1.0, q_raw=1.0,
+tests/unit/test_fabric_context.py:591:                      timeframe=TF, redundancy_rho=0.9)
+tests/unit/test_fabric_context.py:596:                       for f in __import__("dataclasses").fields(ConflictRecord))
+tests/unit/test_fabric_context.py:598:        # resolve() itself returns no authorization of any kind.
+tests/unit/test_fabric_evidence.py:22:    EvidenceFabric,
+tests/unit/test_fabric_evidence.py:146:class TestEvidenceFabric:
+tests/unit/test_fabric_evidence.py:148:        fab = EvidenceFabric.assemble(symbol="BTCUSDT", timeframe="1h",
+tests/unit/test_fabric_evidence.py:160:        fab = EvidenceFabric.assemble(
+tests/unit/test_fabric_evidence.py:172:        fab = EvidenceFabric.assemble(
+tests/unit/test_fabric_evidence.py:180:        fab = EvidenceFabric.assemble(
+tests/unit/test_fabric_evidence.py:186:        fab = EvidenceFabric.assemble(
+tests/unit/test_fabric_evidence.py:196:        fab = EvidenceFabric.assemble(
+tests/unit/test_fabric_evidence.py:208:            EvidenceFabric.assemble(symbol="BTCUSDT", timeframe="1h",
+tests/unit/test_fabric_evidence.py:213:        a = EvidenceFabric.assemble(symbol="BTCUSDT", timeframe="1h",
+tests/unit/test_fabric_evidence.py:216:        b = EvidenceFabric.assemble(symbol="BTCUSDT", timeframe="1h",
+tests/unit/test_fabric_evidence.py:231:        fab = EvidenceFabric.assemble(symbol="BTCUSDT", timeframe="1h",
+tests/unit/test_identity.py:31:REPO = pathlib.Path(__file__).resolve().parent.parent.parent
+tests/unit/test_ledger_store.py:32:REPO_ROOT = Path(__file__).resolve().parents[2]
+tests/unit/test_ops_bootstrap_service.py:1801:        sys.path.insert(0, str(Path(__file__).resolve().parents[2]
+tests/unit/test_ops_bootstrap_service.py:1816:        sys.path.insert(0, str(Path(__file__).resolve().parents[2]
+tests/unit/test_ops_partial_bar_repair.py:17:sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+tests/unit/test_ops_watchdog.py:342:        out = _run(dog.resolve(to_state="RECOVERY", snapshot_id="snap-2"))
+tests/unit/test_ops_watchdog.py:350:            _run(dog.resolve(to_state="WHATEVER"))
+tests/unit/test_ops_watchdog.py:356:        out = _run(dog.resolve(to_state="MANUAL_OVERRIDE"))
+tests/unit/test_pattern_detect.py:55:FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures"
+tests/unit/test_pattern_detect.py:224:        assert ent.setup_score_contribution_class == "advisory"
+tests/unit/test_pattern_detect.py:227:                             "setup_score_contribution_class": "s_i_component"})
+tests/unit/test_pattern_detect.py:258:                          setup_score_contribution_class="s_i_component",
+tests/unit/test_pattern_detect.py:291:                    "setup_score_contribution_class"}
+tests/unit/test_pattern_detect.py:297:        assert row["setup_score_contribution_class"] in (
+tests/unit/test_pattern_fibonacci.py:195:    PKG = pathlib.Path(__file__).resolve().parents[2] / "apex" / "pattern"
+tests/unit/test_research_governance.py:288:        assert sneaky.resolve() == (gov.LIVE_PARAMS_DIR
+tests/unit/test_research_governance.py:289:                                   / "risk_defaults_v1.yaml").resolve()
+tests/unit/test_research_governance.py:310:        root = Path(__file__).resolve().parents[2]
+tests/unit/test_setup_family_sf_fvg_sweep_rev.py:17:from apex.fabric.evidence import EvidenceFabric, FabricEvidenceRef
+tests/unit/test_setup_family_sf_fvg_sweep_rev.py:73:    return EvidenceFabric.assemble(symbol=symbol, timeframe=timeframe,
+tests/unit/test_setup_family_sf_fvg_sweep_rev.py:339:        empty = EvidenceFabric.assemble(symbol="BTCUSDT", timeframe="1h",
+tests/unit/test_setup_family_sf_fvg_sweep_rev.py:348:        from apex.fabric.context import setup_score
+tests/unit/test_setup_family_sf_fvg_sweep_rev.py:349:        s = setup_score(empty, s_i={}, q_i={})
+tests/unit/test_setup_gates.py:297:    def test_q_min_tf_is_reported_for_the_cell(self):
+tests/unit/test_setup_gates.py:299:        assert res["q_min_tf"] == load_params()["quality_weights"] \
+tests/unit/test_telegram_signaling.py:27:REPO_ROOT = Path(__file__).resolve().parents[2]
+tests/unit/test_toobit_adapter.py:24:FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / \
+
