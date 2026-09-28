@@ -1,0 +1,47 @@
+==============================================================================
+M-001  structure_gate checks direction != 0, never direction agreement
+==============================================================================
+  structure_gate(direction=+1) -> ok=True reason=BOS_ALIGNED
+  structure_gate(direction=-1) -> ok=True reason=BOS_ALIGNED
+  structure_gate(direction=+0) -> ok=False reason=BOS_DIRECTION_MISSING
+  evaluate_cell(direction=+1 (BULLISH setup), bos.direction=-1) -> status=EMITTED reason=ALL_GATES_PASS step5=BOS_ALIGNED
+  final_score=0.9000  all_pass=True
+  the setup's own direction is NOT an argument of structure_gate:
+    (bos: 'Optional[Mapping[str, Any]]', *, s_min: 'Optional[float]' = None) -> 'Dict[str, Any]'
+  producer selection (engine_context.py:1927-1931):
+        bos_native = next((b for b in reversed(bundle["structural_events"]) if "strength" in b),None)
+        if bos_native is None:
+            raise BridgeError("BOS_STRENGTH_UNAVAILABLE","native E01 strength.S required")
+        bos = {"s_struct":bos_native["strength"]["S"],"direction":1 if "BULLISH" in bos_native["event_type"] else -1,
+               "snapshot_id":bos_native["snapshot_id"],"event_type":bos_native["event_type"]}
+
+
+==============================================================================
+M-002  fvg_gate takes the newest UNFILLED zone with no direction check;
+       the bridge re-picks a (possibly different) zone afterwards
+==============================================================================
+  fvg_gate(setup direction +1) -> UNFILLED_FVG_IN_WINDOW idx=24 zone={'index': 24, 'filled': False, 'low': 120.0, 'high': 126.0, 'fate': 'ACTIVE'}
+  evaluate_cell -> status=EMITTED step4_idx=24 reason=ALL_GATES_PASS
+  plan_bridge re-pick: recent_zone = {'index': 24, 'filled': False, 'low': 120.0, 'high': 126.0, 'fate': 'ACTIVE'}  (index 24, fvg gate used index 24)
+  same zone here, but note: the bridge re-pick has NO 12-bar window and
+  NO snapshot/fate check, only `not filled`.
+  build_stops(LONG) with that zone -> stop=94.75 R=5.2500 target=115.75
+  zone at index 5 (OUTSIDE the 12-bar window) + zone 24:
+    fvg_gate -> UNFILLED_FVG_IN_WINDOW idx=24
+    plan_bridge re-pick -> index 24  (SAME)
+  MITIGATED fate is not read by fvg_gate either: ['"""Step 4: an E05 unfilled FVG of that TF within the last 12 bars.', '``zones`` are E05 FVG records ``{index, filled: bool}`` — the family only', 'if not bool(z.get("filled", False)):']
+
+==============================================================================
+M-003  _evidence_directions keeps only the LAST direction per engine
+==============================================================================
+  fabric with E01.direction=-1 and the rest +1
+    per_engine = {'E10': 1, 'E05': 1, 'E01': -1, 'E09': 1, 'E02': 1, 'E12': 1, 'E06': 1, 'E11': 1}
+    members in hash order: [('E10', 1), ('E05', 1), ('E01', -1), ('E09', 1), ('E02', 1), ('E12', 1), ('E06', 1), ('E11', 1)]
+  two opposing ACTIVE E01 refs: [('E01', 1), ('E01', -1)]
+    per_engine after the collapse = {'E01': -1}  <-- ONE of -1/+1 survives
+  evaluate_cell with an E01 that votes -1 while the setup is +1 -> status=QUARANTINED reason=GATES_BLOCK::GATE1_BELOW_Q_MIN_SETUP score=0.5400
+  required_conflict step = {'required_conflict': True, 'multiplier': 0.6, 'reason': 'REQUIRED_DIRECTION_CONFLICT'}
+  conflict multiplier = 0.6
+  Evaluate_cell source lines for required_conflict:
+    ['required_conflict = any(a * b == -1 for a in dirs for b in dirs)', 'required_conflict=required_conflict,', 'steps["conflict"] = {"required_conflict": required_conflict,']
+DONE M-001..M-003

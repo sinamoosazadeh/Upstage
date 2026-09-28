@@ -1,0 +1,12 @@
+  2 troughs: neckline would be  85.5000 -> NO hit (correct: nothing
+          closed below it; the market only drifted to 87.5)
+  3 troughs: neckline 128.7500 -> HIT at bar 10 with close 87.5  (true mean of the
+          troughs = 85.8333; the close never approached it)
+          strength=1.0000 direction=-1 invalidation=88.5/UP
+  4 troughs: neckline 172.2500 -> HIT at bar 10 with close 87.5  (true mean of the
+          troughs = 86.1250; the close never approached it)
+          strength=1.0000 direction=-1 invalidation=88.5/UP
+
+  with THREE or more inter-shoulder troughs the neckline is pushed
+  ABOVE the head, so `closes[j] < neckline` is satisfied by the first
+  bar after the right shoulder even when the structure is unbroken.

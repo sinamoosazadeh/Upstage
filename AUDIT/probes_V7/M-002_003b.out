@@ -1,0 +1,45 @@
+==============================================================================
+M-003  two OPPOSING ACTIVE E01 members; which one survives the collapse
+==============================================================================
+  fabric members in D50 hash (content_id) order:
+    E06 direction=+1 content_id=028925e1ebb8… evidence_id=ev_E06
+    E12 direction=+1 content_id=270996af39fb… evidence_id=ev_E12
+    E01 direction=+1 content_id=4167a322a226… evidence_id=evB
+    E05 direction=+1 content_id=420b3115fee2… evidence_id=ev_E05
+    E09 direction=+1 content_id=4f61dd1627be… evidence_id=ev_E09
+    E02 direction=+1 content_id=57f9e8d5d23a… evidence_id=ev_E02
+    E11 direction=+1 content_id=5e3c7e212e5a… evidence_id=ev_E11
+    E01 direction=-1 content_id=6c99fe10ac16… evidence_id=evA
+    E10 direction=+1 content_id=f2659e5f9bad… evidence_id=ev_E10
+  per_engine after the collapse: {'E01': -1, 'E02': 1, 'E05': 1, 'E06': 1, 'E09': 1, 'E10': 1, 'E11': 1, 'E12': 1}
+  ALL members carrying E01: [('evB', 1), ('evA', -1)]
+  evaluate_cell(direction=+1) -> status=QUARANTINED reason=GATES_BLOCK::GATE1_BELOW_Q_MIN_SETUP score=0.5400
+  conflict step: {'required_conflict': True, 'multiplier': 0.6, 'reason': 'REQUIRED_DIRECTION_CONFLICT'}
+  -> the DIRECTION of the setup is not in the conflict law; only the
+     collapsed per-engine votes are.  A genuine E01 contradiction
+     (-1 and +1 in the same ACTIVE fabric) is scored only if the hash
+     order happens to leave -1 last.
+  same fabric, all other requireds +1: required_conflict=True  multiplier=0.6
+  same two E01 refs, snapshot ids swapped -> per_engine E01=-1  (the hash order, not any consensus, decides)
+  evaluate_cell on that fabric -> status=QUARANTINED score=0.5400 required_conflict=True multiplier=0.6
+
+==============================================================================
+M-002  opposite-direction FVG accepted; and a zone that is NOT in the
+       fabric / NOT from E05 is accepted just the same
+==============================================================================
+  LONG setup, only a BEARISH FVG present (above price):
+    fvg_gate -> ok=True idx=24 zone={'index': 24, 'filled': False, 'low': 120.0, 'high': 126.0, 'fate': 'ACTIVE', 'snapshot_id': 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'}
+    evaluate_cell -> status=QUARANTINED reason=GATES_BLOCK::GATE1_BELOW_Q_MIN_SETUP step4=UNFILLED_FVG_IN_WINDOW
+  a zone with snapshot_id not present in the fabric and fate='UNKNOWN':
+    fvg_gate -> UNFILLED_FVG_IN_WINDOW
+    evaluate_cell -> status=QUARANTINED reason=GATES_BLOCK::GATE1_BELOW_Q_MIN_SETUP
+    build_stops with the alien zone: stop=89.75 R=10.25 target=130.75
+    build_stops with NO zone     : stop=94.75 R=5.25 target=115.75
+    -> identical here (sweep_extreme=95 < alien low=90? no: 90<95, so
+       min(95,90)=90 differs) : DIFFERS
+    with the BEARISH zone (low=120 > sweep 95): stop=94.75 R=5.25 -> SAME as no-zone
+  -> a genuinely opposite-side zone normally does NOT move the LONG stop
+     (min() picks the sweep extreme), but the gate ACCEPTANCE itself is
+     wrong and a zone whose boundary is beyond the sweep extreme does
+     move R/target/sizing.
+DONE M-002 / M-003 refined

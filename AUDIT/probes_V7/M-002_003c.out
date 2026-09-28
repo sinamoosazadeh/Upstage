@@ -1,0 +1,23 @@
+==============================================================================
+M-002  isolated: conflict-free fabric, only the FVG zone changes
+==============================================================================
+  bullish zone (correct side)    step4=UNFILLED_FVG_IN_WINDOW     status=EMITTED      score=0.9000 reason=ALL_GATES_PASS
+                                 build_stops -> stop=94.75 R=5.25 target=115.75
+  BEARISH zone (wrong side)      step4=UNFILLED_FVG_IN_WINDOW     status=EMITTED      score=0.9000 reason=ALL_GATES_PASS
+                                 build_stops -> stop=94.75 R=5.25 target=115.75
+  zone absent from the fabric    step4=UNFILLED_FVG_IN_WINDOW     status=EMITTED      score=0.9000 reason=ALL_GATES_PASS
+                                 build_stops -> stop=89.75 R=10.25 target=130.75
+  plan_bridge's own re-pick (no 12-bar window, no PIT check):
+    bullish    -> index 24 (fvg_gate chose 24)
+    bearish    -> index 24 (fvg_gate chose 24)
+
+==============================================================================
+M-003  does the OPPOSING E01 vote ever get lost by the hash order?
+==============================================================================
+  trial0: E01 members in hash order=[('evE01_0', -1), ('evE01_1', 1)] -> kept +1 required_conflict=False status=EMITTED score=0.9000
+  trial1: E01 members in hash order=[('evE01_0', -1), ('evE01_1', 1)] -> kept +1 required_conflict=False status=EMITTED score=0.9000
+  trial2: E01 members in hash order=[('evE01_0', -1), ('evE01_1', 1)] -> kept +1 required_conflict=False status=EMITTED score=0.9000
+  over 12 fabric hashes, the OPPOSING (-1) E01 vote was LOST in 12 cases (kept 0)
+  -> the collapse is deterministic per fabric hash, so which of the two
+     contradicting E01 witnesses survives is decided by content_id
+     ordering, not by time or by any consensus rule.

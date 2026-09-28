@@ -1,0 +1,39 @@
+==============================================================================
+M-004  neckline = sum(troughs)/2.0  --  it scales with the COUNT, not
+       the location, of the troughs between the shoulders
+==============================================================================
+  2 troughs  85 / 86               -> hit index=10 neckline=85.5000 strength=1.0000
+  3 troughs  85 / 86 / 86.5        -> hit index=10 neckline=128.7500 strength=1.0000
+  4 troughs  85 / 86 / 86.5 / 87   -> hit index=10 neckline=172.2500 strength=1.0000
+
+  the same three troughs re-scored by the formula the code uses:
+    2 troughs: sum/2.0 =  85.5000   true mean =  85.5000   head 100 minus it =  14.5000
+    3 troughs: sum/2.0 = 128.7500   true mean =  85.8333   head 100 minus it = -28.7500
+    4 troughs: sum/2.0 = 172.2500   true mean =  86.1250   head 100 minus it = -72.2500
+  -> with 3 or more inter-shoulder troughs the neckline is ABOVE the
+     head, so `closes[j] < neckline` can never be satisfied and the
+     detector silently returns None for the rest of the run.  The
+     auditor's phrasing ('mean of all troughs') understates it: the
+     divisor is a hard-coded 2.0, not len(between).
+
+==============================================================================
+M-005  invalidation_level/side contradict the confirming close
+==============================================================================
+  Flag +1: index=9 direction=+1 invalidation=112.0/DOWN invalidation_side=DOWN confirming close=109.5
+  is_invalidated(hit, hit's OWN confirming close) -> True
+  source of invalidation_level: []
+
+==============================================================================
+M-006  the ASC/DESC breakout scan starts at j=1
+==============================================================================
+  swing_anchor highs [(4, 110.0), (8, 110.0), (12, 110.0), (16, 110.0)] (all equal 110 -> flat side)
+  swing_anchor lows  [(6, 90.0), (10, 92.0), (14, 94.0), (18, 96.0)] (strictly rising -> ASCENDING)
+  bar 1 close = 111.5  (already beyond the flat level 110)
+  detect_triangle_ascending -> ('PAT-STR-005', 'index=1', 'dir=1', 'boundary=110.0')
+  hit.index=1 but the pattern's swings live at indices [4, 8, 12, 16] / [6, 10, 14, 18]
+  -> the reported breakout (1) PREDATES every swing the
+     detector used to define the pattern; the confirming close at
+     bar 1 is 111.5, above every other bar.
+  with the early close removed and a late breakout instead -> index=19
+  SYMMETRICAL uses `for j in range(len(closes)-1, -1, -1)` -> index=1 (scans BACKWARD, newest first)
+DONE M-004/M-005/M-006 exact

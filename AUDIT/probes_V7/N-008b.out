@@ -1,0 +1,30 @@
+==============================================================================
+N-008  ONE confirmed touch -> instances=1, Q1, and a Q1 SWEEP
+==============================================================================
+  after 20 flat bars: ATR14 = 0.400000  theta_eq*ATR = 0.060000
+  levels so far: [('lvl_100.2_0', 100.2, 19, 'Q2', 'STRENGTHENED', 'EQUAL_HIGH'), ('lvl_99.8_0', 99.8, 19, 'Q2', 'STRENGTHENED', 'EQUAL_LOW')]
+  ATR after a 2.0 range for 14 bars: 1.560423 (theta_eq*ATR = 0.234063)
+  ONE touch ingested at 102.00 -> level lvl_102_19
+    instances=1  touch_count=1  Q=Q1  fate=FORMED  ltype=SWING_EXTREME  side=SELL_SIDE  salience=0.0000
+    levels before=2 after=3
+    CONFIRMED: the contract Q1 law (>=2 observations) is not applied at
+    formation; the code hard-codes Q='Q1', instances=1.
+  one bar later: fate=ACTIVE  Q=Q1  age=1
+  detect_sweep(one-touch Q1 level) -> SWEEP score=0.7734
+    prereq {'P1_valid_level': True, 'P2_penetration': True, 'P3_rejection': True, 'P4_temporal': True, 'P5_data_quality': True}   all P1..P5 True = True
+    EMITTED EV_LIQ_006 at_bar=21 Q=Q1 payload={'score': 0.7634177686605631, 'side': 'SellSide', 'prereq': {'P1_valid_level': True, 'P2_penetration': True, 'P3_rejection': True, 'P4_temporal': True, 'P5_data_quality': True}}
+  sweep events emitted: 1
+  level lvl_102_19 now: instances=1 Q=Q1 fate=SWEPT
+
+  P1's own test (engine.py:289-292):
+    ['return "NONE", prereq, 0.0', 'if (level.fate in ("ACTIVE", "STRENGTHENED")', 'and level.Q in ("Q1", "Q2")', 'and level.first_seen <= candle.bar_index - 1):']
+  -> P1 requires only fate in (ACTIVE, STRENGTHENED), Q in (Q1, Q2)
+     and first_seen <= bar-1.  A single touch satisfies all three after
+     one bar, so a one-observation level is a valid P1 sweep origin.
+
+==============================================================================
+side note — feed_touches' documented key is `type`, the code reads
+`ltype`; and pre-ATR touches are queued as 'SWING_EXTREME' by default
+==============================================================================
+  feed_touches BEFORE any candle -> _pending_touches=[(102.0, 0, 'SWING_EXTREME')]
+  (queued, not yet a level: 0 levels)

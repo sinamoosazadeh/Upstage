@@ -1,0 +1,25 @@
+==============================================================================
+M-004  neckline = SUM(troughs)/len(troughs), not a 2-pivot line
+==============================================================================
+  anchors: shoulders [(1, 100.0), (5, 105.0), (9, 102.0)], head 105, troughs [97.0, 97.5, 98.0]
+  _hsh_variant -> None
+
+==============================================================================
+M-005  is_invalidated(hit, hit's OWN confirming close)
+==============================================================================
+  Flag +1        index=9 dir=+1 invalidation=112.0/DOWN confirming close=109.5
+     is_invalidated(hit, its OWN confirming close) -> True
+  -> select_native_pattern() rejects a hit when ANY bar from hit.index
+     onward invalidates it, so a self-invalidating hit is unreachable.
+
+==============================================================================
+M-006  _triangle scans j from 1, so a breakout can predate the pattern
+==============================================================================
+  swing highs [(4, 110.0), (8, 110.0), (12, 110.0)]
+  swing lows  [(2, 99.0), (5, 90.0), (9, 92.0), (13, 94.0)]
+  detect_triangle_ascending -> None
+  the loop bound in _triangle: ['for j in range(max(flat_vals and 1, 1), len(closes)):', 'for j in range(len(closes) - 1, -1, -1):']
+  `max(flat_vals and 1, 1)` evaluates to max(1,1)=1 whenever flat_vals
+  is a non-empty list, so the scan starts at bar 1, not after formation.
+  19-bar window hit index=None | 25-bar window hit index=None
+DONE M-004/M-005/M-006

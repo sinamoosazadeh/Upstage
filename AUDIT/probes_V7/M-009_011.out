@@ -1,0 +1,153 @@
+==============================================================================
+M-009  pattern_evidence is a declared-but-unused table; the bridge
+       mints ACTIVE PatternEntity records straight from the legacy
+       CATALOGUE, and never looks the pattern up in the store
+==============================================================================
+  a FRESH repository CH4_DDL database: pattern_evidence rows = 0
+  _pattern_entity('PAT-STR-001') on that EMPTY db -> pattern_id=PAT-STR-001 lifecycle_status=ACTIVE contribution=s_i_component
+    provenance_class=ACTIVE
+  a caller-supplied PAT-STR-005 entity, requested as PAT-STR-001 -> ACCEPTED, entity.pattern_id=PAT-STR-005
+  SELECT/INSERT against pattern_evidence anywhere in apex/:
+  -> NONE.  The table is declared in CH4_DDL and never read or written.
+  every mention of the table in apex/:
+    apex/data_catalog/store/sqlite_store.py:121:CREATE TABLE pattern_evidence ( | apex/pattern/detect.py:15:  the Data Plane ``pattern_evidence``. | apex/pattern/detect.py:169:    def to_pattern_evidence_row(self) -> Dict[str, Any]: | apex/pattern/detect.py:170:        """The Data Plane ``pattern_evidence`` materialization (AC.5 #2).""" |
+  the accept path (plan_bridge.py:750-758) with no pattern_hit and no
+  pattern_detected flag at all -> PATTERN_NOT_DETECTED is not raised:
+    ['elif context.get("pattern_detected") is False:']
+  there is no `pattern_hit` table in CH4_DDL: ['market_observation', 'quality_vector', 'snapshot_pit', 'evidence_event', 'pattern_evidence', 'setup_candidate', 'ledger', 'outcome']
+
+==============================================================================
+M-010  setup_id is a short hash of the inputs; the same cell with a
+        different stop/confidence/regime collides on INSERT OR IGNORE
+==============================================================================
+   ['"setup_id": "setup-" + sha256_hex(canonical_json({']
+   ['"INSERT OR IGNORE INTO setup_candidate (" + ",".join(_SETUP_COLUMNS)']
+  evaluation A: setup_id=setup-aa123951a9524ce6f4cc236ee3d3fe13
+                stop_loss=99.0 confidence=None regime=None
+  evaluation B: setup_id=setup-aa123951a9524ce6f4cc236ee3d3fe13
+                stop_loss=99.0 confidence=None regime=None
+  SAME setup_id for materially different setups? True
+    A: atr=1.0 raw=0.9000 final=0.9000 risk_reference=99.0
+    B: atr=3.0 raw=0.1800 final=0.1800 risk_reference=99.0
+  _SETUP_COLUMNS has 21 entries: ['setup_id', 'timestamp', 'symbol', 'timeframe', 'pattern_ids', 'direction', 'entry_price', 'stop_loss', 'take_profit', 'risk_reward', 'confidence', 'quality', 'validity', 'snapshot_id', 'parent_ids', 'payload_hash', 'regime', 'utc_activity_window_id', 'lineage', 'authority', 'authority_scope']
+  after two INSERT OR IGNORE of DIFFERENT payloads sharing the id: 1 row(s)
+    ('setup-aa123951a9524ce6f4cc236ee3d3fe13', '99.0', None, None, 'Q1')
+  -> the second evaluation is silently discarded; no revision, no error.
+
+==============================================================================
+M-011  setup_candidate has no family_id column
+==============================================================================
+  setup_candidate columns (21): ['setup_id', 'timestamp', 'symbol', 'timeframe', 'pattern_ids', 'direction', 'entry_price', 'stop_loss', 'take_profit', 'risk_reward', 'confidence', 'quality', 'validity', 'snapshot_id', 'parent_ids', 'payload_hash', 'regime', 'utc_activity_window_id', 'lineage', 'authority', 'authority_scope']
+  family_id in setup_candidate? False
+  outcome columns: ['outcome_id', 'entry_price', 'exit_price', 'pnl', 'fees', 'slippage', 'mfe', 'mae', 'duration', 'exit_reason', 'risk_used', 'forecast', 'setup_id', 'regime', 'context']
+  family_id in outcome? False
+  to_setup_event() keys: ['authority', 'authority_scope', 'confidence', 'contract_version', 'direction', 'entry_logic_ref', 'entry_logic_steps', 'entry_price', 'family_id', 'gates', 'horizon_bars', 'lineage', 'parent_ids', 'pattern_ids', 'payload_hash', 'playbook_id', 'quality', 'reason', 'regime', 'risk_reward', 'score', 'setup_id', 'snapshot_id', 'status', 'stop_loss', 'symbol', 'take_profit', 'timeframe', 'timestamp', 'utc_activity_window_id', 'validity']
+  family_id value produced by the family: SF_FVG_SWEEP_REV
+  AD.1 says family_id is field 22, but the durable DDL stops at 21:
+  rows stored with only 6 of 21 columns: 2
+  -> family membership of a durable setup/outcome row cannot be
+     reconstructed from the store at all.
+
+==============================================================================
+M-012  SetupEvent.stop_loss is the sweep risk_reference, not the
+        protective stop the playbook actually sends
+==============================================================================
+  SetupEvent stop_loss   = 99.0
+  SetupEvent take_profit = None
+  SetupEvent risk_reward = None
+  build_stops(LONG)       -> stop=94.75 target=115.75 R=5.25
+  SetupEvent stop_loss == protective stop? False  (risk_reference is the sweep low)
+  as persisted: [('99.0', None, None)]
+  the plan that was actually built carried stop=94.75 target=115.75 R=5.25
+  -> the durable setup row disagrees with the order's protective stop,
+     and take_profit / risk_reward stay NULL.
+
+==============================================================================
+M-013  evaluate_cell never calls mtf_gate; gate6 only sees the tier
+==============================================================================
+  'mtf_gate' appears in evaluate_cell source? False
+  gate6_mtf_sufficient source:
+def gate6_mtf_sufficient(mtf_state: str, *, has_coarser_bars: bool = True) -> GateResult:
+    """``MTF INSUFFICIENT`` ⇒ block. When no coarser timeframe exists at all,
+    the HTF/intermediate requirement is a documented **vacuous pass**
+    (Ch.10 §10.1); a *missing required coarser bar* is not vacuous — it blocks
+    (that cell does not emit)."""
+    if mtf_state not in ("ALIGNED", "PARTIALLY_ALIGNED", "CONFLICTING",
+                        "STALE", "UNAVAILABLE", "INSUFFICIENT"):
+        raise ValueError(f"GATE_MTF_STATE_QX: {mtf_state!r} is not an MTF state")
+    passed = (mtf_state != "INSUFFICIENT") or (not has_coarser_bars)
+    return _res(6, passed, mtf_state, "INSUFFICIENT",
+                 "MTF_SUFFICIENT" if mtf_state != "INSUFFICIENT"
+                 else "GATE6_VACUOUS_NO_COARSER_TF",
+                 "GATE6_MTF_INSUFFICIENT")
+
+  gate6_mtf_sufficient('ALIGNED')  -> GateResult(number=6, name='MTF_INSUFFICIENT', passed=True, measured='ALIGNED', threshold='INSUFFICIENT', reason='MTF_SUFFICIENT')
+  gate6_mtf_sufficient('ALIGNED', has_coarser_bars=False) -> GateResult(number=6, name='MTF_INSUFFICIENT', passed=True, measured='ALIGNED', threshold='INSUFFICIENT', reason='MTF_SUFFICIENT')
+  relative_mtf('1d') = {'setup': '1d', 'timing': '12h', 'timing_available': True, 'intermediate': '1mo', 'htf': '1mo', 'vacuous': False, 'note': 'missing required coarser bar ⇒ the cell does not emit; no coarser TF at all ⇒ documented vacuous pass'}  -> no coarser tier: vacuous by law
+  mtf_gate(timeframe='1d', available_closes={}) -> {'ok': False, 'reason': 'MISSING_REQUIRED_COARSER_BAR', 'missing': ['1mo', '1mo'], 'selection': {'setup': '1d', 'timing': '12h', 'timing_available': True, 'intermediate': '1mo', 'htf': '1mo', 'vacuous': False, 'note': 'missing required coarser bar ⇒ the cell does not emit; no coarser TF at all ⇒ documented vacuous pass'}}
+  mtf_gate(timeframe='1h', available_closes={}) -> {'ok': False, 'reason': 'MISSING_REQUIRED_COARSER_BAR', 'missing': ['4h', '8h'], 'selection': {'setup': '1h', 'timing': '30m', 'timing_available': True, 'intermediate': '4h', 'htf': '8h', 'vacuous': False, 'note': 'missing required coarser bar ⇒ the cell does not emit; no coarser TF at all ⇒ documented vacuous pass'}}
+  1h fabricate the required bar to show the helper does work when the
+  family actually calls it:
+    mtf_gate('1h', available_closes={'4h': 1000, '8h': 1000}) -> {'ok': True, 'reason': 'MTF_BARS_PRESENT', 'selection': {'setup': '1h', 'timing': '30m', 'timing_available': True, 'intermediate': '4h', 'htf': '8h', 'vacuous': False, 'note': 'missing required coarser bar ⇒ the cell does not emit; no coarser TF at all ⇒ documented vacuous pass'}, 'timing_present': False}
+  but evaluate_cell has no available_closes parameter at all:
+    (*, symbol: 'str', timeframe: 'str', as_of: 'int', fabric: 'EvidenceFabric', bars: 'Sequence[Mapping[str, float]]', atr: 'Optional[float]', direction: 'int', fvg_zones: 'Sequence[Mapping[str, Any]]' = (), bos: 'Optional[Mapping[str, Any]]' = None, regime_state: 'Optional[str]' = None, mtf_state: 'str' = 'ALIGNED', available_closes: 'Optional[Mapping[str, Any]]' = None, window_qualities: 'Optional[Sequence[Tuple[float, float]]]' = None, temporal_quality: 'Any' = 'Q2', volatility_quality: 'Any' = 'Q2', forecast: 'Optional[Mapping[str, Any]]' = None, q_forecast: 'Optional[float]' = None, package: 'Optional[Mapping[str, Any]]' = None, payload: 'Optional[Mapping[str, Any]]' = None, lineage: 'Optional[Sequence[str]]' = None, context_confidence: 'Optional[float]' = None, component_series: 'Optional[Mapping[str, Sequence[float]]]' = None, s_i: 'Optional[Mapping[str, float]]' = None, q_i: 'Optional[Mapping[str, float]]' = None, environment: 'str' = 'PAPER') -> 'SetupEvaluation'
+  and its own step 6 for 1d: None
+  evaluate_cell(timeframe='1d', NO coarser bars supplied, no available_closes argument) -> status=EMITTED reason=ALL_GATES_PASS
+    step6 = None
+
+==============================================================================
+M-014  gate10_forecast_quality accepts a bare self-declared label
+==============================================================================
+  gates.gate10_forecast_quality({'quality':'Q3'}, environment='LIVE') -> GateResult(number=10, name='FORECAST_QUALITY', passed=True, measured='Q3', threshold='Q2', reason='FORECAST_QUALITY_OK')
+  gate10_forecast_quality({}, environment='LIVE') -> GateResult(number=10, name='FORECAST_QUALITY', passed=False, measured='MISSING_FORECAST_QUALITY', threshold='Q1', reason='GATE10_FORECAST_QUALITY_MISSING')
+  gate10_forecast_quality({'quality':'Q3','bootstrap_prior':True}, environment='LIVE') -> GateResult(number=10, name='FORECAST_QUALITY', passed=False, measured='bootstrap p=0.5 in LIVE', threshold='RESEARCH|PAPER only', reason='GATE10_BOOTSTRAP_PRIOR_NOT_LIVE_ELIGIBLE')
+  gate10_forecast_quality({'quality':'Q3'}, environment='LIVE') -> GateResult(number=10, name='FORECAST_QUALITY', passed=True, measured='Q3', threshold='Q2', reason='FORECAST_QUALITY_OK')
+  fields the docstring calls the 'full P/U/C contract' and the fields
+  the body actually reads:
+    ['if "q_forecast" not in forecast and "quality" not in forecast:', 'bootstrap = bool(forecast.get("bootstrap_prior", False))', 'cls = forecast.get("quality", forecast.get("q_forecast"))', 'if "q_forecast" in forecast or cls <= 1:', 'return _res(10, 0 <= cls <= 1 and cls >= q_forecast_min(),', 'cls, q_forecast_min(), "FORECAST_QUALITY_OK",']
+  an evidence/identity/calibration field is never consulted: ['snapshot_id', 'lineage', 'p_hat', 'evidence', 'calibration', 'package_version']
+def gate10_forecast_quality(forecast: Mapping[str, Any], *,
+                            environment: str = "PAPER") -> GateResult:
+    """Forecast quality fail ⇒ block.
+
+    Two fail-closed conditions from Ch.13 §13.1:
+    * the forecast record must carry the full P/U/C contract; a missing
+      quality view is a fail, never an assumed pass;
+    * the constant-0.5 bootstrap prior is eligible for RESEARCH/PAPER **only**
+      — "LIVE capital: Setup Gates 10/12 fail until a calibrated package
+      exists".
+    """
+    if "q_forecast" not in forecast and "quality" not in forecast:
+        return _res(10, False, "MISSING_FORECAST_QUALITY", "Q1",
+                    "", "GATE10_FORECAST_QUALITY_MISSING")
+    bootstrap = bool(forecast.get("bootstrap_prior", False))
+    if bootstrap and environment not in ("RESEARCH", "PAPER", "BACKTEST"):
+        return _res(10, False, f"bootstrap p=0.5 in {environment}",
+                    "RESEARCH|PAPER only", "",
+                    "GATE10_BOOTSTRAP_PRIOR_NOT_LIVE_ELIGIBLE")
+    cls = forecast.get("quality", forecast.get("q_forecast"))
+    # D33: na
+
+==============================================================================
+M-015  build_proposal(NO_TRADE).proposal_id raises
+==============================================================================
+  EU = -inf
+  proposal_id -> CanonicalJsonError: float NaN/Inf is forbidden in canonical payloads
+  canonical_json(p.to_dict()) -> CanonicalJsonError: float NaN/Inf is forbidden in canonical payloads
+  the same call for a TRADE proposal:
+    proposal_id = sp-7272e658ed64ebcdcdd5d400caefd3a3
+
+==============================================================================
+M-016  generate_candidates mirrors one geometry onto BOTH sides;
+        units_of_r uses abs() so inverted geometry passes
+==============================================================================
+  side=LONG  RR=3.0000 R=3.0000 EU=1.3900   (LONG wants stop<entry<target; SHORT wants target<entry<stop)
+  side=SHORT RR=3.0000 R=3.0000 EU=1.3900   (LONG wants stop<entry<target; SHORT wants target<entry<stop)
+  -> a SHORT with stop 97 BELOW entry 100 and target 109 ABOVE entry 100 is ranked at full EU 1.3900
+  rank() order: ['LONG', 'SHORT']
+  build_proposal(direction='SHORT', stop=97 < entry=100 < target=109)
+    -> EU=1.3900 sizing_request={'requested': True, 'R_unit': 3.0, 'RR': 3.0, 'stop_distance': 3.0, 'target_distance': 9.0}
+    direction='SHORT' stop=97.0 targets=(109.0,)
+  units_of_r(entry=100, stop=97, target=109) = {'R': 3.0, 'RR': 3.0, 'G': 9.0, 'L': 3.0, 'stop_distance': 3.0, 'target_distance': 9.0}
+  units_of_r(entry=100, stop=103, target=91) [a genuine SHORT] = {'R': 3.0, 'RR': 3.0, 'G': 9.0, 'L': 3.0, 'stop_distance': 3.0, 'target_distance': 9.0}
+DONE M-009..M-016

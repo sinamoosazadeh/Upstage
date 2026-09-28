@@ -1,0 +1,65 @@
+==============================================================================
+M-004  H&S neckline = mean of ALL troughs between the shoulders
+==============================================================================
+  swing highs: [(4, 105.0), (7, 102.5), (11, 100.0), (12, 100.0), (13, 100.0)]
+  swing lows : [(5, 97.5), (11, 96.0), (12, 96.0), (13, 96.0)]
+  detect_head_and_shoulders -> None
+  detect_all -> {}
+
+==============================================================================
+M-005  invalidation metadata contradicts the confirming close
+==============================================================================
+  detect_flag(+1) -> None
+  detect_rectangle -> None
+  detect_quasimodo -> None
+  detect_broadening -> None
+  select_native_pattern evaluates is_invalidated for every bar from
+  hit.index onward, so an immediately-invalidated hit is discarded:
+    ['from apex.pattern.detect import assert_scoring_admissible, is_invalidated', 'if any(is_invalidated(hit, float(b["c"])) for b in bars[hit.index:]):']
+
+==============================================================================
+M-006  triangle / double-top confirmations are backdated before the
+       pattern exists
+==============================================================================
+  swing highs: [(4, 110.0), (8, 110.0), (12, 110.0), (16, 110.0), (19, 101.0), (20, 101.0), (21, 101.0)]
+  swing lows : [(2, 99.0), (5, 90.0), (9, 90.0), (13, 90.0), (17, 90.0), (20, 99.0), (21, 99.0)]
+  detect_triangle_ascending(24 bars) -> None
+    prefix of 18 bars -> None
+    prefix of 20 bars -> None
+    prefix of 22 bars -> None
+    prefix of 24 bars -> None
+  detect_double_top(24 bars) -> None
+
+==============================================================================
+M-007/M-008  E08 wrappers have no caller; detect_all skips E08 rows;
+             detect_flag is shared by PAT-STR-008 and PAT-STR-009
+==============================================================================
+apex/pattern/__init__.py:37:    from_e08_spring,
+apex/pattern/__init__.py:38:    from_e08_upthrust,
+apex/pattern/detect.py:316:                 ("E08",), "from_e08_spring"),
+apex/pattern/detect.py:321:                 "ACTIVE", ("E08",), "from_e08_upthrust"),
+apex/pattern/detect.py:847:def from_e08_spring(bars: Sequence[Mapping[str, float]], range_lo: float,
+apex/pattern/detect.py:866:def from_e08_upthrust(bars: Sequence[Mapping[str, float]], range_hi: float,
+apex/pattern/detect.py:895:    "from_e08_spring": from_e08_spring,
+apex/pattern/detect.py:896:    "from_e08_upthrust": from_e08_upthrust,
+apex/pattern/detect.py:951:    "entity_for", "from_e08_spring", "from_e08_upthrust", "get_params",
+
+tests/integration/test_context_to_trade_paper.py:95:    from_e08_spring,
+tests/integration/test_context_to_trade_paper.py:246:    spring_hit = from_e08_spring(gfb, lvl, 16, atr, vr)
+tests/unit/test_pattern_detect.py:47:    from_e08_spring,
+tests/unit/test_pattern_detect.py:48:    from_e08_upthrust,
+tests/unit/test_pattern_detect.py:178:        hit = from_e08_spring(bars, lvl, 16, atr14(bars),
+tests/unit/test_pattern_detect.py:189:        hit = from_e08_upthrust(bars, lvl, 16, atr14(bars),
+tests/unit/test_pattern_detect.py:198:        assert from_e08_spring(bars, lvl, 16, atr14(bars), 2.0) is None
+tests/unit/test_pattern_detect.py:566:        hit = from_e08_spring(bars, 99.5, 8, atr14(bars), 2.0)
+
+  detect_all skips rows whose engines != ('E01','E04'):
+    ['if row.engines != ("E01", "E04"):', 'continue                     # E08-backed rows run via their own API', 'and r.engines == ("E01", "E04")),']
+  catalogue rows pointing at detect_flag:
+    PAT-STR-008 Flag       detector=detect_flag lifecycle=ACTIVE
+    PAT-STR-009 Pennant    detector=detect_flag lifecycle=ACTIVE
+  detect_flag(..., direction=+1) returns pattern_id=None name=None
+  detect_all keys: ['PAT-STR-008']
+  PAT-STR-009 (Pennant) ever produced? False
+  n_admitted_rows=16 n_run_here=14 ACTIVE rows with a detector = 16
+DONE M-004..M-008
