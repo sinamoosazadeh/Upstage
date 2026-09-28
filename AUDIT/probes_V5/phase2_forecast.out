@@ -1,0 +1,29 @@
+{
+  "H001": {
+    "basis": "scripts/run_apex.py COMMANDS has no replay entry (source inspection)",
+    "replay_cli_registered": false
+  },
+  "H009": {
+    "contract_version": "4.0.0",
+    "critical_failures": [],
+    "defaults_active": true,
+    "deterministic": true,
+    "phase": 2,
+    "status": "COMPLETE"
+  },
+  "H014": {
+    "bootstrap_prior": false,
+    "caller_p_hat": 0.99,
+    "eligible_environments": [
+      "RESEARCH",
+      "PAPER",
+      "BACKTEST",
+      "LIVE"
+    ],
+    "is_admissible_live": true,
+    "package": {
+      "p_hat": 0.61
+    },
+    "result_p_hat": 0.99
+  }
+}

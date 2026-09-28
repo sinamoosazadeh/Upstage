@@ -1,0 +1,196 @@
+{
+  "benchmark": {
+    "confidence": 0.95,
+    "mean_excess": -0.06500000000000002,
+    "outperforms": false,
+    "sharpe_benchmark": 4.929503017546495,
+    "sharpe_strategy": 1.9364916731037085,
+    "z": -4.913538149119955,
+    "z_critical": 1.644853625133699
+  },
+  "composite_low_n": {
+    "C": 0.8,
+    "U": 0.2,
+    "dropped": [
+      "b",
+      "r",
+      "e"
+    ],
+    "p_hat": 0.99,
+    "reason": "COMPOSITE_OK",
+    "shrinkage": [],
+    "state": "ACTIVE",
+    "weights": {
+      "f": 1.0
+    }
+  },
+  "cost": {
+    "quantity_0_01": 0.0029000000000000002,
+    "quantity_1": 0.2504
+  },
+  "cvar": {
+    "cvar": -0.09999999999999996,
+    "level": 0.95,
+    "paths": 1000,
+    "seed": 7
+  },
+  "drawdown_R": {
+    "contract_version": "4.0.0",
+    "expectancy_r": 0.0,
+    "max_drawdown": 1.0,
+    "mean_r": 0.0,
+    "profit_factor": 1.0,
+    "sharpe": 0.0,
+    "std_r": 1.4142135623730951,
+    "total_r": 0,
+    "trades": 2,
+    "winrate": 0.5,
+    "wins": 1
+  },
+  "empty_oos": {
+    "checks": {
+      "drawdown_lt_15pct": true,
+      "oos_sharpe_gt_1_0": true,
+      "pf_gt_1_2": true
+    },
+    "criteria": {
+      "max_drawdown": 0.15,
+      "min_oos_sharpe": 1.0,
+      "min_pf": 1.2
+    },
+    "decision": "PROMOTED",
+    "oos": {
+      "max_drawdown": 0.01,
+      "profit_factor": 2,
+      "sharpe": 2
+    },
+    "test": {
+      "max_drawdown": 0.01,
+      "profit_factor": 2,
+      "sharpe": 2
+    },
+    "train": {}
+  },
+  "family_bad_trade": {
+    "eligible": true,
+    "n": 30,
+    "wins": 30
+  },
+  "gap_entry": [
+    1,
+    99.0,
+    "STOP"
+  ],
+  "mismatched_candidate_pool": {
+    "checks": {
+      "benchmark": true,
+      "deflated_sharpe": true,
+      "family_pool": true,
+      "pbo": true,
+      "wfo": true
+    },
+    "contract_version": "4.0.0",
+    "decision": "PROMOTE",
+    "failed": [],
+    "family_id": "B",
+    "pool_gate": {
+      "above_breakeven": true,
+      "eligible": true,
+      "floor": 30,
+      "floor_ok": true,
+      "k": 30,
+      "n": 30,
+      "p_breakeven": 0.48,
+      "p_hat": 1.0,
+      "per_symbol": {
+        "BTCUSDT": {
+          "n": 30,
+          "wins": 30
+        }
+      },
+      "reason": "PROMOTION_ALLOWED",
+      "wilson_lower": 0.886482908609522,
+      "z": 1.96
+    }
+  },
+  "optimizer_grid_hash_equal": true,
+  "optimizer_grid_hash_shape": [
+    "de8d4bf4adf3996de9344d931d49f4506b3b386c096b7272cbaa759893d1bd39",
+    "de8d4bf4adf3996de9344d931d49f4506b3b386c096b7272cbaa759893d1bd39"
+  ],
+  "optimizer_infeasible": {
+    "checkpointed": false,
+    "completed_cells": [
+      "BTC-1h"
+    ],
+    "pending_cells": [],
+    "results": [
+      {
+        "best_params": {
+          "x": 0
+        },
+        "best_value": 100.0,
+        "cell_id": "BTC-1h",
+        "combinations_evaluated": 2,
+        "contract_version": "4.0.0",
+        "feasible_fraction": 0.0,
+        "optimizer": "SIGNAL",
+        "sru_hash": "f6da4e1f976b0a1e2970c418361d055e6fe0828c2fd58ebd73ce16872b190742",
+        "status": "COMPLETE"
+      }
+    ],
+    "run_id": "r",
+    "schedule": {
+      "continuous": true,
+      "reason": "WINDOW_OPEN",
+      "run": true,
+      "window": [
+        "03:00",
+        "05:00"
+      ]
+    },
+    "status": "COMPLETE"
+  },
+  "pool_serialization": "AttributeError: 'Trade' object has no attribute 'stop_distance'",
+  "risk_missing_value": {
+    "constraints": {
+      "drawdown_within_limit": true,
+      "leverage_adherence_full": true,
+      "regimes_reported": true
+    },
+    "feasible": true,
+    "missing_regimes": [],
+    "objective": "expected_net_value_in_R",
+    "per_regime_stability": {
+      "CRISIS": 0,
+      "EXTREME": 0,
+      "HIGH": 0,
+      "LOW": 0,
+      "NORMAL": 0
+    },
+    "value": 1.0
+  },
+  "shrinkage_n0": {
+    "cell_rate": 1.0,
+    "family_rate": 0.3,
+    "family_variance": 0,
+    "lambda": 1.0,
+    "n_cell": 0,
+    "shrunk_rate": 1.0,
+    "used_in_isolation": false
+  },
+  "stress": {
+    "CorrelationBreakdown": [
+      0.30000000000000004,
+      -0.30000000000000004
+    ],
+    "ExtremeFill": [
+      0.048,
+      -0.15200000000000002
+    ],
+    "Volume": [
+      0.010000000000000002,
+      -0.010000000000000002
+    ]
+  }
+}
