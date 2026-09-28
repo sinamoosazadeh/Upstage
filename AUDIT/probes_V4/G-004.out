@@ -1,0 +1,3 @@
+gateway= {'delivered': True, 'result': {'sent': False, 'reason': 'INJECTED_FAILURE'}}
+bootstrap_report= {'kind': 'INFO', 'text': 'synthetic', 'force': False, 'delivered': True, 'result': {'sent': False, 'reason': 'INJECTED_FAILURE'}}
+real_notifier= {'sent': False, 'state': 'INVALIDATED', 'reason': 'INJECTED_FAILURE'}

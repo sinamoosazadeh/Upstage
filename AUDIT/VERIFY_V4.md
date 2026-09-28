@@ -1,6 +1,6 @@
 # V4 independent verification — baseline 85b2c155d7b054a468379ddfd802eb239d0801f9
 
-Read-only source/contract examination; probes used synthetic identities, injected faults and disposable SQLite with the repository migrations and triggers. No venue, Telegram, device database, or secret value was intentionally accessed. **Protocol limitation:** an early exploratory G-009 invocation constructed default `Config()` before the committed probe was corrected; this could have parsed a local `.env` if one existed. No value was printed, retained or used intentionally; the logs cannot establish whether that file existed. All committed probes inject synthetic configuration. This possible accidental access does not meet the requested no-`.env` assurance. Baseline command `git rev-parse HEAD && git log -1 --oneline` returned the full baseline SHA and `85b2c15 Merge pull request #25 ...`. Report source: `/tmp/AUDIT.md` (fetched 690e2d88); index is not evidence. Commands below assume `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1`. All measured results are **fixture-only**, not evidence of trades or device latency. A green test suite does not discharge the counterexamples.
+Read-only source/contract examination; probes used synthetic identities, injected faults and disposable SQLite with the repository migrations and triggers. No venue, Telegram, device database, or secret value was intentionally accessed. **Protocol limitation:** `ls -la .env` in repository root returned `ls: cannot access '.env': No such file or directory` (exit code 2; no contents read). The prior exploratory default-Config invocation therefore had no repository-root `.env` to parse in this sandbox; environment variables, if any, were not inspected. **Original disclosure:** an early exploratory G-009 invocation constructed default `Config()` before the committed probe was corrected; this could have parsed a local `.env` if one existed. No value was printed, retained or used intentionally; the logs cannot establish whether that file existed. All committed probes inject synthetic configuration. This possible accidental access does not meet the requested no-`.env` assurance. Baseline command `git rev-parse HEAD && git log -1 --oneline` returned the full baseline SHA and `85b2c15 Merge pull request #25 ...`. Report source: `/tmp/AUDIT.md` (fetched 690e2d88); index is not evidence. Commands below assume `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1`. All measured results are **fixture-only**, not evidence of trades or device latency. A green test suite does not discharge the counterexamples.
 
 | ID | Verdict | Auditor severity | Independent severity | Frozen? | Cross-ref (D/ISSUE) | Recommended option |
 |---|---|---|---|---|---|---|
@@ -25,7 +25,12 @@ Read-only source/contract examination; probes used synthetic identities, injecte
 | G-017 | CONFIRMED | S1 | S1 | No | — | A: delivery-aware dedup |
 | G-018 | PARTIAL | S1 | S1 | No | — | A: separate delivery from protection |
 | G-023 | CONFIRMED (synthetic timing) | S1 | S1 | No | — | A: priority admission |
-| G-001, G-003..G-008, G-010..G-014, G-019..G-020, G-024..G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
+| G-001 | CONFIRMED | S2 | S2 | No | D17 | A: central redaction |
+| G-003 | CONFIRMED | S1 | S1 | No | D57 distinct; D-002 distinct | A: atomic recovery |
+| G-004 | CONFIRMED | S2 | S2 | No | — | A: typed delivery result |
+| G-008 | CONFIRMED | S1 | S1 | No | G-009 distinct | A: OWNER auth |
+| G-010 | CONFIRMED | S1 | S1 | No | D57 distinct | A: pending vs committed |
+| G-005..G-007, G-011..G-014, G-019..G-020, G-024..G-029 | NOT VERIFIED | per source row | unassigned | unassessed | see end | defer |
 
 **Shared test execution:** `PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/unit/test_ledger_store.py tests/unit/test_telegram_control_plane.py tests/unit/test_ops_telegram_gateway.py tests/unit/test_telegram_signaling.py tests/unit/test_identity.py > AUDIT/probes_V4/TARGETED_TESTS.out 2>&1`: **286 passed, 13 warnings**. For individual probes use `PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V4/<ID>.py`; output is the sibling `.out`. `QUERY-PLAN.py/.out` run against the real schema with/without the two device-only indexes. Scope of assertions below is the cited implementation behavior, not end-to-end or device acceptance. Owner decisions in PHASE2_DECISION_LOG.md supersede conflicting blueprint prose. No source changes proposed here are authorized.
 
@@ -575,6 +580,136 @@ B until an approved filesystem-safe writer can implement A; keep G-002 explicit 
 ### Acceptance and regression tests
 Sibling root, `..`, absolute/relative, Unicode, symlink and directory swap before write all refused/contained; valid path generated and atomically opened under root, not merely validated; real device path policy still needs confirmation.
 
+## G-001
+### Auditor claim (short quote)
+“owner/watchdog chat id” appears unmasked in boot and Config repr despite D17.
+### What I read (files, line ranges, functions, callers)
+`apex/config.py:32-80,121-200` (`ENV_NAMES`, `_SENSITIVE`, `_load_env`, `Config.__repr__` and accessors), `scripts/run_apex.py:106-124,192-209,504-509,615-621,1127-1141` (`_redacted`, `_boot`, bootstrap/status/main); `grep -Rn '_redacted\|repr(cfg)\|Config(' scripts apex` shows boot, bootstrap and status print `_redacted`, other constructors default to Config. No real Config was constructed in the probe.
+### Reproduction (command, probe file, actual result)
+`PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V4/G-001.py > AUDIT/probes_V4/G-001.out 2>&1`: synthetic `Config` allocated via `__new__`, `_env` populated with test-only identifiers; `owner/watchdog repr_contains=True boot_contains=True`, synthetic bot token both False. No `.env` opened.
+### Verdict and reasoning
+CONFIRMED S2: explicit disclosure of contact IDs, not API tokens; log disclosure is limited observability/privacy impact, severity matches auditor. Device logs/access policy not assessed.
+### Root cause
+`Config._SENSITIVE` masks three credentials but not the two chat identifiers; `_redacted` deliberately echoes both, contrary to later D17.
+### Direct impact
+IDs appear in `Config` repr and CLI environment-surface print, potentially copied to diagnostics.
+### Secondary effects and interactions (upstream/downstream)
+Upstream owner-approved chat identity comes from environment; downstream boot/bootstrap/status stdout, logs and support exports may carry IDs. Not evidence of compromised Telegram authorization or venue orders; makes G-007 identity mistakes more consequential only if IDs are exposed to another actor.
+### Contract and decisions
+`APEX_GEN5.md:1150-1155`: “Runtime env names (values never in this document)” includes TELEGRAM_OWNER_CHAT_ID; `PHASE2_DECISION_LOG.md:205` D17 explicitly says “Secrets (bot token, chat id, venue key/secret) ... never printed by any command”. D17 is later binding owner decision and wins over any earlier boot-display convention.
+### Frozen status and non-frozen alternative
+`apex/config.py` and `scripts/run_apex.py` non-frozen; no frozen params/DDL changes needed.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: central redaction policy for IDs across repr, CLI and exception payloads (SET/UNSET); changes literal-output tests/operator debugging, no DB migration/retraining or trading hash change. B: redact only boot output leaves repr/support leak, insufficient. IDs must remain available internally for routing, so do not remove from config.
+### My recommendation
+A; add integration stdout checks with synthetic canaries across boot/status/bootstrap without contacting services.
+### Acceptance and regression tests
+Sentinel owner/watchdog IDs never appear in repr/boot/bootstrap/status or exception logs, tokens stay masked, internal equality/routing still uses correct ID; read-only device logs require separate authorized review.
+
+## G-003
+### Auditor claim (short quote)
+“RECOVER only clears ratchet”, while `paused/new_positions_disabled/safe_mode/read_only` persist.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:393-439,450-487,800-850,898-977` (`EmergencyRatchet`, `_action`, `_emergency_effect`); `gateway.py:276-320` callback dispatch; `paper_loop.py:1103-1140` (`run`, `_control_paused`); `scripts/run_apex.py:725-735` handler registration; `test_telegram_control_plane.py:814-923`. Grep `RECOVER`, `.paused`, `new_positions_disabled` across apex/scripts/tests shows no clearing outside this callback and initialization.
+### Reproduction (command, probe file, actual result)
+`PYTHONPATH=. PYTHONDONTWRITEBYTECODE=1 python3 AUDIT/probes_V4/G-003.py` → `.out`: real L1 confirmation via synthetic successful handler, `before=('L1',True,False,False,False)`; OWNER RECOVER `ok=True recovered=True`, `after=(None,True,False,False,False)`, real `PaperRuntime._control_paused()=True`. No order or Telegram connection.
+### Verdict and reasoning
+CONFIRMED S1: in-process UI says recovered but `run()` still skips cycles. It does not prove safe resumption would be appropriate without health/reconcile; indiscriminate clearing would be unsafe. Related G-012 is restart durability, not same-process inconsistency.
+### Root cause
+`_action('RECOVER')` delegates only to `ratchet.recover`; the control flags are separate mutable attributes without a state transition protocol.
+### Direct impact
+Operator-facing recovery acknowledgement disagrees with runtime pause gate.
+### Secondary effects and interactions (upstream/downstream)
+Upstream OWNER/nonce state and handler success do not run readiness checks; downstream `run()` may skip `run_cycle`, including position management. Risk ladder is independent of these control flags (D57); D-002/ISSUE-073 noop emergency handlers limit whether real venue protective effects occur. G-009 lock is separate state. No replay/ledger transition is recorded for this recovery.
+### Contract and decisions
+`APEX_GEN5.md:17922-17926`: “Only OWNER can recover from an Emergency state”; `19068-19072`: RECOVERY→NORMAL only after startup reconciliation; `18424-18434`: restore emergency-ladder state and refuse new trade before READY. `PHASE2_DECISION_LOG.md:194-210` D1 same PAPER FSM/ledger; D57 recorded/not implemented (`1173`), does not authorize unsafe unpause. Binding owner decision supersedes earlier generic UI language.
+### Frozen status and non-frozen alternative
+Control-plane/runtime and additive state migration non-frozen; do not change frozen risk engines/DDL or frozen YAML. Adapter/fabric gate can reconcile risk state without modifying frozen files.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: durable atomic RECOVER state transition after independent health/broker/ledger checks, flags updated together and confirmation returns actual status; requires migration/restart tests, changes existing tests expecting immediate `recovered=True`, new control-state hashes/replay/backup identity may change, no model retraining. B: interim explicit `RECOVERY_PENDING` refusal, retaining flags; safer than falsely claiming success but delays legitimate restart.
+### My recommendation
+A with B until health+reconcile is implemented; do not clear pause on unaudited callback alone.
+### Acceptance and regression tests
+L1/L2/L5→OWNER recover with healthy and unhealthy broker/boot, fault during persist, process restart, reduce-only position exits while new entries blocked, UI/runtime/ledger all agree; USER denied.
+
+## G-004
+### Auditor claim (short quote)
+Gateway/BootstrapService mark returned `{sent: False}` as delivered.
+### What I read (files, line ranges, functions, callers)
+`gateway.py:230-275,308-355` (`reply`, `_reply_from`, handle_update); `scripts/run_apex.py:839-857` (`_telegram_reply`); `bootstrap_service.py:1229-1276,1400-1460,1570-1609` (`report`, `SignalingNotifier`); `signaling.py:666-782` (`send` returning `SendResult.sent`); grep `\.report(` and `reply(` in apex/scripts/tests and gateway bootstrap tests.
+### Reproduction (command, probe file, actual result)
+`G-004.py/.out`: real `TelegramGateway.reply` with notifier returning `{sent:False}` yields `delivered=True`; real `BootstrapService.report` on a synthetic instance also yields `delivered=True`; real `SignalingNotifier.__call__` passes actual `sent=False` from injected plane back to caller. No network.
+### Verdict and reasoning
+CONFIRMED S2; limited to delivery acknowledgement, not evidence all messages fail or trading decisions change. When notifier raises instead, both methods correctly return delivered=False.
+### Root cause
+Success is defined as “notifier returned without raising”, not its `sent` result.
+### Direct impact
+False delivery receipts for failed sends.
+### Secondary effects and interactions (upstream/downstream)
+Upstream SignalingPlane returns `sent=False` for known failure and can supply a reason; downstream gateway replies, bootstrap progress and UI/operator assurance misstate it. G-028 (fabricated receipt when transport returns `{}`) is a distinct upstream false-positive. No impact on risk authorization by Telegram delivery per contract.
+### Contract and decisions
+`APEX_GEN5.md:17747-17753`: Telegram is downstream, delivery is not execution prerequisite; `18168-18175`: P0 “never drop”, signaling failure never blocks protective execution; `PHASE2_DECISION_LOG.md:194-210` D1 routes PAPER FSM/ledger/Telegram, D17 protects identifiers but does not redefine “delivered”. Owner decisions prevail; no decision permits claiming receipt without `sent`.
+### Frozen status and non-frozen alternative
+Gateway, BootstrapService, SignalingNotifier non-frozen; no engine/store/params edit needed.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: typed notifier result with sent/unknown/error, propagate reason, keep reply-status separate from command execution; tests expecting delivered=True on any normal return change, delivery caches/reporting metrics and persisted notification status may need versioning, no DB migration unless durable outbox introduced, no retraining. B: throw on `sent=False` in notifier, works with current exception handling but loses structured error and creates inconsistent call contracts.
+### My recommendation
+A; never turn “not raised” into delivery proof.
+### Acceptance and regression tests
+Stub returns sent=False/True/UNKNOWN, raises, times out: gateway and bootstrap delivery statuses reflect actual receipt; downstream retries do not re-execute inbound action; real provider evidence required for device delivery.
+
+## G-008
+### Auditor claim (short quote)
+An unknown USER can `/lock`; only OWNER can `/unlock`.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:103-115,162-211,725-795` (`AccessControl.check`, `handle_command`, `_command`, `_broadcast`, `locked_verdict`), `gateway.py:147-179,276-309` update/command route, `test_telegram_control_plane.py:660-710`; `grep -Rn '/lock\|handle_command'` in scripts/apex/tests. The control path does not call OWNER check for `/lock` but does for `/unlock`.
+### Reproduction (command, probe file, actual result)
+`G-008.py/.out`: actual ControlPlane with synthetic OWNER=123 and unknown USER=456, no signaling endpoint: USER `/lock` returns `ok=True state=True`; same USER `/unlock` returns `OWNER_ONLY`, OWNER unlocks. No venue/Telegram traffic.
+### Verdict and reasoning
+CONFIRMED S1 for unauthorized operator-control denial-of-service; no proven trading halt because G-009 independently found lock lacks execution gating. Severity reflects operator UI disruption and security contract, not claimed market impact.
+### Root cause
+Asymmetric authorization of two state-mutating commands; role assignment uses synthetic chat ID, and lock branch skips `access.check` entirely.
+### Direct impact
+Non-owner blocks `/start`, screen callbacks and bootstrap commands until owner unlocks.
+### Secondary effects and interactions (upstream/downstream)
+Upstream G-007 group chat sender ambiguity can widen principal misuse; downstream gateway refuses operational interactions; lock doesn't protect entry (G-009), so incident operator may lose control while execution continues. No ledger/canonical hash changes on command.
+### Contract and decisions
+`APEX_GEN5.md:1158-1161`: USER “cannot ... operate the Emergency Ladder”; `17913-17926`: “Emergency (5 levels, OWNER-only)” and Panic Lock commands in §5.7; `1170-1174` `/lock` as incident response. `PHASE2_DECISION_LOG.md:205` D17 restricts chat identifiers; no owner decision grants USER lock authority. Later owner decision prevails, but §5.7 does not literally state an independent `/lock` OWNER-only sentence; interpret incident containment and least privilege together.
+### Frozen status and non-frozen alternative
+ControlPlane/Gateway non-frozen; no changes to frozen risk engines/schema/params.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: check verified human OWNER before `/lock`, audit denials, and protect role against group identity confusion G-007; tests relying on permissive USER lock change; no migration/retraining or existing hash rewrite, future audit identity/response changes. B: allow USER lock only under an explicit owner-approved emergency policy, with rate limit/recovery; not currently authorized and exacerbates DoS.
+### My recommendation
+A, coordinated with G-007 principal validation and G-009 real execution gate.
+### Acceptance and regression tests
+Known/unknown USER, group USER with owner destination and callback/command cannot lock; OWNER in authenticated private channel can; denial audited, no state change; exercise repeated/restart cases.
+
+## G-010
+### Auditor claim (short quote)
+Selecting L5 before YES ratchets state; NO leaves lower levels forbidden.
+### What I read (files, line ranges, functions, callers)
+`control_plane.py:212-265,393-439,800-858,902-975` (`ConfirmationRegistry`, `EmergencyRatchet.request`, `_action`, `_emergency`, `_emergency_effect`); `gateway.py:277-309` callback entry; tests `test_telegram_control_plane.py:802-860` (NO asserts flags but not ratchet). Grep `ratchet.request` in apex/tests finds `_emergency` call pre-confirmation.
+### Reproduction (command, probe file, actual result)
+`G-010.py/.out`: synthetic OWNER selects L5 with no handler/send; `unconfirmed_level=L5`, `safe_mode=False`; NO consumes nonce but level remains L5; L1 now refused `RATCHET_DOWN_FORBIDDEN`. Real policy functions, no venue/device.
+### Verdict and reasoning
+CONFIRMED S1: confirmed operator intent and ratchet state diverge. Not evidence a genuine L5 protective action occurred. Severity accounts for inability to select safer intended L1 without recovery.
+### Root cause
+`_emergency` calls `ratchet.request(level)` before confirmation, regardless of NO/expiry/handler result.
+### Direct impact
+A cancelled or expired high-level request prevents lower-level requests.
+### Secondary effects and interactions (upstream/downstream)
+Upstream nonce UI has pending vs committed ambiguity; downstream operator safety controls and G-003 RECOVER may be used to clear stale level but leave other flags. G-012 restart loses this RAM state; D-002/ISSUE-073 downstream L3-L5 noops do not justify ratchet changes.
+### Contract and decisions
+`APEX_GEN5.md:17915-17926`: ratchet downgrades forbidden and Yes/No confirmation “irreversible” with 90-second nonce; the prohibition presupposes *confirmed* emergency level, not an unconfirmed request. `PHASE2_DECISION_LOG.md:194-210` D1 controls PAPER path, `1173` D57 deferred durability; no owner decision authorizes NO to escalate. Later owner decision takes precedence over earlier blueprint prose.
+### Frozen status and non-frozen alternative
+Control-plane policy non-frozen; risk engines/schema/frozen params untouched, optional additive durable pending-state migration outside frozen store.
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+A: separate pending proposal and committed level; commit only after authorized YES and success or explicitly classified partial outcome; tests asserting ratchet state at request time change, control-state replay/audit hashes and persisted migration may change, no model retraining. B: revert ratchet after NO/timeout is racy with concurrent YES and other higher-level requests unless serialized/durable; unsafe shortcut.
+### My recommendation
+A, with serialized per-principal transition and safe handling of partial protective effects; do not roll back a real confirmed higher level.
+### Acceptance and regression tests
+L5→NO/expiry then L1 allowed; handler failure and cancellation not reported as completed; L1→YES commits once; interleaved L2/L5 proposals and restart preserve only confirmed level; risk/order/ledger evidence separately checked.
+
 ## New findings not in the audit
 
 ### X-V4-001 — repeated ledger queries have no selective indexes (S2, CONFIRMED plan shape; latency DEVICE-EVIDENCE-NEEDED)
@@ -605,10 +740,10 @@ EXPLAIN on real DDL before/after migration with device indexes both absent/prese
 
 ## Rows not verified or incomplete
 
-**Not verified (20 IDs; no verdict/severity assignment, no coverage claim):** G-001, G-003, G-004, G-005, G-006, G-007, G-008, G-010, G-011, G-012, G-013, G-014, G-019, G-020, G-024, G-025, G-026, G-027, G-028, G-029. Their unquoted full report rows and their complete referenced functions/caller/callee graphs were **not** independently reviewed to the mandatory depth; targeted suite success does not verify any of them. G-001 would also require strict synthetic config isolation before a safe probe. Known ISSUE-073 overlaps G-002, not a blanket verdict on other G rows. Device-specific facts for all rows remain unavailable. Do not extrapolate this report to 41-row coverage.
+**Not verified (15 IDs; no verdict/severity assignment, no coverage claim):** G-005, G-006, G-007, G-011, G-012, G-013, G-014, G-019, G-020, G-024, G-025, G-026, G-027, G-028, G-029. Their unquoted full report rows and their complete referenced functions/caller/callee graphs were **not** independently reviewed to the mandatory depth; targeted suite success does not verify any of them. G-001 would also require strict synthetic config isolation before a safe probe. Known ISSUE-073 overlaps G-002, not a blanket verdict on other G rows. Device-specific facts for all rows remain unavailable. Do not extrapolate this report to 41-row coverage.
 
 **Depth limits for the 21 bounded findings above:** code slices and grep consumers are recorded, but full-file end-to-end semantic review of every referenced file (especially the entire 21k-line contract, `fsm.py`, `gateway.py`, `signaling.py`, `control_plane.py`, all five complete test files, and every transitive caller/callee) was not completed. Thus these are **bounded direct-behavior conclusions, not complete mandatory-depth closure**. The source report's Persian rows cited in their individual sections were read, but no real DB/model/device/transport was available. Query plans were on empty real schema with/without the two specified indexes; optimizer choices and p95 on device are unverified. No L1/L2 risk ladder or order placements were executed. A source-file review must precede any patch; this report is not approval to trade or change frozen files.
 
 ## Final counts
 
-Of 41 requested audit IDs: **17 CONFIRMED** (bounded direct behavior), **4 PARTIAL**, **0 REJECTED**, **0 DEVICE-EVIDENCE-NEEDED as sole verdict**, **20 NOT VERIFIED**. One additional finding X-V4-001: plan shape CONFIRMED, device impact pending. No row is claimed fully closed at the mandatory exhaustive-depth standard. These counts exclude tests and known-owner items outside the 41-ID scope.
+Of 41 requested audit IDs: **22 CONFIRMED** (bounded direct behavior), **4 PARTIAL**, **0 REJECTED**, **0 DEVICE-EVIDENCE-NEEDED as sole verdict**, **15 NOT VERIFIED**. One additional finding X-V4-001: plan shape CONFIRMED, device impact pending. No row is claimed fully closed at the mandatory exhaustive-depth standard. These counts exclude tests and known-owner items outside the 41-ID scope.

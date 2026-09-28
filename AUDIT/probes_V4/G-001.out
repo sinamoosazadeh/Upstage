@@ -1,0 +1,5 @@
+owner repr_contains= True boot_contains= True
+watchdog repr_contains= True boot_contains= True
+bot repr_contains= False boot_contains= False
+repr= Config({'TOOBIT_API_KEY': '***', 'TELEGRAM_BOT_TOKEN': '***', 'TELEGRAM_OWNER_CHAT_ID': '111222333444', 'TELEGRAM_WATCHDOG_CHAT_ID': '555666777888'})
+boot_surface= {"APEX_ALLOW_SIGNED": false, "APEX_ECONOMIC_GATE_SIGNED": false, "APEX_ENV": "RESEARCH", "APEX_SQLITE_PATH": "data/apex.sqlite3", "TELEGRAM_BOT_TOKEN": "SET", "TELEGRAM_OWNER_CHAT_ID": "111222333444", "TELEGRAM_WATCHDOG_CHAT_ID": "555666777888", "TOOBIT_API_KEY": "SET", "TOOBIT_API_SECRET": "UNSET"}

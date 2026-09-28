@@ -1,0 +1,1 @@
+confirmed= True before= ('L1', True, False, False, False) recover= {'ok': True, 'action': 'RECOVER', 'recovered': True, 'previous': 'L1', 'current': None, 'reason': None, 'error_code': None, 'rule': '§5.7 OWNER recovery'} after= (None, True, False, False, False) loop_paused= True
