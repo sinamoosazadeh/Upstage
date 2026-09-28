@@ -1,0 +1,4 @@
+temporal_state.quality = Q1 | temporal_profile.quality = Q2
+EV_TMP_006 (profile attached) journaled at as_of=[1600720000000], AFTER the last state
+second pass with profile pre-attached: state quality = Q2
+R-012 CONFIRMED: same-call state/profile quality mismatch; profile built post-loop never grades the states it shipped with

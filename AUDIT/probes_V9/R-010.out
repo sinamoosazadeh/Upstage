@@ -1,0 +1,19 @@
+quality=Q4 | conditional_rates={} | kruskal_p=0.0 | mean_rho=1.0
+n=5 rate entry: {'p': None, 'n': 5, 'ci': None, 'status': 'INSUFFICIENT_SAMPLE'} -> quality: Q4
+no_future_leak_check source:
+def no_future_leak_check(returns_by_tod: Dict[int, List[float]]) -> bool:
+    """§8.3: the seasonal profile depends only on bin membership, never on
+    sample ORDER or future timestamps ⇒ order-shuffled inputs must reproduce
+    identical factors."""
+    base = fff_seasonal(returns_by_tod)
+    shuffled = {n: list(rs) for n, rs in returns_by_tod.items()}
+    rng = np.random.default_rng(20240315)
+    for rs in shuffled.values():
+        arr = np.array(rs, dtype=float)
+        rng.shuffle(arr)
+        rs[:] = [float(x) for x in arr]
+    return canonical_json({str(k): round(v, 12) for k, v in base.items()}) \
+        == canonical_json({str(k): round(v, 12)
+                           for k, v in fff_seasonal(shuffled).items()})
+
+R-010 CONFIRMED: Q4 'statistical' badge with zero (or all-refused) conditional rates; leak check is a permutation self-test

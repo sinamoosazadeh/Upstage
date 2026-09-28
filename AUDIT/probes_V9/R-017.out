@@ -1,0 +1,7 @@
+registry: {'UTC_W0': (0.0, 7.0), 'UTC_W1': (7.0, 12.5), 'UTC_W2': (12.5, 21.0), 'UTC_W3': (21.0, 24.0)}
+W0 phases: {('UTC_W0', 'MID')}
+W3 phases: {('UTC_W3', 'MID')}
+W1: 07:00->EARLY 07:59->EARLY 08:00->MID 11:29->MID 11:30->LATE
+W2: 12:30->EARLY 12:59->EARLY 13:00->MID 20:29->MID 20:30->LATE
+EARLY share: W0=0% W1=18% W2=6% W3=0%
+R-017 CONFIRMED: phase taxonomy inconsistent across windows; W0/W3 consumers can never react to open/close phases

@@ -1,0 +1,5 @@
+behavior_window=180 days | n_bins=48 | buffer cap=8640 RECORDS
+1h feed: buffer=8640 records spanning 360.0 days (mandate: 180)
+4h feed: buffer=8640 records spanning 1439.8 days
+time-based eviction in stream class ('86400' or 'days' cutoff): False
+R-009 CONFIRMED: record-count cap masquerades as a day window; retention is timeframe-dependent (360d@1h, ~4y@4h, 6d@1m)

@@ -1,0 +1,3 @@
+provider says: {'utc_activity_window': 'UTC_W2', 'is_overlap': True, 'rollover_active': True}
+E07 kz_info:   {'utc_activity_window': 'UTC_W2', 'is_overlap': True, 'rollover_active': False, 'source': 'E12_Temporal_Context.Contract v4.0.0'}
+R-014 CONFIRMED: provider rollover flag dropped — E07 consumers can never see an active rollover

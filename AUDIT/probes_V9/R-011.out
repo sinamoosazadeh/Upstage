@@ -1,0 +1,4 @@
+bogus Q4 profile attached without error
+state quality=Q4 (inherited from the fabricated profile)
+only version is rejected: CONTRACT_MISMATCH_QX: profile is not v4.0.0
+R-011 CONFIRMED: version-string-only validation; forged quality propagates into every state

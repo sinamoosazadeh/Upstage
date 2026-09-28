@@ -1,0 +1,5 @@
+journal codes: ['EV_TMP_001', 'EV_TMP_002', 'EV_TMP_003', 'EV_TMP_004', 'EV_TMP_008']
+EV_TMP_008 record: [{'code': 'EV_TMP_008', 'as_of': 0, 'reason': 'ECON_CALENDAR_NOT_PROVIDED'}]
+published evidence condition_states: ['EV_TMP_001_UTC_W0']
+published codes: {'EV_TMP_001'}
+R-013 CONFIRMED: journal-only events are unpublishable; calendar refusal EV_TMP_008 carries as_of=0 (dateless, unjoinable)
