@@ -221,8 +221,33 @@ async def k003() -> dict:
             await store.close()
 
 
+async def k004() -> dict:
+    with tempfile.TemporaryDirectory(prefix="v3-k004-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        try:
+            original = observation()
+            original_id = await store.ingest_raw(original, "MISSING")
+            replacement = MarketObservation(
+                symbol="ETHUSDT", timeframe="1h", open=Decimal("200"), high=Decimal("207"),
+                low=Decimal("195"), close=Decimal("202"), volume=Decimal("12"), oi=None,
+                timestamp=original.timestamp, sequence=2, status="CLOSED", source="TOOBIT",
+                availability_time=original.availability_time)
+            replacement_id = await store.correct_raw(
+                original_id, replacement, "MISSING", "cross-cell API probe", "V3-PROBE")
+            market = await (await store.db.execute(
+                "SELECT symbol,timeframe,open_time,close_price,candle_status,observation_id "
+                "FROM market_observation ORDER BY rowid")).fetchall()
+            revision = await (await store.db.execute(
+                "SELECT original_event_id,new_event_id FROM raw_revision")).fetchone()
+            return {"original_event_id": original_id, "returned_new_event_id": replacement_id,
+                "revision": list(revision) if revision else None,
+                "market_rows": [list(r) for r in market]}
+        finally:
+            await store.close()
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001, "K-002": k002, "K-003": k003}
+    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}

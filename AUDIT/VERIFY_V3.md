@@ -5,7 +5,7 @@
 | K-001 | CONFIRMED | S1 | S1 | Yes — frozen data contract/store | — | A — fail closed on hash-colliding revisions; owner-approved versioned hash migration before acceptance |
 | K-002 | CONFIRMED | S1 | S1 | Yes — frozen parser/store | ISSUE-CP1-012 (correction lifecycle only) | A — bind each revision to its recorded correction time; refuse historical reconstruction until version-aware reads exist |
 | K-003 | CONFIRMED | S1 | S1 | No — producer is non-frozen; store DDL remains frozen | ISSUE-079 (cache correctness, distinct from latency) | A — fingerprint the selected PIT revision/status set and force cold rebuild on mismatch |
-| K-004 | PENDING | S2 | — | — | — | — |
+| K-004 | CONFIRMED | S2 | S2 | Yes — SQLiteStore is frozen; route via non-frozen guarded service pending owner approval for store guard | ISSUE-CP1-012 (status/lineage only) | A now, B with owner approval — guard all three identity fields before correction |
 | K-005 | PENDING | S1 | — | — | — | — |
 | K-006 | PENDING | S1 | — | — | — | — |
 | K-007 | PENDING | S2 | — | — | — | — |
@@ -168,3 +168,41 @@ Implement A first: the cache key must describe the same selected input set that 
 
 #### Acceptance and regression tests
 Persist a valid context at `as_of`, then add a later correction with availability after that `as_of`: the fingerprint must change or the selected historical input must be reconstructed identically; `prepare` must not reuse the stale fact. Assert warm and cold calls agree on both value and named refusal, status/revision changes invalidate the key, and unchanged inputs reuse the exact context. Include correction, purge, restart, and content-hash collision cases; do not use an invalid or synthetic context as proof of native plan acceptance.
+
+### K-004
+
+#### Auditor claim (short quote)
+> “`correct_raw` تنها event_id اصل را می‌سنجد، نه برابری symbol/TF/open_time جایگزین.” — “`correct_raw` checks only the original event ID, not the replacement’s symbol/timeframe/open-time identity.”
+
+#### What I read (files, line ranges, functions, callers)
+Read `SQLiteStore.correct_raw` and `_find_by_event` (`apex/data_catalog/store/sqlite_store.py:448–494`) and `repair_one`’s caller-side identity preparation (`apex/ops/partial_bar_repair.py:389–449`). `grep -RIn --include='*.py' 'correct_raw(' apex scripts tests` found `repair_one` as the only production caller plus two integration-test calls. The repair path parses the replacement using the candidate’s symbol/timeframe and refuses a timestamp mismatch before `correct_raw`; the store method itself fetches the original by event ID, marks it superseded, and ingests the supplied observation without comparing symbol, timeframe, or open time.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONDONTWRITEBYTECODE=1 python3 -B AUDIT/probes_V3/store_probes.py K-004`. Probe: `store_probes.py::k004`; raw result: `AUDIT/probes_V3/K-004.json`. On a temporary SQLite database opened/migrated by `SQLiteStore`, I passed a BTCUSDT original and an ETHUSDT replacement with the same open time to the actual `correct_raw`. It returned a distinct new event; the BTC row became `SUPERSEDED`, the ETH row became `CORRECTED`, and `raw_revision` linked the BTC event ID to the ETH event ID. This proves the direct API behavior. It does not establish that the currently inspected `repair_one` production caller can generate that cross-symbol payload.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The store-level API accepts and persists a cross-cell revision. Severity is limited because the current repair caller supplies symbol/timeframe from the candidate and checks the open-time value before calling; no real caller-induced cross-cell event or device data was observed.
+
+#### Root cause
+`correct_raw` treats `original_event_id` as sufficient identity. `_find_by_event` returns the original observation ID but `correct_raw` does not compare the corrected record’s `(symbol, timeframe, timestamp)` with that original before the status update and append.
+
+#### Direct impact
+A direct or future caller can mark BTC superseded while adding an ETH row as its “correction”; the lineage then says ETH replaces BTC, and no BTC replacement remains active. The caller’s current safeguards reduce the known production exposure but do not make the store API safe.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the current `repair_one` constructs replacement identity from the candidate and venue request, so the reproduced cross-cell path is an API misuse/future-caller risk. Downstream, a cross-cell revision can corrupt per-symbol/timeframe windows, lineage, quality, features, training, and any correction consumer. Cross-reference `ISSUE-CP1-012` only for lifecycle/status behavior; it does not specify or enforce cross-cell identity. No D/ISSUE owner item was found that closes this boundary validation.
+
+#### Contract and decisions
+`APEX_GEN5.md:18692–18699` says a correction marks “the original record” superseded and creates the new record “with the corrected values” and parent lineage to that original; it does not expressly spell out the equality predicate, so I do not claim a separate written symbol/time equality clause. `PHASE2_DECISION_LOG.md:51` (ISSUE-CP1-012) governs append-only correction status and lineage. Precedence: the row establishes an unsafe API seam; the current guarded repair caller narrows occurrence, but neither text authorizes using a different market cell as the correction.
+
+#### Frozen status and non-frozen alternative
+**Frozen:** `SQLiteStore` is in frozen `apex/data_catalog/**`. `partial_bar_repair.py` and `bootstrap_service.py` are non-frozen. A safe non-frozen alternative is one audited correction service that loads the original identity, validates all three identity fields before write, and is the only allowed production entry point; call-site checks can prevent new direct writes. This cannot change or fully harden the frozen public store method, so direct API callers must remain explicitly unsupported/refused by policy until owner approval.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — route and guard non-frozen callers:** require exact symbol/timeframe/open-time equality before calling the frozen method and add a repository call-site/lint test. Side effects: no content hashes or caches change; invalid cross-cell candidates remain unapplied and must be ingested/reconciled as separate observations. **B — owner-approved frozen API invariant:** validate replacement identity inside `correct_raw` before any write. Side effects: API callers that relied on cross-cell misuse will now fail; no schema/hash migration is needed, but any already-written cross-cell revisions require a separate audit/recovery rather than silent rewriting.
+
+#### My recommendation
+Use A immediately and seek approval for B so the invariant sits at the store boundary. A correction must never be a migration between symbols, timeframes, or candle opens; ingest such data as its own observation.
+
+#### Acceptance and regression tests
+For each identity field, mutate only symbol, timeframe, then timestamp in separate direct `correct_raw` tests; each must refuse before changing either market row or inserting raw/revision data. The current repair caller with exact candidate identity must still succeed. Add a persisted-state assertion that the old row is unchanged on refusal, and a call-site test ensuring production code uses the guarded service.

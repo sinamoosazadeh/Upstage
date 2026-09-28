@@ -1,0 +1,30 @@
+{
+  "id": "K-004",
+  "probe": "k004",
+  "result": {
+    "market_rows": [
+      [
+        "BTCUSDT",
+        "1h",
+        "2026-09-27T00:00:00.000Z",
+        "101",
+        "SUPERSEDED",
+        "obs-01a0e974-a10e-7a18-87db-56923f8466f0"
+      ],
+      [
+        "ETHUSDT",
+        "1h",
+        "2026-09-27T00:00:00.000Z",
+        "202",
+        "CORRECTED",
+        "obs-01a0e974-a110-7ae3-8811-316ca145d049"
+      ]
+    ],
+    "original_event_id": "01a0e974-a10e-7a18-87db-56923f8466f0",
+    "returned_new_event_id": "01a0e974-a110-7ae3-8811-316ca145d049",
+    "revision": [
+      "01a0e974-a10e-7a18-87db-56923f8466f0",
+      "01a0e974-a110-7ae3-8811-316ca145d049"
+    ]
+  }
+}
