@@ -1,0 +1,40 @@
+apex/config.py:251:class _YamlSubsetParser:
+apex/config.py:455:        data = _YamlSubsetParser(text).parse()
+apex/config.py:463:class Params:
+apex/config.py:503:        # Property, not a method: E11.get_params does dict(load_params().e11_params).
+apex/config.py:509:def load_params() -> Params:
+apex/ops/engine_context.py:19:from apex.config import Config, PARAMS_DIR, PARAMS_FILES, REPO_ROOT, _YamlSubsetParser, load_params
+apex/ops/engine_context.py:59:        parsed = _YamlSubsetParser(raw_text).parse()
+apex/ops/engine_context.py:121:    sla = float(load_params()["quality_weights"]["freshness_threshold_seconds"]["1m"])
+apex/ops/engine_context.py:597:        artifact = _YamlSubsetParser(path.read_text(encoding="utf-8")).parse()
+apex/ops/engine_context.py:615:    sla = float(load_params()["quality_weights"]["freshness_threshold_seconds"][timeframe])
+apex/ops/engine_context.py:622:    account = load_params()["paper_account"]
+apex/ops/engine_context.py:876:        p = load_params()["decision_runtime"]
+apex/ops/engine_context.py:991:            documents[filename] = _YamlSubsetParser(path.read_text(encoding="utf-8")).parse()
+apex/ops/engine_context.py:1942:        step = (Decimal(str(lot[0]["stepSize"])) if lot else load_params()["universe"]["quantity_step"][symbol])
+apex/ops/engine_context.py:1986:            "oi_lag_seconds":oi_lag,"oi_lag_threshold_seconds":load_params()["quality_weights"]["oi_lag_threshold_seconds"][timeframe],
+tests/unit/test_config.py:146:    p = config.load_params()
+tests/unit/test_cp1_foundations.py:77:    def test_sbom_pins_exact(self):
+tests/unit/test_cp1_foundations.py:111:    def test_run_all_tests_runs_full_suite(self):
+tests/unit/test_cp1_foundations.py:157:        from apex.config import load_params
+tests/unit/test_cp1_foundations.py:158:        u = load_params()["universe"]
+tests/unit/test_cp1_foundations.py:173:        from apex.config import load_params
+tests/unit/test_cp1_foundations.py:174:        r = load_params()["risk_defaults"]
+tests/unit/test_cp1_foundations.py:193:        from apex.config import load_params
+tests/unit/test_cp1_foundations.py:194:        s = load_params()["setup_weights"]
+tests/unit/test_cp1_foundations.py:213:        from apex.config import load_params
+tests/unit/test_cp1_foundations.py:214:        q = load_params()["quality_weights"]
+tests/unit/test_cp1_foundations.py:258:        from apex.config import load_params
+tests/unit/test_cp1_foundations.py:259:        w = load_params()["toobit_wire"]
+tests/unit/test_cp1_foundations.py:289:        from apex.config import load_params
+tests/unit/test_cp1_foundations.py:290:        e = load_params()["e11_params"]
+tests/unit/test_engine_context.py:13:from apex.config import Config, load_params
+tests/unit/test_engine_context.py:56:    assert load_params()["paper_account"]["capital_usdt"] == 10000.0
+tests/unit/test_engine_context.py:427:    class Params:
+tests/unit/test_engine_context.py:432:    monkeypatch.setattr(EC, "load_params", Params)
+tests/unit/test_engine_context.py:721:    expected = {name: EC._YamlSubsetParser((folder / name).read_text()).parse()
+tests/unit/test_engine_context.py:777:    monkeypatch.setattr(EC, "load_params", lambda: params)
+tests/unit/test_engine_context.py:2675:    broken = json.loads(json.dumps(EC.load_params()["decision_runtime"]))
+tests/unit/test_engine_context.py:2678:    class Params:
+tests/unit/test_engine_context.py:2682:    monkeypatch.setattr(EC, "load_params", Params)
+tests/unit/test_engine_context.py:2711:        EC.load_params()["decision_runtime"]["paper_bootstrap"])

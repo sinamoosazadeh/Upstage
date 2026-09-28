@@ -1,0 +1,34 @@
+{
+  "fresh_instance_after_mutation": 0.005,
+  "original_budget": 0.005,
+  "params_docstring_claims_read_only_view": true,
+  "parser_cases": {
+    "anchor_alias": {
+      "accepted": true,
+      "value": {
+        "base": "&anchor 1",
+        "copy": "*anchor"
+      }
+    },
+    "block_scalar": {
+      "accepted": false,
+      "error": "ValueError",
+      "message": "params YAML line 2: bad indentation '  content'"
+    },
+    "multi_document": {
+      "accepted": false,
+      "error": "ValueError",
+      "message": "params YAML line 2: expected 'key: value', got '---'"
+    },
+    "valid_flow": {
+      "accepted": true,
+      "value": {
+        "values": [
+          1,
+          2
+        ]
+      }
+    }
+  },
+  "same_instance_after_mutation": -123.0
+}

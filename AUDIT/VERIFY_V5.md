@@ -42,7 +42,7 @@
 | H-036 | CONFIRMED | S2 | S2 | Yes | = APEX_GEN5 §15 tail-risk contract; signed return-tail statistic is not the positive portfolio-loss fraction consumed by Risk Kernel | A — keep frozen backtest helper semantics unchanged; add an approved adapter that derives/validates positive portfolio-loss CVaR from current positions/correlation/window and records provenance before passing it to the Risk Kernel. No current PAPER risk input is wired. |
 | H-037 | PARTIAL | S2 | S2 | No | — | A — document independence as an assumption or use dependence-aware effective sample/cluster interval. Promotion protocol is non-frozen but contract Z.2 is normative; owner decision required before changing statistical acceptance, recompute all family gates and do not treat ATR as proof. |
 | I-001 | PARTIAL | S2 | S2 | No | = CP-1 config/parameter-loader checks and D24 missing-artifact behavior; test binds directly to the gitignored runtime artifact path | A — preserve D24 absent/present semantics but run the assertion against an isolated temporary params root; no production fallback or classifier commit. The test is filesystem-sensitive and does not prove run_apex→PaperRuntime composition. |
-| I-002 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| I-002 | PARTIAL | S2 | S2 | No | = CP-1 Part I tests prove pinned metadata/literals, not parser rejection, installation, or immutable Params; CP-14 separately covers fixture boundary | A — add hermetic parser/immutability/install assertions; retain CP-14 fixture separation and do not broaden matrix claims beyond asserted scope. No source/frozen change in this audit. |
 | I-003 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-004 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-005 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -113,7 +113,7 @@ Baseline source files were not changed. Selected actual-repository probes are in
 | H-036 | CONFIRMED | S2 | S2 | Yes | = APEX_GEN5 §15 tail-risk contract; signed return-tail statistic is not the positive portfolio-loss fraction consumed by Risk Kernel | A — keep frozen backtest helper semantics unchanged; add an approved adapter that derives/validates positive portfolio-loss CVaR from current positions/correlation/window and records provenance before passing it to the Risk Kernel. No current PAPER risk input is wired. |
 | H-037 | PARTIAL | S2 | S2 | No | — | A — document independence as an assumption or use dependence-aware effective sample/cluster interval. Promotion protocol is non-frozen but contract Z.2 is normative; owner decision required before changing statistical acceptance, recompute all family gates and do not treat ATR as proof. |
 | I-001 | PARTIAL | S2 | S2 | No | = CP-1 config/parameter-loader checks and D24 missing-artifact behavior; test binds directly to the gitignored runtime artifact path | A — preserve D24 absent/present semantics but run the assertion against an isolated temporary params root; no production fallback or classifier commit. The test is filesystem-sensitive and does not prove run_apex→PaperRuntime composition. |
-| I-002 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
+| I-002 | PARTIAL | S2 | S2 | No | = CP-1 Part I tests prove pinned metadata/literals, not parser rejection, installation, or immutable Params; CP-14 separately covers fixture boundary | A — add hermetic parser/immutability/install assertions; retain CP-14 fixture separation and do not broaden matrix claims beyond asserted scope. No source/frozen change in this audit. |
 | I-003 | UNVERIFIED | S1 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-004 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
 | I-005 | UNVERIFIED | S2 | — | No | — | No recommendation until the row is independently verified; do not apply an audit proposal based on this incomplete review. |
@@ -1514,39 +1514,38 @@ In `tmp_path`, assert `Params()["e11_classifier"]` fails when the runtime filena
 ### Auditor claim (short quote)
 Config/foundation tests leave parser, installation, immutability, and fixture boundary gaps.
 
-### What I read (files, line ranges, functions, callers)
-Incomplete. I extracted the complete audit row from `/tmp/AUDIT.md` (source report commit 015d19b). I did not read all cited source/test files, complete functions and callers/callees, governing clauses and decisions, or the composition-root trace required for a verdict. No source finding is adopted.
+### What I read (baseline line references; complete functions and callers/callees)
+Against baseline `85b2c155d7b054a468379ddfd802eb239d0801f9`: full stdlib `.env`/YAML parser, `_load_yaml`, `Params.__getitem__`, and `load_params` in `apex/config.py:87–147,190–462,463–511`; package tests and `TestNormativeTree` / `TestParamsFrozenValues` in `tests/unit/test_cp1_foundations.py:25–295`; the full `tests/unit/test_config.py`; fixture/artifact tests and D28 temporary-params tests in `tests/unit/test_engine_context.py:19–72,683–766`; run_apex composition `scripts/run_apex.py:745–779`; and paper plan boundary/consumer in `apex/ops/paper_loop.py:644–695`. Grep consumer inventory is in `I002_consumers.out`; production composition and exact matrix Part I rows are in `I002_composition.out`. Read APEX_GEN5 §9.5 parser/tree/artifact clauses and D24/D28. The tests do not call the production run_apex root or execute PaperRuntime as a composed runtime test.
 
 ### Reproduction (command, probe file, actual result)
-Not reproduced. No command/probe result is claimed for this ID. A test suite pass, fixture, or auditor-supplied reproduction is not independent proof.
+Ran `tests/unit/test_config.py`, `tests/unit/test_cp1_foundations.py`, and three focused engine-context classifier/package tests: **33 passed in 5.66s** (`I002_pytest.out`). These prove exact lock/pyproject text, collect-only/full-suite discoverability, tree/import/literal checks, `.env` parsing cases, plus later CP-14 fixture/missing-artifact and temporary package-hash behavior. `I002_config_boundaries.py` mutates a real `Params` instance’s nested `risk_defaults` mapping: the same object returns the mutation, while a new `load_params()` returns the original YAML value. The `Params` API is not actually immutable. The same probe shows valid flow sequence parsing, but YAML anchors/aliases are silently accepted as the literal strings `&anchor 1` and `*anchor`; block scalar and multi-document examples raise `ValueError`. Raw output is `I002_config_boundaries.out`. `test_run_all_tests_runs_full_suite` invokes `pytest --collect-only`; packaging tests check exact pins/metadata but do not install them. Test output is recorded in `I002_pytest.out`; no network/device or database operation was used.
 
-### Verdict and reasoning
-UNVERIFIED. This is not a rejection, confirmation, or device-evidence verdict. Severity is not independently assigned.
+### Verdict and independently assigned severity
+**PARTIAL, independent severity S2.** The CP-1 evidence has confirmed gaps: no CP-1 test proves real package installation; YAML-subset negative-boundary tests are absent and the real parser treats anchor/alias markers as ordinary strings; and `Params` returns mutable cached dictionaries despite “read-only view” documentation. But the broader fixture-boundary portion is not wholly missing: CP-14 engine-context tests explicitly load a test-only classifier, exercise missing artifact refusal, and bind package hashes using temporary copied params. Matrix Part I’s narrower claims (nine pins, config env/no-dotenv behavior, frozen YAML literals) are supported by the named tests; they do not claim parser/immutability or production composition. No product config/file mutation was observed. Severity S2 reflects test/validation and mutable-view boundaries, not a demonstrated order defect.
 
 ### Root cause
-Not determined; do not infer from the report title or code names.
+The CP-1 suite checks declared dependency pins and literal values, while the loader tests focus on valid current files and `.env` grammar. It does not assert `pip install` success or unsupported-YAML rejection. `Params.__getitem__` memoizes and returns the parser’s mutable `dict` directly; mutation persists within that `Params` instance. Separate CP-14 tests added explicit artifact-fixture isolation, so the initial blanket fixture-gap claim overstates the full repository test set.
 
 ### Direct impact
-Not determined.
+An invalid YAML anchor/alias can be accepted as a plain string and then fail later at consumer schema/use, instead of failing at parse time as the loader documentation promises. A caller can mutate a parameter mapping and alter subsequent reads from that same `Params` instance; fresh `load_params()` calls reread their own cache and repository files remain unchanged. A dependency set may satisfy textual pin tests without those packages being installable together, although the matrix separately records a prior clean-clone install/run procedure. There is no evidence that run_apex or PaperRuntime mutates shared params in a live process.
 
 ### Secondary effects and interactions (upstream/downstream)
-Not traced upstream or downstream; no claim regarding decision/risk/order/ledger/hash/training/replay path.
+Upstream the matrix Part I config tests (`PHASE2_TRACEABILITY_MATRIX.md:9,14`) prove exact package metadata and env security; the frozen-parameter row `:26` proves specified YAML values. They do not establish unsupported YAML syntax rejection, mapping immutability, or actual install. CP-14 `test_classifier_loader_and_real_bridge_tensor_validation`, `test_artifact_missing_is_lazy_and_has_no_fixture_fallback`, and D28 temp package tests cover fixture boundary/identity separately. Downstream, run_apex wires `EngineContextProducer → PaperPlanBridge → PaperRuntime`; `paper_loop._resolve_plan` accepts only a provider mapping or named refusal, but none of these CP-1/CP-14 unit tests executes that full runtime composition. Mutable params could affect a consumer only if the same `Params` object is passed and mutated; no such production path was found. No data/ledger/order/training/hash side effect was demonstrated. SQLite query plans are not applicable.
 
 ### Contract and decisions
-Governing clause and owner-decision precedence were not fully located/quoted for this row; no contract conclusion.
+APEX_GEN5 §9.5-7 (configuration/parser) documents the supported APEX YAML subset and fail-closed unsupported syntax; the matrix Part I rows record only exact package pins, env names/no-dotenv, required tree and frozen literal values. D24 (`PHASE2_DECISION_LOG.md:296`) requires lazy fail-closed behavior when the runtime classifier artifact is absent and separate valid fixture loading; D28 (`:440`) specifies temp/package binding semantics including the optional classifier file. The tree states the runtime artifact is phone-generated/gitignored/never committed and the test fixture is not a runtime fallback (`APEX_GEN5.md:20415–20435`). These later decisions override no CP-1 test claims; they demonstrate the fixture boundary is covered by CP-14 tests, not by CP-1 alone. No decision was found making returned nested dictionaries immutable by enforcement.
 
 ### Frozen status and non-frozen alternative
-Frozen status is a preliminary path-based estimate only where shown in summary; no fix authorization. Required alternative outside frozen code not assessed.
+`apex/config.py` and tests are non-frozen; the six original parameter YAML files remain frozen. Add hermetic tests using a temporary params root for parser syntax and mutation boundaries. If an immutable API is required, freeze nested mappings or return defensive deep copies in a non-frozen wrapper; check callers that currently expect plain dicts before changing shape. Packaging should be verified in a throwaway venv using the exact lock, without changing the lock or installed environment in the repository. Preserve the CP-14 fixture file as test-only and never add it as a production fallback.
 
 ### Fix options (A/B/C… each with side effects, or "single path" with justification)
-No fix recommendation until verified. Do not apply auditor proposal based on this incomplete review.
+A: add tests for anchors, aliases, tags, block scalars, multi-documents and malformed flow syntax, and reject unsupported syntax at parser boundary. This may reject previously accepted but invalid parameter documents; revalidate every governed YAML. B: make `Params` return defensive recursive copies or immutable nested mappings and add mutation tests. Copying costs memory and could alter identity/mutation assumptions; recursive immutability can break call sites requiring dict/list. C: add a clean temporary-venv install smoke test for `requirements.lock` and runtime import/startup checks, while preserving pytest as dev-only. These are non-frozen tests/loader work; do not alter the six frozen YAMLs, model artifact, or live composition during this audit.
 
 ### My recommendation
-My recommendation is to leave source untouched and complete the mandated review before making a change.
+Record the matrix’s narrow CP-1 claims as proven by their actual assertions, but do not infer parser/install/immutability/runtime-composition acceptance from them. Add isolated parser, read-only-view, and lock-install checks. Count fixture separation as covered by CP-14 tests, not a gap, and keep all runtime classifier artifacts outside Git.
 
 ### Acceptance and regression tests
-No acceptance criteria validated; requires full function/caller/callee, contract/decision, relevant test/probe, and effect tracing.
-
+Test every supported and unsupported YAML form directly against the config parser (including anchor/alias rejection), prove `Params` callers cannot mutate cached state or explicitly relabel the API mutable, and verify a fresh venv can install exact lock pins and import the runtime. Keep CP-14 tests proving valid fixture loading, missing-artifact refusal, and package hashing with optional classifier only in a temporary params directory. Add a composition test for run_apex’s actual producer/bridge/Runtime seam with fake store/clock/adapter and no network, assert missing artifact fails closed and fixture never becomes fallback. Re-run the named matrix CP-1 tests and CP-14 tests; no frozen file or device artifact may change.
 
 ## I-003
 
@@ -2174,9 +2173,9 @@ Acceptance: on a fresh checkout without f14be36, the test can execute determinis
 
 ## Rows not verified or incomplete
 
-No coverage claim is made for the following 16 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
+No coverage claim is made for the following 15 IDs. Each remains UNVERIFIED because the remaining mandatory source/test reads, consumer search, governing clause/decision precedence, reproduction and two-way effect trace were not completed:
 
-`I-002, I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
+`I-003, I-004, I-005, I-006, I-007, I-008, I-009, I-010, I-011, I-012, I-013, I-014, I-015, I-016, I-017`.
 
 Rows with a non-UNVERIFIED status were independently evidenced only to the exact scope stated in their sections. Synthetic tests do not establish real data/device/model behavior. H-002/H-003/H-005/H-006/H-007/H-011/H-013 have new bounded real-function probe evidence in this continuation; untested integration/device assertions remain explicitly excluded. H-004 is PARTIAL as above; H-022 and H-034 retain their prior partial caller/governance/integration review caveat. Full V5 acceptance requires completing all remaining unverified rows, mandatory caller/callee and test reads, and relevant SQLite plan checks where applicable.
 
@@ -2185,9 +2184,9 @@ Rows with a non-UNVERIFIED status were independently evidenced only to the exact
 | Verdict | Count |
 |---|---:|
 | CONFIRMED | 28 |
-| PARTIAL | 10 |
+| PARTIAL | 11 |
 | REJECTED | 0 |
-| UNVERIFIED / incomplete | 16 |
+| UNVERIFIED / incomplete | 15 |
 | DEVICE-EVIDENCE-NEEDED | 0 (no real-device dependent claim was assigned this verdict; device evidence was not obtained) |
 
-New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle); H-036 (signed return-series CVaR helper is not positive portfolio-loss CVaR and is unwired from production sizing); I-001 (classifier-absence unit assertion reads the gitignored runtime artifact path and can vary with device state; it does not prove runtime composition).
+New findings: `X-V5-001` (test reproducibility depends on unavailable base commit); H-010 (selected scope and realized per-cell contribution are distinct report quantities, without a D30 violation); H-026 (promotion accepts internally contradictory metric/flag summaries at the exposed API); H-030 (SPRT action strings/in-memory halt are not wired to durable or execution actions); H-031 (Phase-3 schedule metadata has no repository runner); H-033 (stale checkpoint writes regress status/payload while preserving cursor); H-035 (forecast invalidation is local-object only; the PAPER trace is in-memory, not a durable lifecycle); H-036 (signed return-series CVaR helper is not positive portfolio-loss CVaR and is unwired from production sizing); I-001 (classifier-absence unit assertion reads the gitignored runtime artifact path and can vary with device state; it does not prove runtime composition); I-002 (CP-1 lacks direct YAML-negative, install, and immutable-view assertions; later CP-14 tests do cover fixture separation).
