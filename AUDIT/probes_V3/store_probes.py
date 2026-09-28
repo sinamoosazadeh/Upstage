@@ -246,8 +246,39 @@ async def k004() -> dict:
             await store.close()
 
 
+async def k005() -> dict:
+    import sqlite3
+    with tempfile.TemporaryDirectory(prefix="v3-k005-") as td:
+        store = await SQLiteStore(str(Path(td) / "probe.sqlite")).open()
+        try:
+            original = observation()
+            original_id = await store.ingest_raw(original, "MISSING")
+            await store.db.execute("CREATE TRIGGER v3_fail_revision BEFORE INSERT ON raw_revision "
+                "BEGIN SELECT RAISE(ABORT,'V3_INJECTED_REVISION_FAILURE'); END")
+            await store.db.commit()
+            corrected = observation(high="107", close="102")
+            caught = None
+            try:
+                await store.correct_raw(original_id, corrected, "MISSING", "fault probe", "V3-PROBE")
+            except sqlite3.IntegrityError as exc:
+                caught = f"{type(exc).__name__}: {exc}"
+                await store.db.rollback()
+            raw = await (await store.db.execute(
+                "SELECT event_id,high,close FROM raw_observation ORDER BY rowid")).fetchall()
+            market = await (await store.db.execute(
+                "SELECT symbol,high_price,close_price,candle_status FROM market_observation ORDER BY rowid")).fetchall()
+            revision_count = await (await store.db.execute("SELECT COUNT(*) FROM raw_revision")).fetchone()
+            retention_count = await (await store.db.execute(
+                "SELECT COUNT(*) FROM retention_event WHERE event_kind='CORRECTION'")).fetchone()
+            return {"injected_error": caught, "raw_rows": [list(r) for r in raw],
+                "market_rows_after_rollback": [list(r) for r in market],
+                "revision_count": revision_count[0], "correction_retention_event_count": retention_count[0]}
+        finally:
+            await store.close()
+
+
 async def main(row: str) -> dict:
-    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004}
+    probes = {"K-001": k001, "K-002": k002, "K-003": k003, "K-004": k004, "K-005": k005}
     if row not in probes:
         raise SystemExit(f"probe not yet implemented: {row}")
     return {"id": row, "probe": probes[row].__name__, "result": await probes[row]()}

@@ -1,0 +1,35 @@
+{
+  "id": "K-005",
+  "probe": "k005",
+  "result": {
+    "correction_retention_event_count": 0,
+    "injected_error": "IntegrityError: V3_INJECTED_REVISION_FAILURE",
+    "market_rows_after_rollback": [
+      [
+        "BTCUSDT",
+        "105",
+        "101",
+        "SUPERSEDED"
+      ],
+      [
+        "BTCUSDT",
+        "107",
+        "102",
+        "CLOSED"
+      ]
+    ],
+    "raw_rows": [
+      [
+        "01a0e975-7430-7d06-8e98-3d87ad506c07",
+        "105",
+        "101"
+      ],
+      [
+        "01a0e975-7433-791d-b21b-97b758109a90",
+        "107",
+        "102"
+      ]
+    ],
+    "revision_count": 0
+  }
+}

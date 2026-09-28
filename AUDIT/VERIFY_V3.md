@@ -5,8 +5,8 @@
 | K-001 | CONFIRMED | S1 | S1 | Yes — frozen data contract/store | — | A — fail closed on hash-colliding revisions; owner-approved versioned hash migration before acceptance |
 | K-002 | CONFIRMED | S1 | S1 | Yes — frozen parser/store | ISSUE-CP1-012 (correction lifecycle only) | A — bind each revision to its recorded correction time; refuse historical reconstruction until version-aware reads exist |
 | K-003 | CONFIRMED | S1 | S1 | No — producer is non-frozen; store DDL remains frozen | ISSUE-079 (cache correctness, distinct from latency) | A — fingerprint the selected PIT revision/status set and force cold rebuild on mismatch |
-| K-004 | CONFIRMED | S2 | S2 | Yes — SQLiteStore is frozen; route via non-frozen guarded service pending owner approval for store guard | ISSUE-CP1-012 (status/lineage only) | A now, B with owner approval — guard all three identity fields before correction |
-| K-005 | PENDING | S1 | — | — | — | — |
+| K-004 | CONFIRMED | S2 | S2 | Yes — SQLiteStore is frozen; route via non-frozen guarded service pending owner approval for store guard | — | A now, B with owner approval — guard all three identity fields before correction |
+| K-005 | CONFIRMED | S1 | S1 | Yes — SQLiteStore is frozen; non-frozen atomic writer is a fallback | ISSUE-076 (commit boundary) | B with owner approval; until then gate writes or route through tested atomic writer |
 | K-006 | PENDING | S1 | — | — | — | — |
 | K-007 | PENDING | S2 | — | — | — | — |
 | K-008 | PENDING | S2 | — | — | — | — |
@@ -206,3 +206,42 @@ Use A immediately and seek approval for B so the invariant sits at the store bou
 
 #### Acceptance and regression tests
 For each identity field, mutate only symbol, timeframe, then timestamp in separate direct `correct_raw` tests; each must refuse before changing either market row or inserting raw/revision data. The current repair caller with exact candidate identity must still succeed. Add a persisted-state assertion that the old row is unchanged on refusal, and a call-site test ensuring production code uses the guarded service.
+
+### K-005
+
+#### Auditor claim (short quote)
+> “`correct_raw` قبل از درج `raw_revision` داخل `ingest_raw` commit می‌کند؛ … اصل SUPERSEDED و جایگزین CLOSED ماندند، اما revision و audit ساخته نشدند.” — “`correct_raw` commits inside `ingest_raw` before inserting `raw_revision`; … the original remained SUPERSEDED and the replacement CLOSED, with no revision or audit row.”
+
+#### What I read (files, line ranges, functions, callers)
+Read the full `correct_raw`, `ingest_raw`, `_find_by_event`, and relevant transaction/commit paths (`apex/data_catalog/store/sqlite_store.py:392–494`). `correct_raw` marks the original superseded, calls `ingest_raw` (`:461`), then marks the new market row corrected, inserts `raw_revision`, inserts `retention_event`, and calls `commit` (`:463–479`). `ingest_raw` commits its raw/market insert before returning. `grep -RIn --include='*.py' 'correct_raw(' apex scripts tests` confirms `partial_bar_repair.repair_one` is the only production caller; the other calls are integration tests. That repair awaits the public method directly and does not wrap its internal commits.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONDONTWRITEBYTECODE=1 python3 -B AUDIT/probes_V3/store_probes.py K-005`. Probe: `store_probes.py::k005`; raw result: `AUDIT/probes_V3/K-005.json`. On temporary repository DDL, I installed a test-only SQLite trigger that aborts insertion into `raw_revision`, called the real `correct_raw`, caught the injected `IntegrityError`, and rolled back the remaining transaction. The original market row persisted as `SUPERSEDED`; a second raw row and market row persisted as `CLOSED`; `raw_revision` count and correction `retention_event` count were both zero. The trigger was isolated to the temporary probe database; this is not a device fault or device-data result.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). A failure after `ingest_raw`’s inner commit leaves a durable partial correction even when the caller rolls back. The exact injected failure point demonstrates the code’s transaction boundary; one probe does not estimate hardware/power-loss probability.
+
+#### Root cause
+The method spans several logically coupled rows but delegates to `ingest_raw`, which commits the shared SQLite connection before the revision and retention records are inserted. A later rollback cannot undo that commit, and the old supersede update was included in it.
+
+#### Direct impact
+A failed correction can leave no active original, an unclassified `CLOSED` replacement, and no lineage/audit record. Retry, recovery, and the active market projection can then disagree about whether correction completed.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, partial-bar repair can trigger this path; failures propagate through the caller but cannot reverse the nested commit. Downstream, PIT reconstruction, revision lookup, cache keys, quality/feature consumers, and retention/audit reconciliation see incomplete history. `ISSUE-076` overlaps only on inner/per-row commit boundaries; this finding concerns atomicity of one correction across raw, market, revision, and retention state, not replay throughput. `ISSUE-CP1-012` owns the expected status/lineage semantics but does not make these writes atomic. No concurrent-device or filesystem failure was run.
+
+#### Contract and decisions
+`APEX_GEN5.md:18692–18699` requires append correction, original `SUPERSEDED`, new event, parent lineage, and retained history; `:18725–18730` makes the raw store append-only and revision-bearing. `PHASE2_DECISION_LOG.md:51` (ISSUE-CP1-012) records the chosen status/lineage mapping. The text does not explicitly prescribe a SQLite `BEGIN/COMMIT` boundary; the independent finding is that a mid-operation error leaves a state inconsistent with that correction model, not a claim that a specific SQL primitive is named as normative.
+
+#### Frozen status and non-frozen alternative
+**Frozen:** `SQLiteStore` is in frozen `apex/data_catalog/**`; `partial_bar_repair.py` is non-frozen. Without changing frozen code, route production corrections through a new non-frozen atomic writer that uses a single explicit transaction and avoids calling the commit-owning `ingest_raw`/`correct_raw` methods. This duplicates or factors frozen serialization/DDL assumptions and must be guarded by schema-compatibility and parity tests. Caller-level rollback alone is not an alternative because the inner commit is already durable.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — non-frozen transaction-owning correction service:** validate and prepare the canonical event, then write raw observation, market projection, revision, and retention audit under one `BEGIN IMMEDIATE`/commit, rolling all back on any error; route all production writes through it. Side effects: duplicates store internals, holds the writer lock longer, requires idempotent retry rules, and must exactly preserve event/hash/lineage semantics (including K-001/K-004 constraints). **B — owner-approved store correction transaction:** refactor the frozen method so nested ingestion does not commit and the entire correction owns one transaction. Side effects: frozen implementation change and explicit migration/parity approval; existing partial corrections need a reconciliation report, not automatic rewrite.
+
+#### My recommendation
+Do not retry/continue from a failed correction as though it were atomic. Seek owner approval for B; until then, block the production correction path or route it only through a fully tested atomic writer A, with startup reconciliation for existing split states.
+
+#### Acceptance and regression tests
+Inject failure after each write boundary (original status, raw insert, market insert, new status, revision, retention event, final commit). After each failure, assert the durable database contains either the exact pre-state or the complete corrected state—never a partial mix. Verify rollback under WAL, restart/reopen, concurrent reader behavior, idempotent retry, and retention/revision consistency; keep a test that proves `ingest_raw` remains atomic for its own single-observation contract.
+
