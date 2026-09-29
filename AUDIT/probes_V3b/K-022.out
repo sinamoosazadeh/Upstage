@@ -1,0 +1,19 @@
+# K-022 — repair verdicts do not distinguish the cause
+
+candidates found by the real find_candidates = 1
+  cell=BTCUSDT:1h open=2026-09-29T01:00:00.000Z created=2026-09-29T01:47:40.407Z close_ms=1790647200000
+
+HTTP 429 rate limit (transient)                fetch_live_bar=None calls=2
+                                               verdict='UNREPAIRABLE_VENUE_WINDOW_PASSED' detail='venue window passed and no evidence entry'
+network timeout (transient)                    fetch_live_bar=None calls=2
+                                               verdict='UNREPAIRABLE_VENUE_WINDOW_PASSED' detail='venue window passed and no evidence entry'
+HTTP 500 server error (transient)              fetch_live_bar=None calls=2
+                                               verdict='UNREPAIRABLE_VENUE_WINDOW_PASSED' detail='venue window passed and no evidence entry'
+healthy venue, window truly empty (retention)  fetch_live_bar=None calls=2
+                                               verdict='UNREPAIRABLE_VENUE_WINDOW_PASSED' detail='venue window passed and no evidence entry'
+
+end-to-end run_repair with an injected now_ms past the close (so the bar is no longer 'still open'), venue returning HTTP 429:
+   counts  = {'candidates': 1, 'verified': 0, 'corrected': 0, 'unrepairable': 1, 'refused': 0}
+   verdict = 'UNREPAIRABLE_VENUE_WINDOW_PASSED'
+
+CLI mapping: scripts/run_apex.py:683-686 — unrepairable>0 or refused>0 -> EXIT_DEGRADED, with no cause field

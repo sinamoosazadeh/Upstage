@@ -35,7 +35,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-019 | CONFIRMED | S1 | S1 | No — `apex/ops/bootstrap_service.py` / `apex/ops/engine_context.py` are non-frozen | D22 (CATCH_UP_FAILED); K-017 (evidence durability) | A — durable per-observation publish outbox retried independently of `new_hashes`, cell status DEGRADED until reconciled |
 | K-020 | CONFIRMED | S1 | S1 | Partly — `apex/research/bootstrap.py` frozen; the service, the coverage gate and `scripts/run_apex.py` are not | K-015 (walk stop reason), ISSUE-CP13-001 (empty page = only completion signal) | A — a separate non-frozen coverage gate; SKIPPED never counted as complete, never exit READY |
 | K-021 | CONFIRMED | S2 | S2 | No — the wrapper lives in `apex/ops/bootstrap_service.py`; the two DDLs are frozen | ISSUE-CP9-007 (canonical table = resume authority); K-017 | A — surface the mirror failure as a named DEGRADED status and reconcile the two tables |
-| K-022 | PENDING | S2 | — | — | — | — |
+| K-022 | CONFIRMED | S2 | S2 | No — `apex/ops/partial_bar_repair.py` and `scripts/run_apex.py` are non-frozen | ISSUE-CP13-001 / CP-13.1 (governed repair) | A — classify the fetch failure, retry transients, and give an exhausted window its own verdict |
 | K-023 | PENDING | S2 | — | — | — | — |
 | K-024 | PENDING | S1 | — | — | — | — |
 | K-025 | PENDING | S1 | — | — | — | — |
@@ -1537,3 +1537,151 @@ one), then **D** as an owner-approved `last_error` lifecycle policy. Do not ship
    cleared or retained with a recorded reason), never left ambiguous.
 5. Re-running an already complete cell does not double `bars_written` on either side, or the
    accumulation is documented and asserted as intentional.
+
+---
+
+## K-022 — repair cannot distinguish a transient venue failure from an exhausted retention window
+
+#### Auditor claim (short quote)
+> «`fetch_live_bar` همهٔ خطاهای fetch، حتی ۴۲۹/timeout را `None` می‌کند؛ اگر evidence نباشد `repair_one` بی‌تمایز `UNREPAIRABLE_VENUE_WINDOW_PASSED` می‌دهد. در probe ۴۲۹ گذرا، دقیقاً همین verdict و پیام «venue window passed» برگردانده شد؛ retention واقعاً تمام نشده بود.»
+> — “`fetch_live_bar` turns every fetch error, even 429/timeout, into `None`; with no evidence, `repair_one` returns an undifferentiated `UNREPAIRABLE_VENUE_WINDOW_PASSED`. In the probe a transient 429 produced exactly that verdict and the ‘venue window passed’ message, while retention had not in fact expired.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/partial_bar_repair.py:327–348` — `fetch_live_bar`: the docstring itself states
+“Any venue failure — window passed, rate-limit exhausted, network error — is `None`”, and the
+body is `except (ToobitPublicError, Exception): return None` (a clause that catches
+everything, the first alternative being redundant). No retry, no classification, no logging of
+the exception.
+`apex/ops/partial_bar_repair.py:389–426` — `repair_one`: “1. LIVE first” →
+`live = await fetch_live_bar(...)`; on `None` the evidence fallback runs; when neither yields
+a replacement, `return {... "verdict": UNREPAIRABLE_VENUE_WINDOW_PASSED,
+"detail": "venue window passed and no evidence entry"}` (423–425) — a single verdict with a
+hard-coded causal claim.
+`apex/ops/partial_bar_repair.py:119–129` — the verdict vocabulary: `VERIFIED_CLOSED`,
+`CORRECTED`, `UNREPAIRABLE_VENUE_WINDOW_PASSED`, `REFUSED_OHLC_*`,
+`REFUSED_EVIDENCE_MISMATCH`, `REFUSED_PARSE`, `SKIPPED_STILL_OPEN` — there is **no**
+"venue unavailable / retry later" verdict.
+`apex/ops/partial_bar_repair.py:457–525` — `run_repair`: still-open candidates are skipped
+before any fetch (CP-13.1 / ISSUE-CP13-004); everything else goes through `repair_one`;
+`counts["unrepairable"]` aggregates the single verdict.
+`apex/ops/partial_bar_repair.py:281–320` — `find_candidates` (the real detector used by the
+probe).
+`scripts/run_apex.py:648–686` — the CLI prints `verdict=` per row and
+`summary: … unrepairable=… refused=…`, writes the JSON report, and
+`if counts["unrepairable"] == 0 and counts["refused"] == 0: return EXIT_READY` else
+`EXIT_DEGRADED` — no cause is carried, so a rate-limited run and a genuinely unrepairable
+history produce the same operator-visible outcome.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-022.py`; probe/output `AUDIT/probes_V3b/K-022.py|.out`.
+A real partial bar is written to a temp `SQLiteStore` (`ingest_raw` of a bar that is still
+open, i.e. `created_at < close`), detected by the real `find_candidates`, and offered to the
+real `fetch_live_bar`/`repair_one` with four clients:
+```
+candidates found by the real find_candidates = 1
+  cell=BTCUSDT:1h open=2026-09-29T01:00:00.000Z created=2026-09-29T01:47:24.540Z
+HTTP 429 rate limit (transient)        fetch_live_bar=None  verdict='UNREPAIRABLE_VENUE_WINDOW_PASSED'
+network timeout (transient)            fetch_live_bar=None  verdict='UNREPAIRABLE_VENUE_WINDOW_PASSED'
+HTTP 500 server error (transient)      fetch_live_bar=None  verdict='UNREPAIRABLE_VENUE_WINDOW_PASSED'
+healthy venue, window truly empty      fetch_live_bar=None  verdict='UNREPAIRABLE_VENUE_WINDOW_PASSED'
+   (all four details: 'venue window passed and no evidence entry')
+end-to-end run_repair (now_ms injected past the close, venue returning HTTP 429):
+   counts  = {'candidates': 1, 'verified': 0, 'corrected': 0, 'unrepairable': 1, 'refused': 0}
+   verdict = 'UNREPAIRABLE_VENUE_WINDOW_PASSED'
+```
+Four causally different situations, one verdict and one identical detail string; the CLI maps
+all of them to `EXIT_DEGRADED` with `unrepairable=1`.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The behaviour is reproduced on
+real code end to end, including through `run_repair` and the CLI counting. S2 rather than S1
+because nothing incorrect is written to the store — `repair_one` refuses rather than
+fabricates, the raw row is untouched, and the run exits DEGRADED, so the failure is
+conservative. The harm is decision-quality: the verdict asserts a cause ("venue window
+passed") that the code never established.
+
+#### Root cause
+The fetch layer erases the error class (`except (ToobitPublicError, Exception): return None`)
+and the verdict layer then names a cause that only the erased information could justify. There
+is also no retry at this layer, although the repository's own public client already implements
+`RETRY_ATTEMPTS = 3` with `RETRY_BACKOFF_SECONDS = (1.0, 2.0, 4.0)` — the repair path discards
+whatever it raises.
+
+#### Direct impact
+A repairable row is reported as permanently unrepairable whenever the venue is momentarily
+rate-limited or unreachable, and the JSON report written to `data/` records that false cause
+for the audit trail.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream this is the CP-13 governed-repair path for exactly the partial bars that
+ISSUE-CP13-001 left behind (the owner's 45/91 confirmed mismatches), i.e. the rows where the
+operator most needs a reliable cause. Downstream the auditor's concern is the operator: told
+the venue window has passed, the operator may abandon the row or reach for a manual/`--evidence`
+correction that carries weaker provenance, when simply retrying later would have succeeded.
+Interacts with **K-015** (an ambiguous venue silence read as a definitive state) and **K-019**
+(a transient failure recorded in a side field and never retried) — the same class of
+error-erasure. It does **not** interact with the immutable-raw guarantees: no write happens in
+any of the failing branches.
+
+#### Contract and decisions
+* `APEX_GEN5.md:16978` — retry/fill discipline: “never to blind retry”; and
+  `APEX_GEN5.md:18950` “**No blind retry after UNKNOWN exchange response**”. Read together
+  with `APEX_GEN5.md:144/14738` (the governed 3× exponential backoff 1s/2s/4s), the contract's
+  position is that an UNKNOWN response must be *classified*, not guessed — the current code
+  does the opposite: it converts UNKNOWN into a definite negative conclusion.
+* `APEX_GEN5.md:18744–18746` — “Every correction, revocation, or deletion is logged with
+  event_id, timestamp, reason, **and actor identity**”: a logged `reason` that is not the
+  actual reason defeats the clause.
+* `APEX_GEN5.md:5068` — an unavailable/degraded status “MUST be carried as a degraded
+  quality/provenance flag”, not resolved into a factual claim.
+* `PHASE2_DECISION_LOG.md:182` (**ISSUE-CP13-001**) defines the repair path and its verdict
+  set — `UNREPAIRABLE_VENUE_WINDOW_PASSED` / `REFUSED_*` — and requires the CLI to exit 0
+  “iff nothing is left unrepairable or refused”. Precedence: the decision *names* the verdict
+  but does not license using it for a transient failure; adding a distinct
+  venue-unavailable verdict is additive and consistent with its exit rule (such a row is also
+  "left unrepaired", so exit stays DEGRADED). CP-13.1 / ISSUE-CP13-004 already established the
+  precedent that a non-repairable-yet row gets **its own** verdict (`SKIPPED_STILL_OPEN`) with
+  a `closes_at` field telling the owner when to retry — exactly the shape the transient case
+  needs.
+
+#### Frozen status and non-frozen alternative
+**Not frozen**: `apex/ops/partial_bar_repair.py` and `scripts/run_apex.py` are wiring, added
+by CP-13 itself. The frozen public client (`apex/data_catalog/ingest/toobit_public.py`) needs
+no change — its exceptions merely have to be *propagated* rather than erased.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — classify the failure in `fetch_live_bar` (return a small result object
+  or raise a typed error: `EMPTY_WINDOW`, `RATE_LIMITED`, `TRANSPORT_ERROR`, `HTTP_5XX`),
+  apply the governed 3× 1s/2s/4s backoff to the transient classes, and add a distinct verdict
+  `UNREPAIRABLE_VENUE_UNAVAILABLE` (with `retry_after`/last error detail) kept separate from
+  `UNREPAIRABLE_VENUE_WINDOW_PASSED` — mirroring the existing `SKIPPED_STILL_OPEN` precedent.
+  Side effects: `run_repair`'s `counts` gains a bucket and the CLI summary/JSON report grows a
+  field, so `tests/unit/test_ops_partial_bar_repair.py` (20 tests, several asserting exact
+  verdicts and counts) and any stored report fixture must be extended; the exit rule stays
+  DEGRADED for the new bucket, so no behaviour the owner relies on is weakened; no frozen
+  file, no migration, no invalidated hash.
+* **B** — keep one verdict but attach the real cause in `detail` (e.g. the exception type and
+  message). Side effects: one-line change, immediately stops the false "window passed" claim,
+  but machine consumers still see `unrepairable` and cannot select rows worth retrying.
+* **C** — retry only, without classification. Side effects: hides most transients but still
+  reports the wrong cause for the rest, and adds latency to genuinely empty windows.
+* **D** — probe retention explicitly (fetch a nearby known-present bar to prove the venue is
+  alive before concluding the window passed). Side effects: extra venue calls against the
+  rate-limit budget; useful as a confirmation step inside A, not on its own.
+
+#### My recommendation
+**A**, with **B** as the same-day mitigation (stop asserting a cause that was not measured).
+
+#### Acceptance and regression tests
+1. Client raises `ToobitPublicError("klines", "HTTP 429 …")`: verdict is the new
+   venue-unavailable class after the governed retries, not `…WINDOW_PASSED`; the store row is
+   unchanged.
+2. Client raises `asyncio.TimeoutError` and, separately, an HTTP 500: same treatment, each
+   with its cause recorded in `detail`.
+3. Healthy client returning an empty window: verdict stays
+   `UNREPAIRABLE_VENUE_WINDOW_PASSED`, and the test asserts the venue was actually reachable.
+4. Valid `--evidence` entry present: the evidence fallback still wins over a transient failure
+   (existing F6a/F6b behaviour preserved, with the store-equality gate).
+5. Counts/exit: transient-only run exits DEGRADED with the new bucket non-zero and
+   `unrepairable` (window-passed) zero; a clean run still exits READY.
+6. No branch of the failing paths performs any write (`correct_raw` not called).
