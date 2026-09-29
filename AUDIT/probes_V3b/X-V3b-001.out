@@ -1,0 +1,140 @@
+# X-V3b-001 probe — sqlite 3.40.1, db=/tmp/v3b_big.db, phase=build
+(reusing previously built synthetic db)
+  market_observation: 200000 rows
+  raw_observation: 200000 rows
+  snapshot_pit: 300000 rows
+  ledger: 2000 rows
+  db size: 268.1 MB
+  indexes present: ["idx_mo_sym_tf_open", "idx_pit_scope_asof", "idx_raw_manifest_period", "idx_raw_revision_original", "idx_raw_sym_tf_asof", "sqlite_autoindex_apex_risk_ladder_state_1", "sqlite_autoindex_bootstrap_progress_1", "sqlite_autoindex_evidence_event_1", "sqlite_autoindex_ledger_1", "sqlite_autoindex_ledger_audit_1", "sqlite_autoindex_market_observation_1", "sqlite_autoindex_outcome_1", "sqlite_autoindex_pattern_evidence_1", "sqlite_autoindex_purge_allow_1", "sqlite_autoindex_quality_vector_1", "sqlite_autoindex_raw_manifest_1", "sqlite_autoindex_raw_manifest_2", "sqlite_autoindex_raw_observation_1", "sqlite_autoindex_raw_observation_2", "sqlite_autoindex_raw_revision_1", "sqlite_autoindex_retention_event_1", "sqlite_autoindex_schema_migrations_1", "sqlite_autoindex_setup_candidate_1", "sqlite_autoindex_snapshot_pit_1", "sqlite_autoindex_trade_plan_1"]
+# X-V3b-001 probe — sqlite 3.40.1, db=/tmp/v3b_big.db, phase=plans
+
+--- EXPLAIN QUERY PLAN — state A. no device indexes, no ANALYZE ---
+  [FP_RAW (fingerprint join, current)] SCAN r
+  [FP_RAW (fingerprint join, current)] SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)
+  [FP_RAW (fingerprint join, current)] USE TEMP B-TREE FOR ORDER BY
+  [FP_RAW (rewrite substr)] SCAN m
+  [FP_RAW (rewrite substr)] SEARCH r USING INDEX sqlite_autoindex_raw_observation_1 (event_id=?)
+  [FP_RAW (rewrite substr)] USE TEMP B-TREE FOR ORDER BY
+  [FP_FACTS] SCAN snapshot_pit USING INDEX sqlite_autoindex_snapshot_pit_1
+  [FP_PRIOR] SCAN snapshot_pit USING INDEX sqlite_autoindex_snapshot_pit_1
+  [FP_LEDGER] SCAN ledger
+  [WIN_META (window join, current)] SCAN r
+  [WIN_META (window join, current)] SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)
+  [WIN_META (window join, current)] USE TEMP B-TREE FOR ORDER BY
+  [WIN_META (rewrite substr)] SCAN m
+  [WIN_META (rewrite substr)] SEARCH r USING INDEX sqlite_autoindex_raw_observation_1 (event_id=?)
+  [WIN_META (rewrite substr)] USE TEMP B-TREE FOR ORDER BY
+  [HISTORY (compose_bridge_context)] SCAN snapshot_pit
+  [HISTORY (compose_bridge_context)] USE TEMP B-TREE FOR ORDER BY
+
+--- EXPLAIN QUERY PLAN — state B. no device indexes, after ANALYZE ---
+  [FP_RAW (fingerprint join, current)] SCAN r
+  [FP_RAW (fingerprint join, current)] SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)
+  [FP_RAW (fingerprint join, current)] USE TEMP B-TREE FOR ORDER BY
+  [FP_RAW (rewrite substr)] SCAN m
+  [FP_RAW (rewrite substr)] SEARCH r USING INDEX sqlite_autoindex_raw_observation_1 (event_id=?)
+  [FP_RAW (rewrite substr)] USE TEMP B-TREE FOR ORDER BY
+  [FP_FACTS] SCAN snapshot_pit USING INDEX sqlite_autoindex_snapshot_pit_1
+  [FP_PRIOR] SCAN snapshot_pit USING INDEX sqlite_autoindex_snapshot_pit_1
+  [FP_LEDGER] SCAN ledger
+  [WIN_META (window join, current)] SCAN r
+  [WIN_META (window join, current)] SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)
+  [WIN_META (window join, current)] USE TEMP B-TREE FOR ORDER BY
+  [WIN_META (rewrite substr)] SCAN m
+  [WIN_META (rewrite substr)] SEARCH r USING INDEX sqlite_autoindex_raw_observation_1 (event_id=?)
+  [WIN_META (rewrite substr)] USE TEMP B-TREE FOR ORDER BY
+  [HISTORY (compose_bridge_context)] SCAN snapshot_pit
+  [HISTORY (compose_bridge_context)] USE TEMP B-TREE FOR ORDER BY
+
+--- EXPLAIN QUERY PLAN — state C. device indexes, no ANALYZE ---
+  [FP_RAW (fingerprint join, current)] SEARCH m USING INDEX idx_mo_sym_tf_open (symbol=?)
+  [FP_RAW (fingerprint join, current)] SCAN r
+  [FP_RAW (fingerprint join, current)] USE TEMP B-TREE FOR RIGHT PART OF ORDER BY
+  [FP_RAW (rewrite substr)] SEARCH m USING INDEX idx_mo_sym_tf_open (symbol=?)
+  [FP_RAW (rewrite substr)] SEARCH r USING INDEX sqlite_autoindex_raw_observation_1 (event_id=?)
+  [FP_RAW (rewrite substr)] USE TEMP B-TREE FOR RIGHT PART OF ORDER BY
+  [FP_FACTS] SCAN snapshot_pit USING INDEX sqlite_autoindex_snapshot_pit_1
+  [FP_PRIOR] SEARCH snapshot_pit USING INDEX idx_pit_scope_asof (source_state=? AND symbol_scope=? AND timeframe_scope=? AND as_of<?)
+  [FP_PRIOR] USE TEMP B-TREE FOR ORDER BY
+  [FP_LEDGER] SCAN ledger
+  [WIN_META (window join, current)] SEARCH m USING INDEX idx_mo_sym_tf_open (symbol=? AND timeframe=? AND open_time>? AND open_time<?)
+  [WIN_META (window join, current)] SCAN r
+  [WIN_META (rewrite substr)] SEARCH m USING INDEX idx_mo_sym_tf_open (symbol=? AND timeframe=? AND open_time>? AND open_time<?)
+  [WIN_META (rewrite substr)] SEARCH r USING INDEX sqlite_autoindex_raw_observation_1 (event_id=?)
+  [HISTORY (compose_bridge_context)] SEARCH snapshot_pit USING INDEX idx_pit_scope_asof (source_state=? AND symbol_scope=? AND timeframe_scope=? AND as_of<?)
+
+--- EXPLAIN QUERY PLAN — state D. device indexes, after ANALYZE ---
+  [FP_RAW (fingerprint join, current)] SCAN r
+  [FP_RAW (fingerprint join, current)] SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)
+  [FP_RAW (fingerprint join, current)] USE TEMP B-TREE FOR ORDER BY
+  [FP_RAW (rewrite substr)] SEARCH m USING INDEX idx_mo_sym_tf_open (symbol=?)
+  [FP_RAW (rewrite substr)] SEARCH r USING INDEX sqlite_autoindex_raw_observation_1 (event_id=?)
+  [FP_RAW (rewrite substr)] USE TEMP B-TREE FOR RIGHT PART OF ORDER BY
+  [FP_FACTS] SCAN snapshot_pit USING INDEX sqlite_autoindex_snapshot_pit_1
+  [FP_PRIOR] SEARCH snapshot_pit USING INDEX idx_pit_scope_asof (source_state=? AND symbol_scope=? AND timeframe_scope=? AND as_of<?)
+  [FP_PRIOR] USE TEMP B-TREE FOR ORDER BY
+  [FP_LEDGER] SCAN ledger
+  [WIN_META (window join, current)] SCAN r
+  [WIN_META (window join, current)] SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)
+  [WIN_META (window join, current)] USE TEMP B-TREE FOR ORDER BY
+  [WIN_META (rewrite substr)] SEARCH m USING INDEX idx_mo_sym_tf_open (symbol=? AND timeframe=? AND open_time>? AND open_time<?)
+  [WIN_META (rewrite substr)] SEARCH r USING INDEX sqlite_autoindex_raw_observation_1 (event_id=?)
+  [HISTORY (compose_bridge_context)] SEARCH snapshot_pit USING INDEX idx_pit_scope_asof (source_state=? AND symbol_scope=? AND timeframe_scope=? AND as_of<?)
+# X-V3b-001 probe — sqlite 3.40.1, db=/tmp/v3b_big.db, phase=timings
+
+--- wall time (budget 120s/query) — state A. no device indexes, no ANALYZE ---
+  FP_RAW (fingerprint join, current): 25753 rows in 0.096s [complete]
+  FP_RAW (rewrite substr): 25753 rows in 0.117s [complete]
+  FP_FACTS: 100000 rows in 0.124s [complete]
+  FP_PRIOR: 10000 rows in 0.055s [complete]
+  FP_LEDGER: 0 rows in 0.001s [complete]
+  WIN_META (window join, current): 334 rows in 0.121s [complete]
+  WIN_META (rewrite substr): 334 rows in 0.029s [complete]
+  HISTORY (compose_bridge_context): 0 rows in 0.032s [complete]
+
+--- wall time (budget 120s/query) — state B. no device indexes, after ANALYZE ---
+  FP_RAW (fingerprint join, current): 25753 rows in 0.096s [complete]
+  FP_RAW (rewrite substr): 25753 rows in 0.208s [complete]
+  FP_FACTS: 100000 rows in 0.203s [complete]
+  FP_PRIOR: 10000 rows in 0.125s [complete]
+  FP_LEDGER: 0 rows in 0.002s [complete]
+  WIN_META (window join, current): 334 rows in 0.230s [complete]
+  WIN_META (rewrite substr): 334 rows in 0.053s [complete]
+  HISTORY (compose_bridge_context): 0 rows in 0.060s [complete]
+
+--- wall time (budget 120s/query) — state C. device indexes, no ANALYZE ---
+  FP_RAW (fingerprint join, current): 1332 rows in 120.001s [ABORTED-interrupted]
+  FP_RAW (rewrite substr): 25753 rows in 0.108s [complete]
+  FP_FACTS: 100000 rows in 0.127s [complete]
+  FP_PRIOR: 10000 rows in 0.018s [complete]
+  FP_LEDGER: 0 rows in 0.001s [complete]
+  WIN_META (window join, current): 334 rows in 13.977s [complete]
+  WIN_META (rewrite substr): 334 rows in 0.002s [complete]
+  HISTORY (compose_bridge_context): 0 rows in 0.001s [complete]
+
+--- wall time (budget 120s/query) — state D. device indexes, after ANALYZE ---
+  FP_RAW (fingerprint join, current): 25753 rows in 0.224s [complete]
+  FP_RAW (rewrite substr): 25753 rows in 0.317s [complete]
+  FP_FACTS: 100000 rows in 0.285s [complete]
+  FP_PRIOR: 10000 rows in 0.035s [complete]
+  FP_LEDGER: 0 rows in 0.002s [complete]
+  WIN_META (window join, current): 334 rows in 0.272s [complete]
+  WIN_META (rewrite substr): 334 rows in 0.002s [complete]
+  HISTORY (compose_bridge_context): 0 rows in 0.001s [complete]
+# X-V3b-001 probe — sqlite 3.40.1, db=/tmp/v3b_big.db, phase=producer
+
+--- real producer calls — state A. no device indexes, no ANALYZE ---
+  producer.window(BTCUSDT,1h,bars=300): 299 obs in 0.208s
+  producer._input_fingerprint: 18552eb28818e461… in 1.266s
+
+--- real producer calls — state B. no device indexes, after ANALYZE ---
+  producer.window(BTCUSDT,1h,bars=300): 299 obs in 0.168s
+  producer._input_fingerprint: 18552eb28818e461… in 1.215s
+
+--- real producer calls — state C. device indexes, no ANALYZE ---
+  producer.window(BTCUSDT,1h,bars=300): 299 obs in 12.407s
+  producer._input_fingerprint: SKIPPED in state C — the same FP_RAW plan did not finish within 1690s in an earlier run
+
+--- real producer calls — state D. device indexes, after ANALYZE ---
+  producer.window(BTCUSDT,1h,bars=300): 299 obs in 0.138s
+  producer._input_fingerprint: 18552eb28818e461… in 1.137s

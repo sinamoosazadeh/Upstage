@@ -1,0 +1,43 @@
+# K-015 — repeated-window venue vs genuinely exhausted venue
+
+A. StickyTail (venue ignores endTime and repeats its tail):
+  [sticky] page 2: EMPTY page returned (code=None) -> this is the only completion signal the runner gets
+  [sticky] venue retains 4 bars [1726434000000, 1726437600000, 1726441200000, 1726444800000]
+  [sticky] bars served to the runner: [1726441200000, 1726444800000]
+  [sticky] bars durably stored: 2
+  [sticky] missing bars: [1726434000000, 1726437600000]
+  [sticky] source reported an error/refusal at any point: no
+
+B. HonestVenue (same 4 bars, endTime honoured):
+  [honest] page 2: EMPTY page returned (code=None) -> this is the only completion signal the runner gets
+  [honest] venue retains 4 bars [1726434000000, 1726437600000, 1726441200000, 1726444800000]
+  [honest] bars served to the runner: [1726434000000, 1726437600000, 1726441200000, 1726444800000]
+  [honest] bars durably stored: 4
+  [honest] missing bars: []
+  [honest] source reported an error/refusal at any point: no
+
+-- the completion signal in source code --
+  bootstrap_service.py:620:         self.open_excluded_by_cell[key] = len(excluded_open_ms)
+  bootstrap_service.py:621:         self.open_bars_excluded = sum(self.open_excluded_by_cell.values())
+  bootstrap_service.py:622:         if not chunk:
+  bootstrap_service.py:623:             # Walked history exhausted (or empty venue, or only the still-open
+  bootstrap_service.py:624:             # bar remains) → frozen empty-page shape so the runner completes
+  bootstrap_service.py:625:             # the cell honestly. This stays the ONLY completion signal: a page
+  bootstrap_service.py:626:             # whose rows were all invalid dropped nothing here and completes
+  bootstrap_service.py:627:             # no cell by itself, and an excluded open bar completes no cell
+  bootstrap_service.py:628:             # by itself either (it is reported, then served on a later run
+  bootstrap_service.py:629:             # once closed — no hole thanks to the frontier rule above).
+  bootstrap_service.py:630:             self._queue_cell_complete(key, str(symbol), tf_name)
+  bootstrap_service.py:631:             return {"rows": [], "next_cursor_ms": end, "code": None,
+  bootstrap_service.py:632:                     "oi_available": False}
+  bootstrap_service.py:633:         last_open_ms = _iso_to_ms(chunk[-1].timestamp)
+
+-- default phase-1 verification in the runner --
+  research/bootstrap.py:307:                 break
+  research/bootstrap.py:308:             verification = {"verified": True, "reason": "PHASE1_PAGE_WALK_DONE"}
+  research/bootstrap.py:309:             if self.phase1_verifier is not None:
+  research/bootstrap.py:310:                 verification = dict(self.phase1_verifier(
+  research/bootstrap.py:311:                     {"cell_id": cell_id, "symbol": symbol,
+  research/bootstrap.py:312:                      "timeframe": timeframe, "cursor_ms": cursor,
+  research/bootstrap.py:313:                      "bars": self.state.bars_ingested}))
+  research/bootstrap.py:314:             status = "COMPLETE" if verification.get("verified") else "SKIPPED"

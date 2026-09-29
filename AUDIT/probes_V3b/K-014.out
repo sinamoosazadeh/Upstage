@@ -1,0 +1,29 @@
+negative volume:
+  parser accepted: volume=Decimal('-1') status=CLOSED type=Decimal
+  _ohlc_violation (CP-12 hygiene gate) -> None
+  validate_market_observation -> ValidationError QX_INVALID: QX_INVALID: negative volume
+zero volume, CLOSED:
+  parser accepted: volume=Decimal('0') status=CLOSED type=Decimal
+  _ohlc_violation (CP-12 hygiene gate) -> None
+  validate_market_observation -> ValidationError E-Q-001: E-Q-001: zero volume only permitted for OPEN status
+healthy volume:
+  parser accepted: volume=Decimal('12.5') status=CLOSED type=Decimal
+  _ohlc_violation (CP-12 hygiene gate) -> None
+  validate_market_observation -> PASSED
+
+ingest_observations result: {'rows': 3, 'inserted': 3, 'duplicates': 0, 'oi_state': 'MISSING', 'contract_version': '4.0.0'}
+market_observation rows after ingest:
+  open_time=2020-09-13T12:26:40.000Z volume='-1' candle_status=CLOSED quality_state=Q0
+  open_time=2020-09-13T13:26:40.000Z volume='0' candle_status=CLOSED quality_state=Q0
+  open_time=2020-09-13T14:26:40.000Z volume='12.5' candle_status=CLOSED quality_state=Q0
+raw_observation rows after ingest:
+  as_of=2020-09-13T12:26:40.000Z volume='-1' status=CLOSED oi_state=MISSING
+  as_of=2020-09-13T13:26:40.000Z volume='0' status=CLOSED oi_state=MISSING
+  as_of=2020-09-13T14:26:40.000Z volume='12.5' status=CLOSED oi_state=MISSING
+
+grep: does any ingest path call validate_market_observation?
+  apex/data_catalog/contracts.py:185:def validate_market_observation(
+  apex/ops/engine_context.py:3586:    """Map validate_market_observation's outcome onto QualityFlags (D52)."""
+  apex/ops/engine_context.py:3587:    from apex.data_catalog.contracts import ValidationError, validate_market_observation
+  apex/ops/engine_context.py:3590:        validate_market_observation(observation, prev_sequence)
+  apex/quality/vector.py:34:    validation order is enforced by contracts.validate_market_observation;

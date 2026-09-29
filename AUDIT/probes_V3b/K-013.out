@@ -1,0 +1,21 @@
+registry completeness: {'count': 74, 'tiers': {'ATOM': 44, 'MOLE': 1, 'ORGN': 29}}
+
+-- every branch of Catalog.get --
+  ATOM, OK                           feature=body_ratio             status=OK         reason=                       value=0.250000           snapshot_id=None
+  ATOM, OK (second call)             feature=body_ratio             status=OK         reason=                       value=0.250000           snapshot_id=None
+  non-ATOM first call (sweep)        feature=sweep                  status=OK         reason=NO_SWEEP_IN_BLOCK      value=0                  snapshot_id=None
+  non-ATOM second call (sweep)       feature=sweep                  status=OK         reason=TIER_CACHE_HIT         value=0                  snapshot_id=None
+  non-ATOM first call (volatility_regime) feature=volatility_regime      status=UNAVAILABLE reason=CONTEXT_E11_REGIME_NOT_BUILT value=None               snapshot_id=None
+  non-ATOM second call (volatility_regime) feature=volatility_regime      status=UNAVAILABLE reason=CONTEXT_E11_REGIME_NOT_BUILT value=None               snapshot_id=None
+  UNREGISTERED_FEATURE_ID            feature=no_such_feature        status=INVALID    reason=UNREGISTERED_FEATURE_ID value=None               snapshot_id=None
+  PIT_FUTURE_AS_OF                   status=INVALID    reason=PIT_FUTURE_AS_OF       snapshot_id=None
+  NO_WINDOW_PROVIDER                 status=MISSING    reason=NO_WINDOW_PROVIDER     snapshot_id=None
+  INVALID_AS_OF_FORMAT               status=INVALID    reason=INVALID_AS_OF_FORMAT   snapshot_id=None
+
+-- source check: literal 'snapshot_id=' occurrences in Catalog.get --
+  catalog.py:303: availability_time=None, snapshot_id=None,
+  catalog.py:311: availability_time=None, snapshot_id=None,
+  catalog.py:324: snapshot_id=None, status=CatalogStatus.INVALID,
+  catalog.py:332: snapshot_id=None, status=CatalogStatus.INVALID,
+  catalog.py:356: snapshot_id=None, status=CatalogStatus.OK,
+  catalog.py:378: availability_time=availability, snapshot_id=None,

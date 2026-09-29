@@ -1,0 +1,7 @@
+# X-V3b-001b — sqlite 3.40.1, db=/tmp/v3b_big.db
+current join rows: 100000; rewrite rows: 100000; identical: True
+market_observation rows whose observation_id does not start with 'obs-': 0  (the ONE case where the rewrite could differ)
+prepare_engine_bundle COUNT(*) for BTCUSDT:1h = 20000 bars (this is the `bars` argument it passes to window())
+  full-history WIN_META [A no-index/no-ANALYZE]: 20000/20000 rows in 0.167s [complete]
+  full-history WIN_META [C device-index/no-ANALYZE]: 2888/20000 rows in 120.001s [ABORTED-interrupted]
+  full-history WIN_META [D device-index/ANALYZE]: 20000/20000 rows in 0.153s [complete]
