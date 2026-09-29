@@ -1,0 +1,26 @@
+# K-033 — EvidenceFabric(frozen=True) with a mutable nested dict
+
+dataclass params frozen = True
+fabric_id = fab_07529d7d378ad0e8a5b61fd8ec341bb5
+hash      = 07529d7d378ad0e8a5b61fd8ec341bb580baec245c35897fe7b5dae825ca27ae
+redundancy_state = {'G1': 0.1}
+
+1. attribute assignment is refused (this is what frozen=True buys)
+   fab.data_trust = 0.0 -> FrozenInstanceError: cannot assign to field 'data_trust'
+
+2. the nested dict is mutated in place instead
+   fab.redundancy_state = {'G1': 0.99, 'G9': 0.5}
+   fab.hash      = 07529d7d378ad0e8a5b61fd8ec341bb580baec245c35897fe7b5dae825ca27ae   (unchanged)
+   fab.fabric_id = fab_07529d7d378ad0e8a5b61fd8ec341bb5   (unchanged)
+   to_dict()['redundancy_state'] = {'G1': 0.99, 'G9': 0.5}
+   to_dict()['hash']             = 07529d7d378ad0e8a5b61fd8ec341bb580baec245c35897fe7b5dae825ca27ae
+   hash recomputed from the CURRENT body = 2fc2404450b44cc544980705b08e71450fc8cf8171a15589fed63c46f845bc6d
+   matches stored hash = False
+   fabric_id that the current body would get = fab_2fc2404450b44cc544980705b08e7145
+
+3. is the caller's own dict shared? (assemble does dict(sorted(...)))
+   caller mutated its dict -> fabric sees 0.99
+
+4. effect on the default setup path (payload=None)
+   payload=None : status=NOT_EMITTED reason='FABRIC_HASH_MISMATCH'
+   payload=<current body> : status=EMITTED all_pass=True

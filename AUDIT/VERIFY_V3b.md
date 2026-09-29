@@ -46,7 +46,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-030 | CONFIRMED | S2 | S2 | No — `apex/quality/pit.py` non-frozen; `MarketObservation` (frozen contract) legitimately has no `q_raw` | K-028/K-029 (same helper), K-025 (measurement inputs) | A — take the computed quality vector with provenance, or return a named unknown/refusal |
 | K-031 | CONFIRMED | S2 | S2 | No — `apex/identity/snapshot.py` and `apex/quality/pit.py` are non-frozen | K-029 (identity binding), K-030 (quality_state) | A — deep-copy inputs, freeze attributes, re-validate scope, and verify the id against the payload before use |
 | K-032 | CONFIRMED | S1 | S2 | No — `apex/setup/*`, `apex/ops/plan_bridge.py` non-frozen (`apex/fabric/evidence.py` non-frozen too) | K-027 (fabric built from unverified inputs), X-V3b-001 | A — verify `fabric.hash` unconditionally and bind any caller payload to the same cell + member content_ids |
-| K-033 | PENDING | S2 | — | — | — | — |
+| K-033 | CONFIRMED | S2 | S2 | No — `apex/fabric/evidence.py` is not in the frozen set | K-032 (custom payload emits the mutated fabric), K-031 (same defect class on `SnapshotBarrier`) | A — store `redundancy_state` as an immutable mapping and verify `hash` at every consumption |
 | K-034 | PENDING | S2 | — | — | — | — |
 | L-001 | PENDING | S2 | — | — | — | — |
 | L-002 | PENDING | S2 | — | — | — | — |
@@ -3075,3 +3075,144 @@ before A lands.
    from the family.
 5. Gate 11 fails when the fabric reference disagrees, and its failure is `QUARANTINED`, never a
    repair (Ch.10 §10.1 row 11).
+
+---
+
+## K-033 — `EvidenceFabric` is `frozen=True` but its `redundancy_state` dict is mutable in place; `hash` and `fabric_id` stay at their construction values
+
+#### Auditor claim (short quote)
+> «`EvidenceFabric` با `frozen=True` ساخته می‌شود ولی `redundancy_state` دیکشنری public و قابل‌تغییر درجا است. در probe، تغییر `fabric.redundancy_state` پس از `assemble`، خروجی `to_dict()` را تغییر داد و `fabric.hash`/`fabric_id` ثابت ماند؛ hash فقط در سازنده از کپی وضعیت اولیه حساب می‌شود.»
+> — “`EvidenceFabric` is built with `frozen=True`, but `redundancy_state` is a public, in-place-mutable dict. In the probe, changing `fabric.redundancy_state` after `assemble` changed the `to_dict()` output while `fabric.hash`/`fabric_id` stayed fixed; the hash is computed only in the constructor from a copy of the initial state.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/fabric/evidence.py:312–331` — `@dataclass(frozen=True) class EvidenceFabric` with the
+field `redundancy_state: Dict[str, float]` (a plain `dict`, not a `Mapping`/`MappingProxyType`);
+the docstring calls the fabric “read-only for engines”.
+`:379–401` — `assemble` builds `body` with
+`"redundancy_state": dict(sorted((redundancy_state or {}).items()))`, computes
+`digest = make_hash(body)`, and stores **another** `dict(sorted(...))` on the instance plus
+`fabric_id=make_fabric_id(digest)`. So the caller's dict is *copied in* (no inbound leak — the
+probe confirms this) but the instance's copy is then publicly reachable and mutable.
+`:404–418` — `to_dict()` emits `"redundancy_state": dict(self.redundancy_state)` (the *current*
+value) alongside `"hash": self.hash` (the *construction-time* value) — the two can disagree.
+`:33–34, 289–302` — module contract: “pure, deterministic, **hash-bound** read-only view … the
+fabric `hash` is `sha256(canonical_json(serialization))`”; `make_fabric_id` derives the id from
+that hash, so a stale hash means a stale id.
+`apex/setup/family_sf_fvg_sweep_rev.py:445–455` — the only recompute-and-compare in the codebase
+(`fabric_body` vs `fabric.hash`), and it is gated on `payload is None` (= **K-032**).
+`apex/identity/canonical_json.py:128–144` — `canonical_json` is deterministic with sorted keys,
+so a re-hash is a reliable detector; nothing in the library caches or memoizes it.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-033.py`; probe/output `AUDIT/probes_V3b/K-033.py|.out`:
+```
+dataclass params frozen = True
+fabric_id = fab_07529d7d378ad0e8a5b61fd8ec341bb5
+hash      = 07529d7d…27ae      redundancy_state = {'G1': 0.1}
+
+1. fab.data_trust = 0.0  -> FrozenInstanceError: cannot assign to field 'data_trust'
+2. fab.redundancy_state["G1"] = 0.99 ; ["G9"] = 0.5      -> accepted
+   fab.hash / fab.fabric_id                                 unchanged
+   to_dict()['redundancy_state'] = {'G1': 0.99, 'G9': 0.5}
+   to_dict()['hash']             = 07529d7d…27ae
+   hash recomputed from the CURRENT body = 2fc24044…bc6d   matches stored hash = False
+   fabric_id the current body would get  = fab_2fc2404450b44cc544980705b08e7145
+3. caller's original dict mutated afterwards -> fabric unaffected (assemble copies in)
+4. default setup path, payload=None      : NOT_EMITTED  'FABRIC_HASH_MISMATCH'
+   same mutated fabric, payload=<current body> : EMITTED  all_pass=True
+```
+Step 4 is the joint demonstration with **K-032**: the mutation *is* caught on the default path,
+and is *not* caught the moment a payload is supplied.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). Everything reproduces:
+`frozen=True` blocks attribute rebinding but not container mutation; `to_dict()` and `hash`
+disagree after a mutation; `fabric_id`, being hash-derived, points at content that no longer
+exists. Not higher than S2 because no production code mutates `redundancy_state` after
+`assemble` (I found none) and the default `evaluate_cell` path still rejects a mutated fabric —
+this is a broken invariant that today needs a second defect (K-032) or new code to become
+harmful. Distinct from **K-031**, which is the same defect class on a different object
+(`SnapshotBarrier`) and is *not* protected by any `frozen=True`.
+
+#### Root cause
+Immutability was delegated entirely to `@dataclass(frozen=True)`, which only intercepts
+`__setattr__`/`__delattr__` on the instance. A mutable `Dict[str, float]` field therefore leaves
+the object's content mutable while its identity (`hash`, `fabric_id`) is computed exactly once
+in `assemble`. Nothing re-derives or re-checks the hash at serialization time.
+
+#### Direct impact
+One `fabric_id`/`hash` pair can describe two different fabric bodies over the lifetime of a
+single object, and `to_dict()` — the Ch.8 §8.0 wire form — can emit a body that does not hash to
+the `hash` it carries in the same dict.
+
+#### Secondary effects and interactions (upstream/downstream)
+`redundancy_state` is not inert: it feeds the redundancy penalty in the family's scoring
+(`_fabric_penalties(fabric, rho)`), so a post-assembly edit changes the score while the evidence
+identity stays put. Downstream, any cache/replay keyed on `fabric_id`, any evidence-lineage
+record, and the emitted setup's `snapshot_id` (which embeds `redundancy_state` in its payload)
+inherit the stale identity. Combined with **K-032** the mutated fabric can be emitted with
+`ALL_GATES_PASS` (probe step 4). Upstream, **K-027** shows the fabric can already be assembled
+from unverified caller data, so “construct then edit” needs no privileged access.
+
+#### Contract and decisions
+* `APEX_GEN5.md:14765–14783` (§8.0): the fabric JSON carries `"hash": "<SHA-256 of canonical
+  serialization>"` and “fabrics are **read-only** for engines — engines publish events, they
+  never mutate a fabric in place.” In-place mutation is named and forbidden.
+* `APEX_GEN5.md:15320` (Ch.10 §10.1 gate 11): snapshot/lineage integrity failure ⇒ QUARANTINED
+  BLOCK — i.e. identity/content disagreement must block, not pass silently.
+* `apex/fabric/evidence.py:33–34` (module contract, non-frozen file but a direct restatement of
+  §8.0): “pure, deterministic, hash-bound read-only view … Identical inputs therefore hash
+  identically.”
+* **D50** (`PHASE2_DECISION_LOG.md`, implemented — see `evidence.py:265, 289–302`): content
+  identity with `evidence_id` only as a tie-break; `fabric_id` = `fab_` + first 32 hex of the
+  hash, “derived from the hash, not hashed”. D50 makes the id *content*-derived, which is
+  precisely what a post-hoc mutation invalidates. No decision authorises mutable fabric state;
+  precedence: APEX_GEN5 §8.0 (frozen contract) > D50 (implementation detail) > code.
+
+#### Frozen status and non-frozen alternative
+**Not frozen.** The frozen set is `apex/engines/**`, `apex/data_catalog/**`,
+`apex/research/bootstrap.py`, `apex/research/backtest.py`, the six params YAMLs and
+`requirements.lock`; `apex/fabric/evidence.py` is outside it and can be changed directly. The
+only frozen artefact involved is the §8.0 JSON shape, which the fix preserves exactly (the wire
+form keeps a plain JSON object — immutability is an in-process concern).
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — store the state immutably: keep the field typed `Mapping[str, float]`
+  and assign `MappingProxyType(dict(sorted(...)))` in `assemble` (or a `frozenset` of items /
+  a small frozen mapping helper); have `to_dict()` return a fresh `dict(...)` of it (already
+  does) so the wire form is unchanged. Side effects: any code doing
+  `fabric.redundancy_state[k] = v` breaks loudly at the mutation site (I found none in
+  `apex/` — verified by reading `evidence.py` and the family; the field is read in
+  `_fabric_penalties` and `to_dict` only); `dataclasses.asdict`/`canonical_json` handle
+  `MappingProxyType` via `dict` normalisation — this must be asserted by a test because
+  `canonical_json` would otherwise fall through `_canonical_default`; no frozen file, no
+  migration, **no hash change** for correctly-used fabrics (the body is built from a plain dict
+  before hashing, and the probe's construction hash `07529d7d…` is unaffected).
+* **B** — add `verify()` / recompute-on-serialize: `to_dict()` re-derives the hash and raises
+  (or emits `FABRIC_HASH_MISMATCH`) when it differs. Side effects: makes the disagreement
+  *detectable* everywhere rather than preventing it; costs one canonical-JSON hash per
+  serialization (µs at 8–10 members); complements A and is the natural pairing with the K-032
+  fix (an unconditional check).
+* **C** — make the members' and excluded tuples plus `redundancy_state` deep-frozen at
+  construction *and* forbid `Dict` in the dataclass annotation via a constructor assertion.
+  Side effects: strictest; slightly more code; subsumes A.
+* **D** — do nothing and rely on the family's `payload is None` check. Side effects: rejected —
+  probe step 4 shows that check is exactly what K-032 disables.
+
+#### My recommendation
+**A + B together**, and land them in the same change as the **K-032** unconditional fabric-hash
+check, since B is what gives K-032's check something trustworthy to compare against. Treat
+**K-031** as the same work item for `SnapshotBarrier`.
+
+#### Acceptance and regression tests
+1. `fabric.redundancy_state["G1"] = 0.99` raises (`TypeError` for a read-only mapping), and so
+   does adding a new key.
+2. After construction, `make_hash(<body rebuilt from the live object>) == fabric.hash` holds for
+   every fabric, asserted as an invariant in the fabric test battery.
+3. `to_dict()` output round-trips: `make_hash({k: v for k, v in to_dict().items() if k not in
+   ("fabric_id", "hash")}) == to_dict()["hash"]` — the auditor's own acceptance criterion.
+4. A genuine fabric produces the same `hash`/`fabric_id` as before the fix (no identity churn);
+   the probe's `07529d7d…27ae` / `fab_07529d7d…` are the fixture baseline.
+5. With the K-032 fix in place, a fabric whose body no longer matches its hash is rejected on
+   **both** the `payload=None` and the custom-payload paths (probe step 4 must show
+   `FABRIC_HASH_MISMATCH` twice).
