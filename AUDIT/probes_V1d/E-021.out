@@ -1,0 +1,13 @@
+(1a) divergence from FILLED -> agree=False state=RECOVERY_REQUIRED action=RECOVERY_REQUIRED new_entries_blocked=True
+     ledger.blocked after FSM divergence: False
+     append_fill in the SAME writer while FSM says blocked -> FILL | ledger.blocked still: False
+(1b) match     -> agree=True state=RECONCILED action=None
+(2) recheck divergence -> agree=False state=RECONCILED action=RECOVERY_REQUIRED new_entries_blocked=True note=RECONCILE_DIVERGENCE is not legal from RECONCILED; the delta is recorded and new entries stay blocked
+    corrections appended: 2
+    ledger.blocked: False | blocked_reason: None
+    require_reconciled after divergent recheck: {'intent_id': 'i-e021', 'reconciled': True, 'states': ['SUBMITTING', 'ACKNOWLEDGED', 'FILLED', 'FILLED', 'RECOVERY_REQUIRED', 'RECONCILED']}
+(4) reconcile_against_exchange -> agree=False blocked=True
+    append_fill after writer-gate refused: LEDGER_BLOCKED_PENDING_RECONCILE
+    block resolved: True
+(5) require_reconciled on an intent whose ONLY record is a FILL with result=RECONCILED: {'intent_id': 'i-lone', 'reconciled': True, 'states': ['RECONCILED']}
+tmpdir: /tmp/v1d_e021_x4ytvuvg

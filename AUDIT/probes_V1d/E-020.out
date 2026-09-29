@@ -1,0 +1,8 @@
+submit(quantity=100, plan.sized_quantity=1.0) -> {'state': 'ACKNOWLEDGED', 'outcome': 'ACKNOWLEDGED', 'classification': 'OK', 'reconcile_required': False, 'resubmitted': False, 'order_id': '900001', 'idempotency_key': '8b031d788b0f0588364ad82651a245f294929040f6043bc5f26b0debe260e296'}
+FSM state: ACKNOWLEDGED
+materialized trade_plan.sized_quantity: 1.0
+wire quantity sent to venue: 100 | side: BUY_OPEN | type: LIMIT
+SUBMITTING transition evidence quantity: 100
+venue booked order: 100
+too-small override (0.0001): REJECTED REFUSED | posts: 0
+tmpdir: /tmp/v1d_e020_oaeyokyb
