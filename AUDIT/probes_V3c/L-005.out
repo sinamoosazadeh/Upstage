@@ -1,0 +1,5 @@
+flat      catalog-math rsi_wilder=100   E10 rsi_series=50.0
+pure-up   catalog-math rsi_wilder=100   E10 rsi_series=100.0
+pure-down catalog-math rsi_wilder=0   E10 rsi_series=0.0
+flat-market Catalog.get("RSI") default: UNAVAILABLE/INSUFFICIENT_BARS_QX value=None
+flat-market Catalog.get("RSI", lookback=15): OK value=100.0000 (E10/contract §3.3 edge = 50)

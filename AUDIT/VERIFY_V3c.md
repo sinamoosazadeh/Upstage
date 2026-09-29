@@ -29,8 +29,8 @@ and synthetic failure proves the code path, not that it has already damaged a de
 | L-002 | CONFIRMED | S2 | S2 | Yes — `apex/data_catalog/math` + `atomic/features.py` | L-001 (default depth hides crash as OK/0) | B now (refuse/reroute to E03); A by owner ruling (Wilder convention verbatim) |
 | L-003 | CONFIRMED | S1 | S1 | Yes — `apex/data_catalog/math` + `atomic/molecular/features.py` | E03 `zscore_pit` is the conformant reference | B now (conformant adapter, never consume catalog z-features); A by owner ruling (baseline + σ-guard together) |
 | L-004 | CONFIRMED | S1 | S1 | Yes — `apex/data_catalog/atomic/features.py` | L-003 (same window-as-baseline confusion) | B now (adapter currency check); A by owner ruling jointly with L-003-A |
-| L-005 | PENDING | S2 | — | — | — | — |
-| L-006 | PENDING | S2 | — | — | — | — |
+| L-005 | CONFIRMED | S2 | S2 | Yes — `apex/data_catalog/math` + `atomic/features.py` | E10 `rsi_series`/streaming is the conformant reference | B now (E10 RSI via adapter); A by owner ruling (§3.3 edge verbatim) |
+| L-006 | CONFIRMED | S2 | S2 | No — `apex/quality/vector.py` + `apex/setup/gates.py` are non-frozen | D-026 (same NaN-through-comparison theme at risk layer) | A — single path: API-boundary finite/range validation |
 | L-007 | PENDING | S2 | — | — | — | — |
 | L-008 | PENDING | S2 | — | — | — | — |
 | L-009 | PENDING | S2 | — | — | — | — |
@@ -221,3 +221,92 @@ B now (adapter currency check on every `OI_z` consumption); pursue A by owner ru
 - The probe's 21-bar case (current OI None) returns `MISSING/Q0` at EVERY lookback; current-valid + history-valid returns `OK`; current-valid + short history returns `MISSING` (not a short-window value).
 - Contiguity: a `None` OI strictly inside history is either refused or explicitly degraded per the owner ruling — never silently dropped.
 - Regression: T-OM-002 (`tests/unit/test_catalog.py:286–294`) still passes; add the two-depth test to `test_catalog.py`.
+## L-005 — catalog RSI returns 100 on a flat market (contract/E10 say 50)
+
+#### Auditor claim (short quote)
+> "In L00 RSI the `avg_loss==0` branch returns 100 indiscriminately, even when `avg_gain==0`; for 15 flat closes catalog-math=100 but E10/explicit §3.3 contract=50. Changing depth past L-001 reveals the difference."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/data_catalog/math/__init__.py:144–164` (`rsi_wilder`): Wilder SMA-seed + RMA recursion, then `if avg_loss == 0: return Decimal(100)` — no flat check, exact-`==0` (not `<ε`). The docstring itself documents the deviation: "flat series → 100".
+- `apex/data_catalog/atomic/features.py:228–233` (`_f18_rsi`): needs n+1=15 bars, passes closes straight through — so the edge is reachable only past the L-001 default depth (verified: default `UNAVAILABLE`, depth-15 `OK/100.0000`).
+- `apex/engines/e10_momentum/engine.py:424–458` (`rsi_series`, RMA method): `AL<ε∧AG<ε → 50.0; AL<ε → 100.0`; the streaming path `:831–845` implements the identical edge. `tests/unit/test_e10_momentum.py:275–283` (GF16) pins constant-series RSI to 50.0 ("constant series ⇒ RSI edge AG=AL=0 ⇒ 50 (§3.3)").
+- Callers: catalog `rsi_wilder` is called ONLY by `_f18_rsi`; `_f18_rsi` only via `Catalog.get("RSI")`, which has no runtime caller (L-001). E10 never touches catalog math.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-005.py`. Probe: `AUDIT/probes_V3c/L-005.py` (real `rsi_wilder`, real E10 `rsi_series`, real `Catalog.get("RSI")`; synthetic closes). Raw output: `AUDIT/probes_V3c/L-005.out`. Result: 15 flat closes → catalog `100`, E10 `50.0`; pure-up → `100`/`100.0` (agree); pure-down → `0`/`0.0` (agree); flat-market `Catalog.get("RSI")` default → `UNAVAILABLE`, `lookback=15 → OK/100.0000`.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The divergence is isolated to exactly the flat edge (up/down agree), reproduced with both real functions plus the catalog path. S2 because catalog RSI is latent (E10 computes its own conformant RSI) and the failure is a wrong-but-bounded value (100 vs 50), not a crash or leak; it would become S1 the day catalog RSI feeds momentum/calibration logic, since flat-neutral would read as overbought.
+
+#### Root cause
+Missing distinguished flat branch: `avg_loss == 0` conflates "pure gains" (→100) with "no movement at all" (→50), and uses exact equality instead of the contract's `<ε` comparison.
+
+#### Direct impact
+Any flat/near-flat market reads RSI=100 (maximum overbought) instead of 50 (neutral) on the catalog path. Calibration, display, or signal logic built on catalog RSI would misclassify dead markets as extreme momentum.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, L-001 hides the bug at default depth (the probe shows `UNAVAILABLE` there) — it surfaces only when a caller passes sufficient depth, i.e. exactly when the feature starts being used. Downstream, catalog RSI and E10 RSI permanently disagree on flat windows (100 vs 50), so cross-checks between registry features and engine indicators would flag false mismatches. No identity/cache/ledger impact (ATOM uncached, results unhashed, path unconsumed).
+
+#### Contract and decisions
+`APEX_GEN5.md:10459–10467` (§3.3): "**Edge:** if `AL_t < ε` and `AG_t < ε`: RSI=50 (flat). If `AL_t < ε` and `AG_t>0`: RSI=100." The code implements only the second half and with `==0`. E10 (both batch and streaming paths) plus the GF16 fixture test implement the full edge — the conformant reference. No `PHASE2_DECISION_LOG.md` ruling touches RSI edges. Precedence: §3.3 governs; the frozen docstring "flat series → 100" contradicts the contract and cannot stand as an interpretation.
+
+#### Frozen status and non-frozen alternative
+**Frozen:** `apex/data_catalog/math/__init__.py` and `atomic/features.py` are under frozen `apex/data_catalog/**`. A non-frozen alternative EXISTS for consumers: use E10's `rsi_series`/streaming RSI (non-frozen, tested, §3.3-conformant) via a non-frozen adapter instead of catalog `RSI`. There is NO non-frozen way to repair `Catalog.get("RSI")` itself.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — frozen edge fix (owner ruling):** `avg_gain<ε ∧ avg_loss<ε → 50; avg_loss<ε (gain positive) → 100`, matching §3.3/E10 verbatim. Side effects: flat-window catalog RSI changes 100→50 (intended); NO existing test breaks (nothing pins catalog RSI values; E10's GF16 already expects 50); no hashes/caches/DB/retraining impact. Touches frozen files → owner ruling required.
+**B — non-frozen adapter (no frozen change):** route RSI consumption through E10's function. Side effects: catalog `RSI` stays wrong for direct callers; float-vs-Decimal precision seam (4-digit quantization) to document.
+
+#### My recommendation
+B now (never consume catalog RSI directly); pursue A by owner ruling — a two-line edge fix adopting the §3.3 text verbatim.
+
+#### Acceptance and regression tests
+- 15+ flat bars → 50; pure-up → 100; pure-down → 0; near-ε windows (gains/losses straddling ε) compared against E10 `rsi_series` bar-for-bar.
+- Parity test: catalog RSI equals E10 RSI on identical synthetic windows to the 4-digit quantization.
+- Regression: `tests/unit/test_e10_momentum.py` (GF01/GF16) unchanged.
+
+## L-006 — NaN window quality stays VALID/Q1; non-finite gate measured values pass
+
+#### Auditor claim (short quote)
+> "`calc_window_quality([(0.9,0.0),(NaN,1.0)])` returned `(nan,'VALID','Q1')`: the `min_q < q_thr` comparison is not fail-closed for NaN and gate 2 passes on `state=='VALID'` alone. §15 extension: `run_all` with `final_score/q_forecast=+inf` and `conflict_penalty/redundancy_penalty/h_norm=-inf` gave `all_pass=True` with gates 1/3/4/7/12 passing; gate 11 hashed a separate finite payload and never sees the outside measured values. The PAPER producer has separate finite guards; bypass of that producer is not proven."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/quality/vector.py:163–187` (`calc_window_quality`): `min_q = min(q…)` then `if min_q < q_thr` — for NaN the `<` is False, so the minimum-veto never fires; the weighted sum is NaN, returned as `(nan, 'VALID', 'Q1')`.
+- `apex/setup/gates.py:185–207` (`gate2_window_quality`): `passed = state == "VALID"` — consumes the verdict without inspecting finiteness of `value`.
+- `apex/setup/gates.py` score gates: `gate1` (178–182, `final_score >= thr` — +inf passes), `gate3` (210–216, `penalty <= 0.5` — −inf passes), `gate4` (218–222, `<= 0.3` — −inf passes), `gate7` (250–256, `h_norm <= thr` — −inf passes), `gate12` (350–359, `>= thr` with only a NaN/None check — +inf passes); `run_all` (447–476) threads `context[…]` measured values straight into each gate.
+- `gate11_snapshot_lineage` (303–341): hashes ONLY its own `payload` argument; non-finite payload → `GATE11_SNAPSHOT_UNHASHABLE`, but measured values of sibling gates are outside its input — it cannot see them by construction.
+- Native-producer guards (boundary): `apex/ops/engine_context.py:317–340` (`measured_number` finite+range guard; `window_quality_projection` applies it to every `(q, age)` pair before `calc_window_quality`); `validate_produced_context` (3901–3960) finite-guards `data_trust/q_raw/h_norm/s_i/q_i/x/risk` keys and re-runs `window_quality_projection` on `window_qualities` (3942–3944); `canonical_json` forbids NaN/Inf (`apex/identity/canonical_json.py`, `test_nan_inf_forbidden`).
+- Callers: `calc_window_quality` ← `window_quality_projection` (guarded) + `gate2` (unguarded); `gate2` ← `run_all` ← family `evaluate` (`family_sf_fvg_sweep_rev.py:549`, `window_qualities or [(1.0,0.0)]*len(bars)`) ← `plan_bridge.py:803` (`_required(context, "window_qualities")`) ← producer `q["window_qualities"]` (finite pairs, `engine_context.py:340,2017`). The native chain is finite at every hop; the hole needs a non-producer caller.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-006.py`. Probe: `AUDIT/probes_V3c/L-006.py` (real `calc_window_quality`, `gate2`, `run_all`, `window_quality_projection`, `canonical_json`; synthetic inputs). Raw output: `AUDIT/probes_V3c/L-006.out`. Result: `calc_window_quality([(0.9,0),(nan,1)]) → (nan,'VALID','Q1')`; `gate2 → passed=True, measured=nan`; `run_all` with the auditor's inf pattern → `all_pass=True, action=ELIGIBLE`, gates 1/3/4/7/12 passed with inf measured, gate 11 passed on the separate finite payload; `window_quality_projection` refused NaN and +inf with `BridgeError QUALITY_PROVENANCE_UNAVAILABLE`; `canonical_json(+inf)` raised `CanonicalJsonError`.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). Both halves (§7 NaN-window, §15 non-finite measured) reproduce exactly, including gate 11's blindness-by-construction and both boundary guards. S2 because exploitation requires a non-producer caller: the entire native producer→family→gate→risk chain is finite-guarded twice over (`measured_number` at projection + `validate_produced_context`), and no such caller exists in the checkout — so this is a fail-open API surface, not an active bypass. It would escalate to S1 if any new caller (backfill, replay, tooling, future serve path) feeds unguarded numbers into gates.
+
+#### Root cause
+Two missing validations at the API boundary: (a) `calc_window_quality` never checks finiteness of `Q_i`/`age_i` before the minimum-veto comparison, and NaN poisons comparisons silently (`nan < thr` is False); (b) the score gates compare raw measured floats against thresholds with no finite/range pre-check, so ±inf lands on the passing side of one-sided comparisons.
+
+#### Direct impact
+Any direct API caller can obtain `VALID/Q1` window quality from NaN-contaminated inputs and `ALL_GATES_PASS/ELIGIBLE` from impossible measured values (`final_score=+inf`, negative-infinite penalties). The outputs are verdict-shaped lies: `measured=nan/inf` sitting next to `passed=True`.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, `min()` itself is NaN-fragile (`min(0.9, nan)` returns 0.9 or nan depending on order — CPython returns the first-seen on `<` chains... in fact `min` uses `<` pairwise, so NaN position changes the result), adding order-dependence on top of the fail-open. Downstream, a contaminated gate verdict would flow into setup eligibility and (via `failed_setup_gate`) risk veto 1 — the exact path the producer guards exist to protect. Cross-ref D-026 (risk-kernel NaN handling): same NaN-through-comparison theme one layer down; the producer guards mitigate both for the native path only. No DW impact on device data (read-only probe, synthetic inputs).
+
+#### Contract and decisions
+§2.1 (via `vector.py` module contract + `APEX_GEN5.md` quality chapter): "NaN/Inf never return silently — callers set Q_formula_valid=0"; Ch.10 §10.1 gate table lists blocking conditions that presuppose real measurements. No clause permits `VALID` on NaN or passing on ±inf. No `PHASE2_DECISION_LOG.md` ruling authorizes non-finite measured values. Precedence: the fail-closed quality contract governs; the guards belong at the API boundary, not only in the producer.
+
+#### Frozen status and non-frozen alternative
+**NOT frozen:** `apex/quality/vector.py` and `apex/setup/gates.py` are outside the frozen set (`engines/**`, `data_catalog/**`, `research/bootstrap.py`, `research/backtest.py`, six YAMLs, `requirements.lock`). No frozen change is needed; the producer guards in non-frozen `engine_context.py` already demonstrate the pattern.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — API-boundary finite/range validation (single path, non-frozen):** in `calc_window_quality`, reject non-finite `Q_i`/`age_i` (and non-finite `weighted_sum`/`exp_sum`) with a named `INVALID_NONFINITE_QX` before the veto comparison; in gates 1/3/4/7/12, finite-check (and, where the domain is bounded, range-check) `measured` before comparing, failing closed with named reasons. Side effects: direct callers passing NaN/Inf now get refusals instead of passes (intended); EXISTING TESTS — `tests/unit/test_quality.py` window tests use finite inputs (unaffected); `tests/unit/test_setup_gates.py` uses finite ±1-unit boundary values plus two NaN-fail-closed pins (`gate12(NaN)→fail` at :170, `gate11(NaN payload)→fail` at :228) that A preserves — no test asserts an inf-pass, so none should break (re-run to confirm); the native producer path is behavior-identical (its inputs are already finite). No hashes/identities/caches/DB/retraining impact. No frozen file touched.
+No alternative path is needed — A is small, non-frozen, and matches the existing producer-guard precedent.
+
+#### My recommendation
+Implement A (both the `calc_window_quality` finite check and the five gate measured-checks) with named reasons; keep the producer guards as defense-in-depth.
+
+#### Acceptance and regression tests
+- NaN/±Inf in any `(Q_i, age_i)` position → named invalid + gate 2 fail; finite valid inputs keep the exact previous weighted values (bit-equality test against current outputs).
+- NaN/±Inf in `final_score/conflict_penalty/redundancy_penalty/h_norm/q_forecast` → each gate fails with a named reason independent of the payload; finite boundary values (±1 unit) keep previous verdicts.
+- Regression: `tests/unit/test_quality.py`, `tests/unit/test_setup_gates.py`, `tests/unit/test_cp146.py`, `tests/unit/test_engine_context_store_sources.py` all pass.

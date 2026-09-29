@@ -1,0 +1,13 @@
+calc_window_quality([(0.9,0),(nan,1)]): (nan, 'VALID', 'Q1')
+gate2 same input: passed=True measured=nan reason=WINDOW_QUALITY_VALID
+run_all all_pass=True action=ELIGIBLE blocked_by=[]
+  gate 1 FINAL_SCORE_MIN              passed=True measured=inf reason=SCORE_ABOVE_Q_MIN
+  gate 2 Q_WINDOW_MIN                 passed=True measured=0.9 reason=WINDOW_QUALITY_VALID
+  gate 3 CONFLICT_PENALTY_MAX         passed=True measured=-inf reason=CONFLICT_PENALTY_IN_BOUNDS
+  gate 4 REDUNDANCY_PENALTY_MAX       passed=True measured=-inf reason=REDUNDANCY_PENALTY_IN_BOUNDS
+  gate 7 REGIME_QUALITY               passed=True measured=-inf reason=REGIME_ENTROPY_IN_BOUNDS
+  gate11 SNAPSHOT_LINEAGE_INTEGRITY   passed=True measured=a098cd459d828d6d6f76207cdb3f27c33c0ea4c2cd8af2a96eb16c3403f6936f reason=SNAPSHOT_LINEAGE_INTACT
+  gate12 Q_FORECAST_MIN               passed=True measured=inf reason=Q_FORECAST_ABOVE_MIN
+window_quality_projection(NaN): BridgeError QUALITY_PROVENANCE_UNAVAILABLE: nan
+window_quality_projection(+inf): BridgeError QUALITY_PROVENANCE_UNAVAILABLE
+canonical_json(+inf): CanonicalJsonError (float NaN/Inf is forbidden in canonical payloads)
