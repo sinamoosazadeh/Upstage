@@ -1,0 +1,14 @@
+# K-018 — completion announcement vs the run-end boundary
+
+A. end_ms == close boundary of the last closed bar
+  last bar open=1677628800000 close=1677715200000 end_ms=1677715200000 (offset 0 ms)
+  run status=COMPLETE invalid_bars_dropped=2 pages_fetched=None
+  checkpoint status=COMPLETE payload={'invalid_bars_dropped': 2, 'invalid_reasons': {'HIGH_BELOW_MAX_OPEN_CLOSE': 1, 'LOW_ABOVE_MIN_OPEN_CLOSE': 1}}
+  CELL_COMPLETE notifications = 0
+
+B. end_ms == close boundary + 5 s
+  last bar open=1677628800000 close=1677715200000 end_ms=1677715205000 (offset 5000 ms)
+  run status=COMPLETE invalid_bars_dropped=2 pages_fetched=None
+  checkpoint status=COMPLETE payload={'invalid_bars_dropped': 2, 'invalid_reasons': {'HIGH_BELOW_MAX_OPEN_CLOSE': 1, 'LOW_ABOVE_MIN_OPEN_CLOSE': 1}}
+  CELL_COMPLETE notifications = 1
+    bootstrap Phase 1 cell complete: cell=BTCUSDT:1d pages=2 bars=48 dropped=2 open_excluded=0 offenders=[BTCUSDT:1d@1673395200000; BTCUSDT:1d@1677196800000] reasons=[HIGH_BELOW_MAX_OPEN_CLOSE=1; LOW_ABOVE_MIN_OPEN_CLOSE=1]

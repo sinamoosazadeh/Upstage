@@ -31,7 +31,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-015 | CONFIRMED | S1 | S1 | Source is non-frozen (`apex/ops/bootstrap_service.py`); the runner `apex/research/bootstrap.py` is frozen | — | A — distinguish a repeat-stop from a real exhaustion and refuse COMPLETE without an earliest-retained witness |
 | K-016 | CONFIRMED (worse than claimed) | S1 | S1 | Source non-frozen; runner `apex/research/bootstrap.py` frozen | ISSUE-076 (per-row commits) | A — advance the delivery high-water mark only after a confirmed durable write |
 | K-017 | CONFIRMED | S2 | S2 | No — `apex/ops/bootstrap_service.py` is non-frozen | — | A — persist per-cell drop evidence idempotently at every checkpoint, not only at COMPLETE |
-| K-018 | PENDING | S2 | — | — | — | — |
+| K-018 | CONFIRMED | S2 | S2 | No — `apex/ops/bootstrap_service.py` is non-frozen | K-017 (evidence durability) | A — announce completion on the durable COMPLETE transition, once, for both termination shapes |
 | K-019 | PENDING | S1 | — | — | — | — |
 | K-020 | PENDING | S1 | — | — | — | — |
 | K-021 | PENDING | S2 | — | — | — | — |
@@ -947,3 +947,110 @@ them out of the venue window.
 4. Regression: `tests/unit/test_ops_bootstrap_service.py::test_budget_stop_keeps_the_drop_evidence`
    (in-process reporting) must keep passing; the `…persists_nothing` test must be re-baselined
    to the new durability guarantee.
+
+---
+
+## K-018 — no `CELL_COMPLETE` announcement when the run end falls exactly on a close boundary
+
+#### Auditor claim (short quote)
+> «چاپ `CELL_COMPLETE` فقط وقتی `__call__` صفحهٔ خالی برگرداند صف می‌شود؛ اگر آخرین کندل بسته‌شده دقیقاً در `end_ms` تمام شود، `next_cursor_ms=end_ms` و runner بدون درخواست empty از loop خارج و COMPLETE می‌کند … مجموع drop در خروجی قابل دیدن است، اما گزارش per-cell/offenders پیش‌فرض از دست می‌رود.»
+> — “The `CELL_COMPLETE` print is queued only when `__call__` returns an empty page; if the last closed candle ends exactly at `end_ms`, `next_cursor_ms=end_ms` and the runner leaves the loop and completes without ever asking for an empty page … the total drop count is still visible, but the per-cell/offender report is lost.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/bootstrap_service.py:609–644` — the serve path: `_served_upto` update, then
+`if not chunk: self._queue_cell_complete(...)` (622–632) — the **only** call site of
+`_queue_cell_complete` — and otherwise `close_last = close_time_ms(last_open_ms, tf_name);
+next_cursor = close_last if close_last > cursor else cursor + 1` (639–640).
+`apex/ops/bootstrap_service.py:742–764` — `_queue_cell_complete` builds the line with
+`dropped=`, `open_excluded=` and `_offenders_summary`.
+`apex/ops/bootstrap_service.py:1225–1240` — `_flush_cell_complete_prints` drains
+`drain_cell_complete_prints()` into `self.report(..., kind="CELL_COMPLETE")`; called at
+1425/1436/1494.
+`apex/research/bootstrap.py:273–321` (frozen) — `while cursor < end:` … `cursor = new_cursor`;
+when `new_cursor == end` the loop exits **without another fetch**, then the default
+`verified: True` writes `COMPLETE`.
+`scripts/run_apex.py:488–502,538–556` — the CLI surfaces notifications and the aggregate
+`invalid_bars_dropped`.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-018.py`; probe/output
+`AUDIT/probes_V3b/K-018.py|.out`. Real service, real source, repository poison-row venue,
+two runs differing only in `end_ms`:
+```
+A. end_ms == close boundary (1677715200000): status=COMPLETE, invalid_bars_dropped=2,
+   checkpoint payload={'invalid_bars_dropped': 2, 'invalid_reasons': {...}},
+   CELL_COMPLETE notifications = 0
+B. end_ms == close boundary + 5 s:            status=COMPLETE, invalid_bars_dropped=2,
+   CELL_COMPLETE notifications = 1
+   "cell=BTCUSDT:1d pages=2 bars=48 dropped=2 open_excluded=0
+    offenders=[BTCUSDT:1d@1673395200000; BTCUSDT:1d@1677196800000]
+    reasons=[HIGH_BELOW_MAX_OPEN_CLOSE=1; LOW_ABOVE_MIN_OPEN_CLOSE=1]"
+```
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The boundary sensitivity is
+exact and reproduces on real code. Two refinements to the auditor's text, both in the
+project's favour: the aggregate `invalid_bars_dropped=2` is still reported (as the auditor
+also notes), **and** in this scenario the durable checkpoint payload is identical in both
+runs, because the cell did reach COMPLETE and the K-017 merge ran. So the loss is exactly
+the per-cell announcement with the offender list — an observability defect, S2.
+
+#### Root cause
+The completion *announcement* is attached to a fetch-path side effect (the empty page)
+instead of to the state transition that actually means completion (the runner's
+`status=COMPLETE` save). A run end that coincides with a close boundary is a normal,
+frequent case for a scheduler aligned to close boundaries.
+
+#### Direct impact
+For every cell whose last closed bar ends exactly at the run end, the owner sees no
+per-cell completion line and no offender/reason list, even when bars were dropped.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, `end_ms` is chosen by the caller: `BootstrapService.run(end_ms=...)` and the
+scheduler's close boundaries make exact coincidence likely, not exotic. Downstream, the
+offender list is the only place where the *identity* of dropped bars is shown to a human
+(K-017 shows it is not durable in the non-COMPLETE case; here it is durable but unannounced).
+Interacts with K-015/K-020: a cell can complete without any announcement and without any
+coverage proof.
+
+#### Contract and decisions
+APEX_GEN5.md:17276 makes `bootstrap_progress` checkpointing normative but says nothing about
+the announcement channel; the Telegram command surface in the same clause
+(`start|pause|resume|stop|progress|eta|continuous on|off`) implies the operator learns
+progress from the service, and §2.6/AI.5's audit-trail principle implies a drop must be
+visible. No `PHASE2_DECISION_LOG.md` decision governs the announcement trigger; the CP-13
+source comment calling the empty page “the ONLY completion signal” is an implementation
+note, not an owner ruling.
+
+#### Frozen status and non-frozen alternative
+**Not frozen** — everything involved (`_queue_cell_complete`, `_flush_cell_complete_prints`,
+the mirrored checkpoint wrapper) is in `apex/ops/bootstrap_service.py`. The frozen runner
+need not change: `CanonicalMirroredCheckpoints.save_bootstrap` already observes every
+status transition and is the natural hook.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — emit the announcement from the mirrored checkpoint wrapper when a
+  cell transitions to `COMPLETE` (dedup by cell id so the empty-page path does not produce a
+  second line). Side effects: the announcement now fires for cells completed without a walk
+  in this process (re-runs), so the text must state “no walk in this process” rather than
+  printing a stale zero — the same distinction K-017's merge already makes; tests that count
+  notifications must be extended.
+* **B** — also request one final page after the loop so the empty-page signal always occurs.
+  Side effects: an extra venue call per cell per run (rate-limit budget, C-012), and it
+  would have to happen inside the **frozen** runner — rejected.
+* **C** — leave the trigger and print the offender summary in the run report instead of a
+  per-cell notification. Side effects: weakest; loses the one-line-per-cell format the owner
+  already reads.
+
+#### My recommendation
+**A** — it fixes both termination shapes with one non-frozen hook and composes with the
+K-017 durability fix (same merge point).
+
+#### Acceptance and regression tests
+1. `end_ms` exactly on the close boundary, with `dropped>0`: exactly **one** CELL_COMPLETE
+   notification containing the offender list.
+2. `end_ms` a few seconds later: still exactly **one** notification (no duplicate from the
+   empty-page path).
+3. `open_excluded>0` (a still-open bar at the end) reports the same single notification with
+   the excluded open time.
+4. A re-run over an already complete cell must not print a misleading `dropped=0`.
