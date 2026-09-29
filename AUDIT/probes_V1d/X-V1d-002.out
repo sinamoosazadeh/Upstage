@@ -1,0 +1,6 @@
+apply_adapter_result(cached=True, error_code=DUPLICATE_CLIENT_ORDER_ID):
+  -> {'state': 'ACKNOWLEDGED', 'outcome': 'ACKNOWLEDGED', 'classification': 'OK', 'reconcile_required': False, 'resubmitted': False, 'order_id': '900001', 'idempotency_key': 'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk'}
+  FSM state: ACKNOWLEDGED | reconcile_required: False
+  grep of apply_adapter_result (fsm.py:598-641): it branches ONLY on result.classification and result.outcome;
+  result.cached and result.error_code are never read — a cached duplicate receipt is indistinguishable from a fresh ACK.
+  (D50: a repeated client order id is 'rejected by name DUPLICATE_CLIENT_ORDER_ID'; the adapter's own comment says 'the named code is what a caller matches on' — yet no caller matches on it: grep over apex/ finds .cached / DUPLICATE_CLIENT_ORDER_ID only inside toobit_adapter.py.)

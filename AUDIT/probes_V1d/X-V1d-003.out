@@ -1,0 +1,7 @@
+first submit: OK (plan materialized, proposal_id=pr-dup)
+second submit raised: sqlite3.IntegrityError
+  message: UNIQUE constraint failed: trade_plan.proposal_id
+  is a named LedgerError/FsmError with .reason?: True
+  isinstance LedgerError: False | isinstance FsmError: False | has .reason: False
+machine2 state after the raw failure: READY | ledger intact, machine untouched pre-submission)
+tmpdir: /tmp/v1d_x003_oax0jreu

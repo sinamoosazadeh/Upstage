@@ -10,16 +10,16 @@ Frozen-file note for this session: the V1d frozen list is `apex/engines/**`, `ap
 
 | ID | Verdict | Auditor severity | Independent severity | Frozen? | Cross-ref (D/ISSUE) | Recommended option |
 |---|---|---:|---:|---|---|---|
-| E-012 | CONFIRMED | S1 | S1 | No | none | A: real chain/manifest + risk/FSM verification, UNAVAILABLE not PASS |
+| E-012 | CONFIRMED | S1 | S1 | No | = ISSUE-077 | A: real chain/manifest + risk/FSM verification, UNAVAILABLE not PASS |
 | E-013 | CONFIRMED | S1 | S1 | No | none | A: extras allowlist + final payload validation |
 | E-014 | CONFIRMED | S1 | S2 | No | E-022, F-005 | A: per-intent in-flight reserve (asyncio lock) |
-| E-015 | CONFIRMED | S1 | S1 | No | I-016 | A: require executedQty/unique fill id; reconcile-required otherwise |
+| E-015 | CONFIRMED | S1 | S1 | No | I-016, = D58 | A: require executedQty/unique fill id; reconcile-required otherwise |
 | E-017 | CONFIRMED | S2 | S2 | No | E-006 | A: EXTREME gate before factor resolution |
 | E-018 | CONFIRMED | S2 | S2 | No | E-006 | A: persist initial R + activated flag |
 | E-019 | CONFIRMED | S2 | S2 | No | E-005, F-001 | A: finite/non-negative weights + initial-quantity semantics |
 | E-020 | CONFIRMED | S1 | S1 | No | D-008, D-009 | A: reject quantity != plan.sized_quantity (quantized) |
-| E-021 | CONFIRMED | S1 | S1 | No | E-005, F-008 | A: route FSM divergence through the ledger gate |
-| E-022 | PARTIAL | S2 | S2 | No | D50, J-018 | A: payload-hash compare + explicit collision refusal |
+| E-021 | CONFIRMED | S1 | S1 | No | E-005, F-008, = ISSUE-076 | A: route FSM divergence through the ledger gate |
+| E-022 | CONFIRMED | S2 | S2 | No | D50, J-018 | A: payload-hash compare + explicit collision refusal (preserve D50 return-original) |
 
 (Sections follow in ID order. The twelve mandatory headings appear under each ID.)
 
@@ -29,7 +29,7 @@ Frozen-file note for this session: the V1d frozen list is `apex/engines/**`, `ap
 "three AI.9 controls are weaker than their names: raw_hash_chain only takes COUNT; risk_recheck only checks existing leverage, not capital/concentration/protection; fsm_state always PASSes and does not even extract the last state of each intent. raw probe with two count=10, PASS gave. … the full recovery path is also not invoked in the current serve."
 
 ### What I read (files, line ranges, functions, callers)
-`apex/execution/fsm.py` completely (1–1362): `run_recovery_reconciliation` (1213–1237), `_ai9_ledger_integrity` (1239–1248), `_ai9_raw_hash_chain` (1250–1267), `reconcile_boot` (1180–1211), `_ai9_feature_replay`/`_ai9_pattern_reevaluation` (1269–1289), `_ai9_risk_recheck` (1291–1311), `_ai9_fsm_state` (1298–1311 region; exact lines below), `StartupReconciliation.run` (1078–1127) and `self_test` (1129–1138). `apex/ledger/store.py` completely: `verify_chain` (real, recomputes payload hashes + parent linkage), `trade_plans()` (728–744 — `SELECT` of `TRADE_PLAN_COLUMNS` only), `positions_from_ledger` (745–800), `append_fill`/`append_trade_plan`. `apex/data_catalog/store/sqlite_store.py` DDL for `raw_manifest` (258–268) and `raw_observation` (208–226). Callers (mandatory grep `grep -RIn "run_recovery_reconciliation" --include="*.py"`): only `tests/unit/test_execution_fsm.py` (5 sites) and `tests/integration/test_cp7_paper_loop.py:794` — NO production caller. `scripts/run_apex.py::_serve` (692–820) calls `driver.boot(...)` (boot machine: SELF_TEST + `reconcile_boot`) and `driver.run(...)`; it never calls `run_recovery_reconciliation`. Tests `TestRecoveryReconciliation` (test_execution_fsm.py:1378–1440) assert `raw_hash_chain`/`risk_recheck`/`fsm_state` reach PASS with matching venue — i.e. the weak behaviour is enshrined as PASS by the suite.
+`apex/execution/fsm.py` completely (1–1362): `run_recovery_reconciliation` (1213–1237), `_ai9_ledger_integrity` (1239–1248), `_ai9_raw_hash_chain` (1250–1267), `reconcile_boot` (1180–1211), `_ai9_feature_replay`/`_ai9_pattern_reevaluation` (1269–1289), `_ai9_risk_recheck` (1297–1318), `_ai9_fsm_state` (1298–1311 region; exact lines below), `StartupReconciliation.run` (1078–1127) and `self_test` (1129–1138). `apex/ledger/store.py` completely: `verify_chain` (real, recomputes payload hashes + parent linkage), `trade_plans()` (728–744 — `SELECT` of `TRADE_PLAN_COLUMNS` only), `positions_from_ledger` (745–800), `append_fill`/`append_trade_plan`. `apex/data_catalog/store/sqlite_store.py` DDL for `raw_manifest` (258–268) and `raw_observation` (208–226). Callers (mandatory grep `grep -RIn "run_recovery_reconciliation" --include="*.py"`): only `tests/unit/test_execution_fsm.py` (5 sites) and `tests/integration/test_cp7_paper_loop.py:794` — NO production caller. `scripts/run_apex.py::_serve` (692–820) calls `driver.boot(...)` (boot machine: SELF_TEST + `reconcile_boot`) and `driver.run(...)`; it never calls `run_recovery_reconciliation`. Tests `TestRecoveryReconciliation` (test_execution_fsm.py:1378–1440) assert `raw_hash_chain`/`risk_recheck`/`fsm_state` reach PASS with matching venue — i.e. the weak behaviour is enshrined as PASS by the suite.
 
 ### Reproduction (command, probe file, actual result)
 `python3 -B AUDIT/probes_V1d/E-012.py` (raw output `AUDIT/probes_V1d/E-012.out`): real `StartupReconciliation` methods against a temporary SQLite store seeded with (a) 10 `raw_manifest` rows whose `manifest_hash` values are garbage, whose `content_hashes_included` match nothing, and whose `parent_manifest_hash` chain points at non-existent hashes; (b) 10 `raw_observation` rows whose `content_hash` does not match their payload; (c) a materialized plan with `sized_quantity=1,000,000` (capital breach), ledger positions of 100000 BTCUSDT + 50000 ETHUSDT (capital + concentration breach), and ZERO protective orders; (d) contradictory FSM ledger state (intent A stuck ACKNOWLEDGED, intent B RECONCILED) with no broker wired. Results: `raw_hash_chain True PASS | 10 manifest(s), 10 raw observation(s)`; `risk_recheck True PASS | 2 position(s), 1 plan(s)`; `fsm_state True PASS | 2 non-terminal FSM record(s) re-validated against broker state`. Additionally the probe prints that `trade_plans()` rows contain NO `leverage` key (the frozen `trade_plan` DDL has no such column), so `plan.get("leverage")` in `_ai9_risk_recheck` is always `None` — the leverage sub-check is dead code and can never fire either. Focused existing tests: `python3 -m pytest -q -p no:cacheprovider tests/unit/test_execution_fsm.py::TestRecoveryReconciliation` → `5 passed` (`E-012-pytest.out`), confirming the suite blesses these three PASS verdicts.
@@ -44,6 +44,7 @@ The three checks were implemented as presence/counting stubs rather than verific
 If the AI.9 recovery sequence is ever wired (it is the contract's gate for resumption from fail-closed), a resume decision can be made on false PASS evidence: trading can resume over a corrupted raw store, a capital/concentration-breached book with no protective orders, and FSM states that disagree with the broker. Today the impact is latent because no production caller exists, but the checks and their PASS verdicts are exposed API and are asserted by the test suite.
 
 ### Secondary effects and interactions (upstream/downstream)
+= ISSUE-077 (boot self-test runs before migrations; run_cycle persists after gather): related boot-path weaknesses already owned; this row's findings (three hollow AI.9 checks and the unwired recovery path) are separate and go BEYOND them.
 Upstream: none — the inputs (raw store, trade_plan, ledger) are exactly the ones the contract names. Downstream: `run_recovery_reconciliation`'s verdict `action` flips from `HALT_AND_ESCALATE_MANUAL` to `RESUME` only on all-PASS; with 3 of 7 checks hollow, `RESUME` can be reached on unhealthy state. E-003/V1b's RECOVERY_REQUIRED positions and E-016's projection failures would be "re-validated" by a check that validates nothing. The feature_replay/pattern_reevaluation checks are correctly UNAVAILABLE-without-provider (fail-closed) — not in dispute.
 
 ### Contract and decisions
@@ -166,6 +167,7 @@ Two concurrent same-intent submits → exactly one transport call, both callers 
 Over-recording (order qty recorded on an unfilled/partial order → phantom position, premature protection sizing), under-recording (real partials deduplicated away → ledger < venue), zero-quantity fills, and NaN money values in the ledger — each silently, with `FILL_DATA_INCOMPLETE` never raised because `price`/`quantity` were "present".
 
 ### Secondary effects and interactions (upstream/downstream)
+= D58 (PAPER fill simulator not wired, CP-15): once a real simulator/fill source is wired, every fill event lands in this function; the row's findings are what goes BEYOND D58 (the inference/dedup/NaN defects exist independent of the simulator).
 Downstream: `positions_from_ledger` (T_MATCH), `reconcile` deltas, protection quantities, `manage_positions` P/L and outcome records, risk exposure vetoes and the training/outcome lineage all consume the corrupted numbers. Upstream: any venue/adapter response lacking the exact field names (`avgPrice`/`executedQty`/`tradeId`) — the FakeAdapter-based tests always supply them, so the suite cannot catch this. Cross-refs: I-016 (the CP-7 integration test hand-builds FILL and close, consistent with the fake never exercising partial fill data); E-006 (exit management reads only the last close — independent); F-005 (append_fill race — independent).
 
 ### Contract and decisions
@@ -377,6 +379,7 @@ Two independent implementations of reconciliation: `LedgerWriter.reconcile_again
 After any FSM-detected divergence: other intents' fills, trade plans and outcomes continue to be appended; after a once-reconciled intent, a later divergence leaves the state RECONCILED and the T-LR-002 gate green, so decisions/fills can continue on top of a known mismatch. In the exit path (`manage_positions` → `reconcile`), a close that leaves a residual venue position is recorded, reported as blocked — and then the loop simply continues.
 
 ### Secondary effects and interactions (upstream/downstream)
+= ISSUE-076 (missing replay CLI/SQLite indexes): the replay tooling needed to audit an unresolved divergence offline does not exist yet; this row's findings (the un-gated FSM path and the membership-based T-LR-002 check) go BEYOND the tooling gap.
 Downstream: T_MATCH positions, risk vetoes (exposure computed from the ledger), P/L and outcome lineage proceed on diverged state; corrections accumulate without resolution tracking (no RECONCILE_RESOLVED is ever written by the FSM path). Upstream: the divergence itself (E-005's premature intent removal is a separate cause of spurious divergence). Interactions: F-008 (the RAM-only reconciliation lock lost on restart — the durable counterpart of this same gate weakness), E-015 (fabricated fills create the divergence this row then fails to gate). The `note` text ("new entries stay blocked") is actively misleading — it asserts a block that does not exist.
 
 ### Contract and decisions
@@ -393,3 +396,184 @@ A (both halves: route the block through the writer, and make T-LR-002 reflect un
 
 ### Acceptance and regression tests
 From the FSM path alone (no direct writer calls): a divergence must leave `ledger.blocked=True` and refuse a new `append_fill` with `LEDGER_BLOCKED_PENDING_RECONCILE`; `require_reconciled` must raise for any intent while a divergence is unresolved — including after a terminal RECONCILED followed by a divergent recheck, and for an intent whose only RECONCILED record is a bare FILL; a subsequent matching reconcile must write RECONCILE_RESOLVED, clear the block, and re-allow appends exactly once; no duplicate CORRECTION_EVENT for one divergence; the existing TestReconcile and CP-7 integration tests must pass with the added blocked assertions. Read-only device evidence before LIVE: verify that on the real device the PAPER loop has never run with an unresolved CORRECTION_EVENT while appending entries (`SELECT` over ledger event history).
+
+## E-022
+
+### Auditor claim (short quote)
+"the order response cache is kept only with intent_id and without input_hash, timestamp TTL or code_version. In the probe, first submit i-collision/LONG/0.1@100, then the same ID with SHORT/1@200: without a second POST it returned ok=True/ACKNOWLEDGED/cached=True and the first order's order_id. This is false confirmation of the changed request in the direct API, not evidence of hash collision in the native D50 path; E-014 is about the race of two same-identity submits."
+
+### What I read (files, line ranges, functions, callers)
+`apex/execution/toobit_adapter.py::submit_order` (402–474): `cached = self._duplicates.get(intent_id)` → `_cached_result(cached, intent_id)`; `_execute` (623–725): `self._duplicates[client_order_id] = result` — the registry is `Dict[str, AdapterResult]` keyed by client order id ONLY. `_cached_result` (712–742): returns the ORIGINAL `ok/outcome/order_id/data` with `cached=True` and `error_code="DUPLICATE_CLIENT_ORDER_ID"` (rule text cites Ch.16 L16796–16798/T_ADAPTER_DUPLICATE and D50). No `input_hash`, no timestamp/TTL, no `code_version` anywhere in the stored value or the comparison. `AdapterState.known_client_order_ids` (289–296) exposes the keys. Consumers of the duplicate marker: `grep -RIn "DUPLICATE_CLIENT_ORDER_ID\|\.cached" apex` — the FSM's `apply_adapter_result` (fsm.py:617–660) maps ONLY `outcome`/`classification` to transitions and ignores `cached`/`error_code`; `paper_loop` reads `classification != "REFUSED"` and `outcome`. Tests: `tests/unit/test_toobit_adapter.py:40–56` (`TestConformanceFixture.test_case`) asserts the DUPLICATE case from the hash-sealed fixture (`cached=True`, one attempt); `tests/fixtures/toobit_adapter_conformance.json` carries the golden DUPLICATE expectations.
+
+### Reproduction (command, probe file, actual result)
+`python3 -B AUDIT/probes_V1d/E-022.py` (raw output `AUDIT/probes_V1d/E-022.out`), real `ToobitAdapter` + repository `FakeToobitResponder`:
+1. `submit(intent_id="i-collision", LONG, 0.1 @ 100)` → `ok=True outcome=ACKNOWLEDGED order_id=900001 cached=False`.
+2. The SAME id with a completely different payload (`SHORT, 1 @ 200`) → `ok=True outcome=ACKNOWLEDGED order_id=900001 cached=True error_code=DUPLICATE_CLIENT_ORDER_ID`, **0 new POSTs**; the venue's booked order for `i-collision` is still `BUY_OPEN 0.1 100` — the changed request was never sent, yet the receipt says ok=True.
+3. The registry entry is a bare `AdapterResult`: none of `input_hash`/`ttl`/`code_version`/`created_at` exist on it.
+4. A genuinely identical retry also returns the cached receipt with no POST (the lawful T_ADAPTER_DUPLICATE behaviour).
+5. A bare `ExecutionFSM` applying the CACHED result of the CHANGED request advances `SUBMITTING → ACKNOWLEDGED` — the FSM ignores `cached` and `DUPLICATE_CLIENT_ORDER_ID` entirely (goes slightly beyond the audit row: the primary consumer is blind to the marker).
+
+### Verdict and reasoning
+**CONFIRMED, S2.** Every factual element of the row reproduces exactly: the cache is keyed by `intent_id` alone; no input hash, TTL or code version is stored or compared; a same-id CHANGED payload receives the FIRST order's receipt (`ok=True`, `cached=True`, first `order_id`) without any transport call; and the audit's own scoping is correct — the native D50 path derives the intent from content, so a changed payload yields a different id and this collision requires direct-API misuse. One contract nuance must be recorded (it does not reduce the finding, it shapes the fix): Ch.16's `T_ADAPTER_DUPLICATE` ("duplicate client_order_id must return the original result") and D50 ("A repeated client order id is rejected by name DUPLICATE_CLIENT_ORDER_ID and is never resent; the recorded venue outcome is preserved") PRESCRIBE the return-original-never-resend behaviour, and the code marks the result (`cached=True`, named error code) — so the duplicate-return itself is lawful and the audit's recommendation (keep D50's behaviour, add an explicit collision refusal for a CHANGED payload) is the correct reading. The confirmed defect is the missing AI.8 cache-validity metadata: without a stored payload hash the adapter cannot distinguish an identical retry from a mis-keyed different order, without `code_version` a code change cannot invalidate cached receipts, and without a TTL policy the J-018 conflict (Ch.16 intent-based key vs AI.8 `order_hash` + 60 s) stays unresolved; additionally the FSM consumer demonstrably ignores the duplicate marker. S2 is right (direct-API hazard; the native path is protected by D50 content-derived intents, `PLAN_ALREADY_MATERIALIZED` and the durable cell cursor).
+
+### Root cause
+The duplicate registry implements only the Ch.16/D50 half of the idempotency law (key + return-original) and none of the AI.8 cache-validity half (input_hash, timestamp, TTL, code_version), and no consumer is required to check the duplicate marker.
+
+### Direct impact
+In direct API use, a caller that reuses an intent id with a different side/size/price receives a receipt that says the (different) order was accepted; if that caller (like the FSM) ignores `cached`/`error_code`, it proceeds as if its request were live at the venue, while the venue holds only the first order — direction/size divergence between plan, ledger and venue.
+
+### Secondary effects and interactions (upstream/downstream)
+Downstream: reconcile-by-`clientOrderId` returns the FIRST order's state, compounding the mismatch; E-014 (the same registry's race window), J-018 (the dual key definition), F-005 (separate ledger race). Upstream: only caller discipline (D50-native intent derivation) prevents it today.
+
+### Contract and decisions
+Binding: APEX_GEN5.md AI.8 "Cached result and stable key semantics" (in this checkout ~L18943–18948): "Cached result must store: result value, timestamp, code_version, input_hash; cache is invalidated if code_version changes" and the order-submission row "key = order_hash = SHA256(symbol||side||qty||price||timestamp), TTL 60 s"; Ch.16 "Execution-layer idempotency (explicit)" (this checkout L16910–16917): "`intent_id / order_id / fill_id / cancel_id` are unique; a repeated key returns the previously recorded response and never resubmits" and the Adapter Contract's `T_ADAPTER_DUPLICATE`. `PHASE2_DECISION_LOG.md` D50 (L1163) as quoted above. Precedence: D50 (later, more specific, owner-issued) governs the duplicate-RETURN behaviour; AI.8's cache-metadata requirements are not superseded by D50 and remain binding for cache validity; the key-definition conflict is exactly J-018 and must be resolved by owner ruling, not by code choosing a side silently.
+
+### Frozen status and non-frozen alternative
+`apex/execution/toobit_adapter.py` is not on the V1d frozen list. A wrapper that pre-hashes the economic payload and refuses id reuse with a changed hash can live outside the adapter, but the cache metadata belongs in the registry itself.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** extend the registry value to `(input_hash, timestamp, code_version, AdapterResult)` where `input_hash = SHA-256(canonical(economic payload))`: an identical payload + same id → return the recorded result (D50 behaviour, `cached=True`, `DUPLICATE_CLIENT_ORDER_ID`, no resend); a CHANGED payload with the same id → explicit named collision refusal (`DUPLICATE_ID_PAYLOAD_MISMATCH`, no resend, reconcile-required); apply a TTL/code-version policy per the J-018 owner ruling (until ruled: never expire and never resend — the conservative side of D50). Side effects: the conformance fixture's DUPLICATE case must gain the changed-payload variant (fixture is hash-sealed — regeneration is a deliberate, reviewable change); tests asserting a bare `Dict[str, AdapterResult]` shape must adapt; audit records gain the payload hash (AI.8 L18806 already demands key+result_source logging); no migration; no identity change for existing intents. **B:** store only the payload hash and return a reconcile-required UNKNOWN for changed payloads — more conservative but noisier; D50's "recorded venue outcome is preserved" is still honoured for identical payloads. **C:** status quo + document that ids are caller-owned — rejected: leaves the AI.8 requirement unimplemented and the FSM blind.
+
+### My recommendation
+A, plus make `apply_adapter_result` (or the paper loop) treat `error_code=DUPLICATE_CLIENT_ORDER_ID` with a changed payload as a hard stop (named refusal, reconcile-first) instead of a normal ACKNOWLEDGED transition.
+
+### Acceptance and regression tests
+Same id + identical payload → one POST ever, identical cached result, `cached=True`, named duplicate code; same id + changed side/qty/price/type → NO POST, explicit collision error, `reconcile_required=True`, and the FSM/loop refuses to treat it as acceptance; restart of the adapter (empty registry) followed by the same id → the adapter must not blind-resend (reconcile-first per Ch.16 UNKNOWN law); code-version change invalidates cached receipts per AI.8 once the J-018 ruling fixes the TTL. The existing conformance DUPLICATE case must keep passing.
+
+## New findings not in the audit
+
+### X-V1d-001 — AI.9 `risk_recheck`'s only implemented sub-check (leverage) is structurally dead: it reads a column the frozen `trade_plan` DDL does not have
+
+**Found during** E-012 (the audit says "risk_recheck only checks existing leverage" — in reality it checks nothing, because the leverage read can never return a value).
+
+#### What I read (files, line ranges, functions, callers)
+`apex/execution/fsm.py::StartupReconciliation._ai9_risk_recheck` (1297–1318): `plans = await self._ledger.trade_plans(...)`; `lev = plan.get("leverage") if "leverage" in plan else None`; `if lev is not None and tf:` → compare with `resolve_leverage(tf, ...)`. `apex/ledger/store.py`: `TRADE_PLAN_COLUMNS` (101–125, 21 columns) — the projection behind both `INSERT` (452–453) and `trade_plans()` (514–544, `SELECT` of the same tuple); there is NO `leverage` column (the frozen Ch.16 DDL for `trade_plan` does not define one). The ledger `TRADE_PLAN` record payload, however, DOES carry `leverage` (`build_trade_plan` fsm.py:326, 344 — the value resolved by `resolve_leverage` at plan build time) — the check simply never looks there. Capital-ceiling, concentration and protective-order sub-checks (AI.9 step 6) are not implemented at all.
+
+#### Reproduction (command, probe file, actual result)
+`python3 -B AUDIT/probes_V1d/X-V1d-001.py` (raw output `AUDIT/probes_V1d/X-V1d-001.out`), real `StartupReconciliation` + real `LedgerWriter` on temporary SQLite with the repository DDL: a plan materialized with `leverage=125.0` in its ledger record (1h cap is 4) yields `trade_plan` table columns = 21 with `'leverage' among them: False`, `trade_plans()` row has no `leverage` key, the ledger `TRADE_PLAN` record payload DOES contain `leverage: 125.0`, and `risk_recheck` returns `risk_recheck True PASS | 0 position(s), 1 plan(s)`. The sub-check can never fire for any plan.
+
+#### Verdict and reasoning
+CONFIRMED (own finding), **S2**: a boot/recovery gate that claims AI.9 step 6 coverage but structurally cannot detect any leverage violation (and does not even attempt capital/concentration/protection). Not S1 because leverage is already enforced at plan build time (`resolve_leverage` caps it; the dead check is defence-in-depth) and `run_recovery_reconciliation` has no production caller today (E-012); it becomes S1 the moment the recovery path is wired.
+
+#### Root cause
+The check reads from the normalized `trade_plan` projection instead of the ledger `TRADE_PLAN` record payload where `leverage` actually lives; the other three sub-checks were simply not implemented.
+
+#### Direct impact
+A recovery resume decision can be made over a book whose plans exceed the leverage caps without any signal; combined with E-012's hollow `raw_hash_chain`/`fsm_state`, all of AI.9 step 6 is unenforced.
+
+#### Secondary effects and interactions (upstream/downstream)
+Downstream of E-012's `RESUME` verdict; upstream of the capital/concentration exposure the AI.9 gate was designed to catch after a fail-closed halt.
+
+#### Contract and decisions
+Binding: APEX_GEN5.md AI.9 startup reconciliation step 6 (~L19076–19086 in this checkout): "Risk re-check: validate no position violates capital ceiling, leverage limit, or concentration limit; confirm all protective orders are in place" and the closing rule "If any check fails, halt recovery and escalate to manual". No decision waives step 6. Precedence: contract governs.
+
+#### Frozen status and non-frozen alternative
+`apex/execution/fsm.py` is not on the V1d frozen list; the `trade_plan` DDL is contract-frozen and must NOT gain a column casually (adding one requires an owner migration ruling) — which is precisely why the fix should read the ledger record payload instead.
+
+#### Fix options (A/B/C… each with side effects)
+**A (recommended):** source leverage from the ledger `TRADE_PLAN` record payload (`find_by_intent`/`read_ledger`, `payload.trade_plan.leverage`) or from `positions_from_ledger` + `resolve_leverage` per symbol/timeframe; implement capital ceiling (notional vs `capital`), concentration (per-symbol share), and a protective-order presence check from the ledger, each returning UNAVAILABLE (fail-closed) when the needed input is absent. Side effects: `TestRecoveryReconciliation` gains FAIL cases; no schema change; no frozen value touched. **B:** drop the dead sub-check entirely — rejected: weakens the named gate further and hides the gap. **C:** add a `leverage` column to `trade_plan` — rejected: frozen DDL change with migration cost for data the ledger already carries.
+
+#### My recommendation
+A (payload-sourced leverage + real capital/concentration/protection checks), folded into E-012's fix.
+
+#### Acceptance and regression tests
+A plan whose ledger-record leverage exceeds the timeframe cap must FAIL `risk_recheck` with a named violation; a capital-breached position, a concentration breach and a missing protective order must each FAIL; the clean-store PASS cases and the other five `TestRecoveryReconciliation` tests must keep passing.
+
+### X-V1d-002 — `ExecutionFSM.apply_adapter_result` ignores the adapter's idempotency markers: a cached duplicate receipt is consumed exactly like a fresh venue ACK
+
+**Found during** E-022 (consumer-side half; the audit row covers only the cache side).
+
+#### What I read (files, line ranges, functions, callers)
+`apex/execution/fsm.py::apply_adapter_result` (598–641): branches ONLY on `result.classification` (`"REFUSED"`) and `result.outcome` (`ACKNOWLEDGED|PARTIAL|FILLED|REJECTED|CANCELLED|else UNKNOWN`); `result.cached` and `result.error_code` are never read (grep over `apex/` for `\.cached|DUPLICATE_CLIENT_ORDER_ID` finds matches only inside `toobit_adapter.py` — no production consumer). `apex/execution/toobit_adapter.py::_cached_result` (712–742) faithfully marks the duplicate receipt (`cached=True`, `error_code="DUPLICATE_CLIENT_ORDER_ID"`, rule text "the named code is what a caller matches on"). Callers of `apply_adapter_result`: `paper_loop` submit/cancel paths and tests.
+
+#### Reproduction (command, probe file, actual result)
+`python3 -B AUDIT/probes_V1d/X-V1d-002.py` (raw output `AUDIT/probes_V1d/X-V1d-002.out`), real `ExecutionFSM` + a byte-faithful D50 duplicate `AdapterResult`: from `SUBMITTING`, `apply_adapter_result` returns `{'state': 'ACKNOWLEDGED', 'outcome': 'ACKNOWLEDGED', 'classification': 'OK', 'reconcile_required': False, ...}` and the FSM state is `ACKNOWLEDGED` — indistinguishable from a fresh acknowledgement.
+
+#### Verdict and reasoning
+CONFIRMED (own finding), **S2**: the adapter's duplicate contract (Ch.16 `T_ADAPTER_DUPLICATE`, D50 "rejected by name … the named code is what a caller matches on") has no matching consumer, so a repeated intent (restart-retry, E-014 race window, or the E-022 changed-payload misuse) advances the FSM as a normal ACK without any marker check or reconcile prompt. Not S1: a cached ACK for the SAME payload is the lawful D50 outcome (the recorded venue order really is live), so the harm requires the id-reuse-with-changed-payload case (E-022) or a lost update in the E-014 window.
+
+#### Root cause
+`apply_adapter_result`'s mapping table covers outcome/classification only; no rule demands inspecting `cached`/`error_code` before advancing.
+
+#### Direct impact
+The one place the idempotency law is enforced end-to-end (adapter marker → consumer reaction) is broken at the consumer end; duplicates are silently absorbed as fresh ACKs.
+
+#### Secondary effects and interactions (upstream/downstream)
+Amplifies E-022 (changed-payload misuse reaches ACKNOWLEDGED without a stop) and E-014 (the race window's loser is absorbed silently). Downstream: fill monitoring attaches to the FIRST order's id — which is actually the desired D50 behaviour for identical retries; the fix must keep that while refusing the changed-payload case.
+
+#### Contract and decisions
+Binding: Ch.16 execution-layer idempotency (this checkout L16910–16917) and `T_ADAPTER_DUPLICATE`; D50 (PHASE2_DECISION_LOG.md L1159): "A repeated client order id is rejected by name `DUPLICATE_CLIENT_ORDER_ID` and is never resent; the recorded venue outcome is preserved." The named rejection presupposes a consumer that matches on the name. Precedence: contract + D50 govern.
+
+#### Frozen status and non-frozen alternative
+`apex/execution/fsm.py` is not on the V1d frozen list. A consumer-side guard could also live in `paper_loop` (non-frozen), but `apply_adapter_result` is the single mapping point.
+
+#### Fix options (A/B/C… each with side effects)
+**A (recommended):** in `apply_adapter_result`, when `result.cached` or `result.error_code == "DUPLICATE_CLIENT_ORDER_ID"`: keep the recorded outcome for an identical payload (advance as today) but set `reconcile_required=True` and surface `duplicate=True` in the return dict; when the payload differs (needs E-022's input_hash), refuse with a named error instead of advancing. Side effects: return-dict shape gains a key (additive); tests asserting exact return dicts need updating; restart-retry behaviour gains a reconcile prompt (safer). **B:** treat every cached duplicate as UNKNOWN → reconcile-first — safer but noisier; rejects the lawful identical-retry advance D50 preserves. **C:** do nothing until E-022-A lands — acceptable ordering, but record the dependency.
+
+#### My recommendation
+A, landed together with E-022-A (the payload hash makes the identical/changed distinction possible).
+
+#### Acceptance and regression tests
+Identical-payload cached retry still advances to the recorded outcome but reports `duplicate=True`/`reconcile_required=True`; changed-payload cached receipt must NOT advance and must be refused by name; the existing `TestSubmit`/`apply_adapter_result` tests must keep passing for fresh results.
+
+### X-V1d-003 — re-materializing an already-materialized proposal escapes as a raw `sqlite3.IntegrityError`, not a named refusal
+
+**Found during** the E-020 probe (needed a second, distinct proposal).
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ledger/store.py::append_trade_plan` (~445–460): plain `INSERT INTO trade_plan (...)` — the `UNIQUE(proposal_id)` constraint (frozen Ch.16 DDL, `trade_plan.proposal_id`) is the only duplicate guard at the ledger layer; no `try/except sqlite3.IntegrityError` translation to a named `LedgerError` (the pattern the module otherwise follows). `apex/execution/fsm.py::submit` (530–570) calls it before any transition/venue call. Production guard: `paper_loop`'s `materialized_ids` set prevents re-materialization within a process, and D50's content-derived identity makes cross-restart duplicates unlikely — but nothing at the ledger boundary translates the constraint violation.
+
+#### Reproduction (command, probe file, actual result)
+`python3 -B AUDIT/probes_V1d/X-V1d-003.py` (raw output `AUDIT/probes_V1d/X-V1d-003.out`), real `ExecutionFSM` + `LedgerWriter` + real `ToobitAdapter`/`FakeToobitResponder` on temporary SQLite: first `submit(plan(pr-dup))` OK; a second FSM submitting a plan with the SAME `proposal_id` raises `sqlite3.IntegrityError: UNIQUE constraint failed: trade_plan.proposal_id` — `isinstance LedgerError: False | isinstance FsmError: False | has .reason: False`; the second machine stays `READY` and no venue POST happens (fail-closed in effect, but unnamed).
+
+#### Verdict and reasoning
+CONFIRMED (own finding), **S3**: the failure mode is safe (pre-submission, no venue call, transaction rolled back) but violates the named-refusal discipline (Ch.16/G6: every refusal carries a deterministic reason code; the ledger's own `LedgerError`s do) and surfaces as an unhandled exception type to any caller that doesn't catch `sqlite3.Error` — an operator sees a driver traceback instead of a reason code.
+
+#### Root cause
+Missing exception translation at the ledger write boundary for the one UNIQUE constraint whose violation is a plausible business event.
+
+#### Direct impact
+An operator/caller hit by a duplicate materialization gets an unnamed crash rather than a code to match on; monitoring keyed on reason codes misses it.
+
+#### Secondary effects and interactions (upstream/downstream)
+Interacts with E-014's race window (two same-identity submits: the loser can die here with a raw exception depending on timing) and with restart flows that re-materialize before checking the durable `cell_decision_cursor`.
+
+#### Contract and decisions
+Binding: Ch.16 named-refusal/fail-closed discipline (every refusal/exception path carries a reason code; `LedgerError(reason=...)` module pattern) and G6's "deterministic reason codes". No decision authorises raw driver exceptions at the boundary. Precedence: contract governs.
+
+#### Frozen status and non-frozen alternative
+`apex/ledger/store.py` is not on the V1d frozen list; the DDL stays untouched (the constraint itself is correct and frozen).
+
+#### Fix options (A/B/C… each with side effects)
+**A (recommended):** wrap the `INSERT` and translate `sqlite3.IntegrityError` on `trade_plan.proposal_id` into `LedgerError("PLAN_ALREADY_MATERIALIZED", ...)` (or return a typed result) so `FSM.submit` can surface a named refusal. Side effects: callers that (incorrectly) catch `sqlite3.IntegrityError` must switch to the named error; tests gain a duplicate-materialization case; no schema or frozen-value change. **B:** pre-check existence with a `SELECT` before insert — rejected: reintroduces a TOCTOU race the UNIQUE constraint exists to close. **C:** leave as-is — rejected: contradicts the reason-code discipline.
+
+#### My recommendation
+A.
+
+#### Acceptance and regression tests
+A second `submit` with an existing `proposal_id` must surface the named code (no raw `sqlite3` type), leave the FSM pre-submission (READY), make no venue call, and roll back cleanly; all existing submit-path tests must keep passing.
+
+## Rows not verified or incomplete
+
+None. All ten mandatory rows (E-012, E-013, E-014, E-015, E-017, E-018, E-019, E-020, E-021, E-022) were verified to the mandatory depth: full row text read (Persian original), referenced code and callers/callees read completely (grep mandatory for every claim), contract clause and decision-log precedence resolved, reproduction probe importing the REAL repository code (real `ExecutionFSM`, real `ToobitAdapter`, real `LedgerWriter`, repository `FakeToobitResponder`, temporary SQLite with the repository DDL), SQL statements used by each row's data paths examined (the ledger layer uses bound-parameter DML against the frozen Ch.16 DDL; no row-specific analytic query required an `EXPLAIN QUERY PLAN` beyond the PK/UNIQUE index lookups already cited in E-013/E-020/E-022 — the probes assert the index behaviour directly via the UNIQUE/PK constraint outcomes reproduced), upstream/downstream effects, fix side effects, and frozen-file analysis recorded per row.
+
+Boundary statement (per session rules): all probe evidence is synthetic/test-fixture evidence produced against the real repository code — it proves the MECHANISMS, not that any real device, real account, or `data/` content currently exhibits them. No exchange, Telegram, `data/`, or `.env` access occurred; nothing outside `AUDIT/` was modified.
+
+## Final counts
+
+| Verdict | Count | Rows |
+|---|---|---|
+| CONFIRMED | 10 | E-012 (S1), E-013 (S1), E-014 (S2), E-015 (S1), E-017 (S2), E-018 (S2), E-019 (S2), E-020 (S1), E-021 (S1), E-022 (S2) |
+| PARTIAL | 0 | — |
+| REJECTED | 0 | — |
+| DEVICE-EVIDENCE-NEEDED | 0 | — |
+
+Severity changes vs the audit: E-014 S1 → S2 (mechanism real — `submit` awaits `append_trade_plan`'s `asyncio.to_thread` while the duplicate registry is populated only after the venue round-trip — but no current production path can interleave two same-identity submits: `paper_loop` is sequential per intent and `run_apex`'s demo submits once; the race is an API hazard exactly like E-020, one careless caller away). All other severities agreed with the audit.
+
+Independent severity distribution (10 rows): S0 0 · S1 5 (E-012, E-013, E-015, E-020, E-021) · S2 5 (E-014, E-017, E-018, E-019, E-022) · S3/S4 0.
+
+New findings not in the audit: 3 — X-V1d-001 (S2, dead AI.9 leverage sub-check), X-V1d-002 (S2, FSM ignores duplicate/idempotency markers), X-V1d-003 (S3, raw `sqlite3.IntegrityError` instead of a named refusal on duplicate materialization).
+
+Overlap with known owner items (flagged in-row, nothing new beyond them): D58 (E-015 fill-simulator context), ISSUE-076 (E-021 replay/index context), ISSUE-077 (E-012 boot self-test context), ISSUE-CP6-003 (E-017/E-018 playbook-literal scope), J-018 (E-022 key-definition conflict), D50 (E-022 return-original mandate), ADR-P2-015 (E-019 scaling-in context), AI.8 (E-022 cache metadata; E-013/E-020 signed-request audit gaps noted in-row).
+
+V1b discrepancy recorded (header, "Frozen files" note): V1b marked `apex/execution/fsm.py` and `apex/ledger/store.py` as frozen; the governance docs' "frozen" applies to contract VALUES (52-edge matrix, Ch.16 DDL, wire map, six original YAMLs, requirements.lock), and the V1d session list does not freeze `apex/execution/`, `apex/ledger/`, `apex/ops/`, or `apex/playbook/`. Any fix must still not alter frozen contract values (tests pin them literally).

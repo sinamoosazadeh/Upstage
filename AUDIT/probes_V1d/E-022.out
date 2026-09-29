@@ -1,0 +1,8 @@
+1) LONG 0.1 @100  -> ok=True outcome=ACKNOWLEDGED order_id=900001 cached=False error_code=None
+2) SHORT 1 @200 (same id) -> ok=True outcome=ACKNOWLEDGED order_id=900001 cached=True error_code=DUPLICATE_CLIENT_ORDER_ID
+   new POSTs for the changed request: 0
+   side recorded by the venue for i-collision: BUY_OPEN 0.1 100
+   the changed request's side (SHORT) was NEVER sent; the receipt says ok=True
+3) registry keys: ('i-collision',) | duplicate entry fields (input_hash? ttl? code_version?): NONE of them — only the AdapterResult
+4) identical retry -> ok=True cached=True error_code=DUPLICATE_CLIENT_ORDER_ID new_POSTs=0
+5) FSM applying the cached result of the CHANGED request: {'state': 'ACKNOWLEDGED', 'outcome': 'ACKNOWLEDGED', 'classification': 'OK', 'reconcile_required': False, 'resubmitted': False, 'order_id': '900001', 'idempotency_key': '6554edaa4c17442db4b2a3f09a3575fca329d2a2ed2cdc3db23c923325397806'}

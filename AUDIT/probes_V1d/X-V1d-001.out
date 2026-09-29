@@ -1,0 +1,5 @@
+trade_plan table columns: 21 | 'leverage' among them: False
+trade_plans() row has 'leverage' key: False
+ledger TRADE_PLAN record payload leverage: 125.0
+risk_recheck on a plan with leverage=125 (1h cap=4): risk_recheck True PASS | 0 position(s), 1 plan(s)
+tmpdir: /tmp/v1d_x001_x8a8hck2
