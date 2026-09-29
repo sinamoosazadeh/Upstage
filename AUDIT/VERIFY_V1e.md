@@ -14,8 +14,8 @@ Baseline verified: `85b2c155d7b054a468379ddfd802eb239d0801f9` (`85b2c15 Merge pu
 | E-007 | PARTIAL | S1 | S1 | No | D50; X-V1d-002 | A: durable child exit lifecycle |
 | E-008 | CONFIRMED | S1 | S1 | No | — | A: canonical inverse symbol map |
 | E-009 | CONFIRMED | S1 | S1 | No | — | A: require successful/schema-valid boot queries |
-| E-010 | Pending | S1 | Pending | No | — | Pending |
-| E-011 | Pending | S1 | Pending | No | — | Pending |
+| E-010 | CONFIRMED | S1 | S1 | No | — | A: three-way boot order/fill/position matching |
+| E-011 | CONFIRMED | S1 | S1 | No | — | A: successful/schema-valid per-intent queries |
 
 ## E-001
 
@@ -321,3 +321,97 @@ A, shared with E-011 in one query-validation helper so boot and per-intent recon
 ### Acceptance and regression tests
 For each positions/open/fills call independently inject `-1022`, `-1120`, unknown code, timeout, non-200 code 0, malformed data and valid empty response; only schema-valid successful empties may agree. Repeat with non-empty ledger/venue state and assert boot never reaches READY on any failed call.
 
+## E-010
+
+### Auditor claim (short quote)
+“Boot receives fills then discards them; working orders become only IDs, so unknown order/unrecorded fill can pass with empty positions.”
+
+### What I read (files, line ranges, functions, callers)
+I read full `/tmp/AUDIT.md:203`, all required scope files, `StartupReconciliation.reconcile_boot` and recovery caller (`apex/execution/fsm.py:1163–1243`), the fake responder’s lost-ACK/order/fill routes (`tests/fake_toobit_responder.py:110–410`) and the CP-7 reconciliation test region (`tests/integration/test_cp7_paper_loop.py:782–804`). Mandatory search was `grep -RInE 'reconcile_boot|scope="open"|scope="fills"|open_intents|userTrades|lost_ack' apex tests scripts`. The boot method obtains `fills` but uses it only in the UNKNOWN predicate; it builds `_open_intents` from client IDs and calculates divergence exclusively from aggregated positions versus ledger positions—no order/fill identity, order status, fill ID or quantity comparison exists.
+
+### Reproduction (command, probe file, actual result)
+`python3 -u -B AUDIT/probes_V1e/E-010.py` (raw `AUDIT/probes_V1e/E-010.out`) runs two real adapter/startup-reconciliation cases on temporary SQLite. First, a fake venue records a lost-ACK order: `submit UNKNOWN reconcile True open_intents ('i-lost-new',) venue_orders [('i-lost-new', 'NEW')] venue_fills 0`. Second, an unledgered immediate fill reports `submit FILLED reconcile True open_intents () venue_orders [('i-unledgered-fill', 'FILLED')] venue_fills 1`. The current tolerance also allows the 0.2 unledgered position discrepancy, but the code independently never reads fill data for comparison. `E-010_E-011-pytest.out` records `16 passed, 152 deselected`; current tests do not make either condition fail. The fake is a control-flow double, not real venue/device evidence.
+
+### Verdict and reasoning
+**CONFIRMED, S1.** A broker reconciliation PASS can be produced while a `NEW` lost-ack order remains and while a venue fill has no ledger identity, because only net position deltas are checked. Open IDs are informational and fills are ignored. This directly violates three-way reconciliation; even a net-zero state cannot prove an order/fill is accounted for. S1 is appropriate for restart recovery, duplicate-order and hidden-exposure/accounting risk.
+
+### Root cause
+`reconcile_boot` implements a position-netting check, not the contract’s reconciliation of positions, working orders and recent fills. It has neither ledger lineage lookup nor durable child-order/fill comparison rules; tolerance compounds the blind spot for small positions.
+
+### Direct impact
+A crash after venue acceptance/fill can boot PASS/READY without recording or managing that order/fill. Recovery may resume with duplicate-entry risk, missing protection, false flatness and no audit linkage.
+
+### Secondary effects and interactions (upstream/downstream)
+E-001 loses an acknowledged order in-process and E-002 fails to hydrate it; E-008 symbol conversion can add unrelated false deltas; E-009 can falsely accept rejected queries; E-011 can reconcile a single intent after failed queries. D50 duplicate protection limits repeated same-ID POSTs but does not establish fill accounting. Downstream ledger chain, outcomes, P/L/risk budgets, replay and training labels are incomplete. No actual database/device crash or exchange lost ACK occurred in this verification.
+
+### Contract and decisions
+Ch.23 `APEX_GEN5.md:18246–18250` expressly requires reconciliation of “open positions, working orders, and recent fills” before normal operation. Ch.16 `16874–16880` says no downstream state may reconcile while ledger/exchange disagree; adapter conformance at `16972–16983` includes lost acknowledgment reconcile-not-resubmit. AI.9 `18894–18903` demands recovery halt on any failed check. D50 preserves original duplicate outcome but is not a waiver for ledger matching. The contract and D50 govern; no later owner decision overrides them.
+
+### Frozen status and non-frozen alternative
+Affected FSM/ledger consumer code is non-frozen; frozen Ch.16 DDL/value literals must remain. A non-frozen reconciliation projection can derive expected client-order IDs/fill IDs/quantities from immutable ledger records and query results. If persistent child order linkage is absent, an additive non-frozen table/migration may be necessary; do not rewrite historical ledger records.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** implement three-way matching: every exchange open order/recent fill must map to a ledger parent/intent/order/fill and expected lifecycle/quantity; orphan, missing, duplicate or pending `NEW` records block READY until resolution. Side effects: legacy historical records can fail boot and need explicit correction/manual resolution; more queries/ledger reads; new matching tests and possible child-order migration; no identity/hash rewrite if append-only associations are used. **B:** fail boot whenever any working order or fill exists. Safer but prevents automated legitimate recovery. **C:** retain net-position-only reconciliation. Rejected: directly disproved.
+
+### My recommendation
+A, integrated with E-001/E-002 durable lifecycle reconstruction and E-009 shared query validation.
+
+### Acceptance and regression tests
+Test matching ACK/NEW, partial/final fills, cancelled order, lost ACK, orphan order, orphan fill, duplicate fill and net-zero offsetting fills. Each orphan/missing/unknown/pending state must block READY; clean complete lineage may resume. Verify no extra submit occurs after crash and all matching uses immutable ledger data.
+
+## E-011
+
+### Auditor claim (short quote)
+“Per-intent reconciliation does not check position-query success; empty/error becomes zero, while order status is not an agreement criterion.”
+
+### What I read (files, line ranges, functions, callers)
+I read full `/tmp/AUDIT.md:204`, all complete required files, especially `ExecutionFSM.reconcile` (`apex/execution/fsm.py:832–910`), adapter position/order queries (`toobit_adapter.py:513–561`), business-code classification (`toobit_map.py:320–378`) and ledger position reconstruction (`ledger/store.py:525–571`). Mandatory search was `grep -RInE '\.reconcile\(|query_open_positions|query_order_state|order_state|RECONCILE_MATCH' apex tests scripts`. It identifies `paper_loop` and CP-7/unit tests as consumers; no caller adds a post-query-success check. The method checks order query only when outcome is UNKNOWN and `not ok`; it never checks `p.ok`, p.classification or p.outcome at all, then parses absent data as no rows/zero.
+
+### Reproduction (command, probe file, actual result)
+`python3 -u -B AUDIT/probes_V1e/E-011.py` (raw `AUDIT/probes_V1e/E-011.out`) brings a real FSM to CLOSED using legal transitions, then sets the real adapter/fake responder to return documented business code `-1022` for both order and position queries. The classifier audit is two `ABORT/REJECTED/-1022` results, but output is `agree True state RECONCILED delta 0 order_state_in_evidence` (empty). This meets the requested use of a classification-table code yielding REJECTED. `E-010_E-011-pytest.out` has 16 focused passing tests and does not test rejected per-intent queries. Synthetic response proof does not establish real venue/device behavior.
+
+### Verdict and reasoning
+**CONFIRMED, S1.** Both rejected query results are treated as missing values; zero ledger/derived exchange quantity permits `RECONCILE_MATCH` from CLOSED. The FSM thereby writes a RECONCILED lifecycle record while it has no successful knowledge of either order or position. This is a direct fail-closed/recovery violation.
+
+### Root cause
+Query response validity is not made an invariant before quantity comparison. `order_state` is extracted for diagnostic evidence only, not validated against the current FSM lifecycle; position parsing has no result-status guard.
+
+### Direct impact
+A rejected or malformed exchange query can falsely terminally reconcile an intent. That can permit downstream decisions/recovery and hide an unknown order/position without any correction/alert.
+
+### Secondary effects and interactions (upstream/downstream)
+E-009 is the boot-wide version; E-010 lacks order/fill identity matching even on successful calls; E-005 can remove records despite failed reconciliation. E-008 can add false symbol mismatch. Downstream `require_reconciled`, ledger audit state, risk admission, P/L/outcomes/replay may rely on false terminality. No actual credentials, exchange account or device was queried.
+
+### Contract and decisions
+Ch.16 `APEX_GEN5.md:16874–16880` makes reconciliation a first-class invariant and forces recovery on divergence; state mapping/error mapping at `16972–16983` says unexpected errors do not license blind advance. AI.9 `18894–18903` requires recovery halt/escalation on failed checks. The documented `-1022 abort` has no authority to impersonate a zero position. No later decision conflicts; the contract is controlling.
+
+### Frozen status and non-frozen alternative
+`fsm.py` is non-frozen; leave frozen error/wire/state values unchanged. A shared non-frozen result-validation helper used by boot (E-009) and per-intent reconciliation can fail closed without schema/migration/retraining. A richer order lifecycle comparator (E-010) is separate but complementary.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** validate both result objects (`ok`, known successful classification/outcome, operation/scope and schema) before parsing; require order lifecycle compatibility as part of agreement; any invalid/missing response advances or retains `RECOVERY_REQUIRED`, never RECONCILED. Side effects: unit tests with bare injected mappings must use explicit valid result objects; previously permissive recovery becomes manual; no hash, DB migration or retraining effect. **B:** treat all non-UNKNOWN query failures as zero. Rejected: disproved. **C:** only check p.ok. Insufficient: stale/wrong-scope/malformed success payloads still become zero.
+
+### My recommendation
+A, implemented once with E-009-A and followed by E-010-A identity/quantity matching.
+
+### Acceptance and regression tests
+For each query independently test REJECTED `-1022`, UNKNOWN, interval rejection, malformed data, wrong scope/status and valid empty position/order. Every invalid combination must be `RECOVERY_REQUIRED`, retain nonterminal management and avoid false RECONCILED ledger transition. Test lifecycle mismatch (e.g., CLOSED ledger vs NEW order) even when quantities match.
+
+## New findings not in the audit
+
+No additional independent finding is opened. The unindexed per-managed-intent `market_observation` scan observed in E-006 is **= ISSUE-076** (the prescribed device index changes the recorded plan) and the cache-marker consumer defect is **= X-V1d-002**; neither is relabelled as new.
+
+## Rows not verified or incomplete
+
+No row is omitted within the requested ten IDs. This is not a coverage claim for any other audit row, full-suite behavior, real database/model/device data, production PAPER simulator, live venue, account credentials, exchange or Telegram endpoint. E-005, E-006 and E-007 are explicitly PARTIAL because their reported ACK/fill exit premise is blocked by the real adapter’s unsupported `kind="exit"` path; their conditional/dead branches were still assessed as documented above.
+
+## Final counts
+
+| Verdict | Count | Rows |
+|---|---:|---|
+| CONFIRMED | 7 | E-001, E-002, E-004, E-008, E-009, E-010, E-011 |
+| PARTIAL | 3 | E-005, E-006, E-007 |
+| REJECTED | 0 | — |
+| DEVICE-EVIDENCE-NEEDED | 0 | — |
+
+Independent severity distribution: S1 10; S0/S2/S3/S4 0. Severity differs from no auditor-assigned level only in verdict qualification: E-005/E-006/E-007 remain S1 because their actual/latent exit-management failures are serious, but their specific presently executable ACK/fill narratives are blocked by `ORDER_KIND_QX`.

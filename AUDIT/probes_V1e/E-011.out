@@ -1,0 +1,2 @@
+agree True state RECONCILED delta 0 order_state_in_evidence 
+adapter_audit [('query_order_state', 'ABORT', 'REJECTED', -1022), ('query_open_positions', 'ABORT', 'REJECTED', -1022)]
