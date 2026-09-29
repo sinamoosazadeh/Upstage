@@ -1,0 +1,3 @@
+agree True open_intents ()
+adapter_audit [('query_open_positions', 'ABORT', 'REJECTED', -1022), ('query_order_state', 'ABORT', 'REJECTED', -1022), ('query_order_state', 'ABORT', 'REJECTED', -1022)]
+check PASS 1 exchange position row(s), 0 working order(s), 0 divergence(s)

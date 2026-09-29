@@ -12,8 +12,8 @@ Baseline verified: `85b2c155d7b054a468379ddfd802eb239d0801f9` (`85b2c15 Merge pu
 | E-005 | PARTIAL | S1 | S1 | No | X-V1d-002; D50 | A: lawful exit mapping + residual accounting |
 | E-006 | PARTIAL | S1 | S1 | Mixed (catalog frozen) | D58; ISSUE-076; X-V1d-002 | A: CP-15 simulator/state + index deployment |
 | E-007 | PARTIAL | S1 | S1 | No | D50; X-V1d-002 | A: durable child exit lifecycle |
-| E-008 | Pending | S1 | Pending | No | — | Pending |
-| E-009 | Pending | S1 | Pending | No | — | Pending |
+| E-008 | CONFIRMED | S1 | S1 | No | — | A: canonical inverse symbol map |
+| E-009 | CONFIRMED | S1 | S1 | No | — | A: require successful/schema-valid boot queries |
 | E-010 | Pending | S1 | Pending | No | — | Pending |
 | E-011 | Pending | S1 | Pending | No | — | Pending |
 
@@ -244,4 +244,80 @@ A, coordinated with E-005-A and V1d X-V1d-002-A; make the adapter path lawful be
 
 ### Acceptance and regression tests
 Use real adapter/fake responder with a lawful flatten path to assert first ACK produces one durable child record, subsequent cycles query rather than POST, later FILLED records one exit fill and terminal reconciliation, cached duplicate reports its marker, and price reversion does not abandon the outstanding exit. Verify unsupported ad-hoc kinds remain rejected and no new frozen wire literal changes without ruling.
+
+## E-008
+
+### Auditor claim (short quote)
+“`BTC-SWAP-USDT` is reduced to `BTC`, not `BTCUSDT`; boot and `_position_row_for` create false ±2 deltas at tolerance 1.”
+
+### What I read (files, line ranges, functions, callers)
+I read full row `/tmp/AUDIT.md:201`, all required scope files, `fsm.py` position normalization at 917–926 and boot reconciliation 1163–1218, and the complete wire map including `to_internal_symbol` at `apex/execution/toobit_map.py:90–112`. The relevant direct callers are `ExecutionFSM.reconcile` and `StartupReconciliation.reconcile_boot`; both consume venue position rows. Mandatory search was `grep -RInE '_position_row_for|SWAP-USDT|to_internal_symbol|query_open_positions' apex tests scripts`. It finds the canonical inverse exists in `toobit_map.py` but neither FSM caller uses it. I also read the requested fake responder and its `seed_position`/position query behavior.
+
+### Reproduction (command, probe file, actual result)
+`python3 -u -B AUDIT/probes_V1e/E-008.py` (raw `AUDIT/probes_V1e/E-008.out`) uses real startup reconciliation/ledger/adapter over temporary SQLite and a fake venue position `BTC-SWAP-USDT=2` matching a ledger `BTCUSDT=2` entry. Result: `boot_agree False`; deltas are `BTCUSDT: exchange 0 ledger 2 delta -2` and `BTC: exchange 2 ledger 0 delta 2`; direct `_position_row_for(..., "BTCUSDT")` returns `{}`. Focused test output `E-008_E-009-pytest.out` has `14 passed, 194 deselected`; it does not cover this inverse map. The fake proves code conversion and its result only, not real venue symbol payloads.
+
+### Verdict and reasoning
+**CONFIRMED, S1.** The string replacement strips the entire `-SWAP-USDT` suffix and creates the wrong internal key. The repository’s own bijective map has the proper answer but is bypassed in both boot and per-intent reconciliation. A matching position is treated as two divergences, yields corrections and blocks readiness/recovery. S1 is warranted because this affects boot/reconciliation and can create a false recovery stop or misleading correction record.
+
+### Root cause
+Ad-hoc suffix removal was used instead of the canonical inverse `to_internal_symbol`; `_position_row_for` repeats the same lossy matching rule.
+
+### Direct impact
+Known Core-10 wire positions do not match ledger symbols. Boot can enter `RECOVERY_REQUIRED` and append false `BOOT_BROKER_LEDGER_DELTA` corrections; per-intent reconciliation reads no matching position as quantity zero.
+
+### Secondary effects and interactions (upstream/downstream)
+E-002 boot restoration is undermined by false divergence; E-010 boot order/fill matching is separately incomplete; E-011 per-intent reconcile can falsely see zero. False correction events pollute the immutable ledger and recovery/audit/replay evidence, but do not themselves place/cancel orders. The actual device symbol response format was not tested.
+
+### Contract and decisions
+Binding wire prose at `APEX_GEN5.md:16901–16904` says internal `BTCUSDT…LTCUSDT` maps to wire `BTC-SWAP-USDT…LTC-SWAP-USDT`; Ch.16 `16874–16880` requires matching ledger/exchange state and divergence recovery. Ch.23 `18246–18250` requires positions be reconciled before READY. No later decision overrides this mapping; the contract controls.
+
+### Frozen status and non-frozen alternative
+The original wire YAML/map values are frozen, but `fsm.py` is non-frozen. Do not alter symbol literals: import/use the existing inverse map in the non-frozen consumer and fail closed with its named unknown-symbol error. An adapter-side producer normalization is possible but has broader response-contract effects.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** replace both lossy conversions with `to_internal_symbol`, catching its named unknown symbol refusal and keeping unknown rows explicit. Side effects: matching valid symbols changes correction/boot outcomes; existing tests that implicitly expect suffix stripping change; historical false correction records stay immutable and need append-only remediation if acted upon; no migration/retraining/hash invalidation. **B:** build a reverse dict local to FSM. Rejected: duplicates frozen mapping and risks drift. **C:** accept both guessed forms. Rejected: hides unknown symbols and can collide.
+
+### My recommendation
+A, with a round-trip test over all ten frozen symbol-map members and an unknown wire symbol fail-closed test.
+
+### Acceptance and regression tests
+For every map entry, wire→internal→wire must preserve exactly; zero/nonzero matching ledger positions must have zero delta in boot and per-intent reconciliation. Unknown/malformed wire symbol must fail/recovery rather than be treated as zero. Retain tolerance behavior only for genuine numeric deltas.
+
+## E-009
+
+### Auditor claim (short quote)
+“Boot rejects only UNKNOWN-and-not-ok; three `REJECTED`/`ok=False` `-1022` queries with an empty ledger give `agree=True`.”
+
+### What I read (files, line ranges, functions, callers)
+I read complete `/tmp/AUDIT.md:202`, all required scope files, `StartupReconciliation.reconcile_boot` (`fsm.py:1163–1218`), adapter query execution/classification (`toobit_adapter.py:513–731, 849–879`) and `classify_business_code` (`toobit_map.py:320–378`). The mandatory consumer search `grep -RInE 'reconcile_boot|EXCHANGE_UNKNOWN|outcome == "UNKNOWN"|business_code' apex tests scripts` establishes this is the boot consumer and no surrounding caller revalidates REJECTED results. The classification table makes `-1022` `ABORT`, outcome `REJECTED`, `ok=False`, `reconcile_required=False`; this is a documented business code, not an invented envelope.
+
+### Reproduction (command, probe file, actual result)
+`python3 -u -B AUDIT/probes_V1e/E-009.py` (raw `AUDIT/probes_V1e/E-009.out`) invokes real boot reconciliation with a real adapter, temporary SQLite and fake responder configured for three `-1022` responses. It prints `agree True open_intents ()`; adapter audit is three `(..., 'ABORT', 'REJECTED', -1022)` entries and boot appends `check PASS 1 exchange position row(s), 0 working order(s), 0 divergence(s)`. `E-008_E-009-pytest.out` records 14 focused passing tests; none asserts REJECTED boot queries fail. This proves implementation behavior with a synthetic response, not actual authentication/device failure.
+
+### Verdict and reasoning
+**CONFIRMED, S1.** Boot only returns failure for `r.outcome == "UNKNOWN" and not r.ok`. It treats three explicit abort/rejection responses as empty-ish response data, calculates no deltas on the empty ledger, and reports PASS/agree. This violates fail-closed reconciliation and can reach READY without account state.
+
+### Root cause
+The boot result validation confuses “not UNKNOWN” with successful/schema-valid result. It neither requires `ok`/`classification == OK` for each of the three required queries nor validates expected response shape before parsing rows.
+
+### Direct impact
+A rejected credentials/authorization/business response can be accepted as no positions/orders/fills, allowing false reconciliation and later trading readiness when the actual account is unknown.
+
+### Secondary effects and interactions (upstream/downstream)
+E-010 then ignores orders/fills even when calls succeed; E-011 repeats weak query validation per intent; E-002 may hydrate nothing after false boot. Downstream risk, protection, accounting and recovery depend on a false account view. No real credential, exchange or device endpoint was used or inspected.
+
+### Contract and decisions
+Ch.23 `APEX_GEN5.md:18246–18250` requires queries for open positions, working orders and recent fills before transitions to READY. Ch.16 `16972–16983` maps errors deterministically and makes UNKNOWN reconcile-first; the more general `16874–16880` invariant prohibits reconcile while states disagree. AI.9 `18894–18903` says any failed check halts/escalates. The documented `-1022 abort` at `16927–16933` cannot lawfully mean a successful empty account. No conflicting later decision exists; contract has precedence.
+
+### Frozen status and non-frozen alternative
+FSM/adapter code is non-frozen; business-code values/wire defaults must remain frozen. A non-frozen boot response validator can require all queries be successful, expected-scope and schema-valid before parsing, without DDL, engine, YAML or requirements changes.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** require `ok`, classification `OK`, appropriate operation/scope and valid list/object schema for positions/open/fills; any rejection, UNKNOWN, malformed body or transport uncertainty yields named boot failure/DEGRADED. Side effects: current tests/fixtures that pass sparse success bodies need explicit valid envelopes; boot becomes more conservative; no hash/migration/retraining change. **B:** accept REJECTED only when ledger is empty. Rejected: credentials/account knowledge remains absent. **C:** map `-1022` to UNKNOWN. Rejected: loses meaningful classification and does not fix all `ok=False` classes.
+
+### My recommendation
+A, shared with E-011 in one query-validation helper so boot and per-intent reconcile cannot drift.
+
+### Acceptance and regression tests
+For each positions/open/fills call independently inject `-1022`, `-1120`, unknown code, timeout, non-200 code 0, malformed data and valid empty response; only schema-valid successful empties may agree. Repeat with non-empty ledger/venue state and assert boot never reaches READY on any failed call.
 

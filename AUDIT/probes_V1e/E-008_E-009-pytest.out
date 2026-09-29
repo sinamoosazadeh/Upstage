@@ -1,0 +1,32 @@
+..............                                                           [100%]
+=============================== warnings summary ===============================
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+  /usr/local/lib/python3.11/dist-packages/matplotlib/_fontconfig_pattern.py:88: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+  /usr/local/lib/python3.11/dist-packages/matplotlib/_fontconfig_pattern.py:92: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+tests/unit/test_execution_fsm.py::TestBootMachine::test_a_clean_boot_reaches_ready_and_allows_new_trades
+  /home/user/Upstage/apex/execution/fsm.py:1080: DeprecationWarning: 
+  Pyarrow will become a required dependency of pandas in the next major release of pandas (pandas 3.0),
+  (to allow more performant data types, such as the Arrow string type, and better interoperability with other libraries)
+  but was not found to be installed on your system.
+  If this would cause problems for you,
+  please provide us feedback at https://github.com/pandas-dev/pandas/issues/54466
+          
+    __import__(module)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+14 passed, 194 deselected, 13 warnings in 3.08s
