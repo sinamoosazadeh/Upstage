@@ -40,8 +40,8 @@ failure proves the code path, not that it has already damaged a device record.
 | K-024 | CONFIRMED (severity lowered) | S1 | S2 | No — detector and ingest wiring are non-frozen; `raw_observation` DDL and the parser are frozen | K-022/K-023 (same command), ISSUE-CP13-001 | A — persist a measured capture/receipt time and key detection on it; B — bounded verification of suspect bars |
 | K-025 | CONFIRMED | S1 | S1 | No — `apex/ops/engine_context.py` / `bootstrap_service.py` are non-frozen; `apex/quality/vector.py` is not in the frozen set either | D52 A1; K-019 (publish path); K-010 (calendar step) | A — carry offered/accepted/receipt and the previous frontier into the measurement; unknown must stay unknown |
 | K-026 | CONFIRMED (severity lowered) | S1 | S2 | No — `apex/ops/engine_context.py` non-frozen; the freshness thresholds are governed params | D52 B (backfill), D33/ISSUE-037 (minimum veto), K-019/K-025 (same publish path) | A — report usability, not just `written`; B — owner-approved warmup-vs-decision window policy |
-| K-027 | PENDING | S2 | — | — | — | — |
-| K-028 | PENDING | S2 | — | — | — | — |
+| K-027 | CONFIRMED | S2 | S2 | Partly — `apex/fabric/evidence.py` is NOT in the frozen list; `apex/ops/plan_bridge.py` is not frozen either | V3 K-015/K-020 (auditor cross-ref); E-PIT-001 | A — parse and check each event's own availability_time in the adapter; B — always re-measure age from event_time |
+| K-028 | CONFIRMED (spec-level; no production caller) | S2 | S2 | No — `apex/quality/pit.py` is non-frozen, but it transcribes the frozen APEX_GEN5.md §2.3 pseudocode | K-025 (coverage measured from delivered rows), K-020 | A — count distinct in-window closes and apply the freshness SLA, with an owner doc amendment to §2.3 |
 | K-029 | PENDING | S2 | — | — | — | — |
 | K-030 | PENDING | S2 | — | — | — | — |
 | K-031 | PENDING | S2 | — | — | — | — |
@@ -2248,3 +2248,292 @@ own acceptance criterion says the same.
    (`QUALITY_PROVENANCE_BACKFILL_NOT_LIVE` still fires).
 5. `skipped_receipt_before_close` continues to list (never fake) rows whose receipt precedes
    their close.
+
+---
+
+## K-027 — the fabric adapters take the caller's word for event time, age and lineage
+
+#### Auditor claim (short quote)
+> «`fabric_from_events` به‌جای availability واقعی، `as_of` درخواستی را در ref می‌نویسد؛ ACTIVE با availability سال۲۰۹۹ و `as_of=1000` عضو fabric شد. همین آداپتر `age=None` را صفر و lineage خالی را `(evidence_id,)` می‌کند. **اصلاح مرز پیشین:** producer بومی `evidence_age_bars` اندازه‌گیری‌شده می‌دهد و bridge فقط *در صورت وجود این نگاشت* سن را با `event_time` تطبیق می‌دهد؛ ورودی مستقل `context_source` بدون آن نگاشت، age ادعایی event را می‌پذیرد … این اثبات plan از producer بومی یا معامله نیست.»
+> — “`fabric_from_events` writes the requested `as_of` into the ref instead of the real availability; an ACTIVE event with availability in 2099 became a fabric member at `as_of=1000`. The same adapter turns `age=None` into zero and an empty lineage into `(evidence_id,)`. **Correction to an earlier boundary:** the native producer supplies a measured `evidence_age_bars` and the bridge reconciles the age with `event_time` *only when that mapping is present*; an independent `context_source` without it accepts the event's claimed age … this is not proof about the native producer's plan or about trading.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/fabric/evidence.py:334–378` — `EvidenceFabric.assemble`: the admission gates are
+`FABRIC_SCOPE_MISMATCH_QX`, `NOT_ACTIVE_SL14`, **`if ref.as_of > as_of: E-PIT-001`**,
+`LINEAGE_UNRESOLVED_QX` (only when `raw_observation_ids` is supplied), and
+`if ref.age_bars * TF_DURATION_SECONDS[tf] > expiry: EXPIRED_5TF`. Every gate reads the
+**ref**, so the ref's fields are the trust boundary.
+`apex/fabric/evidence.py:430–472` — `fabric_from_events`: builds each ref with
+`age_bars=float(ev.age if ev.age is not None else 0.0)`, **`as_of=as_of`** (the caller's
+requested as_of — the event's own `availability_time` is never read, so the `E-PIT-001` gate
+can never fire), and `lineage=tuple(ev.lineage) if ev.lineage else (ev.evidence_id,)` (a
+self-rooted lineage that satisfies "lineage present").
+`apex/data_catalog/contracts.py:310–334` — the 24-field contract: `event_time` (#7),
+`availability_time` (#8), `age` (#19), `lineage` (#23); `:338–350` and `validate_24_fields`
+require non-empty `event_time`/`availability_time` but do not check their relationship to any
+as_of.
+`apex/ops/plan_bridge.py:316–375` — `_fabric_ref`, the **stricter** boundary: it parses
+`availability_time` and refuses `EVIDENCE_AVAILABILITY_UNAVAILABLE`, refuses
+`EVIDENCE_LINEAGE_UNRESOLVED` for an empty lineage and `EVIDENCE_AGE_UNAVAILABLE` for
+`age=None`, and sets `as_of=event_as_of` — but `age_bars=float(event.age)` is the **claimed**
+value.
+`apex/ops/plan_bridge.py:635–646` — the age is re-derived (`decision_evidence_age(event_time,
+timeframe, as_of_ms)`) and compared **only** `if context.get("evidence_age_bars") is not None`.
+`apex/ops/plan_bridge.py:683–695` — `EvidenceFabric.assemble(..., as_of=as_of_ms, refs, …)`
+consumes whatever the refs carry.
+`apex/ops/engine_context.py:1862–1865` — the native producer builds
+`ages = {e.evidence_id: decision_evidence_age(e.event_time, timeframe, end)}` and replaces
+every ref's `age_bars`; `:2001–2005` puts that mapping into the transport
+(`"evidence_age_bars": ages`), which is why the native path is safe.
+Callers: `grep -rn "fabric_from_events" --include=*.py .` → the package export
+(`apex/fabric/__init__.py:22`) and **tests only** (`tests/unit/test_fabric_evidence.py`,
+`tests/integration/test_context_to_trade_paper.py`) — no production call site.
+`grep -rn "context_source"` → `scripts/run_apex.py:752` wires the native
+`producer.get_bridge_context`, so production supplies the mapping.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-027.py`; probe/output `AUDIT/probes_V3b/K-027.py|.out`.
+Real frozen `EvidenceEvent`, real fabric, real bridge adapter:
+```
+A. fabric_from_events: availability 2099, age=None, lineage=()
+   members = 1  excluded = []
+   ref.as_of=1000  ref.age_bars=0.0  ref.lineage=('ev-1',)
+B. bridge adapter, 1h event claiming age=0
+   measured age (decision_evidence_age) = 494.0 bars
+   ref.age_bars accepted by _fabric_ref  = 0.0
+   claimed age 0 -> members=1 excluded=[]
+   measured age  -> members=0 excluded=[('ev-1','EXPIRED_5TF')]
+C. availability_time missing -> EvidenceEvent refused (#7/#8)
+   age None      -> BridgeError('EVIDENCE_AGE_UNAVAILABLE')
+   lineage empty -> BridgeError('EVIDENCE_LINEAGE_UNRESOLVED')
+```
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained), with the auditor's own
+correction upheld: the bridge boundary already refuses missing availability, `age=None` and an
+empty lineage, so only the *claimed age* survives there, and only when no
+`evidence_age_bars` mapping is supplied. The fabric adapter `fabric_from_events` is
+unguarded on all three counts, but it has **no production caller** today. S2 is the right
+level: this is a defence-in-depth failure in two adapters, not a demonstrated live PIT
+violation — exactly as the auditor states.
+
+#### Root cause
+The adapters treat caller-provided derived fields (`age`) and a caller-provided `as_of` as
+measurements, although both are derivable from data the adapter already holds
+(`event_time`/`availability_time` and the target `as_of`). The fabric's PIT and expiry gates
+are therefore evaluated against numbers the fabric itself did not derive.
+
+#### Direct impact
+`fabric_from_events` admits evidence whose availability lies in the future, with a fabricated
+zero age and a self-rooted lineage; `_fabric_ref` admits an expired event as fresh whenever the
+caller claims `age=0` and supplies no age mapping. In both cases the `EXPIRED_5TF` and
+`E-PIT-001` gates are bypassed without being reported as exclusions.
+
+#### Secondary effects and interactions (upstream/downstream)
+Downstream the members' ages feed `stale_fraction_of(...)` and the conflict/decay policy
+(`plan_bridge.py:690–700`), so an understated age changes conflict resolution and the fabric
+hash, not just membership. A self-rooted lineage defeats the `LINEAGE_UNRESOLVED_QX` gate
+whenever `raw_observation_ids` is supplied, severing the derivation chain to an
+`observation_id` (24-field contract #23). This is the same family as V3's **K-015/K-020**
+(the auditor marks it "تکمیل ۱۵ و ۲۰"): a guard evaluated on unverified inputs. It is
+independent of the native producer, which measures the age correctly and must not be treated
+as defective.
+
+#### Contract and decisions
+* `APEX_GEN5.md:14731` — **E-PIT-001**: “PIT rule: for each decision, all artifacts
+  `availability_time <= as_of` — if violates → **BLOCK**.” The fabric implements the check
+  (`ref.as_of > as_of`), but `fabric_from_events` supplies `ref.as_of = as_of` by construction,
+  so the block can never trigger.
+* `APEX_GEN5.md:16720` / `:16767` — a PIT violation (`availability_time > as_of`) is a named
+  blocking condition of the plan path.
+* `APEX_GEN5.md:1127` and the SL-14 lifecycle: expiry/staleness invalidate evidence — the
+  `EXPIRED_5TF` gate is the implementation, and it is only as good as `age_bars`.
+* `APEX_GEN5.md:14222+`/AI.6 — an unmeasured input is never substituted with 0; `age=None →
+  0.0` is exactly that substitution.
+* `PHASE2_DECISION_LOG.md:85` (ISSUE-CP3-013) and the “consumed-never-patched” principle make
+  the frozen 24-field contract the authority for these fields; nothing in the decision log
+  authorises an adapter to synthesise `as_of`, `age` or `lineage`. No decision governs
+  `fabric_from_events` specifically.
+
+#### Frozen status and non-frozen alternative
+Neither `apex/fabric/evidence.py` nor `apex/ops/plan_bridge.py` is in the frozen set
+(`apex/engines/**`, `apex/data_catalog/**`, `apex/research/bootstrap.py`,
+`apex/research/backtest.py`, the six original params YAMLs, `requirements.lock`) — the frozen
+part here is the **contract** `apex/data_catalog/contracts.py` (`EvidenceEvent`), which needs
+no change because it already carries `event_time`/`availability_time`. So both fixes are
+non-frozen; the fabric's admission law itself stays untouched.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — in `fabric_from_events`, parse each event's own `availability_time`
+  into `ref.as_of` (refusing unparseable/absent), refuse `age=None` instead of defaulting to
+  0.0, and refuse an empty lineage instead of self-rooting it — i.e. make the fabric adapter
+  as strict as `_fabric_ref` already is. Side effects: `tests/unit/test_fabric_evidence.py:279,
+  300` and `tests/integration/test_context_to_trade_paper.py:400` construct events for this
+  adapter and may need real availability/age/lineage values; because there is no production
+  caller, no runtime behaviour changes; fabric hashes computed in tests change if their
+  fixtures' ages change.
+* **B** — in `plan_bridge._fabric_ref`, always compute `age_bars` from `event_time` and
+  `as_of_ms` via `decision_evidence_age`, and treat `context["evidence_age_bars"]` as a
+  cross-check rather than as the trigger for measuring. Side effects: any caller that supplies
+  a claimed age different from the measured one now fails closed
+  (`EVIDENCE_AGE_UNAVAILABLE`); the native producer is unaffected because its mapping already
+  equals the measured value (engine_context.py:1862–1865); bridge tests that pass hand-made
+  ages must be updated.
+* **C** — delete/deprecate `fabric_from_events` since nothing in production uses it. Side
+  effects: removes the weaker of the two boundaries entirely, but also removes a public
+  export (`apex/fabric/__init__.py`) other code or the owner may intend to use; A is safer.
+* **D** — document the adapter as "trusted-caller only". Side effects: **rejected** — the
+  fabric's own docstring advertises PIT and expiry admission, so a trusted-caller adapter
+  contradicts the stated guarantee.
+
+#### My recommendation
+**A + B**: make both adapters derive what they can derive and refuse what they cannot, keeping
+the native producer's measured mapping as a cross-check. Do not weaken the fabric's admission
+law itself — it is correct; only its inputs are unverified.
+
+#### Acceptance and regression tests
+1. An event with `availability_time` after the fabric `as_of` is excluded with `E-PIT-001` in
+   **both** adapters.
+2. A 1h event whose `event_time` is 336 bars old is excluded with `EXPIRED_5TF` regardless of a
+   claimed `age=0`, with and without an `evidence_age_bars` mapping.
+3. `age=None` and an empty `lineage` are refusals in `fabric_from_events`, matching
+   `_fabric_ref`'s `EVIDENCE_AGE_UNAVAILABLE` / `EVIDENCE_LINEAGE_UNRESOLVED`.
+4. A fresh event with valid availability, measured age and a lineage resolving into
+   `raw_observation_ids` is still admitted (no false refusals) and the fabric hash is unchanged
+   for unchanged inputs.
+5. A caller-supplied `evidence_age_bars` that disagrees with the measured age fails closed.
+
+---
+
+## K-028 — snapshot PIT window: repeated bars count as depth, and the freshness threshold is never used
+
+#### Auditor claim (short quote)
+> «`calc_snapshot_pit_window` تعداد ورودی‌ها را به‌جای کندل‌های متمایز و معتبر می‌شمارد و `freshness_threshold` را اصلاً مصرف نمی‌کند؛ ۱۱۴ تکرار **یک** کندل 1h با `minimum_bars=100` خروجی `VALID/Q1` و `mtf_states['1h']='ALIGNED'` داد. metadata پنجرهٔ ۱۱۴تایی، وجود ۱۱۴ بار واقعی را ثابت نمی‌کند.»
+> — “`calc_snapshot_pit_window` counts input entries instead of distinct valid candles and never consumes `freshness_threshold`; 114 repetitions of **one** 1h candle with `minimum_bars=100` returned `VALID/Q1` and `mtf_states['1h']='ALIGNED'`. The 114-bar window metadata does not prove 114 real bars exist.”
+> The auditor also notes: “فراخوانندهٔ عملیاتی برای این helper پیدا نشد” — no operational caller of the helper was found.
+
+#### What I read (files, line ranges, functions, callers)
+`apex/quality/pit.py:60–105` — `calc_snapshot_pit_window`: `valid_observations` filters only
+on `is_closed` and `timeframe in required_timeframes`; the sufficiency test is
+`if len(valid_observations) < minimum_bars` — **entry count**, not distinct `timestamp`;
+`as_of_ms = max(_availability_ms(obs) …)` immediately followed by
+`for obs …: if _availability_ms(obs) > as_of_ms: return PIT_VIOLATION` — unreachable by
+construction; `observation_windows[tf]["bars"] = required_depth + warmup` is a *declared*
+depth independent of what is present; `mtf_states[tf]` uses the same entry count.
+`apex/quality/pit.py:116–166` — the manifest/payload/`snapshot_id` construction and
+`_min_q_and_weighted_mean`; `freshness_threshold` appears **only** in the signature (the probe
+counts one occurrence in the whole function body).
+`tests/unit/test_quality.py:290–301` — `test_insufficient_bars` (one observation vs
+`minimum_bars=100`) and `test_mtf_states` (`[obs]*3` counted as three 1h bars — the repeated
+entry is the fixture's intent).
+Callers: `grep -rn "calc_snapshot_pit_window" --include=*.py .` → the definition and
+`tests/unit/test_quality.py` only. No production caller, as the auditor says.
+`APEX_GEN5.md:995–1035` — the normative §2.3 pseudocode, which is **the same algorithm**:
+`if len(valid_observations) < minimum_bars`, the same `as_of = max(...)` followed by the same
+vacuous PIT loop, the same `len([o for o in valid_observations if o.timeframe == tf])`, and the
+same unused `freshness_threshold=None` parameter.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-028.py`; probe/output `AUDIT/probes_V3b/K-028.py|.out`.
+Real helper, real parsed observations:
+```
+1. 114 copies of ONE 1h bar, minimum_bars=100
+   state/class = 'VALID' / 'Q1'   mtf_states = {'1h': 'ALIGNED'}
+   observation_windows['1h'] = {'start': …, 'end': …, 'bars': 114}
+   distinct open times in the input = 1
+2. same call with freshness_threshold=1.0 on a 2023 bar
+   state/class = 'VALID' / 'Q1'; identical snapshot_id as case 1 = True
+   occurrences of 'freshness_threshold' in the function body = 1 (signature only)
+3. 114 DISTINCT consecutive bars -> 'VALID' / 'Q1' (reported identically)
+```
+`python3 -m pytest -q -p no:cacheprovider tests/unit/test_quality.py` → **27 passed** (the
+behaviour is the pinned one).
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). All three defects verified:
+entry counting, the never-consumed `freshness_threshold`, and (my addition) a `PIT_VIOLATION`
+branch that is unreachable because `as_of` is the maximum of the very set it is compared
+against. Two qualifications keep this at S2 rather than higher: there is **no production
+caller**, and the implementation is a faithful transcription of the frozen document's own
+§2.3 pseudocode — so this is primarily a *specification* defect that the code inherited, not
+a deviation introduced by the wiring.
+
+#### Root cause
+The §2.3 algorithm equates "number of observation records supplied" with "bars of history
+available", and declares the window depth (`required_depth + warmup`) as metadata rather than
+verifying it against the data. The document's own prose definition of `as_of`
+(`APEX_GEN5.md:913–916`: “… `minimum_bars`, `closed_only=true`, **`freshness_reference <=
+threshold(tf)`**”) includes a freshness condition that its pseudocode never implements — the
+unused parameter is the visible scar of that mismatch.
+
+#### Direct impact
+If this helper is ever wired to snapshot admission, a window of duplicated or out-of-range
+bars is certified `VALID/Q1/ALIGNED`, with a manifest and `snapshot_id` asserting a depth that
+was never verified, and no staleness check at all.
+
+#### Secondary effects and interactions (upstream/downstream)
+The failure mode is the same family as **K-025** (coverage inferred from the rows that happen
+to be present) and **K-020** (completion inferred from a mechanical signal): a sufficiency
+claim derived from the shape of the input rather than from measured coverage. Downstream, a
+snapshot is the PIT anchor for every engine artefact (`snapshot_id` is contract field #6), so a
+falsely-sufficient snapshot would propagate into MTF warmup and into evidence lineage. Today
+the production PIT path is `EngineContextProducer` (`quality_window`/`window`), not this
+helper, which is why the impact is latent.
+
+#### Contract and decisions
+* `APEX_GEN5.md:908–916` (**`as_of` definition**, normative): `as_of = max(availability_time of
+  all required artifacts) where required_timeframes[], minimum_bars, closed_only=true,
+  freshness_reference <= threshold(tf)`. The freshness condition is normative and unimplemented.
+* `APEX_GEN5.md:995–1035` (**§2.3 Algorithm**, normative pseudocode): identical to the code,
+  including the entry counting and the vacuous PIT loop. Precedence: the §2.3 pseudocode and the
+  `as_of` prose are both normative and **conflict** with each other; per this repository's own
+  resolution style (e.g. ISSUE-CP4-016: “the §4 executable form” vs a prose formula, and
+  ISSUE-CP4-006 “§3.7 conjunctive gates cap the §4 cascade”), the *stricter conjunctive
+  requirement* wins — so the freshness condition must be honoured and the count must mean real
+  bars. This is a documented-inconsistency item for the owner, in the same shape as the
+  existing CP-3/CP-4 issues.
+* `APEX_GEN5.md:14731` (E-PIT-001) requires the PIT block to be effective; a branch that cannot
+  fire does not satisfy it.
+* No `PHASE2_DECISION_LOG.md` decision addresses `calc_snapshot_pit_window`.
+
+#### Frozen status and non-frozen alternative
+`apex/quality/pit.py` is **not** in the frozen set, so the code can be fixed. `APEX_GEN5.md`
+itself is frozen (no edit); the mismatch must be raised as an owner doc-amendment item
+(the repository's established mechanism: a `PHASE2_DECISION_LOG.md` ISSUE with A/B and a
+recommendation), exactly as ISSUE-CP3-012/CP4-016 did for other pseudocode/prose conflicts.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — measure the window: count **distinct** `(timeframe, timestamp)` closes
+  that fall inside `[start, end]` of that timeframe's own `observation_window`; require that
+  count ≥ `minimum_bars` (and ≥ `required_depth + warmup` where the depth is claimed); apply
+  `freshness_threshold` against `as_of − last close`; return `INSUFFICIENT_BARS` /
+  `STALE_WINDOW` / a gap count instead of `VALID`. Side effects: `test_mtf_states`
+  (tests/unit/test_quality.py:295–301) uses `[obs]*3` and would start failing — it must be
+  re-baselined with distinct bars; `snapshot_id`/`manifest_hash` values change for any window
+  whose reported bars change, so previously computed snapshot identities are **not**
+  comparable (no stored production snapshots are affected today, since nothing calls the
+  helper); needs the doc amendment above.
+* **B** — keep the counting but add the gap/freshness figures to the manifest as reported
+  measurements without changing the verdict. Side effects: preserves hashes' comparability
+  but still certifies an insufficient window as `VALID` — insufficient on its own.
+* **C** — make the helper refuse when `freshness_threshold is None` (no silent "no SLA")
+  and delete the unreachable PIT loop in favour of a check against a caller-supplied `as_of`.
+  Side effects: small, and it removes two pieces of dead assurance; complements A.
+* **D** — leave the helper as documentation-faithful and ensure nothing ever wires it. Side
+  effects: **rejected** — it is exported and tested, so it will eventually be used.
+
+#### My recommendation
+**A + C**, gated on an owner doc-amendment ISSUE recording the §2.3 pseudocode / `as_of`
+prose conflict; until then, treat the helper as non-admissible for production snapshot
+admission and say so in its docstring.
+
+#### Acceptance and regression tests
+1. 114 copies of one bar with `minimum_bars=100` → `INSUFFICIENT_BARS`/QX.
+2. 114 distinct consecutive in-window closes within the SLA → `VALID`, with the measured
+   distinct count in the manifest.
+3. A window whose newest close is older than `freshness_threshold` → an explicit stale state,
+   never `VALID`.
+4. A window with an internal gap reports the gap count and does not claim `ALIGNED`.
+5. An artefact whose `availability_time` exceeds a caller-supplied `as_of` produces
+   `PIT_VIOLATION` (the branch becomes reachable).
+6. Identical inputs still produce identical `snapshot_id` (determinism preserved).

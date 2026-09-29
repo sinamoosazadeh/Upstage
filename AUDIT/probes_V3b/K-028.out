@@ -1,0 +1,21 @@
+# K-028 — snapshot PIT window sufficiency and freshness
+
+1. 114 copies of ONE 1h bar, minimum_bars=100
+   state/class      = 'VALID' / 'Q1'
+   mtf_states       = {'1h': 'ALIGNED'}
+   overall_mtf      = 'ALIGNED'
+   observation_windows['1h'] = {'start': 1672124399999, 'end': 1672534799999, 'timeframe': '1h', 'bars': 114}
+   distinct open times in the input = 1
+
+2. the same call with a 1-second freshness_threshold on a 2023 bar
+   state/class      = 'VALID' / 'Q1'
+   identical snapshot_id as case 1 = True
+   occurrences of 'freshness_threshold' in the function body = 1 (the signature parameter only)
+
+3. 114 DISTINCT consecutive bars (the honest window)
+   state/class      = 'VALID' / 'Q1'
+   distinct open times = 114
+   -> cases 1 and 3 are reported identically apart from as_of/hash
+
+4. the PIT loop (apex/quality/pit.py:79-82)
+   as_of_ms = max(availability) over the same list it then compares against, so `_availability_ms(obs) > as_of_ms` is unreachable: PIT_VIOLATION cannot be returned by this helper.

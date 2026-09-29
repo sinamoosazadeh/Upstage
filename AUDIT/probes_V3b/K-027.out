@@ -1,0 +1,19 @@
+# K-027 — event time in the fabric adapters
+
+A. fabric_from_events: availability 2099, age=None, lineage=()
+   members  = 1   excluded = []
+   ref.as_of=1000  ref.age_bars=0.0  ref.lineage=('ev-1',)
+   (the event's own availability_time is never parsed: apex/fabric/evidence.py:465 writes as_of=as_of)
+
+B. bridge adapter with a claimed age of 0 on a 14-day-old 1h event
+   measured age (decision_evidence_age) = 494.0 bars
+   ref.age_bars accepted by _fabric_ref = 0.0
+   expiry_age_bars('1h')                = 18000 seconds
+   claimed age 0   -> members=1 excluded=[]
+   measured age    -> members=0 excluded=[('ev-1', 'EXPIRED_5TF')]
+
+C. bridge refusals that DO fire in _fabric_ref (plan_bridge.py:324-332)
+   availability_time missing  -> EvidenceEvent refused: event_time/availability_time empty (#7/#8)
+   age None                   -> BridgeError('EVIDENCE_AGE_UNAVAILABLE')
+   lineage empty              -> BridgeError('EVIDENCE_LINEAGE_UNRESOLVED')
+   the age is re-measured ONLY when context['evidence_age_bars'] is supplied (plan_bridge.py:640-647)
