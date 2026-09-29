@@ -32,7 +32,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-016 | CONFIRMED (worse than claimed) | S1 | S1 | Source non-frozen; runner `apex/research/bootstrap.py` frozen | ISSUE-076 (per-row commits) | A — advance the delivery high-water mark only after a confirmed durable write |
 | K-017 | CONFIRMED | S2 | S2 | No — `apex/ops/bootstrap_service.py` is non-frozen | — | A — persist per-cell drop evidence idempotently at every checkpoint, not only at COMPLETE |
 | K-018 | CONFIRMED | S2 | S2 | No — `apex/ops/bootstrap_service.py` is non-frozen | K-017 (evidence durability) | A — announce completion on the durable COMPLETE transition, once, for both termination shapes |
-| K-019 | PENDING | S1 | — | — | — | — |
+| K-019 | CONFIRMED | S1 | S1 | No — `apex/ops/bootstrap_service.py` / `apex/ops/engine_context.py` are non-frozen | D22 (CATCH_UP_FAILED); K-017 (evidence durability) | A — durable per-observation publish outbox retried independently of `new_hashes`, cell status DEGRADED until reconciled |
 | K-020 | PENDING | S1 | — | — | — | — |
 | K-021 | PENDING | S2 | — | — | — | — |
 | K-022 | PENDING | S2 | — | — | — | — |
@@ -1054,3 +1054,166 @@ K-017 durability fix (same merge point).
 3. `open_excluded>0` (a still-open bar at the end) reports the same single notification with
    the excluded open time.
 4. A re-run over an already complete cell must not print a misleading `dropped=0`.
+
+---
+
+## K-019 — a failed catch-up quality publish is recorded, never retried, and still counts as success
+
+#### Auditor claim (short quote)
+> «`catch_up` پس از ingestِ commitشده quality fact را publish می‌کند؛ exception/`failures` فقط در `quality_publish.failures` می‌رود، `successful` همچنان True و boundary جلو می‌رود … boundary بعدی هیچ quality retry نداشت؛ زیرا `new_hashes` فقط hashهای هنوز در raw غایب را می‌گیرد. `quality_window` بدون fact با `QUALITY_PROVENANCE_UNAVAILABLE` امتناع می‌کند.»
+> — “`catch_up` publishes the quality fact after the committed ingest; the exception/`failures` only lands in `quality_publish.failures`, `successful` stays True and the boundary advances … the next boundary performs no quality retry, because `new_hashes` only collects hashes still absent from raw. `quality_window` then refuses with `QUALITY_PROVENANCE_UNAVAILABLE`.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/bootstrap_service.py:1456–1564` — the whole of `BootstrapService.catch_up`:
+`successful = True` (1472); per cell `frontier = MAX(as_of) FROM raw_observation` (1479–1483);
+`new_hashes` built **only** from rows whose `content_hash` is *not yet* in `raw_observation`
+(1495–1505); `await self._ingest(rows, symbol, tf)` (1506) commits first; then
+`if new_hashes:` → `publish_catch_up_quality(...)` (1507–1521) wrapped in
+`except Exception as exc:` (1522–1534) which appends to
+`result["quality_publish"]["failures"]` and **does not touch `successful`**; the `else`
+branch (1535–1539) likewise only *accumulates* `published["failures"]`. The cell-level
+`except` (1541–1548) that does set `successful = False` is never reached, so
+`if successful: self._catch_up_boundary[timeframe] = boundary` (1562–1563) runs.
+`apex/ops/engine_context.py:3765–3812` — `publish_catch_up_quality`: `only_hashes` filter
+(3778–3780), duplicate-fact skip (3792–3797), per-row `BridgeError` collected into
+`failures` (3808–3810) — i.e. a partial failure is also non-fatal.
+`apex/ops/engine_context.py:3813–3840` + `2030–2049` — `publish_quality_observation`'s
+`QUALITY_PROVENANCE_UNAVAILABLE` refusals, and the consumer:
+`EngineContext.quality_window` raises `BridgeError("QUALITY_PROVENANCE_UNAVAILABLE", identity)`
+for any window bar whose fact is missing (2046–2048).
+`tests/unit/test_engine_context.py:149–185` — `test_catch_up_quality_publish_failure_is_named`
+asserts exactly the failure list and `bars_ingested == 1`; it asserts nothing about retry,
+boundary or `successful`.
+Callers: `grep -rn "publish_catch_up_quality"` → one production call site
+(`bootstrap_service.py:1509/1517`) and one test monkeypatch. `grep -rn "QUALITY_PROVENANCE_UNAVAILABLE"`
+→ 9 production sites, all refusals.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-019.py`; probe/output `AUDIT/probes_V3b/K-019.py|.out`.
+Real `BootstrapService`, real `SQLiteStore`, the repository's own fake Toobit responder
+(via `tests/unit/test_engine_context.py::_StoredKlineResponder`):
+```
+1. first catch_up, publisher raises BridgeError
+   bars_ingested = 1   cells_updated = 1   failures (cell) = []
+   quality_publish = {'written': 0, 'skipped': 0,
+                      'failures': [{'symbol':'BTCUSDT','timeframe':'1h',
+                                    'reason':'QUALITY_PUBLISH_REFUSED'}]}
+   catch_up boundary = {'1h': 1767229200000}      <-- advanced
+   durable QUALITY fact for that bar = None
+2. next boundary, publisher healthy again, one NEW bar appears
+   bars_ingested = 1   failures (cell) = []
+   quality_publish = {'written': 1, 'skipped': 0, 'failures': []}
+   bar 1 (failed publish)  obs-…ae41 -> fact MISSING
+   bar 2 (healthy publish) obs-…eabe -> fact PRESENT
+```
+Existing tests stay green: `python3 -m pytest -q -p no:cacheprovider
+tests/unit/test_engine_context.py -k catch_up` → **9 passed, 218 deselected** — i.e. the
+behaviour is *pinned*, not accidental.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). Every element of the claim is
+reproduced on real code: failure recorded but not fatal, boundary advanced, the healthy next
+cycle repairs nothing because the bar is no longer "new", and the consumer refuses. The gap
+is permanent under automatic operation: nothing in the runtime ever revisits a bar that is
+already in `raw_observation` but has no `QUALITY_` fact. S1 rather than S2 because it
+silently converts a *stored* bar into an unusable one and the only recovery path
+(`backfill_facts_in_window` / manual backfill) writes `BACKFILL`/
+`HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS` provenance, which `quality_window` rejects outside
+PAPER (`QUALITY_PROVENANCE_BACKFILL_NOT_LIVE`, engine_context.py:2052–2054) — so the manual
+route cannot restore LIVE-usable provenance either.
+
+#### Root cause
+Two independent writes (raw ingest, quality fact) are sequenced without a transaction, a
+receipt or an outbox, and the *retry trigger* is derived from the wrong predicate: the
+"is there work to do" test is `content_hash not in raw_observation`, which is by construction
+false immediately after the ingest that preceded the failed publish. Additionally the error
+class chosen for the publish failure (`quality_publish.failures`) is outside the D22
+`failures[]`/`CATCH_UP_FAILED` channel that the plan stage actually consults.
+
+#### Direct impact
+A bar exists in the raw store with no quality witness for ever. Any `quality_window`
+covering it — i.e. the whole 300-bar window containing that timestamp, for as long as it is
+in the window — refuses with `QUALITY_PROVENANCE_UNAVAILABLE`, so no plan/decision is
+produced for that cell even though data and freshness are fine.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream: the `new_hashes` block is guarded by `apex_env == "PAPER"`, so in any other
+environment **no** fact is published by catch-up at all — the same hole, permanently open,
+which makes the LIVE path depend entirely on another publisher. Downstream: `quality_window`
+→ `EngineContext.bundle` → plan/decision; the cell fails closed, which is correct behaviour
+for a missing witness but is caused here by an internal write failure, not a data problem.
+Interacts with **K-017** (drop evidence also survives only on the happy path) and with
+**K-015/K-016** (progress markers advancing past unfinished durable work) — all three are the
+same anti-pattern: a progress/completion marker advanced by delivery rather than by confirmed
+durable state. Also interacts with D22: because the failure is not in `failures[]`, the cell
+is *not* marked `CATCH_UP_FAILED`, so the "next cycle retries" guarantee D22 relies on is
+never engaged.
+
+#### Contract and decisions
+* `APEX_GEN5.md:18751` (Ch.5 read/write ownership): **“Fail-closed: on write failure, halt
+  ingestion and alert; do not cache and retry silently.”** A committed raw row whose quality
+  write failed is neither halted nor alerted as a cell failure — it is reported in a side
+  field and the boundary advances. Direct violation.
+* `APEX_GEN5.md:5068`: a degraded status “MUST be carried as a degraded quality/provenance
+  flag” and “MUST NOT bypass a hard data-quality, PIT, …” gate — the run reports success.
+* `PHASE2_DECISION_LOG.md:284` (**D22**, binding): a catch-up failure “is recorded separately:
+  the cycle JSON `catch_up.failures[]` entry carries the cell, the error code and the frontier
+  it tried from, and the cell receives a per-cycle named status `CATCH_UP_FAILED` … the next
+  cycle retries the catch-up.” Precedence: D22 is an owner decision and is *more specific*
+  than the Ch.5 bullet; both point the same way, and the quality-publish failure satisfies
+  neither — it is in `quality_publish.failures`, not `failures[]`, with no named cell status
+  and no retry.
+* `PHASE2_DECISION_LOG.md:275` (ISSUE-CP14-002 interim) explicitly says engine/plan evaluation
+  must be refused on catch-up failure; here evaluation is refused later, by the consumer, for
+  a reason the operator cannot connect to the cycle that caused it.
+
+#### Frozen status and non-frozen alternative
+**Not frozen.** `apex/ops/bootstrap_service.py` and `apex/ops/engine_context.py` are both
+outside the frozen set (`apex/engines/**`, `apex/data_catalog/**`,
+`apex/research/bootstrap.py`, `apex/research/backtest.py`, the six original params YAMLs,
+`requirements.lock`). Note the *store* DDL is frozen, so a new outbox table must go in the
+non-frozen checkpoint/ops database (the same place K-017's evidence rows would live), not in
+the frozen market store schema.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — durable publish outbox keyed by `observation_id`: written in the same
+  transaction as (or immediately after) the ingest, cleared only when the fact is confirmed
+  present. Each catch-up cycle first drains the outbox (retry independent of `new_hashes`),
+  and any cell with a non-empty outbox reports a named status (`QUALITY_PUBLISH_PENDING`)
+  through the D22 `failures[]` channel so the cell is DEGRADED/blocking until reconciled.
+  Side effects: new non-frozen table + migration in the ops DB; `catch_up`'s return shape
+  gains entries in `failures[]`, so `test_catch_up_quality_publish_failure_is_named`
+  (tests/unit/test_engine_context.py:149–185) must be extended (it currently asserts the
+  failure is *only* in `quality_publish.failures`); PAPER cycle JSON fixtures that assert
+  `failures == []` need updating; no hash or frozen file is touched.
+* **B** — reconciliation sweep: derive the missing set with a query
+  (`market_observation` LEFT JOIN the quality facts for the cell window) and republish.
+  Side effects: no new table, but a per-cell scan each cycle (cost; see X-V3b-001 for how
+  expensive an unindexed per-cell join is on the device) and it can only republish while the
+  original receipt/http metadata is still obtainable — provenance would degrade.
+* **C** — make the publish failure fatal for the cell (`successful = False`, `failures[]`
+  entry) without an outbox, relying on D22's "next cycle retries". Side effects: cheapest,
+  but on its own it does **not** heal the bar — the next cycle still computes an empty
+  `new_hashes`, so it must be combined with B or A; alone it only makes the damage visible.
+* **D** — remove the `apex_env == "PAPER"` guard so every environment publishes. Side effects:
+  necessary for LIVE correctness but orthogonal; must be owner-approved because it changes
+  what LIVE writes.
+
+#### My recommendation
+**A + C**: the outbox makes recovery automatic and the D22 status makes the degradation
+visible in the cycle that caused it. Raise **D** with the owner separately, since as written
+the non-PAPER path never publishes a catch-up fact at all.
+
+#### Acceptance and regression tests
+1. Publish fails once, then the publisher is healthy: no duplicate `raw_observation` row, the
+   fact for the original bar appears on the **next** cycle with correct
+   `receipt_time_ms`/lineage (not BACKFILL provenance), and the outbox is empty afterwards.
+2. While the fact is missing, the cell reports `CATCH_UP_FAILED`/`QUALITY_PUBLISH_PENDING` in
+   `failures[]`, the timeframe boundary does **not** advance, and no plan is produced for that
+   cell.
+3. `quality_window` over a window containing the healed bar succeeds after reconciliation and
+   refuses before it (`QUALITY_PROVENANCE_UNAVAILABLE`).
+4. Idempotence: draining an outbox entry whose fact already exists is a no-op (`skipped`),
+   never a second fact.
+5. Non-PAPER environment: assert explicitly what is expected (currently: nothing published) so
+   option D is a deliberate, tested change.

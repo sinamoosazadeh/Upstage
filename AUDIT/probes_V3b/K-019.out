@@ -1,0 +1,21 @@
+# K-019 — quality publish failure in catch_up
+
+1. first catch_up, publisher raises BridgeError
+   bars_ingested      = 1
+   cells_updated      = 1
+   failures (cell)    = []
+   quality_publish    = {'written': 0, 'skipped': 0, 'failures': [{'symbol': 'BTCUSDT', 'timeframe': '1h', 'reason': 'QUALITY_PUBLISH_REFUSED'}]}
+   catch_up boundary  = {'1h': 1767229200000}
+   durable bar        = 'obs-01a0eacd-c6f2-7cab-85ed-a38ce16c192d'
+   durable QUALITY fact for that bar = None
+
+2. next boundary, publisher healthy again, one NEW bar appears
+   bars_ingested      = 1
+   failures (cell)    = []
+   quality_publish    = {'written': 1, 'skipped': 0, 'failures': []}
+   catch_up boundary  = {'1h': 1767232800000}
+   bar 1 (failed publish)   obs-01a0eacd-c6f2-7cab-85ed-a38ce16c192d -> fact MISSING
+   bar 2 (healthy publish)  obs-01a0eacd-c6f8-7f5b-b07a-768de567eabe -> fact PRESENT
+
+3. consumer view: engine_context.quality_window refuses on a missing fact
+   apex/ops/engine_context.py:2046-2048 -> raise BridgeError('QUALITY_PROVENANCE_UNAVAILABLE', identity)
