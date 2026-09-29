@@ -1,0 +1,64 @@
+apex/ops/bootstrap_service.py:8:        → ToobitKlineSource   (sync page call for the frozen runner contract,
+apex/ops/bootstrap_service.py:248:    The frozen ``BootstrapRunner.run_phase1`` is async but calls
+apex/ops/bootstrap_service.py:300:class ToobitKlineSource:
+apex/ops/bootstrap_service.py:528:        ``run_phase1``. ``_served_upto`` is deliberately NOT cleared here:
+apex/ops/bootstrap_service.py:909:    changed). ``drop_source`` is the ``ToobitKlineSource`` (or a callable
+apex/ops/bootstrap_service.py:1084:def free_disk_mb(path: str = ".") -> float:
+apex/ops/bootstrap_service.py:1089:def read_battery(runner: Optional[Callable[[Sequence[str]], Any]] = None
+apex/ops/bootstrap_service.py:1188:        self.source = ToobitKlineSource(client=self._client, bridge=self._bridge,
+apex/ops/bootstrap_service.py:1195:        if isinstance(self.source, ToobitKlineSource):
+apex/ops/bootstrap_service.py:1410:        battery = read_battery()
+apex/ops/bootstrap_service.py:1411:        preflight = hardware_preflight(free_disk_mb=free_disk_mb(),
+apex/ops/bootstrap_service.py:1421:            result = await self.runner.run_phase1(
+apex/ops/bootstrap_service.py:1422:                start_ms=start_ms, end_ms=end_ms, free_disk_mb=free_disk_mb(),
+apex/ops/bootstrap_service.py:1678:    "SignalingNotifier", "TERMUX_BATTERY_COMMAND", "ToobitKlineSource",
+apex/ops/bootstrap_service.py:1679:    "close_time_ms", "free_disk_mb", "ingest_observations", "read_battery",
+apex/ops/partial_bar_repair.py:281:async def find_candidates(store: Any,
+apex/ops/partial_bar_repair.py:483:    found = await find_candidates(store, cells)
+apex/ops/partial_bar_repair.py:542:    "fetch_live_bar", "find_candidates", "load_evidence_files",
+apex/research/bootstrap.py:74:def hardware_preflight(*, free_disk_mb: float,
+apex/research/bootstrap.py:83:    if float(free_disk_mb) < MIN_FREE_DISK_MB:
+apex/research/bootstrap.py:85:                "free_disk_mb": float(free_disk_mb),
+apex/research/bootstrap.py:89:                "free_disk_mb": float(free_disk_mb)}
+apex/research/bootstrap.py:93:                "free_disk_mb": float(free_disk_mb)}
+apex/research/bootstrap.py:241:    async def run_phase1(self, *, utc_hhmm: str = "03:30",
+apex/research/bootstrap.py:242:                         free_disk_mb: float = 10_000.0,
+apex/research/bootstrap.py:249:        preflight = hardware_preflight(free_disk_mb=free_disk_mb,
+tests/unit/test_engine_context.py:167:        source = BS.ToobitKlineSource(client=client, bridge=bridge)
+tests/unit/test_engine_context.py:200:        source = BS.ToobitKlineSource(client=client, bridge=bridge)
+tests/unit/test_engine_context.py:294:            source=BS.ToobitKlineSource(client=client, bridge=bridge),
+tests/unit/test_engine_context.py:336:            source=BS.ToobitKlineSource(client=client, bridge=bridge),
+tests/unit/test_ops_bootstrap_service.py:7:CP-11: `ToobitKlineSource` is venue-adaptive (backward walk + ascending serve)
+tests/unit/test_ops_bootstrap_service.py:188:    return BS.ToobitKlineSource(
+tests/unit/test_ops_bootstrap_service.py:541:        assert BS.free_disk_mb(".") > 0
+tests/unit/test_ops_bootstrap_service.py:547:        assert BS.read_battery(runner) is None
+tests/unit/test_ops_bootstrap_service.py:553:        assert BS.read_battery(lambda cmd: Completed()) == {
+tests/unit/test_ops_bootstrap_service.py:560:        assert BS.read_battery(lambda cmd: Completed()) is None
+tests/unit/test_ops_partial_bar_repair.py:159:                found = await PR.find_candidates(store)
+tests/unit/test_ops_partial_bar_repair.py:176:                found = await PR.find_candidates(store,
+tests/unit/test_research_bootstrap.py:26:        out = bs.hardware_preflight(free_disk_mb=100.0,
+tests/unit/test_research_bootstrap.py:32:        assert bs.hardware_preflight(free_disk_mb=511.9)["action"] == "PAUSE"
+tests/unit/test_research_bootstrap.py:33:        assert bs.hardware_preflight(free_disk_mb=512.0)["action"] == "PROCEED"
+tests/unit/test_research_bootstrap.py:36:        out = bs.hardware_preflight(free_disk_mb=10_000.0, battery=None)
+tests/unit/test_research_bootstrap.py:41:        out = bs.hardware_preflight(free_disk_mb=10_000.0,
+tests/unit/test_research_bootstrap.py:47:        out = bs.hardware_preflight(free_disk_mb=10_000.0,
+tests/unit/test_research_bootstrap.py:52:        out = bs.hardware_preflight(free_disk_mb=10_000.0,
+tests/unit/test_research_bootstrap.py:57:        out = bs.hardware_preflight(free_disk_mb=10_000.0,
+tests/unit/test_research_bootstrap.py:64:        out = bs.hardware_preflight(free_disk_mb=10_000.0,
+tests/unit/test_research_bootstrap.py:70:        out = bs.hardware_preflight(free_disk_mb=10_000.0,
+tests/unit/test_research_bootstrap.py:75:        out = bs.hardware_preflight(free_disk_mb=10_000.0,
+tests/unit/test_research_bootstrap.py:225:                return await runner.run_phase1(
+tests/unit/test_research_bootstrap.py:238:                return await runner.run_phase1(
+tests/unit/test_research_bootstrap.py:250:                await runner.run_phase1(start_ms=1_000_000,
+tests/unit/test_research_bootstrap.py:259:                await runner.run_phase1(start_ms=0,   # a hostile earlier start
+tests/unit/test_research_bootstrap.py:273:                return await runner.run_phase1(start_ms=1_000_000,
+tests/unit/test_research_bootstrap.py:286:                return await runner.run_phase1(start_ms=1_000_000,
+tests/unit/test_research_bootstrap.py:298:                return await runner.run_phase1(free_disk_mb=10.0)
+tests/unit/test_research_bootstrap.py:309:                return await runner.run_phase1(
+tests/unit/test_research_bootstrap.py:323:                return await runner.run_phase1(start_ms=1_000_000,
+tests/unit/test_toobit_public.py:27:from apex.ops.bootstrap_service import AsyncBridge, BootstrapError, ToobitKlineSource
+tests/unit/test_toobit_public.py:451:        """Assert bootstrap_service.ToobitKlineSource catches -1003 from HTTP 200
+tests/unit/test_toobit_public.py:462:            source = ToobitKlineSource(client=client, bridge=bridge)
+tests/unit/test_toobit_public.py:488:        # 2. Seam: ToobitKlineSource must raise BootstrapError(FETCH_FAILED), NEVER return empty rows
+tests/unit/test_toobit_public.py:492:            source = ToobitKlineSource(client=client, bridge=bridge)
+tests/unit/test_toobit_public.py:511:            source = ToobitKlineSource(client=client, bridge=bridge)

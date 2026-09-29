@@ -1,0 +1,14 @@
+{"calls": 10, "case": "first_page", "cells": 1, "heap_delta": 9748050, "n": 10000, "peak": 11124206, "retained_bars": 10000, "seconds": 4.215053224000002, "served": 1000}
+{"budget_refusal": "PAGE_BUDGET_REACHED", "calls": 10}
+{"calls": 20, "case": "first_page", "cells": 1, "heap_delta": 19097088, "n": 20000, "peak": 22910396, "retained_bars": 20000, "seconds": 8.58518831500001, "served": 1000}
+{"budget_refusal": "PAGE_BUDGET_REACHED", "calls": 20}
+{"calls": 100, "case": "first_page", "cells": 1, "heap_delta": 95402820, "n": 100000, "peak": 108986000, "retained_bars": 100000, "seconds": 39.740988496, "served": 1000}
+{"calls": 200, "case": "first_page", "cells": 2, "heap_delta": 190796168, "n": 100000, "peak": 204388744, "retained_bars": 200000, "seconds": 38.20528431300002, "served": 1000}
+{"calls": 200, "case": "five_cached_pages", "n": 100000, "parse_calls": 500010, "seconds": 3.8852560589999996}
+{"corpus_market_rows": 200000, "corpus_raw_rows": 200000, "facts": 1000, "ledger_rows": 100, "seed_seconds": 16.656726541000012}
+{"case": "repair_one_cell", "device_indexes": false, "heap_current": 158510924, "heap_peak": 159103868, "returned": 10000, "seconds": 4.6344865469999945}
+{"plan": [[4, 0, 0, "SCAN r"], [6, 0, 0, "SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)"]], "plan_group": "False", "sql": "SELECT r.event_id, r.as_of, r.symbol, r.timeframe, r.open, r.high,  r.low, r.close, r.volume, r.created_at, m.candle_status FROM raw_observation r JOIN market_observation m ON m.observation_id = 'obs-' || r.event_id WHERE m.candle_status = 'CLOSED'"}
+{"case": "repair_one_cell", "device_indexes": true, "heap_current": 158123671, "heap_peak": 158716615, "returned": 10000, "seconds": 4.8322969440000065}
+{"plan": [[4, 0, 0, "SCAN r"], [6, 0, 0, "SEARCH m USING INDEX sqlite_autoindex_market_observation_1 (observation_id=?)"]], "plan_group": "True", "sql": "SELECT r.event_id, r.as_of, r.symbol, r.timeframe, r.open, r.high,  r.low, r.close, r.volume, r.created_at, m.candle_status FROM raw_observation r JOIN market_observation m ON m.observation_id = 'obs-' || r.event_id WHERE m.candle_status = 'CLOSED'"}
+{"guard_blocked_attempts": []}
+PASS native source traffic/cache growth and unfiltered native repair
