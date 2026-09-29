@@ -1,0 +1,8 @@
+DEFAULT_COMBINER_WEIGHTS = {'data_trust': 0.35, 'mtf_agreement': 0.2, 'evidence_agreement': 0.15, 'regime_confidence': 0.15, 'one_minus_regime_uncertainty': 0.1, 'one_minus_divergence_magnitude': 0.05, 'temporal_window_validity': 0.0}
+validity=0 -> confidence=0.9426758241011313 z=0.85
+validity=1 -> confidence=0.9426758241011313 z=0.85
+identical: True
+gate8('Q2'): passed=True reason=TEMPORAL_WINDOW_QUALITY_OK
+temporal_validity_projection('DEGRADED') = 0.0
+gate8 signature: (quality_class: 'Any') -> 'GateResult' (no validity parameter)
+=== TestCombiner::test_l1_default_weights_are_the_documented_ones: 1 passed (pins temporal weight 0.0, six-sum 1.0)

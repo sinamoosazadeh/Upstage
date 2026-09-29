@@ -1,0 +1,3 @@
+calm    composite=0.0 components={'amihud_z': 0.0, 'obi_z': 0.0, 'kyle_z': 0.0}
+trending composite=0.0 components={'amihud_z': 0.0, 'obi_z': 0.0, 'kyle_z': 0.0}
+volatile composite=0.0 components={'amihud_z': 0.0, 'obi_z': 0.0, 'kyle_z': 0.0}

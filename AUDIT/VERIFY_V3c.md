@@ -38,7 +38,7 @@ and synthetic failure proves the code path, not that it has already damaged a de
 | L-011 | CONFIRMED | S2 | S2 | No — `apex/pattern/fibonacci.py` is non-frozen | L-010 (diameter fix must include non-finite refusal); L-006 (NaN-comparison theme) | A — single path: uniform isfinite gates on inputs + outputs, jointly with L-010 |
 | L-012 | CONFIRMED | S1 | S1 | No — `quality/vector.py` + `setup/gates.py` + `risk/kernel.py` non-frozen | H-014 (label side); D-026 (adjacent risk-NaN theme); D59 (formula preserved, validation added) | A — single path: finite+domain pre-validation, D59 formula untouched |
 | L-013 | PENDING | S2 | — | — | — | — |
-| L-014 | PENDING | S2 | — | — | — | — |
+| L-014 | CONFIRMED | S2 | S2 | No — `apex/research/proxies.py` is non-frozen | B08 registry row "feeding context/regime" is aspirational (no caller); EC-register discipline | A if owner approves formula (last-vs-window PIT composite); else B (demote to REGISTERED_OPEN) |
 | L-015 | PENDING | S2 | — | — | — | — |
 
 ---
@@ -565,3 +565,91 @@ Implement A with the three domains recorded in the decision log; add the probe's
 - `log_loss/brier/cal ∈ {+inf, −inf, negative, NaN}` → named refusal with the offending metric identified; finite in-domain triples keep bit-identical scores (good→VALID, degraded→DEGRADED).
 - `adjudicate` with an impossible-metrics package → `REJECT/PARAMETER_PACKAGE_INVALID`, never sized.
 - Regression: `tests/unit/test_setup_gates.py`, `tests/unit/test_quality.py`, `tests/unit/test_cp146.py` pass unchanged.
+## L-013 — temporal_window_validity is a documented combiner input with weight 0 (dead by default)
+
+#### Auditor claim (short quote)
+> "`temporal_window_validity` is one of seven `CombinerInputs` but its default weight is 0; moving it 0→1 in the probe left confidence unchanged (0.9701133202). Gate8 checks only the `temporal_quality>=Q2` label and has nothing to do with this validity (e.g. `temporal_validity_projection("DEGRADED")=0` while Gate8 passes on Q2); Gate8 does not even receive validity. The contract names the other six weights and documents no weight for this input, so no non-zero value is assumed as approved without an owner decision; native E12 admission on this probe is not established."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/fabric/context.py` (complete, 648 lines): `DEFAULT_COMBINER_WEIGHTS` (113–122) with `"temporal_window_validity": 0.0` + comment "documented input, no documented weight"; `CombinerInputs` (264–340, seven slots incl. validity); `context_confidence` (342–384) multiplies `wn["temporal_window_validity"] * validity` — identically 0 for any validity at default weights (normalization divides by Σw=1.0, so no rescaling side effect either).
+- `apex/setup/gates.py:259–264` (`gate8_temporal_window_quality(quality_class)`): compares the Q-class label against `gate_quality_min_class=2`; signature takes NO validity parameter (verified by inspection).
+- `apex/ops/engine_context.py:431–437` (`temporal_validity_projection`: VALID→1.0, DEGRADED/INVALID→0.0, else BridgeError) and :2000–2018 (producer sets `"temporal_window_validity": temporal_validity_projection(temporal_event.validity)` alongside `"temporal_quality": temporal["quality"]`) — validity and the Q-label travel as SEPARATE context fields into different consumers (combiner vs gate8).
+- `tests/unit/test_fabric_context.py:154–164` (`test_l1_default_weights_are_the_documented_ones`): pins the 0.0 weight AND Σ(six)=1.0 exactly (re-ran: 1 passed) — the dead input is certified by a passing test.
+- `APEX_GEN5.md:14824–14839` (Ch.8 §8.0): combiner formula over seven `x[k]` slots INCLUDING `temporal_window_validity`, but "Governed L1 default weights" lists only six (0.35/0.20/0.15/0.15/0.10/0.05, Σ=1.0) with no weight for validity.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-013.py` + re-run of the pinning test. Probe: `AUDIT/probes_V3c/L-013.py` (real combiner/gate8/projection; synthetic inputs). Raw output: `AUDIT/probes_V3c/L-013.out`. Result: validity 0→1 with all else equal gives IDENTICAL `confidence=0.9426758241011313, z=0.85` (invariance confirmed; absolute value differs from the auditor's 0.9701 only because inputs differ — the claim is invariance, which holds for every input); `gate8('Q2') → passed`; `temporal_validity_projection('DEGRADED') = 0.0`; gate8 signature has no validity parameter; weight-pinning test passes.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). Zero weight, confidence invariance, gate8's label-only check, and the missing contract weight are all verified exactly as scoped (the auditor explicitly refuses to assume an approved non-zero value — I concur). S2 because the behavior is DOCUMENTED in code (comment + docstring + pinned test), the producer still feeds the field honestly (0.0 for DEGRADED), and gate8 provides a SEPARATE temporal-quality channel (Q-label) — so nothing is silently unsafe; the defect is a dead documented input that misleads ablation/interpretation (analysts varying validity will conclude "temporal quality does not matter") and a contract that lists an input without a weight. Downgrading to S3 was considered (it is documented behavior); S2 stands because a documented-but-dead safety-relevant input in a confidence combiner is more than documentation — it shapes wrong conclusions.
+
+#### Root cause
+Contract under-specification (seven slots, six weights) resolved in code by weight 0.0 — a defensible reading ("no invented weights") that silently disconnects the input, combined with gate8 consuming a DIFFERENT temporal signal (E12 Q-class) so no alarm fires.
+
+#### Direct impact
+At default weights, `temporal_window_validity` cannot influence `context_confidence` in any direction: fully-invalid temporal state (0.0) and fully-valid (1.0) score identically, and `Q2` temporal quality passes gate8 regardless of validity.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the producer computes validity faithfully from the E12 event (`VALID→1, DEGRADED/INVALID→0`) — the data is good, the weight kills it. Downstream, `context_confidence` consumers (forecast/decision bands) and any ablation study inherit the blind spot; `validate_produced_context` range-checks the field (0–1) but cannot detect its irrelevance. Giving validity a positive weight WITHOUT renormalizing would break Σw=1 (the code normalizes anyway, rescaling the six governed weights — a governed-change side effect); giving it weight with renormalization changes EVERY confidence value. Either direction needs the owner decision the auditor asks for.
+
+#### Contract and decisions
+`APEX_GEN5.md:14824–14839` lists validity among `x[k]` (so it is MEANT to matter) but documents no weight (so no value is approved). The six governed weights sum to exactly 1.0, consistent with validity being an unweighted arrival. No `PHASE2_DECISION_LOG.md` ruling covers the validity weight. Precedence: the contract's slot list + the no-invention rule jointly support "weight 0 until the owner rules" — the code's choice is lawful but must be either completed (owner sets the role) or made explicit (owner drops the slot); it cannot remain a documented input with silent zero effect forever.
+
+#### Frozen status and non-frozen alternative
+**NOT frozen:** `apex/fabric/context.py`, `apex/setup/gates.py`, `apex/ops/engine_context.py` are all outside the frozen set. BUT the weight table is GOVERNED (SL-12: "all weights are governed") — changing 0.0 to any positive value is a governed-parameter change requiring owner approval even though no frozen FILE is touched. The `test_l1_default_weights…` pin must be updated in the same change.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+This row needs an owner DECISION first; the code change follows the decision:
+**A — owner assigns validity a role:** positive weight (with renormalization of all seven + updated pin test + confidence-value migration note: EVERY historical confidence changes), or a separate validity gate/cap, or explicit slot removal (contract + `CombinerInputs` + producer field). Side effects: any variant changes confidence outputs and breaks the pinning test BY DESIGN (update it); the weight variant additionally rescales the six governed weights through normalization — record the new seven.
+**B — document-and-hold (no behavior change):** record in the decision log that weight-0-until-ruled is intended, and add a combiner WARNING (reason field) when validity=0 so the dead input at least surfaces. Side effects: minimal; does not fix interpretation risk.
+
+#### My recommendation
+Request the owner decision (A's three variants are mutually exclusive and only the owner can choose); implement B's surfacing warning meanwhile so `validity=0` never passes silently through a confidence number again.
+
+#### Acceptance and regression tests
+- Post-decision: two contexts differing ONLY in validity produce the decision-specified versioned outputs; invalid-validity + Q2 is either end-to-end refused or its allowed path is documented.
+- The pinning test reflects the ruled weights (Σ=1 over the ruled set).
+- Regression: `tests/unit/test_fabric_context.py`, gate8 matrix tests, producer-bundle tests.
+
+## L-014 — liquidity_regime_composite standardizes each series' mean against itself (always exactly 0)
+
+#### Auditor claim (short quote)
+> "`liquidity_regime_composite` takes the z-score of the MEAN OF THE SAME SERIES with that series' mean/std — which is zero; three different amihud/obi/kyle windows all gave composite=0. The 38-concept registry count proves nothing about its use/correctness."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/research/proxies.py:533–584` (`liquidity_regime_composite`, full file read): `_zscore` returns `(mean, var, sd)` of the input list (:521–531); each component is then `(sum(xs)/len(xs) − m)/s` where `m` IS `sum(xs)/len(xs)` of the same list (:566–573) — `(m−m)/s = 0` identically (same float ops → exactly `0.0`, not approximately). The weighted combination of three zeros is 0 regardless of weights/signs (the Amihud negative sign is dead).
+- `tests/unit/test_research_proxies.py:231–237` (`test_composite_weights_and_sign`): asserts only component keys + `higher_is_better_liquidity` + `isfinite(composite)` — `0.0` passes, so the suite neither pins nor catches the bug.
+- Callers (mandatory grep): NONE in `apex/` or `scripts/` — no runtime, optimizer, governance, or E11/E02 path calls `liquidity_regime_composite` (E02 has its own `kyle_lambda`; the registry `formula` field is metadata). The B08 registry row claims "composite … feeding context/regime" — no such feed exists in code.
+- The docstring's intent ("standardized (z-scores within their own windows)") is ambiguous but CANNOT mean "z of the mean against itself" — that quantity is definitionally 0 and carries no information under any reading.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-014.py`. Probe: `AUDIT/probes_V3c/L-014.py` (real function; calm/trending/volatile synthetic windows). Raw output: `AUDIT/probes_V3c/L-014.out`. Result: all three regime-distinct windows → `composite=0.0` with all components `0.0` exactly.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The always-zero is structural (`(m−m)/s`), reproduced on three distinct windows with exact `0.0`. S2 because there is no caller (a wrong number nobody reads is latent), NOT S1: no risk/slippage/regime path consumes B08 today despite the registry row's "feeding context/regime" claim. Would escalate to S1 on first consumption (a regime-insensitive composite wired into sizing/slippage would silently flatten regime response).
+
+#### Root cause
+Wrong estimand: the code standardizes the window MEAN against the window distribution instead of standardizing the CURRENT observation against a historical baseline (or combining per-bar z-scores over time). The most likely intended formula given the signature (three windows, no separate baseline argument) is z of the LAST value vs the window, or mean-vs-baseline with a baseline the signature never accepted.
+
+#### Direct impact
+B08 carries zero information: every market regime maps to composite 0.0. Any present-or-future consumer reads a constant disguised as a measurement (with `q_label: Q3`, no less).
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the three input series are accepted and validated (`INSUFFICIENT_HISTORY_Z`, `ZERO_VARIANCE_Z` still fire — the function is not TOTALLY dead, only its VALUE is), which makes the bug harder to notice: errors flow, values do not. Downstream, nothing consumes it; the registry row's "feeding context/regime" integration claim is aspirational text, and `registry_summary` counts B08 as IMPLEMENTED — registry-completeness metrics overstate working functionality. Note `_zscore` uses sample variance (n−1) while catalog math uses population variance (n) — a consistency question for the fix, not part of this verdict.
+
+#### Contract and decisions
+Ch.20/AA.2–AA.4 (registry B08 row): "composite of Amihud + OBI proxy + Kyle λ feeding context/regime" — the code fulfills the registration, not the formula (no blueprint formula is quoted for B08 in the module; the module's EC-register discipline says unformulated concepts stay `REGISTERED_OPEN` with NO active value — B08 is marked IMPLEMENTED with an active, wrong value, violating that discipline). No `PHASE2_DECISION_LOG.md` ruling covers B08. Precedence: the EC-register discipline governs — B08 should either compute a real composite or drop to `REGISTERED_OPEN` with no value.
+
+#### Frozen status and non-frozen alternative
+**NOT frozen:** `apex/research/proxies.py` is outside the frozen set (only `research/bootstrap.py` and `research/backtest.py` are frozen). Fix directly; no alternative layer needed.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — real composite (non-frozen):** standardize the CURRENT (last) value of each series against its window (PIT: last value scored, window as baseline — the L-003 lesson), or accept an explicit separate historical baseline per the auditor's suggestion; combine with the governed weights keeping the Amihud negative sign. Side effects: B08 values change 0→real (intended); existing test stays green (keys/finite/label assertions all still hold — strengthen it with a direction test); NO caller exists, so nothing downstream changes. No hashes/caches/DB/retraining impact.
+**B — demote to REGISTERED_OPEN (non-frozen, if no formula is approved):** remove the active value per EC-register discipline until a governed formula exists. Side effects: `test_composite_weights_and_sign` must be reworked (no value to assert); registry counts shift IMPLEMENTED→OPEN (honest).
+
+#### My recommendation
+A if the owner approves the last-vs-window (or baseline) formula — it is a small, callerless, test-safe fix; otherwise B (an honest OPEN beats a wire-ready zero). Either way, correct the "feeding context/regime" integration text or wire the feed — not both states at once.
+
+#### Acceptance and regression tests
+- Regime-distinct windows give directionally-correct distinct composites (illiquid≪liquid given the higher-is-better convention); constant windows still raise `ZERO_VARIANCE_Z` (fail-closed preserved); no future leak (last-value scoring; shifting history must not change earlier outputs).
+- Regression: `tests/unit/test_research_proxies.py` passes (strengthened, not weakened).
