@@ -1,0 +1,17 @@
+# K-023 — repair report durability
+
+A. report_filename() resolution
+   2026-09-16T12:00:00.100000+00:00 -> repair_partial_report_20260916T120000Z.json
+   2026-09-16T12:00:00.900000+00:00 -> repair_partial_report_20260916T120000Z.json
+   identical = True
+
+B. two consecutive dry runs of the real CLI
+   run 1 exit=0  summary: candidates=1 verified=1 corrected=0 unrepairable=0 refused=0 skipped_still_open=0 | report: data/repair_partial_report_20260929T014948Z.json
+   run 2 exit=0  summary: candidates=1 verified=1 corrected=0 unrepairable=0 refused=0 skipped_still_open=0 | report: data/repair_partial_report_20260929T014948Z.json
+   report files after two runs = 1 ['repair_partial_report_20260929T014948Z.json']
+
+C. report directory read-only, analysis still succeeds
+   BTCUSDT 1h open=2023-01-01T00:00:00.000Z created=2023-01-01T00:00:01.000Z verdict=VERIFIED_CLOSED store_close=100.5 store_vol=10 repl_close=100.5 repl_vol=10 source=EVIDENCE_FILE:store_vs_venue.json
+   summary: candidates=1 verified=1 corrected=0 unrepairable=0 refused=0 skipped_still_open=0
+   report: UNWRITABLE ([Errno 13] Permission denied: '/tmp/tmpzos37vtn/data/repair_partial_report_20260929T014948Z.json') — counts above still stand
+   exit code = 0  (EXIT_READY=0)

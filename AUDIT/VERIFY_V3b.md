@@ -36,7 +36,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-020 | CONFIRMED | S1 | S1 | Partly — `apex/research/bootstrap.py` frozen; the service, the coverage gate and `scripts/run_apex.py` are not | K-015 (walk stop reason), ISSUE-CP13-001 (empty page = only completion signal) | A — a separate non-frozen coverage gate; SKIPPED never counted as complete, never exit READY |
 | K-021 | CONFIRMED | S2 | S2 | No — the wrapper lives in `apex/ops/bootstrap_service.py`; the two DDLs are frozen | ISSUE-CP9-007 (canonical table = resume authority); K-017 | A — surface the mirror failure as a named DEGRADED status and reconcile the two tables |
 | K-022 | CONFIRMED | S2 | S2 | No — `apex/ops/partial_bar_repair.py` and `scripts/run_apex.py` are non-frozen | ISSUE-CP13-001 / CP-13.1 (governed repair) | A — classify the fetch failure, retry transients, and give an exhausted window its own verdict |
-| K-023 | PENDING | S2 | — | — | — | — |
+| K-023 | CONFIRMED | S2 | S2 | No — `apex/ops/partial_bar_repair.py` / `scripts/run_apex.py` | K-022 (same command), ISSUE-CP13-001 | A — unique run id + exclusive atomic create; report-write failure is a named non-READY outcome |
 | K-024 | PENDING | S1 | — | — | — | — |
 | K-025 | PENDING | S1 | — | — | — | — |
 | K-026 | PENDING | S1 | — | — | — | — |
@@ -1685,3 +1685,133 @@ no change — its exceptions merely have to be *propagated* rather than erased.
 5. Counts/exit: transient-only run exits DEGRADED with the new bucket non-zero and
    `unrepairable` (window-passed) zero; a clean run still exits READY.
 6. No branch of the failing paths performs any write (`correct_raw` not called).
+
+---
+
+## K-023 — the repair report can be silently overwritten, and losing it does not stop exit READY
+
+#### Auditor claim (short quote)
+> «نام JSON repair فقط دقت ثانیه دارد و CLI با `open(...,"w")` می‌نویسد؛ دو dry-run/apply در همان ثانیه گزارش قبلی را overwrite می‌کنند. اگر نوشتن گزارش بعد از correction شکست بخورد، صرفاً «UNWRITABLE» چاپ می‌شود و در نبود refusal، exit همچنان READY است؛ raw_revision شاهد محدود دارد ولی فهرست تمام verdictهای بررسی از دست می‌رود.»
+> — “The repair JSON name has only second resolution and the CLI writes with `open(...,"w")`; two dry-runs/applies in the same second overwrite the earlier report. If writing the report fails after a correction, it merely prints ‘UNWRITABLE’ and, absent a refusal, the exit is still READY; `raw_revision` keeps limited evidence but the full list of verdicts is lost.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/partial_bar_repair.py:527–533` — `report_filename`:
+`strftime("%Y%m%dT%H%M%SZ")` → **second** resolution, no run id, no counter.
+`scripts/run_apex.py:665–682` — the writer:
+```
+data_dir = REPO_ROOT / "data"
+data_dir.mkdir(parents=True, exist_ok=True)
+leaf = PR.report_filename()
+with open(str(data_dir / leaf), "w", encoding="utf-8") as handle: json.dump(...)
+except OSError as exc: _say(f"  report: UNWRITABLE ({exc}) — counts above still stand")
+```
+— truncating open, no `x` mode, no temp-file + `os.replace`, no fsync, no hash/receipt.
+`scripts/run_apex.py:683–686` — the exit rule depends **only** on
+`counts["unrepairable"] == 0 and counts["refused"] == 0`; the report outcome is not an input.
+`apex/ops/partial_bar_repair.py:457–525` — `run_repair` returns the verdict rows that exist
+nowhere else once the process exits (the store keeps only `raw_revision` rows for *corrected*
+bars — VERIFIED/UNREPAIRABLE/REFUSED/SKIPPED rows leave no durable trace).
+`tests/unit/test_ops_partial_bar_repair.py:379–384` — `test_report_filename_shape` pins the
+second-resolution name; `:482–503` — `test_cli_verified_exits_zero_and_writes_report` asserts
+`len(reports) == 1` after **one** run, so the overwrite is untested rather than intended.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-023.py`; probe/output `AUDIT/probes_V3b/K-023.py|.out`.
+The real CLI `run_apex._repair_partial` with `REPO_ROOT`/`APEX_SQLITE_PATH` redirected to a
+temp directory (exactly the repository's own CLI-test technique — the repo's `data/` is never
+touched), the real store seeded through the repository's own fixture helper:
+```
+A. 2026-09-16T12:00:00.100000+00:00 -> repair_partial_report_20260916T120000Z.json
+   2026-09-16T12:00:00.900000+00:00 -> repair_partial_report_20260916T120000Z.json
+   identical = True
+B. run 1 exit=0  summary: candidates=1 verified=1 …  report: data/…T014948Z.json
+   run 2 exit=0  summary: candidates=1 verified=1 …  report: data/…T014948Z.json
+   report files after two runs = 1
+C. report directory read-only (fresh create):
+   verdict=VERIFIED_CLOSED …
+   report: UNWRITABLE ([Errno 13] Permission denied: …) — counts above still stand
+   exit code = 0  (EXIT_READY=0)
+```
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). Both halves reproduce against
+the real CLI. S2, not higher: no incorrect data is written to the store, the correction path
+itself is unaffected, and `raw_revision` still records applied corrections; what is lost is
+the audit artefact and the dry-run↔apply comparison.
+
+#### Root cause
+The report is treated as a print-out rather than as evidence: its name is a wall-clock string
+with a resolution coarser than the operation it identifies, the write is a truncating
+non-atomic `open(..., "w")`, and its success is not part of the command's success criterion.
+
+#### Direct impact
+Two runs in the same second (trivially achievable — the probe's two dry runs took far less
+than a second) leave exactly one file, silently; an unwritable/full filesystem after an
+`--apply` run yields exit READY with no artefact recording what was corrected, verified or
+refused.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream: the operator's standard procedure for CP-13 is dry-run → inspect → `--apply`; both
+runs are named by the same scheme in the same directory, so the *comparison* artefact is the
+one most likely to be destroyed. Downstream: **K-022**'s cause-less
+`UNREPAIRABLE_VENUE_WINDOW_PASSED` rows exist only in this report — losing it removes the only
+record that they were examined at all. Also related to **K-017**/**K-021**: evidence written
+outside a transaction and allowed to fail quietly.
+
+#### Contract and decisions
+* `APEX_GEN5.md:18744–18746`: “Every correction, revocation, or deletion is logged with
+  event_id, timestamp, reason, and actor identity. Purge decisions are approved … and
+  **recorded before execution**.” A correction whose report silently vanishes (or is
+  overwritten by a later run) does not satisfy “recorded”.
+* `APEX_GEN5.md:18751`: “Fail-closed: on write failure, halt … and alert; do not cache and
+  retry silently.” The report write failure produces neither a halt nor a non-zero exit.
+* `APEX_GEN5.md:18736–18740` (backup/restore integrity: manifests, re-hash on restore) sets
+  the repository's own standard for durable artefacts — a hash/receipt is expected, and the
+  report has none.
+* `PHASE2_DECISION_LOG.md:182` (**ISSUE-CP13-001**) specifies the repair CLI, its verdicts and
+  “exit 0 iff nothing is left unrepairable or refused”. Precedence: the decision defines the
+  *exit rule*, and it is silent about the report's durability — so tightening the artefact is
+  additive and does not contradict it. Note that making a lost report non-READY is a *change*
+  to that exit rule and therefore needs owner sign-off; the alternative (own exit code /
+  explicit REFUSED verdict) keeps the decision's wording intact.
+
+#### Frozen status and non-frozen alternative
+**Not frozen** — both files are CP-13 wiring. No frozen DDL is involved; the report is a plain
+file under `data/` (which this audit never touches).
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — make the artefact unique and atomic: leaf name
+  `repair_partial_report_<ISO-ms>_<run_id>.json` (run id = a uuid4/ULID also embedded in the
+  JSON), write via `tempfile` + `os.replace` after `fsync`, create with `O_EXCL`, and add a
+  `sha256` of the payload to the printed summary. Side effects:
+  `test_report_filename_shape` (tests/unit/test_ops_partial_bar_repair.py:379–384) and the
+  CLI test's glob/`len(reports) == 1` assertion must be updated; any owner tooling that
+  globs the old name keeps working (the prefix is unchanged); no frozen file, no migration.
+* **B** — keep the name but refuse to overwrite (`open(..., "x")`, falling back to a `-2`
+  suffix). Side effects: minimal, removes the silent data loss, but still no atomicity or
+  receipt.
+* **C** — treat a failed report write as a non-READY outcome (its own exit code or a
+  `REFUSED_REPORT_UNWRITABLE` verdict row) — **owner decision required** because it alters
+  ISSUE-CP13-001's exit rule. Side effects: an `--apply` run that corrected rows correctly
+  would now exit non-zero; this is the honest signal (the corrections are already committed
+  and must never be rolled back blindly, which the auditor also stresses), but it must be
+  documented so the operator does not re-run `--apply`.
+* **D** — persist the verdict rows in the non-frozen ops database instead of (or in addition
+  to) the JSON file. Side effects: new table + migration; makes the audit trail independent of
+  the filesystem; the natural companion to A.
+
+#### My recommendation
+**A + C** (unique atomic artefact with a receipt, and a failed write that is not READY), with
+**D** as the durable follow-up so the verdict history survives regardless of `data/`.
+
+#### Acceptance and regression tests
+1. Two runs inside the same second produce **two** distinct report files, both readable and
+   both listing their own run id.
+2. `--apply` followed by a read-only `data/`: the command reports the failure with a named
+   verdict/exit that is **not** READY, while the already-committed corrections are neither
+   rolled back nor repeated on a re-run (idempotence, as CP-13 already requires).
+3. The written file's recorded sha256 matches its bytes (receipt verification).
+4. A partially written report can never be observed (kill between write and rename leaves
+   either the old file or the complete new one).
+5. Existing CP-13 CLI expectations (`verified=1` exit 0, evidence-fallback path) remain green
+   with the new naming.
