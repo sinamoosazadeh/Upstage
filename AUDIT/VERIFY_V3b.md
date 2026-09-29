@@ -33,7 +33,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-017 | CONFIRMED | S2 | S2 | No — `apex/ops/bootstrap_service.py` is non-frozen | — | A — persist per-cell drop evidence idempotently at every checkpoint, not only at COMPLETE |
 | K-018 | CONFIRMED | S2 | S2 | No — `apex/ops/bootstrap_service.py` is non-frozen | K-017 (evidence durability) | A — announce completion on the durable COMPLETE transition, once, for both termination shapes |
 | K-019 | CONFIRMED | S1 | S1 | No — `apex/ops/bootstrap_service.py` / `apex/ops/engine_context.py` are non-frozen | D22 (CATCH_UP_FAILED); K-017 (evidence durability) | A — durable per-observation publish outbox retried independently of `new_hashes`, cell status DEGRADED until reconciled |
-| K-020 | PENDING | S1 | — | — | — | — |
+| K-020 | CONFIRMED | S1 | S1 | Partly — `apex/research/bootstrap.py` frozen; the service, the coverage gate and `scripts/run_apex.py` are not | K-015 (walk stop reason), ISSUE-CP13-001 (empty page = only completion signal) | A — a separate non-frozen coverage gate; SKIPPED never counted as complete, never exit READY |
 | K-021 | PENDING | S2 | — | — | — | — |
 | K-022 | PENDING | S2 | — | — | — | — |
 | K-023 | PENDING | S2 | — | — | — | — |
@@ -1217,3 +1217,164 @@ the non-PAPER path never publishes a catch-up fact at all.
    never a second fact.
 5. Non-PAPER environment: assert explicitly what is expected (currently: nothing published) so
    option D is a deliberate, tested change.
+
+---
+
+## K-020 — harvest "completion" means the walk ended, not that data was acquired or accepted
+
+#### Auditor claim (short quote)
+> «runner در production verifier ندارد و حتی وقتی منبع **هیچ بار** تحویل نداده، empty-page را COMPLETE می‌کند؛ probe سلول با صفر ingest، status COMPLETE و pending=[] داد. اگر verifier سفارشی false دهد، status سلول `SKIPPED` می‌شود ولی `pending_cells` و `progress_async` آن را completed حساب می‌کنند؛ وقتی همه SKIPPED باشند result اصلی هم COMPLETE و CLI status exit READY می‌دهد.»
+> — “In production the runner has no verifier and completes on the empty page even when the source delivered **no bar at all**; the probe's cell with zero ingest gave status COMPLETE and pending=[]. If a custom verifier returns false the cell status becomes `SKIPPED`, but `pending_cells` and `progress_async` count it as completed; when all are SKIPPED the top-level result is COMPLETE too and the CLI status exits READY.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/research/bootstrap.py:257–334` (frozen) — `run_phase1`: the walk `while cursor < end`,
+then `verification = {"verified": True, "reason": "PHASE1_PAGE_WALK_DONE"}` (307) overridden
+only `if self.phase1_verifier is not None` (309–313); `status = "COMPLETE" if
+verification.get("verified") else "SKIPPED"` (314); the result's top-level `status` is
+`"STOPPED"/"PAUSED"/"COMPLETE"` (323–325) and depends only on stop/pause flags — never on
+`skipped_cells`.
+`apex/research/bootstrap.py:336–346` — `pending_cells`: `done = {... if r["status"] in
+("COMPLETE", "SKIPPED")}`, i.e. a refused cell is *not* pending.
+`apex/research/bootstrap.py:409–424` — `progress_async`: `complete = [r for r in rows if
+r["status"] in ("COMPLETE","SKIPPED")]`, `cells_remaining = len(cells) - len(complete)`;
+`_percent()` is a page-count heuristic, not coverage.
+`apex/research/bootstrap.py:167,176` — `phase1_verifier` is a constructor parameter that
+defaults to `None`.
+`apex/ops/bootstrap_service.py:1170–1179` — `BootstrapService.open()` constructs
+`BootstrapRunner(fetcher=…, ingest=…, store=…, cells=…, now=…)` — **no `phase1_verifier`
+argument**; `grep -rn "phase1_verifier" --include=*.py .` returns only the definition sites
+and `tests/unit/test_research_bootstrap.py:217`.
+`apex/ops/bootstrap_service.py:1396–1454` — `run()` decorates the runner result with
+preflight/drop/offender/open-excluded fields; it does not re-judge completion.
+`apex/ops/bootstrap_service.py:609–640` — the serve path whose empty page is the only
+completion signal (ISSUE-CP13-001), reached identically when the venue retains nothing and
+when every retained bar was dropped as invalid.
+`scripts/run_apex.py:504–571` — `_bootstrap`: prints `completed=len(completed_cells)
+pending=len(pending_cells)` and `if status == "COMPLETE": return EXIT_READY`.
+`scripts/run_apex.py:577–605` — `_status`: `return EXIT_READY if
+status["cells_remaining"] == 0 else EXIT_DEGRADED`.
+`tests/unit/test_ops_bootstrap_service.py:940–957` —
+`test_all_poison_cell_completes_with_zero_bars_and_full_evidence` pins exactly this: 25
+poison bars, `rows == []`, `next_cursor_ms == end` — “the ONLY completion signal”, `bars=0`.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-020.py`; probe/output `AUDIT/probes_V3b/K-020.py|.out`.
+Real `BootstrapService`, real `BootstrapRunner`, real `ResearchCheckpointStore`:
+```
+A. empty venue (zero retained bars), real BootstrapService
+   runner phase1_verifier = None
+   status = 'COMPLETE'  completed_cells = ['BTCUSDT:1h']  skipped_cells = []
+   pending_cells = []   bars_ingested = 0
+   status(): completed=1 remaining=0 bars=0
+   durable raw_observation rows = 0
+B. real runner, verifier refuses EVERY cell
+   durable statuses = [('BTCUSDT:15m','SKIPPED'), ('ETHUSDT:15m','SKIPPED')]
+   result status = 'COMPLETE'  completed_cells = []  skipped_cells = [both]
+   pending_cells = []   pending_cells() = []
+   progress_async = completed=2 remaining=0
+C. grep -rn phase1_verifier --include=*.py .  -> definition sites +
+   tests/unit/test_research_bootstrap.py:217 only (no production construction)
+```
+Both CLI exit mappings therefore yield **READY**: `_bootstrap` on `status == "COMPLETE"`
+(run_apex.py:565–566) and `_status` on `cells_remaining == 0` (run_apex.py:604).
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). Every element reproduces on
+real code, including the part that is easiest to doubt (SKIPPED counted as done in *three*
+places: `pending_cells`, `progress_async`, and by omission in the top-level status). The
+severity is S1 because the failure mode is a false readiness signal that the operator is
+explicitly told to trust, and because it is silent: an operator seeing `completed=140
+remaining=0 … READY` cannot distinguish 140 fully harvested cells from 140 empty ones.
+
+#### Root cause
+Two different questions are answered by one flag. "Did the page walk terminate?" is a
+mechanical property of the fetch loop; "does this cell hold enough correct data to be used?"
+is a coverage property of the store (first/last bar, gap count, drop ratio, minimum bars).
+The frozen runner only knows the first, and the wiring never adds the second: it never
+installs a verifier, and the two owner-facing aggregations (`pending_cells`,
+`progress_async`) fold the "refused" state into the "finished" set.
+
+#### Direct impact
+A cell with zero bars, a partially retained window, or 100 % dropped bars is reported
+COMPLETE / not pending, and `run_apex.py bootstrap|status` exits READY. Downstream work
+(research, quality, PAPER) is authorised on a coverage that was never measured.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream: the venue itself is the arbiter of the completion signal — the same empty page is
+produced by exhaustion, by a venue that retains nothing, and by a repeat-stopping venue
+(**K-015**), and after a poison-only cell (`test_all_poison_cell_completes_with_zero_bars…`).
+Combined with **K-016**, a cell that lost a bar to a failed write also reaches COMPLETE.
+Downstream: `_status`'s READY is consumed as the go/no-go for the next phase; **K-018** means
+the per-cell announcement may not even be printed, so nothing else contradicts the READY.
+Scope note: per **D30** the default E11 training scope is 20 base cells, which must not be
+confused with the 140-cell data scope of `APEX_GEN5.md:17276` — a readiness gate must state
+which scope it measured (the auditor makes the same point).
+
+#### Contract and decisions
+* `APEX_GEN5.md:17276` (**Phase 1 algorithm, normative**): “for each of **140 cells**, page
+  `GET /quote/v1/klines` limit=1000 **from `2020-01-01T00:00:00Z` to now**; insert closed bars
+  into `raw_observation`; checkpoint `bootstrap_progress`.” The normative unit of completion
+  is the *covered window*, not the loop exit; nothing in the clause authorises declaring a
+  cell done with zero rows.
+* `APEX_GEN5.md:17294+` — Phase 3 “completes when **all** symbol×timeframe cells have been
+  swept at least once”; the same all-cells language is used for readiness, again by coverage.
+* `APEX_GEN5.md:5068` — a degraded status “MUST be carried as a degraded quality/provenance
+  flag … MUST NOT bypass a hard data-quality … gate”: SKIPPED being summed into
+  `cells_completed` is exactly such a bypass.
+* `PHASE2_DECISION_LOG.md:182` (**ISSUE-CP13-001**, CLOSED-with-evidence) makes the empty page
+  “the only completion signal” of the **serve law** and is deliberately about cursor safety,
+  not about data sufficiency. Precedence: ISSUE-CP13-001 governs *how the walk terminates*;
+  APEX_GEN5.md:17276 governs *what Phase 1 must have achieved*. They do not conflict — the
+  gap is that no artefact implements the second.
+* No decision in `PHASE2_DECISION_LOG.md` defines a coverage/readiness criterion or authorises
+  counting SKIPPED as complete.
+
+#### Frozen status and non-frozen alternative
+`apex/research/bootstrap.py` is **frozen**, so `run_phase1`, `pending_cells` and
+`progress_async` may not be edited. Non-frozen alternatives exist and are sufficient:
+(i) `BootstrapService.open()` (bootstrap_service.py:1176) can pass a real `phase1_verifier`
+— the frozen runner already supports the hook and maps a refusal to `SKIPPED`;
+(ii) `BootstrapService.status()` / the run result can recompute its own
+completed/remaining/refused counts from the durable rows instead of reusing
+`progress_async`; (iii) `scripts/run_apex.py` can require `skipped == 0` **and** a coverage
+verdict before `EXIT_READY`. No frozen file needs to be touched.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — install a non-frozen coverage verifier and fix the counting:
+  a `phase1_verifier` that measures, per cell, first/last stored bar vs the requested window,
+  missing-bar count, drop ratio and minimum bar count, returning
+  `{"verified": False, "reason": …}` on failure; plus a service-level status that reports
+  `completed / refused / pending` as three disjoint sets, and a CLI that exits READY only
+  when `refused == 0 and pending == 0` for the declared scope (140 data cells, stated
+  explicitly, separate from D30's 20 fit cells). Side effects: cells that are genuinely
+  incomplete start reporting DEGRADED, which will change existing CLI expectations and any
+  test asserting `EXIT_READY` after a fixture run (`tests/unit/test_ops_bootstrap_service.py`
+  completion tests and the run_apex CLI tests must be re-baselined to the new tri-state);
+  the verifier adds one store query per cell per run — keep it indexed and bounded (see
+  X-V3b-001 for the cost of an unindexed per-cell query on the device); no frozen file, no
+  hash, no migration.
+* **B** — leave the verifier absent and only fix the aggregations (SKIPPED reported
+  separately, READY requires `skipped == 0`). Side effects: minimal and immediate, but does
+  nothing for the empty-venue case, which is the S1 half of this finding.
+* **C** — gate readiness outside the bootstrap entirely, in a separate `coverage-report`
+  command that the operator must run. Side effects: honest, but an out-of-band step that
+  nothing enforces; acceptable only as an addition to A.
+* **D** — change the frozen runner so that `skipped_cells` demotes the top-level status.
+  **Rejected**: frozen file, and A achieves the same from the wiring.
+
+#### My recommendation
+**A**, with **B** shipped first as the one-line risk reduction (stop counting SKIPPED as
+complete, stop exiting READY with refusals). Keep the empty-page serve law untouched — the
+defect is the missing second gate, not the walk termination rule.
+
+#### Acceptance and regression tests
+1. Empty venue: status DEGRADED/refused for the cell, `pending`/`refused` non-empty, CLI exit
+   **not** READY.
+2. Partial window (venue retains only the last N bars of the requested range): refused with a
+   named coverage reason carrying first/last stored bar vs requested.
+3. All bars invalid (the existing poison-only fixture): walk still completes, but the cell is
+   refused and the drop ratio is reported.
+4. Verifier returns false: `SKIPPED` appears in its own bucket; `cells_completed` excludes it;
+   `pending_cells`-equivalent service output includes it; exit not READY.
+5. Full coverage over the declared scope: the only case that yields READY, and the scope size
+   (140 data cells) is asserted explicitly and kept distinct from D30's 20-cell fit scope.

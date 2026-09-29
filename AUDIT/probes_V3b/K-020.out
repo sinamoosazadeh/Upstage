@@ -1,0 +1,33 @@
+# K-020 — harvest completion gate
+
+A. empty venue (zero retained bars), real BootstrapService
+   runner phase1_verifier = None
+   status          = 'COMPLETE'
+   completed_cells = ['BTCUSDT:1h']
+   skipped_cells   = []
+   pending_cells   = []
+   bars_ingested   = 0
+   status(): completed=1 remaining=0 bars=0
+   -> scripts/run_apex.py:565-566 maps status COMPLETE to EXIT_READY
+   -> scripts/run_apex.py:604 maps cells_remaining==0 to EXIT_READY
+   durable raw_observation rows = 0
+
+B. real runner, verifier refuses EVERY cell
+   durable statuses = [('BTCUSDT:15m', 'SKIPPED'), ('ETHUSDT:15m', 'SKIPPED')]
+   result status    = 'COMPLETE'
+   completed_cells  = []
+   skipped_cells    = ['BTCUSDT:15m', 'ETHUSDT:15m']
+   pending_cells    = []
+   pending_cells()  = []
+   progress_async   = completed=2 remaining=0
+
+C. production construction of a verifier
+   ./apex/research/bootstrap.py:167:                 phase1_verifier: Optional[Callable[[Dict[str, Any]], Mapping[str, Any]]] = None,
+   ./apex/research/bootstrap.py:176:        self.phase1_verifier = phase1_verifier
+   ./apex/research/bootstrap.py:309:            if self.phase1_verifier is not None:
+   ./apex/research/bootstrap.py:310:                verification = dict(self.phase1_verifier(
+   ./tests/unit/test_research_bootstrap.py:217:            phase1_verifier=verifier)
+   ./AUDIT/probes_V3b/K-020.py:9:B. Real BootstrapRunner with a phase1_verifier that refuses every cell: are the cells
+   ./AUDIT/probes_V3b/K-020.py:57:    say("   runner phase1_verifier = %r" % service.runner.phase1_verifier)
+   ./AUDIT/probes_V3b/K-020.py:95:        phase1_verifier=refusing_verifier)
+   ./AUDIT/probes_V3b/K-020.py:118:    out = subprocess.run(["grep", "-rn", "phase1_verifier", "--include=*.py", "."],
