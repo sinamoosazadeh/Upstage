@@ -1,0 +1,16 @@
+INCREMENTAL_ONLY=True NUMBA_USED=False
+corwin_schultz_spread(bars: 'Sequence[Mapping[str, Any]]') -> 'SpreadEstimate'
+abdi_ranaldo_spread(bars: 'Sequence[Mapping[str, Any]]') -> 'SpreadEstimate'
+roll_spread(returns: 'Sequence[float]') -> 'SpreadEstimate'
+kyle_lambda(*, returns: 'Sequence[float]', signed_volume: 'Sequence[float]', window: 'int' = 100) -> 'Dict[str, Any]'
+amihud_illiquidity(*, returns: 'Sequence[float]', volumes: 'Sequence[float]') -> 'Dict[str, Any]'
+liquidity_regime_composite(*, amihud: 'Sequence[float]', obi: 'Sequence[float]', kyle: 'Sequence[float]', weights: 'Optional[Mapping[str, float]]' = None) -> 'Dict[str, Any]'
+cvd(deltas: 'Iterable[float]', *, start: 'float' = 0.0) -> 'Dict[str, Any]'
+information_ratio(*, returns: 'Sequence[float]', benchmark_returns: 'Sequence[float]') -> 'Dict[str, Any]'
+--- per-call ms vs history length (min of 5, sandbox CPU) ---
+     n       B01       B02       B03       B07       B08
+   200     0.243     0.210     0.020     0.034     0.120
+  1000     0.668     0.567     0.067     0.083     0.288
+  5000     3.368     3.157     0.352     0.431     1.515
+--- per-bar loop, growing history (B01+B02+B03+B07 per new bar) ---
+bars 200-209 mean 0.337 ms/bar; bars 690-699 mean 1.152 ms/bar; ratio 3.42x (history ratio 3.45x)

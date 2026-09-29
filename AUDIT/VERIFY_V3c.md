@@ -39,7 +39,7 @@ and synthetic failure proves the code path, not that it has already damaged a de
 | L-012 | CONFIRMED | S1 | S1 | No — `quality/vector.py` + `setup/gates.py` + `risk/kernel.py` non-frozen | H-014 (label side); D-026 (adjacent risk-NaN theme); D59 (formula preserved, validation added) | A — single path: finite+domain pre-validation, D59 formula untouched |
 | L-013 | PENDING | S2 | — | — | — | — |
 | L-014 | CONFIRMED | S2 | S2 | No — `apex/research/proxies.py` is non-frozen | B08 registry row "feeding context/regime" is aspirational (no caller); EC-register discipline | A if owner approves formula (last-vs-window PIT composite); else B (demote to REGISTERED_OPEN) |
-| L-015 | PENDING | S2 | — | — | — | — |
+| L-015 | CONFIRMED | S2 | S2 | No — `apex/research/proxies.py` + `scripts/run_nfr_harness.py` non-frozen | L-014 (formula fix is prerequisite for B08); AA.7-2 vs §9.5-9/P6 Numba conflict (resolved toward Wave-Out) | C now (fence as non-live until measured); A when proposed for live use |
 
 ---
 ## L-001 — ATOM default window depth (lookback=1 for all 44 contracts)
@@ -653,3 +653,98 @@ A if the owner approves the last-vs-window (or baseline) formula — it is a sma
 #### Acceptance and regression tests
 - Regime-distinct windows give directionally-correct distinct composites (illiquid≪liquid given the higher-is-better convention); constant windows still raise `ZERO_VARIANCE_Z` (fail-closed preserved); no future leak (last-value scoring; shifting history must not change earlier outputs).
 - Regression: `tests/unit/test_research_proxies.py` passes (strengthened, not weakened).
+## L-015 — INCREMENTAL_ONLY=True but B01/B02/B03 and the rolling proxies re-scan history per call (measured O(n)/call)
+
+#### Auditor claim (short quote)
+> "Despite `INCREMENTAL_ONLY=True`, B01/B02/B03 and several rolling proxies re-walk history on every call; no incremental/O(1) state for stream. The AA.7 contract gap applies IF called per-bar with growing history; the registry alone proves neither live consumption nor a device perf problem. Fix: state update/bounded window, batch-vs-incremental equality test, device capacity measurement. Per-bar cost grows with history length; if consumed widely across 140 cells, latency/battery may suffer."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/research/proxies.py` (complete, 686 lines): `INCREMENTAL_ONLY=True` (:45), `NUMBA_USED=False` (:48); `corwin_schultz_spread` B01 (:389–420, full-history loop + two list builds), `abdi_ranaldo_spread` B02 (:422–437, full loop), `roll_spread` B03 (:440–453, three O(n) passes), `kyle_lambda` B06 (:507–525, window-bounded `min(len,100)` but window re-scanned per call — the bounded exception), `amihud_illiquidity` B07 (:527–541, unbounded O(n)), `liquidity_regime_composite` B08 (:554–584, 3× `_zscore` O(n) scans), `cvd` (:496–504, O(n), `start` only shifts — no resumable state object), `information_ratio` A22 (:632–647, O(n)); signatures accept full-history sequences only — NO state/update/`x_new=f(x_old,y_new)` API exists anywhere in the module.
+- `APEX_GEN5.md:17716–17735` (AA.7 normative): rule 1 "All state updates must be incremental O(1): `x_new = f(x_old, y_new)` rather than `x = recompute()`"; rule 2 Numba+Float32 (in direct conflict with §9.5-9/P6 Wave-Out — the module resolves toward Wave-Out per `[ISSUE-CP8-002]`, test-pinned); Budget Honesty: frozen feature-layer budget CPU<20%/RAM<400MB, 38 concepts REQUIRE re-running the load/capacity test on the deployment target, "Post-measured budget re-registration is mandatory before live deployment; this is not a discretionary gate."
+- `tests/unit/test_research_proxies.py` (all 30 tests): `test_incremental_only_flag` (:287–288) pins the FLAG True; every formula test asserts batch VALUES only; NO perf/scaling/parity/incremental-behavior test exists (grep for perf/benchmark/parity/O(1)/incremental returns only the flag pin).
+- `scripts/run_nfr_harness.py` (complete): measures queue bounds/analysis/submission latency/resource samples — NO 38-concept load test; no script or `apex/ops` module calls any `proxies.*` formula.
+- Callers (mandatory grep): NO runtime caller of any research formula in `apex/` or `scripts/` — the only cross-module imports are the `REPO_ROOT` path constant (checkpoints/governance/optimizer); E02's `kyle_lambda` (`apex/engines/e02_liquidity/engine.py:417`) is engine-local, NOT the research B06. Both directions are empty: nothing feeds these proxies at runtime, nothing consumes their outputs.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-015.py`. Probe: `AUDIT/probes_V3c/L-015.py` (real module constants, real signatures, real formulas; deterministic synthetic series). Raw output: `AUDIT/probes_V3c/L-015.out`. MEASURED (sandbox CPU — absolutes are environment-specific, the scaling law is the finding): per-call ms at n=200/1000/5000: B01 0.243→0.668→3.368, B02 0.210→0.567→3.157, B03 0.020→0.067→0.352, B07 0.034→0.083→0.431, B08 0.120→0.288→1.515 — every rolling proxy grows ~linearly with history length. Per-bar loop (B01+B02+B03+B07 per new bar, growing history): 0.337 ms/bar at bars 200–209 vs 1.152 ms/bar at bars 690–699, ratio **3.42x for 3.45x history** — per-bar cost is linear in history length, i.e. O(n)/call → O(n²) per full stream, the exact shape AA.7-1 forbids. Signatures confirm no state channel; `INCREMENTAL_ONLY=True, NUMBA_USED=False` confirmed live.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The O(n)/call shape is measured, the missing state API is structural (signatures), the flag-vs-behavior contradiction is test-pinned (flag True, behavior recompute), and the AA.7-mandated 38-concept load test has no harness and no recorded result. S2 (not S1): zero runtime consumers today, so no live harm exists — the finding is a DEPLOYMENT-BLOCKER-class gap (AA.7 says the measurement is "not a discretionary gate") plus an O(n²) cost shape waiting for its first per-bar caller. Would escalate to S1 the moment any proxy is wired to a streaming cell. S3 was rejected: a normative "mandatory before live" measurement with no harness is more than polish.
+
+#### Root cause
+Research-plane batch formulas (correct VALUES, test-pinned) were registered under a deployment law (AA.7-1 O(1)) they were never implemented against: the module honors AA.7 as a FLAG (`INCREMENTAL_ONLY=True`) rather than as an ARCHITECTURE (no state objects, no bounded windows except B06, no parity tests, no load harness).
+
+#### Direct impact
+Today: none at runtime (callerless). Conditionally (the auditor's exact scope): per-bar calls with growing history cost O(n) per bar and O(n²) per stream — measured 3.42x per-bar growth over 3.45x history — on pure Python with no JIT fallback (Wave-Out forbids Numba, which makes the O(1) requirement MORE load-bearing, not less).
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, nothing feeds the proxies — the FIRST wiring (any cell, any scheduler) activates the full O(n²) shape silently, because the flag says "incremental" and the tests are green. Downstream, AA.7's Budget Honesty arithmetic (CPU<20%/RAM<400MB + mandatory re-registration with 30% headroom) cannot even START: no harness, no device numbers, no ceilings. Interaction with L-014: B08 must get its FORMULA fixed before anyone incrementalizes it (an O(1) always-zero is still zero — fix order is L-014 formula first, L-015 architecture second). Interaction with the Numba conflict: AA.7-2 (Numba+Float32) vs §9.5-9/P6 (Wave-Out) is already resolved in code toward Wave-Out (`NUMBA_USED=False` pinned) — that resolution stands, and it removes the only excuse for keeping recompute ("JIT will hide it" is not available). The "140 cells" blast radius (Core-10 × 14 TF per contract lines 23/15339/15718) is real arithmetic IF consumed per-cell — today it is a hypothetical the auditor correctly refuses to assert as fact.
+
+#### Contract and decisions
+`APEX_GEN5.md` AA.7 rule 1 (O(1) state updates) is violated by every unbounded rolling proxy; AA.7 Budget Honesty (mandatory pre-live load test + re-registration, "not a discretionary gate") has no implementation artifact; AA.7-2 vs §9.5-9/P6 is an intra-contract conflict already resolved toward Wave-Out in code and tests. No `PHASE2_DECISION_LOG.md` ruling covers proxy incrementalization or the 38-concept load test. Precedence: AA.7's mandatory-measurement rule governs deployment — no live enablement of any proxy without the measured re-registration, regardless of which fix option is chosen.
+
+#### Frozen status and non-frozen alternative
+**NOT frozen:** `apex/research/proxies.py` is outside the frozen set; `scripts/run_nfr_harness.py` is non-frozen. Fix directly in the research plane; no alternative layer needed. (B06's `window=100` bound shows the bounded-window pattern already exists in-module as precedent.)
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — incremental state + parity + device measurement (non-frozen):** per-proxy state objects implementing `x_new=f(x_old,y_new)`; batch-vs-incremental equality tests on PIT data; run the AA.7 load test with all 38 concepts on the deployment target and re-register ceilings with 30% headroom. Side effects: new API surface (state classes); values must NOT change (parity-guaranteed) so no downstream numeric impact; L-014's formula fix is a PREREQUISITE for B08; the flag pin stays True and finally becomes honest.
+**B — bounded windows only (non-frozen, cheaper):** cap every rolling scan like B06's `window=100`. Side effects: per-call cost capped (satisfies budgets) but still recompute (does NOT satisfy the O(1) letter); window choice CHANGES values vs full history → governed-value change needing approval + test updates.
+**C — documented hold (no code change):** record research-plane-only status; forbid live wiring until A (or B+owner waiver of the O(1) letter) plus the AA.7 measurement are complete. Side effects: none; leaves the gap open but fenced.
+
+#### My recommendation
+C immediately (one decision-log entry fencing all 38 concepts as non-live until measured — this is what AA.7 already demands); A for every proxy at the moment it is proposed for live/streaming use (with L-014 first for B08). B only with an explicit owner waiver of the O(1) letter, since it papers over the normative rule.
+
+#### Acceptance and regression tests
+- Batch-vs-incremental parity on PIT data for every stateful proxy (exact or governed-tolerance equality); per-bar p95 time bounded and INDEPENDENT of history length (re-run this probe's per-bar loop: ratio ≈1.0x, not 3.4x).
+- Owner-device T-NFR report with all 38 concepts enabled; ceilings re-registered with 30% headroom; NFR harness extended (or a new load script) so the measurement is repeatable, not a one-off.
+- Regression: all 30 existing `test_research_proxies.py` tests stay green (values unchanged); the flag pin remains True and becomes true.
+- Synthetic-vs-device boundary (binding for this row): the sandbox ms values in `L-015.out` are NOT device numbers and must never be quoted as T-NFR evidence — only the scaling law (O(n)/call, O(n²)/stream) transfers. Device numbers require the owner's target hardware.
+
+## End-1 — Overall verdict, counts, and convergence with the auditor
+
+**Scope:** L-001…L-015 (quality/math/numerical layer), baseline `85b2c15`, read-only.
+**Result: 15/15 rows independently reproduced against real repository code; 15/15 CONFIRMED; 0 refuted; 0 inconclusive.**
+
+| Independent severity | Rows | Count |
+|---|---|---:|
+| S1 | L-003, L-004, L-012 | 3 |
+| S2 | L-001, L-002, L-005, L-006, L-007, L-008, L-009, L-010, L-011, L-013, L-014, L-015 | 12 |
+| S3/S4 | — | 0 |
+
+**Severity convergence:** independent severities match the auditor's on all 15 rows (3×S1, 12×S2). One row is worse than claimed in extent (L-009: 4 silent-VALID positions beyond the claimed crash); none is milder.
+
+**Frozen tally:** L-001…L-005 touch frozen files (`apex/data_catalog/**`, frozen `engines/base.py`, frozen catalog math/atomic features) — all five carry a non-frozen alternative (adapter/refuse/reroute now, owner-ruled A later). L-006…L-015 are fully non-frozen (quality/vector, fabric/context, pattern/fibonacci, research/proxies, setup/gates, risk/kernel, ops/engine_context, NFR harness).
+
+**Recurring patterns (cross-row):** (a) tests that pin the bug instead of catching it (L-008 `test_core_formulas`, L-010 pinning matrix, L-013 weight pin, L-015 flag pin); (b) zero-information outputs disguised as measurements (L-008 `(None,0.0)`, L-009 silent VALID, L-014 constant 0.0, L-015 "incremental" flag); (c) callerless-but-wire-ready hazards (L-010/L-011/L-014/L-015 — each carries an explicit escalate-on-first-use condition); (d) contract-implementation gaps where the code chose the lawful-but-silent reading (L-007 pairing, L-013 weight 0, L-015 flag-vs-architecture).
+
+**Conditional escalations (recorded in-row, not asserted as current fact):** L-010/L-011 → S1 if confluence/fib outputs feed live sizing; L-014 → S1 on first consumption by risk/slippage; L-015 → S1 on first per-bar wiring; L-013 validity role awaits the owner decision either way.
+
+## End-2 — Unverified items, scope limits, and new findings
+
+**Unverified within scope: NONE — all 15 rows verified.** The following are explicit scope limits carried forward from the auditor's own scoping, confirmed as still-open (not newly closed by this session):
+- **L-013 native E12 admission:** whether a native (non-synthetic) invalid-validity context is admitted end-to-end is NOT established — the probe is synthetic by discipline; the auditor's caveat stands.
+- **L-015 device numbers:** no T-NFR/device measurement was or could be run here (sandbox ≠ deployment target); only the scaling law transfers. The AA.7-mandated 38-concept load test on target hardware remains fully outstanding.
+- **Future-consumption branches** (L-010/L-011/L-014/L-015): verified as currently-callerless; any future wiring re-opens the row at the recorded escalation severity.
+- **Owner decisions requested, not made:** L-008 triad (cap vs contract amendment), L-010 independence+diameter ruling, L-013 validity role, L-014 formula approval, L-001…L-005 frozen-layer fixes (A variants).
+
+**New findings raised by this verification (beyond the auditor's claims):**
+1. **L-009 extension (worst):** 4 of 10 NaN/+Inf positions (V/tick/step NaN, ATR +Inf) pass SILENTLY as VALID/Q1 — the claim covered only the 6 raising positions.
+2. **L-011 NaN-ratio asymmetry:** `retracements`/`expansion` pass `ratios=(nan,)` through as `{nan:nan}` (inline compute, no `level()` call) while `projections`/`extensions` refuse NaN via `level()` — verified supplementary probe in `L-011.out`.
+3. **L-012 NaN-vs-±inf asymmetry:** gate13 FAILS NaN metrics (`METRICS_MISSING`) but PASSES ±inf/out-of-domain metrics (`PACKAGE_VALID`) — the gate checks presence, not finiteness or domain.
+4. **L-015 no-harness finding:** the auditor recorded "benchmark not run"; verification establishes the stronger fact — NO 38-concept load harness exists in repo (`scripts/run_nfr_harness.py` covers queue/latency/resource only) and the suite pins `INCREMENTAL_ONLY is True` while testing batch values only.
+5. **L-008/L-010/L-013 pinned-bug tests:** the suites actively certify the defective behavior (deviation pin, passing pinning matrix, 0.0-weight pin) — each fix must rewrite its pin by design (recorded in-row).
+
+## End-3 — Reproduction index, environment, and synthetic boundary
+
+**Artifacts (this session branch only, `AUDIT/` only):**
+- This file: `AUDIT/VERIFY_V3c.md` (summary table + 15 row sections + these end sections).
+- Probes + raw outputs: `AUDIT/probes_V3c/L-001.py` … `L-015.py` with matching `L-001.out` … `L-015.out` (15 pairs). Every probe imports REAL repository code (`apex.*`); every `.out` is the unedited stdout of the stated command.
+
+**Re-run (from repo root, baseline `85b2c15`):**
+```
+PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-001.py   # … through L-015.py
+python3 -m pytest -q -p no:cacheprovider tests/unit/test_research_proxies.py tests/unit/test_fabric_context.py
+```
+**Environment:** `python3 -m pip install --break-system-packages -q -r requirements.lock pytest` (numpy 1.26.0, pytest 9.1.1). No row in this layer involves per-row SQL (EXPLAIN QUERY PLAN N/A throughout), so all 15 probes are pure-computation reproductions over real `apex.*` code with synthetic inputs — no SQLite store was needed and none was built.
+
+**Synthetic boundary (binding on all 15 rows):** every reproduction uses synthetic inputs (and synthetic temp stores where applicable). Synthetic success/failure proves the CODE PATH, never a fact about the owner's device database, live traffic, or deployment hardware. Absolute timings in `L-015.out` are sandbox-specific and must never be quoted as T-NFR evidence — only the measured scaling law transfers. No exchange/Telegram endpoint was contacted, no order placed, no secret or `.env` read, `data/` untouched, and no source/config/test/doc file modified — `git status` shows additions under `AUDIT/` only.
