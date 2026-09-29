@@ -1,0 +1,22 @@
+# K-032 — fabric-hash check is conditional on `payload is None`
+
+baseline (genuine fabric, payload=None)
+   status=EMITTED all_pass=True reason='ALL_GATES_PASS'
+   fabric.hash = 60493ed6dbf83eec5d731b5dc7fcf96d03ab03d1be3f2f05ffa00b8848ad7ecf
+
+A. tampered fabric.hash = ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff , payload=None
+   status=NOT_EMITTED reason='FABRIC_HASH_MISMATCH'
+
+B. SAME tampered fabric.hash, payload=<caller-supplied dict>
+   status=EMITTED all_pass=True reason='ALL_GATES_PASS'
+   gate_block keys = ['action', 'all_pass', 'blocked_by', 'contract_version', 'q_min_tf', 'reasons', 'results']
+   gate 11 entry = {'gate': 11, 'name': 'SNAPSHOT_LINEAGE_INTEGRITY', 'passed': True, 'measured': '60493ed6dbf83eec5d731b5dc7fcf96d03ab03d1be3f2f05ffa00b8848ad7ecf', 'threshold': 'matches recomputed hash', 'reason': 'SNAPSHOT_LINEAGE_INTACT', 'action': None}
+
+C. SAME tampered fabric.hash, payload={'anything':'at all', 'symbol':'ETHUSDT','as_of':1}  (unrelated to the cell)
+   status=EMITTED all_pass=True
+   snapshot_id emitted = 273b698eead8c2032bbcdf69b517825e43a9023d191f491225e02aaa87de822e
+
+D. gate11 alone — the fabric_hash argument that the family never passes
+   without fabric_hash: passed=True reason='SNAPSHOT_LINEAGE_INTACT'
+   with fabric_hash='f'*64: passed=False reason='GATE11_FABRIC_HASH_MISMATCH'
+   (family gate_ctx keys never include 'fabric_hash' → gates.run_all passes None)

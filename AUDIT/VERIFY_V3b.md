@@ -45,7 +45,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-029 | CONFIRMED (worse than claimed) | S2 | S2 | No — `apex/quality/pit.py` non-frozen; the §2.3 payload shape is contract text | K-028 (same helper), V3 K-001 (store hash) | A — bind the manifest to sorted content hashes of every qualifying bar + real package digest |
 | K-030 | CONFIRMED | S2 | S2 | No — `apex/quality/pit.py` non-frozen; `MarketObservation` (frozen contract) legitimately has no `q_raw` | K-028/K-029 (same helper), K-025 (measurement inputs) | A — take the computed quality vector with provenance, or return a named unknown/refusal |
 | K-031 | CONFIRMED | S2 | S2 | No — `apex/identity/snapshot.py` and `apex/quality/pit.py` are non-frozen | K-029 (identity binding), K-030 (quality_state) | A — deep-copy inputs, freeze attributes, re-validate scope, and verify the id against the payload before use |
-| K-032 | PENDING | S1 | — | — | — | — |
+| K-032 | CONFIRMED | S1 | S2 | No — `apex/setup/*`, `apex/ops/plan_bridge.py` non-frozen (`apex/fabric/evidence.py` non-frozen too) | K-027 (fabric built from unverified inputs), X-V3b-001 | A — verify `fabric.hash` unconditionally and bind any caller payload to the same cell + member content_ids |
 | K-033 | PENDING | S2 | — | — | — | — |
 | K-034 | PENDING | S2 | — | — | — | — |
 | L-001 | PENDING | S2 | — | — | — | — |
@@ -2917,3 +2917,161 @@ keep the constructor's existing BLOCK checks and extend them to every payload em
    afterwards.
 5. A corrected artifact yields a **new** barrier with a new id, and the old one is still
    reproducible (supersession traceable).
+
+---
+
+## K-032 — the Evidence-Fabric self-integrity check is skipped whenever a caller supplies `payload`, and Gate 11 verifies the payload only against itself
+
+#### Auditor claim (short quote)
+> «بازمحاسبهٔ `fabric.hash` فقط زیر شرط `payload is None` اجرا می‌شود؛ Gate 11 هش payload ارائه‌شده را با ID مشتق از همان payload می‌سنجد و `gate_ctx` حتی آرگومان اختیاری `fabric_hash` را به آن نمی‌دهد. با جعل hash fabric، `evaluate_cell(payload=None)` به `FABRIC_HASH_MISMATCH` رسید ولی با payload اختیاری به `EMITTED/ALL_GATES_PASS` تبدیل شد.»
+> — “The `fabric.hash` recomputation runs only under `payload is None`; Gate 11 measures the supplied payload's hash against an ID derived from that same payload, and `gate_ctx` does not even pass it the optional `fabric_hash` argument. With a forged fabric hash, `evaluate_cell(payload=None)` reached `FABRIC_HASH_MISMATCH`, but with the optional payload it became `EMITTED/ALL_GATES_PASS`.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/setup/family_sf_fvg_sweep_rev.py:396–418` — `evaluate_cell` signature, including the
+optional `payload: Optional[Mapping[str, Any]] = None`.
+`:431–455` — `snap_payload` is built from the cell's own fabric body, but
+`snap_id = sha256_hex(canonical_json(dict(payload) if payload is not None else snap_payload))`
+takes the **caller's** payload when one is given; then the self-integrity check
+`if payload is None and fabric.hash != sha256_hex(canonical_json(fabric_body)): … FABRIC_HASH_MISMATCH`
+— the comment above it says “the fabric hash must recompute from its own canonical body, or the
+cell does not emit (integrity, not a score)”, yet the guard is conditional on `payload is None`.
+`:547–569` — `gate_ctx` sets `"snapshot_id": snap_id` and `"payload": dict(payload) if payload
+is not None else snap_payload`; it contains **no `"fabric_hash"` key**.
+`apex/setup/gates.py:310–348` — `gate11_snapshot_lineage(snapshot_id, payload, lineage, *,
+fabric_hash: Optional[str] = None)`: it recomputes `expected = sha256_hex(canonical_json(payload))`
+and compares `snapshot_id != expected`; the fabric check is `if fabric_hash is not None and
+fabric_hash != expected`. `gates.py:464–466` — `run_all` calls it with
+`fabric_hash=context.get("fabric_hash")` → **always `None`** from this family.
+`apex/fabric/evidence.py:33–34, 289–302, 330, 380–401, 417` — the fabric is “a pure,
+deterministic, hash-bound read-only view”; `hash = make_hash(body)` and `fabric_id` is derived
+from that hash; the `hash` field is an ordinary dataclass attribute.
+`apex/ops/plan_bridge.py:806–814` — the production bridge passes
+`payload=context.get("setup_payload")`. `grep -rn "setup_payload"` over the whole repo returns
+**exactly one hit** — that line: no native producer sets the key today, so in the current PAPER
+path `payload` is `None` and the guard does fire.
+`PHASE2_TRACEABILITY_MATRIX.md:205` (C6-G11) — “snapshot_id == sha256(canonical_json(payload))
+recomputed here, **never trusted**”, and gate 11 is “integrity ONLY”.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-032.py`; probe/output `AUDIT/probes_V3b/K-032.py|.out`
+(real `EvidenceFabric.assemble`, real `evaluate_cell`, fixture inputs mirroring
+`tests/unit/test_setup_family_sf_fvg_sweep_rev.py::base_kwargs`):
+```
+baseline (genuine fabric, payload=None)      status=EMITTED  all_pass=True
+A. fabric.hash forged to 'f'*64, payload=None
+     status=NOT_EMITTED   reason='FABRIC_HASH_MISMATCH'         <- guard works
+B. SAME forged fabric.hash, payload=<canonical fabric body>
+     status=EMITTED  all_pass=True  reason='ALL_GATES_PASS'
+     gate 11 = {'gate': 11, 'passed': True, 'measured': '60493ed6…7ecf',
+                'reason': 'SNAPSHOT_LINEAGE_INTACT'}
+C. SAME forged fabric.hash, payload={'anything':'at all','symbol':'ETHUSDT','as_of':1}
+     status=EMITTED  all_pass=True   (snapshot_id = 273b698e…822e)
+D. gate11 alone:  without fabric_hash → passed=True
+                  with fabric_hash='f'*64 → passed=False GATE11_FABRIC_HASH_MISMATCH
+```
+Two details beyond the auditor's text: in **B** gate 11 reports `measured = 60493ed6…`, i.e. the
+hash of the *genuine* body — the forged `fabric.hash` attribute is simply never consulted; and
+in **C** the payload need not describe this cell at all (a different symbol and `as_of`) and
+still passes, so the emitted `snapshot_id` can be bound to an unrelated object.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S1, lowered). Every step reproduces exactly,
+plus the stronger C variant. I lower to S2 for the same reason the auditor states in his own
+“bypass PAPER پیش‌فرض ادعا نشده است”: the only production call site is
+`plan_bridge.py:811`, and `setup_payload` is never produced anywhere in the repo, so today the
+bypass is not reachable without an external adapter or a producer change — it is a latent
+integrity hole in a gate, not a live one. The defect itself (a self-referential hash check plus
+a conditional integrity guard) is real and unambiguous, hence CONFIRMED at S2 rather than S1.
+
+#### Root cause
+Two compounding design errors. (1) The fabric self-integrity check was written as part of the
+*snapshot-id derivation* branch instead of as an unconditional precondition, so passing a
+payload “for the snapshot id” silently also disables the integrity check. (2) Gate 11 derives
+`expected` from the very payload it is validating, so it can only detect a mismatch between two
+values the *same caller* supplies; the one argument that would import an independent reference
+(`fabric_hash`) is optional and is never passed by the family.
+
+#### Direct impact
+A caller (external adapter, future producer, or any code path that sets `setup_payload`) can
+emit a setup with `status=EMITTED / ALL_GATES_PASS` whose Evidence Fabric hash does not match
+its body, and whose `snapshot_id` is bound to a payload of the caller's choosing — including
+one describing a different symbol and `as_of`.
+
+#### Secondary effects and interactions (upstream/downstream)
+Gate 11 is the *only* integrity gate of the thirteen (Ch.10 §10.1 row 11), so its bypass removes
+the last check between a fabricated fabric and a decision. The emitted `snapshot_id` becomes the
+lineage anchor recorded with the setup/plan, so the decision's provenance becomes unverifiable
+downstream (evidence 24-field contract, ledger, replay). Upstream this compounds **K-027**:
+`fabric_from_events` already trusts caller-supplied `as_of`/age/lineage, so an adapter can build
+*and* bless a fabric end-to-end. It is independent of **K-029/K-031**, which concern the
+snapshot object rather than the gate.
+
+#### Contract and decisions
+* `APEX_GEN5.md:14765–14783` (§8.0): the fabric carries `"hash": "<SHA-256 of canonical
+  serialization>"`, “every input carries full lineage down to raw `observation_id`”, and
+  “fabrics are **read-only** for engines — engines publish events, they never mutate a fabric in
+  place.” A hash that is not verified cannot enforce read-only-ness.
+* `APEX_GEN5.md:15320` (Ch.10 §10.1, gate 11): “lineage / snapshot integrity fail (AJ.10 /
+  GC-D8; NOT “any of the 13 gates”) ⇒ **QUARANTINED BLOCK**.” The contract makes this a block,
+  not a conditional.
+* `PHASE2_TRACEABILITY_MATRIX.md:205` (C6-G11, PASS(2026-09-13)): “snapshot_id ==
+  sha256(canonical_json(payload)) recomputed here, **never trusted**.” The traced behaviour is
+  literally implemented — which is why the row passes — but the trace itself never required an
+  *independent* reference for the fabric hash, so the matrix entry is satisfied while the
+  property it stands for is not.
+* `apex/fabric/evidence.py:33–34` (module contract): “pure, deterministic, **hash-bound**
+  read-only view”.
+* No `PHASE2_DECISION_LOG.md` decision authorises skipping the fabric check when a payload is
+  supplied; D50 only governs `fabric_id` derivation from the hash. Precedence: APEX_GEN5 §8.0
+  and Ch.10 gate 11 are the frozen contract and they win over the current code.
+
+#### Frozen status and non-frozen alternative
+**Not frozen.** `apex/setup/family_sf_fvg_sweep_rev.py`, `apex/setup/gates.py`,
+`apex/ops/plan_bridge.py` and `apex/fabric/evidence.py` are all outside the frozen set
+(`apex/engines/**`, `apex/data_catalog/**`, `apex/research/bootstrap.py`,
+`apex/research/backtest.py`, the six params YAMLs, `requirements.lock`). The fix is entirely in
+non-frozen code; only the *gate semantics* are contract-frozen and they already demand the
+stricter behaviour.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — make the integrity check unconditional and independent:
+  1. move `if fabric.hash != sha256_hex(canonical_json(fabric_body)): → FABRIC_HASH_MISMATCH`
+     **above** the payload branch, so it runs for every call;
+  2. always put `"fabric_hash": fabric.hash` into `gate_ctx` so `run_all` forwards it to gate 11;
+  3. when `payload is not None`, validate it against the cell before use — it must carry the same
+     `symbol`/`timeframe`/`as_of` and the same member `content_id` set as `snap_payload`, else
+     reject with an explicit reason (e.g. `PAYLOAD_NOT_BOUND_TO_FABRIC`).
+  Side effects: `gate11_snapshot_lineage`'s `fabric_hash` comparison is currently
+  `fabric_hash != expected` (i.e. against the *payload* hash) — with (3) in place the two
+  coincide for the default payload, but for a custom payload the comparison must be against the
+  recomputed fabric body, so that line needs the fabric body passed in too, otherwise (2) would
+  break every custom-payload call. Tests touching gate 11
+  (`tests/unit/test_setup_gates.py::TestGate11IntegrityOnly`, `TestRunAll`, `TestGateMatrixShape`)
+  and the family battery must be re-run; `PHASE2_TRACEABILITY_MATRIX.md:205` should be amended to
+  state the independence requirement. No frozen file, no migration, no stored-hash invalidation
+  (emitted snapshot ids for legitimate cells are unchanged — verified in the probe baseline,
+  where the genuine payload hashes to the genuine fabric hash `60493ed6…`).
+* **B** — drop the `payload` parameter entirely and always derive the snapshot from the fabric.
+  Side effects: simplest and strictly safer, but removes an extension point
+  `plan_bridge.py:811` exposes; would require a bridge change. Acceptable as a hardening step
+  while no producer supplies `setup_payload`.
+* **C** — keep the code and forbid `setup_payload` at the bridge (`assert context.get(
+  "setup_payload") is None`). Side effects: closes today's reachable path only; the gate stays
+  self-referential for any future caller. Weakest.
+
+#### My recommendation
+**A**, with **C** applied immediately as a one-line interim guard at `plan_bridge.py:811` since
+no producer sets `setup_payload` today, so it costs nothing and removes the reachable path
+before A lands.
+
+#### Acceptance and regression tests
+1. A fabric whose `hash` does not recompute from its body is rejected with
+   `FABRIC_HASH_MISMATCH` **both** with `payload=None` and with any supplied payload.
+2. A supplied payload whose `symbol`/`timeframe`/`as_of`/member `content_id` set differs from the
+   evaluated cell is rejected (the probe's case C must not emit).
+3. A genuine fabric with a genuinely derived payload still reaches `EMITTED/ALL_GATES_PASS` and
+   produces the same `snapshot_id` as before the fix (no hash churn).
+4. `gate_ctx` always contains `fabric_hash`; a unit test asserts `run_all` receives it non-`None`
+   from the family.
+5. Gate 11 fails when the fabric reference disagrees, and its failure is `QUARANTINED`, never a
+   repair (Ch.10 §10.1 row 11).
