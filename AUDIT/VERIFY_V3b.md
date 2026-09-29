@@ -48,21 +48,21 @@ failure proves the code path, not that it has already damaged a device record.
 | K-032 | CONFIRMED | S1 | S2 | No — `apex/setup/*`, `apex/ops/plan_bridge.py` non-frozen (`apex/fabric/evidence.py` non-frozen too) | K-027 (fabric built from unverified inputs), X-V3b-001 | A — verify `fabric.hash` unconditionally and bind any caller payload to the same cell + member content_ids |
 | K-033 | CONFIRMED | S2 | S2 | No — `apex/fabric/evidence.py` is not in the frozen set | K-032 (custom payload emits the mutated fabric), K-031 (same defect class on `SnapshotBarrier`) | A — store `redundancy_state` as an immutable mapping and verify `hash` at every consumption |
 | K-034 | CONFIRMED | S2 | S2 | No — `apex/ops/plan_bridge.py` is not in the frozen set | K-032 (same bridge trusts caller payload), K-027 (event-time trust), = the native `EngineContextProducer.window` guard | A — bind every bar to close_time + raw availability at the bridge boundary and fail closed on missing time/status |
-| L-001 | PENDING | S2 | — | — | — | — |
-| L-002 | PENDING | S2 | — | — | — | — |
-| L-003 | PENDING | S1 | — | — | — | — |
-| L-004 | PENDING | S1 | — | — | — | — |
-| L-005 | PENDING | S2 | — | — | — | — |
-| L-006 | PENDING | S2 | — | — | — | — |
-| L-007 | PENDING | S2 | — | — | — | — |
-| L-008 | PENDING | S2 | — | — | — | — |
-| L-009 | PENDING | S2 | — | — | — | — |
-| L-010 | PENDING | S2 | — | — | — | — |
-| L-011 | PENDING | S2 | — | — | — | — |
-| L-012 | PENDING | S1 | — | — | — | — |
-| L-013 | PENDING | S2 | — | — | — | — |
-| L-014 | PENDING | S2 | — | — | — | — |
-| L-015 | PENDING | S2 | — | — | — | — |
+| L-001 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-002 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-003 | NOT VERIFIED — reassigned to session V3c | S1 | — | — | — | — |
+| L-004 | NOT VERIFIED — reassigned to session V3c | S1 | — | — | — | — |
+| L-005 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-006 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-007 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-008 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-009 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-010 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-011 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-012 | NOT VERIFIED — reassigned to session V3c | S1 | — | — | — | — |
+| L-013 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-014 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
+| L-015 | NOT VERIFIED — reassigned to session V3c | S2 | — | — | — | — |
 
 ---
 
@@ -3380,3 +3380,125 @@ part of the K-024 receipt work; keep the native guard regardless.
    lineage) still passes and produces the same plan as before the fix.
 6. A negative test on an alternative `context_source` adapter and a positive test on the native
    producer, so the bridge guard is proven independent of the producer guard.
+
+---
+
+# New findings not in the audit
+
+## X-V3b-001 — per-row `EXPLAIN QUERY PLAN` regression in the raw/market join (= ISSUE-079, and beyond it)
+
+Verified at full depth in its own section above (the first section of this file). Summary for the
+index:
+
+* **Verdict CONFIRMED, independent severity S1.** Not present anywhere in the auditor's 37 rows;
+  it is the owner-known **ISSUE-079** plus two effects that go beyond it.
+* **What it is.** The producer's raw-lineage recovery joins with
+  `ON m.observation_id = 'obs-' || r.event_id`. Concatenating onto the *right* side of the
+  comparison makes the left side an expression over `r`, so SQLite cannot use
+  `market_observation`'s primary key for the join: the plan degrades to a scan of
+  `market_observation` per outer row. Measured on a device-scale database
+  (`/tmp/v3b_big.db`, 200k `market_observation` / 200k `raw_observation` / 300k rows, 268 MB):
+  `FP_RAW` returned 1,332 of 25,753 rows in a 120-second budget **[ABORTED]**;
+  `EngineContextProducer.window()` took **12.407 s** against 0.138–0.208 s in the healthy plan;
+  `WIN_META` produced 2,888 of 20,000 rows in 120 s, i.e. **≈ 830 s per cell** against the
+  **400 ms p95** latency budget.
+* **Beyond ISSUE-079.** (i) The same shape appears in the window-metadata read, not only the
+  fingerprint query, so the regression is per-cell on the decision path and not only on a
+  maintenance path; (ii) `ANALYZE`/`sqlite_stat1` state changes the chosen plan, so any
+  measurement that does not reset `sqlite_stat1` between index states is not reproducible —
+  the index matrix in the probe does reset it.
+* **Fix.** **A** — rewrite the join predicate to keep the PK on the indexed side
+  (`ON r.event_id = substr(m.observation_id, 5)`), measured at **0.108 s / 0.002 s** and
+  **byte-identical** result sets; **B** — scope the fingerprint to its inputs; **C** — run
+  `ANALYZE` as part of the store's maintenance; **D** — the owner's proposed index, which helps
+  but does not remove the per-row scan.
+* **Probes.** `AUDIT/probes_V3b/X-V3b-001.py|.out` (plan matrix with and without the two device
+  indexes, timings, abort accounting) and `AUDIT/probes_V3b/X-V3b-001b.py|.out` (join-rewrite
+  equivalence, byte-identical result comparison).
+
+No other finding outside the audit's own rows was raised to the level of a new ID in this
+session. Several observations that go *beyond* a row's claim are recorded inside that row rather
+than as new IDs — notably K-016 (the gap is durable, not transient), K-029 (the manifest hash,
+not only the snapshot id, varies across processes), K-032 (a supplied payload need not even
+describe the evaluated cell) and K-034 (`availability_time` is discarded by
+`_normalise_bars`, so the bridge *cannot* apply E-PIT-001 even in principle).
+
+---
+
+# Rows not verified or incomplete
+
+| ID | Auditor severity | Status | Reason |
+| --- | --- | --- | --- |
+| L-001 … L-015 | S1 (L-003, L-004, L-012) / S2 (all others) | **NOT VERIFIED — reassigned to session V3c** | Scope reduction directed by the requester during this session: session V3b was narrowed to K-013…K-034 plus the mandatory new finding X-V3b-001. The fifteen L rows were not opened, not read beyond the index, and carry **no** verdict, no independent severity and no probe here. Nothing in this file should be read as evidence for or against any L row. |
+
+No K row in the V3b scope is incomplete: **K-013 through K-034 are all verified to the full
+per-row depth** (full row text from the audit, complete reads of the referenced code plus
+callers/callees via `grep -rn`, a governing APEX_GEN5.md clause and the applicable decision-log
+entry with precedence, an executed reproduction saved under `AUDIT/probes_V3b/`, and the
+side-effect analysis of each fix). **K-001 through K-012 were verified in session V3 and are not
+redone here** — their verdicts are cited where a V3b row interacts with them (V3 K-001, K-003,
+K-005, K-010, K-015, K-020).
+
+Two limitations that apply to this session as a whole and are restated so no reader over-reads a
+verdict:
+
+1. **No device evidence.** Everything was reproduced on synthetic data built with the
+   repository's own DDL and driven through the repository's own code. Where a row's real-world
+   severity depends on live venue behaviour or on the production database, the section says so;
+   synthetic success is never treated as device proof. The one row with device-scale
+   measurement (X-V3b-001) used a 268 MB locally built database, which is a *scale* proxy, not
+   the device.
+2. **Reachability vs defect.** Several rows (K-027, K-032, K-033, K-034) describe real defects on
+   code paths that no wired production producer currently exercises. They are CONFIRMED as
+   defects and held at S2 for that reason; the section states in each case exactly which guard
+   is currently standing between the defect and a live decision.
+
+---
+
+# Final counts
+
+**Rows carried to a verdict in V3b: 23** (X-V3b-001 + K-013 … K-034).
+
+| Verdict | Count | IDs |
+| --- | --- | --- |
+| CONFIRMED | **23** | X-V3b-001, K-013, K-014, K-015, K-016, K-017, K-018, K-019, K-020, K-021, K-022, K-023, K-024, K-025, K-026, K-027, K-028, K-029, K-030, K-031, K-032, K-033, K-034 |
+| PARTIAL | 0 | — |
+| REJECTED | 0 | — |
+| DEVICE-EVIDENCE-NEEDED | 0 | — |
+| NOT VERIFIED (reassigned to V3c) | 15 | L-001 … L-015 |
+
+**Independent severity distribution (the 23 verdicts):**
+
+| Severity | Count | IDs |
+| --- | --- | --- |
+| S0 | 0 | — |
+| S1 | **6** | X-V3b-001, K-015, K-016, K-019, K-020, K-025 |
+| S2 | **17** | K-013, K-014, K-017, K-018, K-021, K-022, K-023, K-024, K-026, K-027, K-028, K-029, K-030, K-031, K-032, K-033, K-034 |
+| S3 / S4 | 0 | — |
+
+**Where my severity differs from the auditor's — 3 rows, all lowered, none raised:**
+
+| ID | Auditor | Independent | Justification |
+| --- | --- | --- | --- |
+| K-024 | S1 | **S2** | The claim is that a *measured* capture receipt is missing — which is true — but no stored value is wrong today; the detector simply has nothing better than the derived time to key on. The risk is undetected staleness, not a wrong decision already taken. |
+| K-026 | S1 | **S2** | The misleading `written=8, skipped=0` report is real, but every affected fact is stored `QUARANTINED_FRESHNESS`, so the quarantine actually held; the defect is in the reporting/usability surface, not in admission. |
+| K-032 | S1 | **S2** | The Gate 11 bypass is real and reproducible, but its only production call site (`plan_bridge.py:811`) reads `setup_payload`, a key that `grep -rn` finds nowhere else in the repository — the path needs an external adapter or a producer change to become reachable. |
+
+**Rows where the defect is *worse* than the auditor claimed (verdict still CONFIRMED, severity
+unchanged): 2** — **K-016** (the delivery gap is durable across runs, and run 2 still reports
+`COMPLETE` with `bars=0`, not a transient miss) and **K-029** (not only the `snapshot_id` but the
+`manifest_hash` itself differs across processes under `PYTHONHASHSEED`, and a corrected
+`close`/`volume` yields the *same* identity).
+
+**Frozen-file exposure:** 4 of the 23 rows have their defect in, or their obvious fix inside, a
+frozen artefact — K-013 and K-014 (`apex/data_catalog/**`), K-015/K-016/K-020 in part
+(`apex/research/bootstrap.py` as the runner), and K-028 (faithful transcription of the frozen
+§2.3 pseudocode). Each of those sections names a concrete **non-frozen alternative**; K-028
+additionally requires an owner doc amendment because the frozen pseudocode at
+`APEX_GEN5.md:995–1035` contradicts the frozen prose at `APEX_GEN5.md:908–916`.
+
+**Probes:** every row in this file has an executable probe under `AUDIT/probes_V3b/` with its
+captured `.out`; all probes import the real repository code and, where a database is needed,
+build it from the repository's own DDL. No source, configuration, test, documentation or data
+file was modified in this session: the only writes are `AUDIT/VERIFY_V3b.md` and
+`AUDIT/probes_V3b/`.
