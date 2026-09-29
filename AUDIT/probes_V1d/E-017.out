@@ -1,0 +1,7 @@
+PLAYBOOK_PARAMS trail: 1.5 1.0
+fallback (mult=None), EXTREME -> {'activated': False, 'trailing_disabled_by_regime': True, 'stop': 98.0, 'reason': 'VOLATILITY_EXTREME_FIXED_STOP'}
+explicit mult=1.0,    EXTREME -> {'activated': True, 'trailing_disabled_by_regime': False, 'stop': 109.0, 'reason': None, 'distance': 1.0}
+package trail_factor=2, EXTREME -> {'activated': False, 'trailing_disabled_by_regime': True, 'stop': 98.0, 'reason': 'VOLATILITY_EXTREME_FIXED_STOP'}
+explicit mult=1.0,    NORMAL  -> {'activated': True, 'stop': 109.0, 'distance': 1.0}
+SHORT explicit mult=1.0, EXTREME -> {'activated': True, 'trailing_disabled_by_regime': False, 'stop': 91.0}
+trail_factor_for('EXTREME') -> {'trail_factor': None, 'trailing_enabled': False, 'source': 'FROZEN_BOOTSTRAP_X2'}

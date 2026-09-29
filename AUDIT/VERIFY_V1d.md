@@ -182,3 +182,131 @@ A. Fill data is accounting data; absence must be a named refusal (reconcile-requ
 
 ### Acceptance and regression tests
 PARTIAL without executedQty, executedQty=0 (number and string), NaN/inf price or quantity, missing tradeId with multiple partials, cumulative executedQty across polls — each must produce NO fabricated fill (named refusal `FILL_DATA_INCOMPLETE` / reconcile-required), no zero/NaN ledger row, and no silent dedup of a genuine second partial; a well-formed partial pair must still sum to the venue truth. Existing CP-7/CP-9 integration tests (which supply well-formed fills) must pass unchanged. Before any LIVE claim, read-only device evidence is needed: sample real venue order-query/userTrades responses to confirm they always carry `avgPrice`/`executedQty`/`tradeId` and whether `executedQty` is cumulative.
+
+## E-017
+
+### Auditor claim (short quote)
+"the X.2 rule 'EXTREME ⇒ trail off' is applied only in the trail_atr_mult=None branch. With entry=100,stop=98,current=110,EXTREME, the fallback stayed inactive but the playbook's explicit coefficient of 1 gave activated=True,stop=109. The existing test measures EXTREME only without an explicit coefficient."
+
+### What I read (files, line ranges, functions, callers)
+`apex/playbook/pb_fvg_sweep_rev_a.py` completely: `TRAIL_FACTOR_BY_VOLATILITY` (83–90, `"EXTREME": None` — "trailing DISABLED; fixed stops only"), `trail_factor_for` (201–219 — returns `trailing_enabled: regime != "EXTREME"` on both the fallback and the package path), `trailing_state` (458–508 — the branch under test), `PLAYBOOK_PARAMS` (74–86, `trail_after_r=1.5`, `trail_atr_mult=1.0`), the module docstring's X.2 summary ("volatility Extreme disables trailing and reverts to the fixed stop") and the ISSUE-CP6-003 conflict note (instantiated playbook values override the generic X.1–X.3 tables for BE trigger / trail distance / max_hold). Callers (mandatory grep): `trailing_state` has NO production consumer — only `apex/playbook/__init__.py` re-export and `tests/unit/test_playbook_pb_fvg_sweep_rev_a.py`; `paper_loop.manage_positions` (803–899) never calls it (that gap is E-006's scope). Test `test_trail_activation_and_extreme_disable` (311–325): the EXTREME case (`ext`) is constructed WITHOUT `trail_atr_mult`, so only the fallback path is asserted.
+
+### Reproduction (command, probe file, actual result)
+`python3 -B AUDIT/probes_V1d/E-017.py` (raw output `AUDIT/probes_V1d/E-017.out`), real `trailing_state` with `entry=100, current_stop=98, atr=1, trail_after_r=1.5`:
+- fallback (`trail_atr_mult=None`), EXTREME, current=110 → `activated=False, trailing_disabled_by_regime=True, stop=98.0, reason=VOLATILITY_EXTREME_FIXED_STOP` (contract behaviour).
+- explicit `trail_atr_mult=1.0` (the frozen playbook coefficient), EXTREME, current=110 → **`activated=True, trailing_disabled_by_regime=False, stop=109.0, distance=1.0`** — exactly the auditor's numbers; the EXTREME rule is bypassed.
+- package path (`package={"trail_factor":2.0}`, no explicit mult), EXTREME → disabled (this path honours the regime).
+- SHORT mirror with explicit mult under EXTREME → `activated=True, stop=91.0` — both directions affected.
+- `trail_factor_for("EXTREME")` itself correctly returns `trailing_enabled=False`; only the explicit-mult branch ignores it.
+
+### Verdict and reasoning
+**CONFIRMED, S2.** In `trailing_state`, `tf_info` defaults to `{"trailing_enabled": True, ...}` and is only replaced by `trail_factor_for(regime, package)` when `trail_atr_mult is None`; the EXTREME gate therefore never runs for an explicit multiplier — precisely the frozen playbook coefficient (`trail_atr_mult=1.0`), which is the value any faithful wiring of the instantiated playbook would pass. The auditor's scoping is accurate: the helper is not yet consumed by PAPER exit management (E-006), so today's impact is on the helper's own contract correctness and on any future/research consumer; S2 (limited current impact) is right.
+
+### Root cause
+The regime gate lives inside the factor-resolution helper rather than in `trailing_state` itself, so the "instantiated coefficient" code path (`trail_atr_mult is not None`) skips the volatility-regime evaluation entirely.
+
+### Direct impact
+If/when the helper drives real stop management, a volatility regime classified EXTREME would still ratchet the trailing stop — the exact "protective reflex" X.2 disables (trailing degrades in extreme volatility; the system must revert to fixed/breakeven stops only).
+
+### Secondary effects and interactions (upstream/downstream)
+Downstream: trail attribution records (`trailing_activated`, `trailing_distance_final`) become contract-inconsistent; outcome/learning-loop and Risk-Optimizer inputs inherit the wrong stop trajectory; backtest attribution (Ch.11 X.2 "recorded in the trade Outcome record") is polluted. Upstream: none. Interactions: E-006 (management not wired), E-018 (activation flicker in the same function). ISSUE-CP6-003 gives the INSTANTIATED VALUES precedence over the generic tables for the trail DISTANCE — it does not and cannot waive the EXTREME-disable rule, which is a separate normative clause of X.2, not a table value.
+
+### Contract and decisions
+Binding: APEX_GEN5.md Ch.11 §11.2 X.2 (in this checkout ~L15763–15778): the regime table row "Extreme (top 10th percentile) | Trailing DISABLED; fixed stops only (protective reflex)" and "If volatility enters the Extreme regime while a position is held, trailing-stop management is immediately disabled, and the stop reverts to fixed-stop behavior (either initial stop or breakeven-adjusted stop, whichever is current); no new trailing adjustments occur until volatility returns to High or lower." `PHASE2_DECISION_LOG.md` ISSUE-CP6-003 (L143) applies the playbook-specific instantiation only to the BE/trail/max_hold VALUES conflict. Precedence: the EXTREME clause is unconditional contract prose; ISSUE-CP6-003 does not mention it, so the contract governs.
+
+### Frozen status and non-frozen alternative
+`apex/playbook/pb_fvg_sweep_rev_a.py` is not on the V1d frozen list. The AE.5 literal values (`trail_after_r=1.5`, `trail_atr_mult=1.0`) are contract-frozen and must not change — but the fix changes WHEN trailing applies, not the values. A caller-side guard (a wrapper that checks the regime before calling with an explicit mult) is possible outside the module.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** evaluate the EXTREME gate in `trailing_state` itself, before factor resolution, independent of the coefficient source (explicit mult, package, or fallback): if the regime is EXTREME, return the disabled record with the current (or breakeven) stop and no trailing adjustment. Side effects: `test_trail_activation_and_extreme_disable` must be extended with an explicit-mult EXTREME case (existing cases keep passing — they already expect disable on the fallback path); `test_trail_never_widens_and_follows_price_up` unaffected (NORMAL); no identity/hash/migration impact; backtests that used the helper with explicit mults under EXTREME would need re-running for attribution correctness (no model retraining). **B:** make the explicit-mult path also consult `trail_factor_for` for the enabled flag only — same effect as A with slightly more coupling. **C:** document that the instantiated playbook overrides the EXTREME rule — rejected: contradicts the unconditional contract clause and the module's own docstring.
+
+### My recommendation
+A, and keep the coefficient provenance (`source`) in the record for attribution.
+
+### Acceptance and regression tests
+For LONG and SHORT, EXTREME with (i) explicit mult, (ii) package factor, (iii) fallback must all return `trailing_disabled_by_regime=True` with the stop unchanged; NORMAL/HIGH/LOW with explicit mult must retain current behaviour (activation, ratchet, never-widen); the existing playbook tests must pass unchanged except for the new EXTREME-with-mult case. Re-run the CP-6 chain test (which uses `build_stops`/`instantiate_playbook` only) to confirm no regression.
+
+## E-018
+
+### Auditor claim (short quote)
+"the trail activation threshold is recomputed from abs(entry-current_stop), not the fixed initial R. long with entry=100,initial_stop=98,current=104 activated and stop=103 became; a subsequent call at 104.2 with current stop 103 incorrectly gave activated=False. The test only checks stop monotonicity, not persistence of the activation state."
+
+### What I read (files, line ranges, functions, callers)
+`apex/playbook/pb_fvg_sweep_rev_a.py::trailing_state` (458–508) completely: `R = abs(entry - current_stop) if current_stop else 0.0`; `activated = progress >= trail_after_r * R - 1e-12`; the ratchet `new_stop = max(current_stop, candidate)`/`min(...)`. The function is STATELESS between calls — the caller must pass `current_stop`, and nothing carries the initial R or the activation latch. `breakeven_state` (413–456) for the X.1 contrast (its docstring and the contract both fix R at inception). Callers (grep): no production consumer (same as E-017); test `test_trail_never_widens_and_follows_price_up` (327–339) asserts only `second["stop"] >= first["stop"]` on the second call — exactly the monotonicity-only assertion the audit names.
+
+### Reproduction (command, probe file, actual result)
+`python3 -B AUDIT/probes_V1d/E-018.py` (raw output `AUDIT/probes_V1d/E-018.out`), real `trailing_state`, LONG `entry=100, initial_stop=98` (initial R=2), `trail_after_r=1.5`, `atr=1`, `trail_atr_mult=1.0`:
+- call 1 at current=104: `activated=True, stop=103.0` (progress 4 ≥ 1.5×2=3).
+- call 2 at current=104.2 with the ratcheted stop 103: `activated=False, stop=103.0` — R recomputed as 3, threshold 4.5 > progress 4.2. With the initial R=2 the threshold would be 3.0 ≤ 4.2 and activation would persist (printed side by side in the .out).
+- call 3 at current=105: `activated=True, stop=104.0` — the flag flickers back on with price, so activation is a function of the current stop, not a latched state.
+- SHORT mirror (entry=100, stop=103, R=3): call 1 at 95.2 → `activated=True, stop=96.2`; call 2 at 95.4 → `activated=False` — both directions affected.
+
+### Verdict and reasoning
+**CONFIRMED, S2.** The code recomputes the risk unit from the CURRENT stop on every call, so each ratchet raises the activation threshold (for a winner, `trail_after_r × R_new`), and the activated flag can turn off although price never retreated — the trailing mechanism can silently stop following price after the first ratchet, leaving the stop stale. The contract fixes R "at trade inception … does not change" (X.1) and X.2's activation is "a minimum of 1.0R of profit" against that same risk unit; the code violates both. The auditor's numbers reproduce exactly. S2 is right: the helper is not wired into PAPER management yet (E-006), so the impact is on the helper's correctness, backtest/attribution fidelity, and any future consumer.
+
+### Root cause
+`trailing_state` derives R from the mutable `current_stop` argument instead of requiring the immutable initial stop (or a persisted activation state); it is a pure function asked to implement a stateful rule.
+
+### Direct impact
+After the first ratchet, subsequent trail adjustments can be suppressed (activated=False) while price advances; the stop stays at a stale level until price rises far enough to clear the inflated threshold — i.e. LESS protection locked in than the contract's trail, and non-monotone activation behaviour that no test pins.
+
+### Secondary effects and interactions (upstream/downstream)
+Downstream: attribution records (`trailing_activated` flickering), Risk-Optimizer backtests and outcome labels inherit a trail trajectory that differs from the contract; if wired later into `manage_positions`, live stops lag. Upstream: the caller must supply `current_stop` — no API even accepts the initial stop. Interactions: E-017 (same function, EXTREME bypass), E-006 (management path unwired), breakeven X.1 (its `R = abs(entry - initial_stop)` is correct — the defect is trail-specific).
+
+### Contract and decisions
+Binding: APEX_GEN5.md Ch.11 §11.2 X.1 (in this checkout ~L15744–15748): "R is the risk unit defined as the absolute difference between entry price and the initial stop-loss price (|entry − initial_stop|). This R is fixed at trade inception and does not change"; X.2 (~L15760–15763): "Trailing-stop protection activates only after the trade has progressed a minimum of 1.0R in the favorable direction" — the same fixed R. No decision addresses trail activation state. Precedence: contract governs.
+
+### Frozen status and non-frozen alternative
+`apex/playbook/pb_fvg_sweep_rev_a.py` is not on the V1d frozen list; the AE.5 literals are contract values and are untouched by this fix. A non-module alternative: a stateful management wrapper (in `apex/ops/`) that persists the initial R and the activated latch and calls the pure function with the initial R semantics — but the function's signature would still invite the misuse.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** change `trailing_state` to take the INITIAL stop (or the inception R) plus an explicit `activated` latch: activation is evaluated once against the initial R and then persists (ratchet-only thereafter); keep `current_stop` for the never-widen ratchet. Side effects: signature change — the existing tests (311–339) call it with `current_stop=98` as the initial stop and would keep passing if `current_stop` is interpreted as the initial stop on the first call, but the second-call test would need the new `activated=True` input; the `record` gains a stable `trailing_activated`; no migration/retraining; backtests that used the flickering semantics must be re-run for attribution. **B:** keep the signature, derive R from `entry` and a new REQUIRED `initial_stop` parameter, and treat activation as latched once true — same effect, clearer API. **C:** document the current behaviour as "threshold scales with the ratchet" — rejected: contradicts X.1/X.2.
+
+### My recommendation
+B (explicit `initial_stop` + latched activation), with restart/partial-exit semantics (E-019's remainder bookkeeping) defined in the same state object.
+
+### Acceptance and regression tests
+LONG and SHORT: two or more consecutive closes beyond 1.5R (audit's 104 then 104.2 case) must keep `activated=True` and ratchet monotonically; a price retreat must never lower the stop; activation must never flip off once set; the existing monotonicity test must still pass; a restart of the manager from persisted state must reproduce the same latch. Re-run attribution/backtest smoke tests after the change.
+
+## E-019
+
+### Auditor claim (short quote)
+"apply_partial_exit only validates a positive sum: weights (-0.5,1.5) from qty=10/risk=4 make qty=15/risk=6, despite the scaling-in prohibition. Also sequential execution of (0.3,0.4,0.3) on the remainder leaves qty=2.94 after all three steps; the meaning of weight relative to total/remainder must be made explicit."
+
+### What I read (files, line ranges, functions, callers)
+`apex/playbook/pb_fvg_sweep_rev_a.py::apply_partial_exit` (593–619) completely: the only gates are `not weights or sum(weights) <= 0` (PB_LADDER_QX), `taken_index` range (PB_LADDER_INDEX_QX) and `sized_quantity < 0 or reserved_risk < 0` (PB_POSITION_QX); `share = weights[taken_index]/sum(weights)`; `qty = max(0, sized_quantity*(1-share))`; `risk = max(0, reserved_risk*(1-share))`; stop never widened (max/min with `proposed_new_stop`). `PLAYBOOK_PARAMS["staged_exit_ratios"] = (1.0,)` (92). `pyramiding_policy` (621–630) and the module docstring's Ch.9 §9.0 summary ("scaling-in DISABLED … every partial exit reduces sized_quantity and the reserved risk proportionally"). Callers (grep): no production consumer (only `apex/playbook/__init__.py` re-export and tests); tests `test_partial_exit_reduces_quantity_and_risk_proportionally` (371–379), `test_stop_is_never_widened_by_a_partial_exit` (381–402), `test_ladder_validation` (404–414) — none use negative/NaN weights or repeat an index.
+
+### Reproduction (command, probe file, actual result)
+`python3 -B AUDIT/probes_V1d/E-019.py` (raw output `AUDIT/probes_V1d/E-019.out`), real `apply_partial_exit`:
+- (1) `ladder_weights=(-0.5, 1.5)`, `taken_index=0`, from qty=10/risk=4 → **`qty=15.0, risk=6.0, closed_fraction=-0.5`** — a "partial exit" that INCREASES position size and reserved risk, i.e. scaling-in, which Ch.9 §9.0 and `pyramiding_policy` forbid. Exactly the auditor's numbers.
+- (2) `ladder_weights=(nan, 1.0)`, `taken_index=0` → passes the gates (NaN comparisons are False) and yields `closed_fraction=nan`, `qty=0.0, risk=0.0` (NaN arithmetic collapsing through `max(0.0, nan)`).
+- (3) sequential 30/40/30 applied to the REMAINDER: 10 → 7.0 → 4.2 → **2.94** remaining after all three steps (risk 1.176), where a ladder summing to 1 over the initial size should leave 0.
+- (4) taking the SAME index twice is not refused (10 → 5 → 2.5).
+- (5) the frozen single-rung ladder `(1.0,)` still reduces to qty=0/risk=0 — the currently frozen configuration is unaffected.
+
+### Verdict and reasoning
+**CONFIRMED, S2.** All three claims reproduce with the real function: negative weights pass the `sum > 0` gate and grow the position (forbidden scaling-in); the weight semantics relative to total-vs-remainder are undefined in code (each step divides the CURRENT remainder, so a full ladder leaves residue (1−w₀)(1−w₁)(1−w₂)); and per my probe the validation is weaker still — NaN weights and repeated indices also pass. The frozen ladder `(1.0,)` and the absence of any production caller keep this at S2 today, exactly as the auditor scoped it ("the current ladder is only (1.0,) and PAPER does not consume it").
+
+### Root cause
+The validation checks only `sum(weights) > 0` rather than each weight being finite and non-negative (and the ladder being index-disjoint); and the reduction applies `share` to the CURRENT remainder without carrying the initial quantity or the set of already-taken rungs, leaving the total/remainder semantics implicit.
+
+### Direct impact
+Any future multi-rung ladder (or a package injecting one) can, on a negative weight, INCREASE size and reserved risk through the "partial exit" API — inverting the Ch.9 §9.0 law that partial exits only reduce — or silently leave 29.4% of the position open after a "complete" ladder, or zero it out on a NaN weight.
+
+### Secondary effects and interactions (upstream/downstream)
+Downstream once wired to the FSM/ledger (E-006's gap): position and reserved-risk bookkeeping diverge from fills and caps; the never-widen stop rule still holds (verified in the same function) but on the wrong quantity; outcome/risk-attribution records inherit wrong sizes. Upstream: parameter packages (Risk Optimizer X.6) are the plausible source of a multi-rung ladder. Interactions: E-005 (partial treated as full close in `manage_positions` — independent), F-001 (fill accounting — independent), Ch.9 §9.0 (the governing scaling law).
+
+### Contract and decisions
+Binding: APEX_GEN5.md Ch.9 §9.0 "Position scaling policy (normative)" (in this checkout ~L15055–15061): "Scaling-in (pyramiding) is disabled: one trade plan maps to exactly one position per (symbol, timeframe, direction) until CLOSED. Scaling-out is permitted only through the Playbook target ladder (partial target takes), and every partial exit reduces `sized_quantity` and the reserved risk amount proportionally; the stop for the remainder is never widened." Ch.11 AE.5 freeze pins the current single target `staged_exit_ratios (1.0,)` (target 100% at 3R). No decision defines total-vs-remainder weight semantics. Precedence: contract governs; the frozen `(1.0,)` ladder is the only lawful configuration today, which is why current impact is contained.
+
+### Frozen status and non-frozen alternative
+`apex/playbook/pb_fvg_sweep_rev_a.py` is not on the V1d frozen list; the AE.5 `staged_exit_ratios=(1.0,)` literal IS a frozen contract value and must not change — the fix tightens validation of CALLER-supplied ladders, not the frozen ladder. A wrapper that validates ladder packages before they reach the function can live outside the module.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** validate `math.isfinite(w) and w >= 0` for every weight, refuse duplicate/repeated `taken_index` consumption via carried state (initial quantity + taken set, or a rung bitmask), and define weights as shares of the INITIAL size (documenting the choice against Ch.9 §9.0's "reduces … proportionally"), computing each step's exit quantity as `initial*weight` rather than `remainder*(weight/…)`. Side effects: the existing test's arithmetic (10 → 7.0 for a 0.3 share of the initial size) is unchanged when weights are interpreted over the initial size and steps are disjoint; the sequential 30/40/30 case then correctly reaches 0; tests for negative/NaN/duplicate rungs must be added; no migration/retraining; any research/backtest code that fed ad-hoc ladders would now be refused (correctly). **B:** keep remainder semantics and require `sum(weights) == 1` with explicit "remainder share" documentation — smaller change but leaves the drift-toward-residue behaviour. **C:** only add the non-negativity gate — rejected: leaves the residue and duplicate-index holes.
+
+### My recommendation
+A, with the taken-rung state carried by the position-management state object proposed in E-018's fix (one stateful manager for BE, trail, ladder).
+
+### Acceptance and regression tests
+Weights with any negative or non-finite member → `PB_LADDER_QX`-style refusal by name; repeated consumption of one rung → refusal; 30/40/30 over the initial size ends at qty=0 and risk=0; the frozen `(1.0,)` ladder unchanged (qty=0, risk=0, stop never widened); the existing three scaling tests keep passing; the never-widen assertions (LONG and SHORT, proposed stop loosening) keep passing.

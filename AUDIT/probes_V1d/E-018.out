@@ -1,0 +1,5 @@
+call 1 (current=104, stop=98): activated=True stop=103.0 (R used=2.0)
+call 2 (current=104.2, stop=103.0): activated=False stop=103.0 (R recomputed=3.0, threshold=4.50, progress=4.20)
+with the INITIAL R=2 the threshold is 3.00 <= progress 4.2 -> activation would persist
+call 3 (current=105, stop=103): activated=True stop=104.0
+SHORT call1 (95.2): activated=True stop=96.2 | call2 (95.4): activated=False stop=96.2
