@@ -34,7 +34,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-018 | CONFIRMED | S2 | S2 | No — `apex/ops/bootstrap_service.py` is non-frozen | K-017 (evidence durability) | A — announce completion on the durable COMPLETE transition, once, for both termination shapes |
 | K-019 | CONFIRMED | S1 | S1 | No — `apex/ops/bootstrap_service.py` / `apex/ops/engine_context.py` are non-frozen | D22 (CATCH_UP_FAILED); K-017 (evidence durability) | A — durable per-observation publish outbox retried independently of `new_hashes`, cell status DEGRADED until reconciled |
 | K-020 | CONFIRMED | S1 | S1 | Partly — `apex/research/bootstrap.py` frozen; the service, the coverage gate and `scripts/run_apex.py` are not | K-015 (walk stop reason), ISSUE-CP13-001 (empty page = only completion signal) | A — a separate non-frozen coverage gate; SKIPPED never counted as complete, never exit READY |
-| K-021 | PENDING | S2 | — | — | — | — |
+| K-021 | CONFIRMED | S2 | S2 | No — the wrapper lives in `apex/ops/bootstrap_service.py`; the two DDLs are frozen | ISSUE-CP9-007 (canonical table = resume authority); K-017 | A — surface the mirror failure as a named DEGRADED status and reconcile the two tables |
 | K-022 | PENDING | S2 | — | — | — | — |
 | K-023 | PENDING | S2 | — | — | — | — |
 | K-024 | PENDING | S1 | — | — | — | — |
@@ -1378,3 +1378,162 @@ defect is the missing second gate, not the walk termination rule.
    `pending_cells`-equivalent service output includes it; exit not READY.
 5. Full coverage over the declared scope: the only case that yields READY, and the scope size
    (140 data cells) is asserted explicitly and kept distinct from D30's 20-cell fit scope.
+
+---
+
+## K-021 — the canonical checkpoint mirror swallows every failure, and `last_error` is sticky
+
+#### Auditor claim (short quote)
+> «`CanonicalMirroredCheckpoints.save_bootstrap` ابتدا research row را commit می‌کند و **تمام** خطاهای mirror canonical را خاموش می‌بلعد. در probe `canonical.db.execute` خطا داد اما research `COMPLETE` ثبت شد و caller موفق برگشت؛ status/CLI فقط research را می‌خوانند. همچنین `last_error=COALESCE(new,old)` خطای SKIPPED قدیمی را پس از DONE احتمالی پاک نمی‌کند.»
+> — “`CanonicalMirroredCheckpoints.save_bootstrap` commits the research row first and silently swallows **all** canonical mirror errors. In the probe `canonical.db.execute` raised, yet research recorded `COMPLETE` and the caller returned successfully; status/CLI read only research. Also `last_error=COALESCE(new,old)` does not clear a stale SKIPPED error after a later DONE.”
+> The auditor also notes: “نبود reader عملیاتی canonical در این خوانش، اثر معامله‌ای مستقیم را اثبات نمی‌کند” — no operational reader of the canonical table was found, so no direct trading impact is proven.
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/bootstrap_service.py:832–857` — `_canonical_upsert`: the `ON CONFLICT … DO UPDATE`
+with `cursor_open_time=MAX(...)`, `status=excluded.status`,
+`bars_written=bootstrap_progress.bars_written+excluded.bars_written`,
+**`last_error=COALESCE(excluded.last_error, bootstrap_progress.last_error)`**.
+`apex/ops/bootstrap_service.py:859–898` — `mirror_bootstrap_progress`: status map, `SKIPPED →
+ERROR` + `last_error="PHASE1_VERIFICATION_SKIPPED"`, 6 attempts with backoff **only** when
+`"locked" in str(exc).lower()`; any other error is re-raised to the caller…
+`apex/ops/bootstrap_service.py:900–1032` — `CanonicalMirroredCheckpoints.save_bootstrap`:
+the research store is written and committed **first** (1010–1020), then
+```
+try: await mirror_bootstrap_progress(...)
+except Exception: pass                # ← every mirror error, silently
+```
+(1023–1032). Note also the two evidence-merge `except Exception: pass` blocks (990, 1008)
+documented under K-017.
+`apex/ops/bootstrap_service.py:1165–1179` — `open()` installs the wrapper only when
+`self._store is not None`; otherwise pure delegation (offline status).
+`apex/research/checkpoints.py:146–172` — `ResearchCheckpointStore.save_bootstrap`, the
+authority actually read by `status()`/`pending_cells()` (`cursor_ms=MAX(...)`,
+`bars_ingested = old + excluded`, `payload_json=excluded.payload_json`).
+`tests/unit/test_ops_bootstrap_service.py:714–781` —
+`test_complete_run_mirrors_canonical_done_and_cursor` and
+`test_budget_paused_mirrors_canonical_running_and_cursor` assert the mirror **on the happy
+path only**; no test covers a failing mirror.
+Callers/readers: `grep -rn "bootstrap_progress" --include=*.py` shows the canonical table is
+written by the mirror and read by tests; `BootstrapService.status()` reads
+`research_bootstrap_progress` through the runner. This corroborates the auditor's own caveat.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-021.py`; probe/output `AUDIT/probes_V3b/K-021.py|.out`.
+Real wrapper, real `ResearchCheckpointStore`, real `SQLiteStore` (temp files; the canonical
+table is dropped **in the temp copy** to produce a genuine SQLite failure rather than a stub):
+```
+A. canonical mirror cannot write
+   caller saw exception = None
+   research row         = status='COMPLETE' cursor_ms=1726444800000 bars=7
+   canonical rows       = 'OperationalError: no such table: bootstrap_progress'
+   service.status()     = completed=1 remaining=0   (reads the research table)
+B. intact canonical table: SKIPPED then COMPLETE
+   after SKIPPED  = [('BTCUSDT','1d','P1','2024-09-16T00:00:00.000Z','ERROR',5,
+                      'PHASE1_VERIFICATION_SKIPPED')]
+   after COMPLETE = [('BTCUSDT','1d','P1','2024-09-17T00:00:00.000Z','DONE',14,
+                      'PHASE1_VERIFICATION_SKIPPED')]
+   research row   = status='COMPLETE' cursor_ms=1726531200000 bars=14
+```
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). Both halves reproduce exactly:
+a total mirror failure is invisible to the caller, to `status()` and to the CLI, and a
+`DONE` row keeps the stale `PHASE1_VERIFICATION_SKIPPED` error for ever. I keep S2 rather
+than S1 for the reason the auditor states himself: I could not find an operational consumer
+of `bootstrap_progress`, so today the damage is confined to the audit trail and to any future
+resume that follows ISSUE-CP9-007's rule. Two additions of my own:
+(i) the divergence is not only "different status" but **row absent entirely** while research
+says COMPLETE; (ii) `bars_written` accumulates (`5 + 9 = 14`) on both sides, so a re-run of
+the same cell double-counts the canonical bar total — the mirror cannot be used to verify the
+row count it is supposed to attest.
+
+#### Root cause
+Two durable records of the same fact with no transaction, no receipt and no reconciliation:
+the secondary write is attempted after the primary has already committed, and its failure is
+converted into silence by a bare `except Exception: pass`. The retry policy inside
+`mirror_bootstrap_progress` distinguishes lock contention from other errors carefully — and
+then the caller discards that distinction. `last_error` uses `COALESCE(new, old)`, which is
+correct for "do not lose an error" but wrong for "clear an error that no longer applies",
+and no clearing policy exists.
+
+#### Direct impact
+`research_bootstrap_progress` and `bootstrap_progress` can disagree arbitrarily (including
+one being empty) with no warning anywhere; an owner reading the canonical table sees ERROR /
+stale `last_error` / accumulated `bars_written` for a cell the service calls COMPLETE.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the same `save_bootstrap` carries the K-017 drop evidence, whose merge is also
+wrapped in `except Exception: pass` — a single unhealthy store therefore loses both the
+mirror and the evidence, silently, in one call. Downstream, ISSUE-CP9-007 designates the
+canonical table as the **resume authority**: any future resume implementation that honours
+that decision would read a row that may be missing or stale, and `pending_cells` (research
+side) would disagree — the exact "silent COMPLETE" the auditor warns about. Interacts with
+K-020 (readiness computed from the research table only) and K-016 (progress markers advanced
+without confirmed durable state).
+
+#### Contract and decisions
+* `PHASE2_DECISION_LOG.md:170` (**ISSUE-CP9-007**, MAJOR, CLOSED-with-evidence): “the
+  canonical table is the **resume authority**; the research table is the cell cursor but must
+  mirror (ADR-P2-003 additive, ISSUE-CP9-002)”, implemented by `CanonicalMirroredCheckpoints`
+  with the very `_canonical_upsert` and `6× retry on 'locked'` described above. A mirror that
+  may silently not happen contradicts the decision's own premise: the authority may be
+  missing while the non-authority says COMPLETE.
+* `APEX_GEN5.md:18751` (Ch.5 read/write ownership): “**Fail-closed: on write failure, halt
+  ingestion and alert; do not cache and retry silently.**” `except Exception: pass` is neither
+  halt nor alert.
+* `APEX_GEN5.md:18744–18746` (correction/purge audit events): every correction is “logged with
+  event_id, timestamp, reason, and actor identity” — a `last_error` that survives a later DONE
+  with no lifecycle rule is the opposite of a governed audit field.
+* `APEX_GEN5.md:17276` requires Phase 1 to “checkpoint `bootstrap_progress`” — the canonical
+  table is named normatively, so its write is not optional. Precedence: the APEX_GEN5 clause
+  names the artefact; ISSUE-CP9-007 (owner decision, later and more specific) makes it the
+  resume authority. Both are violated by a silent skip; neither is violated by the mirror
+  mechanism itself.
+
+#### Frozen status and non-frozen alternative
+The wrapper, `mirror_bootstrap_progress` and `_canonical_upsert` are all in
+`apex/ops/bootstrap_service.py` — **not frozen**. The two schemas are frozen
+(`apex/data_catalog/**` DDL for `bootstrap_progress`, and the research migrations are the
+checkpoint store's own), so the fix must not add columns to `bootstrap_progress`; a
+reconciliation/outbox record must live in the non-frozen ops/checkpoint database (the same
+place K-017's evidence rows and K-019's outbox would live).
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — replace `except Exception: pass` with: record the failure (cell,
+  status, cursor, exception reason) in a non-frozen `mirror_pending` table, mark the run
+  DEGRADED with a named reason, and drain/reconcile the pending set at the start of the next
+  save/run; expose a `mirror_divergence` count in `status()` so the CLI can refuse READY.
+  Side effects: `status()` gains fields and a run that previously "succeeded" can now report
+  DEGRADED — the two mirror tests (tests/unit/test_ops_bootstrap_service.py:714–781) still
+  pass (happy path), but any test asserting an exact `status()` dict must be updated; new
+  non-frozen table + migration; no frozen file, no hash change.
+* **B** — make the mirror failure fatal (propagate the exception). Side effects: simplest and
+  fully fail-closed, but a transient canonical-store problem would abort a long Phase-1 run
+  after the research row is already committed, i.e. it converts a silent divergence into a
+  loud stop without repairing anything; acceptable only with A's reconciliation.
+* **C** — write both rows in one transaction. Side effects: only possible when both tables
+  live in the same SQLite file (the tests use one path, but `db_path` and `checkpoint_path`
+  are independent parameters), so it cannot be relied on; rejected as the primary fix.
+* **D (`last_error`)** — set `last_error = excluded.last_error` (i.e. clear it) whenever the
+  new canonical status is `DONE`, and keep COALESCE otherwise; or add an explicit
+  `last_error_cleared_at` audit line in the ops DB. Side effects: changes the semantics of a
+  frozen-DDL column's content — must be owner-approved as an explicit policy (the audit
+  discipline says an error is never silently erased), which is why I keep it separate from A.
+
+#### My recommendation
+**A** now (visibility + reconciliation is what turns a silent divergence into a repairable
+one), then **D** as an owner-approved `last_error` lifecycle policy. Do not ship **B** alone.
+
+#### Acceptance and regression tests
+1. Mirror write fails (table missing / locked beyond the 6 retries): the run reports a named
+   DEGRADED reason, `status()` exposes a non-zero divergence count, and the CLI does not exit
+   READY.
+2. After the canonical store becomes healthy, the next save reconciles the pending entries;
+   the two tables then agree on status **and** on the ISO cursor
+   (`_iso_to_ms(cursor_open_time) == cursor_ms`, as the existing happy-path tests assert).
+3. A locked canonical store still succeeds through the existing 6× backoff without producing
+   a divergence entry (no regression of ISSUE-CP9-007's retry).
+4. SKIPPED → DONE: `last_error` follows the approved policy explicitly (asserted either
+   cleared or retained with a recorded reason), never left ambiguous.
+5. Re-running an already complete cell does not double `bars_written` on either side, or the
+   accumulation is documented and asserted as intentional.

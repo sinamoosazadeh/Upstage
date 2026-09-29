@@ -1,0 +1,12 @@
+# K-021 — checkpoint mirror coordination
+
+A. canonical mirror cannot write (table dropped in a TEMP db)
+   caller saw exception   = None
+   research row           = status='COMPLETE' cursor_ms=1726444800000 bars=7
+   canonical rows         = 'OperationalError: no such table: bootstrap_progress'
+   service.status()       = completed=1 remaining=0 (reads the research table)
+
+B. intact canonical table: SKIPPED then COMPLETE
+   after SKIPPED  canonical = [('BTCUSDT', '1d', 'P1', '2024-09-16T00:00:00.000Z', 'ERROR', 5, 'PHASE1_VERIFICATION_SKIPPED')]
+   after COMPLETE canonical = [('BTCUSDT', '1d', 'P1', '2024-09-17T00:00:00.000Z', 'DONE', 14, 'PHASE1_VERIFICATION_SKIPPED')]
+   research row             = status='COMPLETE' cursor_ms=1726531200000 bars=14
