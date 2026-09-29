@@ -1,0 +1,5 @@
+formula_volume_ratio(20, 0) = (None, 0.0)
+formula_volume_ratio(20, 10) = (Decimal('2.00000000'), 1.0)
+§2.2 V/max(SMA,eps) with eps=1E-12: 2.0E+13
+helper docstring promises: 'SMA=0 -> large-but-finite via the epsilon floor (never NaN)'
+=== tests/unit/test_quality.py::TestNumerical22::test_core_formulas: 1 passed (pins (None,0.0) for SMA=0)

@@ -31,8 +31,8 @@ and synthetic failure proves the code path, not that it has already damaged a de
 | L-004 | CONFIRMED | S1 | S1 | Yes — `apex/data_catalog/atomic/features.py` | L-003 (same window-as-baseline confusion) | B now (adapter currency check); A by owner ruling jointly with L-003-A |
 | L-005 | CONFIRMED | S2 | S2 | Yes — `apex/data_catalog/math` + `atomic/features.py` | E10 `rsi_series`/streaming is the conformant reference | B now (E10 RSI via adapter); A by owner ruling (§3.3 edge verbatim) |
 | L-006 | CONFIRMED | S2 | S2 | No — `apex/quality/vector.py` + `apex/setup/gates.py` are non-frozen | D-026 (same NaN-through-comparison theme at risk layer) | A — single path: API-boundary finite/range validation |
-| L-007 | PENDING | S2 | — | — | — | — |
-| L-008 | PENDING | S2 | — | — | — | — |
+| L-007 | CONFIRMED | S2 | S2 | No — `apex/fabric/context.py` is non-frozen | — | A — single path: time-aware pairing (backward compatible) |
+| L-008 | CONFIRMED | S2 | S2 | No for this helper; consistent triad fix touches frozen `_f41` | `_f41_volume_ratio` (frozen) + E03 `volume_ratio_pit` share the degraded reading | Owner ruling for the triad: A-with-cap or B (contract amendment); do not flip this branch alone |
 | L-009 | PENDING | S2 | — | — | — | — |
 | L-010 | PENDING | S2 | — | — | — | — |
 | L-011 | PENDING | S2 | — | — | — | — |
@@ -310,3 +310,89 @@ Implement A (both the `calc_window_quality` finite check and the five gate measu
 - NaN/±Inf in any `(Q_i, age_i)` position → named invalid + gate 2 fail; finite valid inputs keep the exact previous weighted values (bit-equality test against current outputs).
 - NaN/±Inf in `final_score/conflict_penalty/redundancy_penalty/h_norm/q_forecast` → each gate fails with a named reason independent of the payload; finite boundary values (±1 unit) keep previous verdicts.
 - Regression: `tests/unit/test_quality.py`, `tests/unit/test_setup_gates.py`, `tests/unit/test_cp146.py`, `tests/unit/test_engine_context_store_sources.py` all pass.
+## L-007 — redundancy_rho pairs series by position after independent NaN-drops (wrong time join)
+
+#### Auditor claim (short quote)
+> "`redundancy_rho` drops each series' NaNs INDEPENDENTLY and zips the tails. On 50 truly anti-correlated points with NaN at two different times it gave `rho=+1.0,points=47`; on the time-aligned valid pairs `rho=−1.0`. In the current producer history all components are numeric and complete; this NaN occurrence in PAPER is not established."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/fabric/context.py:511–532` (`redundancy_rho`): `a = [v for v in list(s_a)[-n:] if v == v]`, same for `b`, then `k = min(len)`, tail-truncate, positional `zip`. No timestamps are accepted, so re-alignment after the drops is impossible by construction. Defaults: `n=48` (`redundancy_window_n`), `min_points=20`.
+- `apex/ops/engine_context.py:1888–1899`: producer builds `series[name] = [h["s_i"][name] …]` from stored `COMPONENTS` facts and calls `redundancy_rho` pairwise; the stored rows are written at :2009–2012 as `{k: components["s_i"].get(k, 0.) for k in COMPONENT_ENGINE}` — complete 12-key dicts of `float(any(…))` ∈ {0.0, 1.0} (`component_projection`, :358–379), persisted via `append_context_fact` → `canonical_json`, which REJECTS NaN/Inf. Additionally `validate_produced_context` (:3931–3935) requires native `s_i ∈ {0., 1.}` finite. NaN therefore cannot enter producer history through the native write path.
+- `apex/setup/family_sf_fvg_sweep_rev.py:508–545`: the family path calls the same function over caller-supplied `component_series` (or skips when absent); `rho` feeds `apply_redundancy` (victim halving) and the redundancy penalty.
+- `redundancy_rho` callers (mandatory grep): only the two above. No test feeds NaN-bearing series to `redundancy_rho` (checked `tests/unit/test_fabric_context.py` redundancy cases — finite inputs).
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-007.py`. Probe: `AUDIT/probes_V3c/L-007.py` (real `redundancy_rho` with default n=48; `a=t%2`, `b=1−t%2`, t=0..49, NaN in `a` at t=2, NaN in `b` at t=49). Raw output: `AUDIT/probes_V3c/L-007.out`. Result: `rho=+1.0, points=47, skipped=False` — the auditor's numbers exactly; the pairwise-complete time-aligned reference gives `rho=−1.0` on the common valid times; the no-NaN control gives `rho=−1.0, points=48`; `canonical_json` on a NaN `s_i` raises `CanonicalJsonError` (boundary).
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The sign flip (+1.0 vs −1.0) and the point count (47) reproduce exactly with the real function, and the mechanism is precisely the claimed independent-drop-plus-zip. S2 because the trigger (NaN inside a stored/input `s_i` series) is unreachable through today's native producer path — complete 0/1 histories sealed by `canonical_json` — so this is a latent API-level time-join defect, not an active mis-penalty. It would matter the day any caller supplies gappy series (backfill gaps, partial histories, family-level direct calls).
+
+#### Root cause
+The function signature carries values without times, then filters each side independently: two drops at different positions shift the middle segment by one slot, and the positional zip pairs values from different instants. With phase-sensitive series (e.g. alternating 0/1), a one-slot shift converts perfect anti-correlation into perfect correlation.
+
+#### Direct impact
+On gappy inputs, ρ's sign, magnitude, and sample count can all be wrong (`+1.0/47` for data that is `−1.0` on every commonly-valid instant), and the `skipped=False/OK` reason asserts a healthy measurement.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, `n=48` windowing happens BEFORE filtering, so `points` conflates window truncation with NaN drops — the count is uninterpretable on gappy data. Downstream, a flipped ρ crosses the `|ρ|>0.85` threshold and triggers `apply_redundancy` victim-halving plus the redundancy penalty on a relationship that does not exist (or misses one that does). This is independent of L-006's NaN handling (there the values reach a comparison; here they are dropped asymmetrically). Note `min_points=20` counts zipped positions, not commonly-valid instants — a second-order overstatement of evidence on gappy data.
+
+#### Contract and decisions
+Ch.10 §10.1 (via the `setup_score` docstring + family code): "Pearson ρ on the last n=48 OK points of the two s_i series (same symbol+TF)". "OK points" implies commonly-OK instants; nothing authorizes independent per-side filtering with positional re-zip. No `PHASE2_DECISION_LOG.md` ruling covers redundancy pairing. Precedence: the "same symbol+TF … OK points" law governs — pairing must be over commonly-valid instants.
+
+#### Frozen status and non-frozen alternative
+**NOT frozen:** `apex/fabric/context.py` is outside the frozen set. The fix belongs in the function itself; no frozen change, no alternative layer needed.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — time-aware pairing (single path, non-frozen):** accept optional per-point times/keys (defaulting to positional index when absent for backward compatibility); drop only pairwise-incomplete instants; count `points` as commonly-valid pairs; keep the `min_points=20` skip with a traceable reason when keys are absent or insufficient. Side effects: complete-series behavior is BIT-IDENTICAL (no drops → same zip) — existing tests and the native producer path are unaffected; gappy inputs change from wrong-ρ to aligned-ρ-or-skip (intended). No hashes/identities/caches/DB/retraining impact (pure function, unhashed outputs consumed as floats).
+
+#### My recommendation
+Implement A with the optional-times signature (backward compatible, native path untouched), and add the probe's alternating-series case as a regression test.
+
+#### Acceptance and regression tests
+- The probe case (NaN at two different times) yields ρ computed over time-intersection (−1.0 here) with true pair counts; insufficient common pairs → named skip, never a re-aligned ρ.
+- Complete-history behavior bit-identical (existing `test_fabric_context.py` redundancy tests pass unchanged).
+- Family-level test: gappy `component_series` either halves the correct victim or skips with reason.
+
+## L-008 — formula_volume_ratio SMA=0 branch contradicts the §2.2 epsilon formula
+
+#### Auditor claim (short quote)
+> "Contract and docstring explicitly require `V/max(SMA_prev,ε)` with a large-but-finite value for SMA=0; the code returns `(None,0.0)` for `formula_volume_ratio(20,0)` before dividing, and the existing test pins exactly that. For the default epsilon the formula gives `2E+13`; null volume is a separate state."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/quality/numerical.py:246–257` (`formula_volume_ratio`): `if sma_prev == 0: return None, 0.0` precedes the `guarded_div(V, max(sma_prev, eps_volume))` line — the epsilon floor is unreachable for exactly the input it exists for. The docstring (246–248) promises the opposite: "SMA=0 → large-but-finite via the epsilon floor (never NaN)" — the code contradicts its own contract sentence.
+- `APEX_GEN5.md:835–839` (§2.2): "`volume_ratio = V / max(SMA_n(V), ε_volume)`, n=20, computed on bar t−1 … if `SMA_n(V)=0`, volume_ratio still resolves to a large-but-finite value via the epsilon floor; if V is null, Q_volume=0 …" — the SMA=0 and V-null states are explicitly distinguished; the code collapses SMA=0 into the missing/degraded bucket.
+- `tests/unit/test_quality.py:247–251` (`test_core_formulas`): asserts `formula_volume_ratio(20, 0) → (None, 0.0)` — the deviation is pinned by a passing test (re-ran: 1 passed).
+- Callers (mandatory grep): NONE in `apex/` or `scripts/` — the helper is currently test-only. Adjacent consistency notes: `_f41_volume_ratio` (`atomic/features.py:389–417`, frozen) and E03 `volume_ratio_pit` (`e03_volume/engine.py:127–133`) also return degraded/None on SMA≈0 rather than large-but-finite — so the "large-but-finite" reading has NO implementation anywhere in the checkout, while the degraded reading has three (one pinned by test). The contract sentence is unambiguous, but its operationalization (a 2E+13 ratio flowing into downstream consumers) has never existed.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-008.py` + `python3 -m pytest -q -p no:cacheprovider tests/unit/test_quality.py::TestNumerical22::test_core_formulas`. Probe: `AUDIT/probes_V3c/L-008.py` (real helper; contract formula evaluated inline). Raw output: `AUDIT/probes_V3c/L-008.out`. Result: helper `(None, 0.0)`; contract formula `2.0E+13`; existing test passes (pins the deviation).
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). Code-vs-contract-vs-docstring triple contradiction is exact, and the test pin is verified by re-running. S2 because the helper has no runtime caller (latent), and because the "correct" behavior (emitting 2E+13) is itself operationally questionable — a giant finite ratio could do more downstream damage than a clean degraded flag. This row is therefore as much a contract-clarification item as a code defect: the fix direction needs an owner decision (run the epsilon formula, possibly with a governed cap, or amend the contract to the degraded reading that three implementations already share).
+
+#### Root cause
+The SMA=0 early-return was written as a degraded path (probably mirroring E03/`_f41`) while the docstring/contract sentence describes the epsilon-floor path; the guard order makes the floor dead code for SMA=0.
+
+#### Direct impact
+Today: none at runtime (no callers) — the impact is a pinned deviation: the test suite certifies behavior the contract forbids, so any future caller inherits a contract-violating helper with a green test suite.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the same degraded-on-zero reading in `_f41` (frozen) and E03 (non-frozen) means "fixing" only this helper would create a THREE-way inconsistency (helper large-finite vs `_f41`/E03 degraded) unless the ruling covers all three. Downstream, if the epsilon reading is adopted, consumers must be audited for giant-ratio handling (2E+13 exceeds any sane feature range; quantization to 8 digits is fine, but thresholds/comparisons are not). If the degraded reading is adopted instead, the contract sentence + this docstring must be amended by owner ruling.
+
+#### Contract and decisions
+`APEX_GEN5.md:835–839` governs and is explicit (large-but-finite via floor; V-null separate). No `PHASE2_DECISION_LOG.md` ruling overrides it. Precedence: contract text governs over the three degraded implementations and the pinning test — BUT the operational risk of 2E+13 ratios means the owner should rule on the full triad (helper + `_f41` + E03) and on capping, not just flip this branch. Note `_f41` is frozen, so the triad ruling necessarily touches the frozen process.
+
+#### Frozen status and non-frozen alternative
+**NOT frozen:** `apex/quality/numerical.py` is outside the frozen set — this helper can be fixed without a frozen ruling. However, the CONSISTENT fix (helper + `_f41` frozen + E03) does touch one frozen file, and the contract-amendment alternative needs an owner ruling either way. Non-frozen alternative for the helper alone: fix the branch + docstring + test directly (no alternative layer needed).
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — epsilon-formula reading (non-frozen for this helper):** remove the early return so `guarded_div(V, max(sma_prev, eps))` runs; add a GOVERNED cap (owner-decided, e.g. ratio ceiling with a named reason) so "large-but-finite" does not mean "unbounded". Side effects: `test_core_formulas` MUST be updated (it pins the old branch); `_f41` (frozen — owner ruling) and E03 should follow for consistency; downstream consumers audited for giant ratios. No hash/cache/DB/retraining impact (pure helper, no callers).
+**B — degraded-reading ruling (contract amendment):** owner rules SMA=0 → degraded `(None, 0.0)`; amend §2.2 sentence + this docstring. Side effects: test stays green; `_f41`/E03 already conform; the "large-but-finite" sentence is retired explicitly rather than violated silently. No code change at all.
+
+#### My recommendation
+Ask the owner to choose A-with-cap or B for the whole triad; do not flip this branch alone. If forced to act without a ruling, B (document current behavior as intended via a decision log entry) is safer than emitting 2E+13 into unprepared consumers — but B without an owner ruling would itself be a contract amendment, so the honest interim is: leave code+test as-is, record the deviation.
+
+#### Acceptance and regression tests
+- Under A: `V>0,SMA_prev=0 → finite value == V/eps (or governed cap with named reason)`; `V` genuinely missing → independent missing/degraded state per contract; `_f41`/E03 parity test across the triad.
+- Under B: contract sentence amended; docstring/test descriptions updated to cite the ruling; a test pins the distinguished V-null vs SMA-zero states.
+- Regression: `tests/unit/test_quality.py` (updated only as the ruling directs).

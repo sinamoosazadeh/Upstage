@@ -1,0 +1,4 @@
+redundancy_rho -> rho=1.0 points=47 skipped=False reason=OK
+time-aligned reference -> rho=-1.0 pairs=48
+control (complete series) -> rho=-1.0 points=48
+canonical_json(NaN s_i): CanonicalJsonError (float NaN/Inf is forbidden in canonical payloads)
