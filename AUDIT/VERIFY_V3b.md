@@ -38,7 +38,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-022 | CONFIRMED | S2 | S2 | No — `apex/ops/partial_bar_repair.py` and `scripts/run_apex.py` are non-frozen | ISSUE-CP13-001 / CP-13.1 (governed repair) | A — classify the fetch failure, retry transients, and give an exhausted window its own verdict |
 | K-023 | CONFIRMED | S2 | S2 | No — `apex/ops/partial_bar_repair.py` / `scripts/run_apex.py` | K-022 (same command), ISSUE-CP13-001 | A — unique run id + exclusive atomic create; report-write failure is a named non-READY outcome |
 | K-024 | CONFIRMED (severity lowered) | S1 | S2 | No — detector and ingest wiring are non-frozen; `raw_observation` DDL and the parser are frozen | K-022/K-023 (same command), ISSUE-CP13-001 | A — persist a measured capture/receipt time and key detection on it; B — bounded verification of suspect bars |
-| K-025 | PENDING | S1 | — | — | — | — |
+| K-025 | CONFIRMED | S1 | S1 | No — `apex/ops/engine_context.py` / `bootstrap_service.py` are non-frozen; `apex/quality/vector.py` is not in the frozen set either | D52 A1; K-019 (publish path); K-010 (calendar step) | A — carry offered/accepted/receipt and the previous frontier into the measurement; unknown must stay unknown |
 | K-026 | PENDING | S1 | — | — | — | — |
 | K-027 | PENDING | S2 | — | — | — | — |
 | K-028 | PENDING | S2 | — | — | — | — |
@@ -1959,3 +1959,145 @@ scoped **B** run for the legacy set with owner-approved bounds. Do not widen the
    without a governed verdict.
 4. `availability_time` remains the frozen derived value; no test asserts it as a receipt.
 5. A genuinely closed bar is never corrected as a result of the new detection rule.
+
+---
+
+## K-025 — page quality is measured inside the page only, so cross-page gaps and pre-delivery drops score perfect
+
+#### Auditor claim (short quote)
+> «منبع OHLC ناسالم را **قبل از تحویل** از تاریخچه حذف می‌کند و صفحه‌های برگشتی را از ردیف‌های پذیرفته‌شده می‌سازد؛ ناشر فقط همان `rows/http_status` را به `page_quality_measurements` می‌دهد، نه offered/accepted واقعی یا frontier صفحهٔ قبل … در probe دو صفحهٔ تک‌ردیفی 1h با openهای 00 و 02، هر دو `gap=0, completeness=100%, source_health=1` گرفتند، در حالی‌که بررسی همان دو ردیف در یک صفحه gap=1 و completeness≈66.7% داد.»
+> — “The source removes unhealthy OHLC from the history **before delivery** and builds the returned pages from the accepted rows; the publisher passes only those `rows`/`http_status` to `page_quality_measurements`, not the real offered/accepted counts or the previous page's frontier … in the probe, two single-row 1h pages with opens 00 and 02 both scored `gap=0, completeness=100%, source_health=1`, while the same two rows in one page gave gap=1 and completeness ≈66.7%.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/engine_context.py:3601–3625` — `page_quality_measurements`: `present` = the rows it
+was given; `opens = sorted(...)`; `expected = (opens[-1] - opens[0]) // step + 1` — the
+expected count is derived **from the page's own first and last row**, so a single-row page is
+always complete; `offered_n = len(present) if offered is None`, `accepted_n = len(present) if
+accepted is None`, hence `health = 1.0` whenever `http_status == 200`.
+`apex/ops/engine_context.py:3798–3799` — the **only** production call site:
+`page_quality_measurements(rows, obs.timeframe, http_status=http_status)` — neither `offered`
+nor `accepted` is passed (confirmed by `grep -rn -A4 "page_quality_measurements(" apex`).
+`apex/ops/engine_context.py:3765–3812` — `publish_catch_up_quality`, which turns those numbers
+into the durable quality fact.
+`apex/ops/bootstrap_service.py:663–711` — `_walk_backward`: the CP-12 hygiene gate
+(`_record_invalid_bar` … `continue`) removes invalid rows from `self._history` **before** any
+page exists, so the publisher can never see them.
+`apex/ops/bootstrap_service.py:539–644` — the serve path builds each page from the accepted
+history slice; `apex/ops/bootstrap_service.py:1477–1519` — `catch_up` pages the same source
+and publishes per page.
+`apex/quality/vector.py:110–160` — the consumers: `q_seq = 1 - gap_count/expected_count`,
+`q_source = 1.0 if source_health >= 0.8 else 0.0`, and the independent vetoes
+`veto_completeness = completeness_pct < 100`, `veto_source = source_health < 0.8`.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-025.py`; probe/output `AUDIT/probes_V3b/K-025.py|.out`.
+Real parser, real measurement function:
+```
+1. page A (open 00:00)   = {'source_health': 1.0, 'gap_count': 0, 'expected_count': 1,
+                            'completeness_pct': 100.0}
+   page B (open 02:00)   = {'source_health': 1.0, 'gap_count': 0, 'expected_count': 1,
+                            'completeness_pct': 100.0}
+   both rows in one page = {'source_health': 1.0, 'gap_count': 1, 'expected_count': 3,
+                            'completeness_pct': 66.67}
+2. served rows only            = {'source_health': 1.0, …, 'completeness_pct': 100.0}
+   with real offered/accepted  = {'source_health': 0.667, …}
+3. production call site: page_quality_measurements(rows, obs.timeframe,
+                                                   http_status=http_status)
+```
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). The function's page-local
+`expected_count`, the defaulted offered/accepted, and the unused `offered`/`accepted`
+parameters at the single production call site are all verified in source and reproduced. S1 is
+justified because the output is not merely an unmeasured number: it is the input to the
+quality plane's *hard vetoes*, so a genuine gap or a genuine drop produces a fact that says
+"complete and healthy" and passes `veto_completeness` / `veto_source`. That is the quality
+plane failing open, in a repository whose stated rule is to fail closed on unknown provenance.
+
+#### Root cause
+The measurement is defined over the delivered page rather than over the requested interval.
+Both pieces of ground truth needed to do better already exist and are simply not passed: the
+source knows `offered`/`accepted` (`invalid_by_cell`, `invalid_reasons`, and the walk's own
+row counts) and the caller knows the previous cursor/frontier and `end_ms`, i.e. the interval
+the page was supposed to cover.
+
+#### Direct impact
+A cell whose bars arrive one per catch-up cycle — or whose bad bars were dropped by the CP-12
+gate — receives quality facts with `gap_count=0`, `completeness_pct=100`, `source_health=1.0`,
+so `q_seq = 1.0`, `q_source = 1.0` and neither completeness nor source veto fires.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the CP-12 drop path (**K-017**) is the one that removes rows before delivery, and its
+counts are exactly the `offered`/`accepted` the measurement lacks — fixing K-017's evidence and
+K-025's inputs is the same plumbing. Downstream, `q_raw`, `data_trust` and admission consume
+these values; the auditor rightly notes that independent controls (e.g. ADV) may still refuse,
+so this is not automatically a trade, but the quality evidence itself is wrong. Interacts with
+**K-019** (when the publish fails the fact is absent — a refusal; here the fact is present and
+falsely good, which is worse) and with **K-010** (V3: the monthly calendar step used for
+`step`/`expected`, a separate defect in the same arithmetic).
+
+#### Contract and decisions
+* `PHASE2_DECISION_LOG.md:1163` (**D52 A1**, binding): “quality measurements for a fetched page
+  are computed from that page (`source_health`, `gap_count`, `expected_count`,
+  `completeness_pct`); **the raw-only runtime does not invent them**.” Precedence: D52 A1
+  authorises the *page* as the measurement unit, so computing from the page is not itself a
+  violation — but defaulting `offered = accepted = len(present)` when rows were demonstrably
+  dropped, and reporting `completeness_pct = 100` for a one-row page, **invents** the two
+  numbers D52 says must not be invented. The parameters exist precisely so the caller can
+  supply the measured values; nothing in D52 licenses omitting them.
+* `APEX_GEN5.md:5068` — a degraded/unknown status “MUST be carried as a degraded
+  quality/provenance flag. It MUST NOT bypass a hard data-quality, PIT, …” gate. Reporting
+  unknown coverage as 100 % is exactly such a bypass.
+* `APEX_GEN5.md:431` (Session-CP-14 / D33 / ISSUE-037): the native minimum-veto quality design
+  requires “unknown provenance refusing”.
+* `APEX_GEN5.md:14222+` (Layer-00 admission language) and AI.6 (“never substitute 0/1 for an
+  unmeasured input”) support the same reading.
+* No decision authorises treating a single-row page as proof of full coverage.
+
+#### Frozen status and non-frozen alternative
+**Not frozen.** `apex/ops/engine_context.py`, `apex/ops/bootstrap_service.py` and
+`apex/quality/vector.py` are all outside the frozen set (frozen = `apex/engines/**`,
+`apex/data_catalog/**`, `apex/research/bootstrap.py`, `apex/research/backtest.py`, the six
+original params YAMLs, `requirements.lock`). The quality-vector formulas are governed
+parameters/contract text, so changing *thresholds* needs governance, but passing correct
+measurements does not.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — measure over the *requested* interval and the *real* counts: the
+  source exposes, per page, `offered` (rows the venue returned for the window), `accepted`
+  (rows served), the drop reasons, the receipt time, and the page's `[from_cursor, end_ms]`
+  bounds; `publish_catch_up_quality` passes them through, and `page_quality_measurements`
+  computes `expected` from the interval (calendar-aware, cf. K-010) rather than from the first
+  and last delivered row. Side effects: the function's return values change for existing
+  callers (facts written before/after are not comparable — document it); more cells will fail
+  the completeness veto, which is the intended behaviour but will surface as new refusals in
+  PAPER; `tests/unit/test_cp146.py::test_d52_*` and any fixture asserting
+  `completeness_pct == 100` must be re-baselined; D52 A1's wording should be amended by the
+  owner to say "computed from that page **and its requested interval**"; no frozen file.
+* **B** — keep the page-local computation but refuse to claim health when the inputs are
+  unknown: when `offered`/`accepted` are not supplied, or when the page has fewer than two
+  rows, return `source_health=None`/`completeness_pct=None` and let the consumer treat unknown
+  as a refusal (the repository's existing `QUALITY_PROVENANCE_UNAVAILABLE` path). Side effects:
+  many facts become refusals until A is implemented; fastest way to stop the false-positive.
+* **C** — measure continuity across pages in the publisher (compare the page's first open with
+  the store frontier / previous page's last close) and report the inter-page gap separately.
+  Side effects: needs one indexed store read per page; complements A rather than replacing it.
+* **D** — leave the measurement and rely on downstream controls (ADV, freshness). Side
+  effects: **rejected** — it accepts a knowingly false quality fact in the audit trail.
+
+#### My recommendation
+**B immediately** (unknown must not be reported as perfect), then **A + C** as the real fix,
+with the D52 A1 wording amended by the owner in the same change.
+
+#### Acceptance and regression tests
+1. Two consecutive correct single-row pages, one bar apart: no gap reported; two pages **two**
+   bars apart: the missing bar is reported as a gap by the publisher.
+2. A page whose CP-12 gate dropped one of three offered rows: `source_health < 1.0` and the
+   drop count appears in the fact.
+3. `http_status != 200` or an unknown offered/accepted: completeness/source are reported
+   unknown, and the consumer refuses rather than scoring 1.0.
+4. A genuinely complete multi-bar page still scores `gap_count=0`, `completeness_pct=100`,
+   `source_health=1.0` (no false positives).
+5. The 1mo/1w calendar step is used for `expected_count` (regression tie-in with K-010).
+6. A quality fact with a real gap triggers `veto_completeness` end to end in
+   `calc_quality_vector`.

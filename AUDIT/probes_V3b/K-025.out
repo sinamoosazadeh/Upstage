@@ -1,0 +1,30 @@
+# K-025 — page quality measurement scope
+
+1. two single-row pages vs the same rows in one page
+   page A (open 00:00)      = {'source_health': 1.0, 'gap_count': 0, 'expected_count': 1, 'completeness_pct': 100.0}
+   page B (open 02:00)      = {'source_health': 1.0, 'gap_count': 0, 'expected_count': 1, 'completeness_pct': 100.0}
+   both rows in one page    = {'source_health': 1.0, 'gap_count': 1, 'expected_count': 3, 'completeness_pct': 66.66666666666667}
+   -> the missing 01:00 bar is invisible when the rows arrive in separate pages
+
+2. a row dropped before delivery (CP-12 hygiene gate)
+   served rows only          = {'source_health': 1.0, 'gap_count': 0, 'expected_count': 2, 'completeness_pct': 100.0}
+   with real offered/accepted= {'source_health': 0.6666666666666666, 'gap_count': 0, 'expected_count': 2, 'completeness_pct': 100.0}
+
+3. production call site arguments
+   apex/ops/engine_context.py:3601:def page_quality_measurements(rows: Sequence, timeframe: str, *,
+   apex/ops/engine_context.py-3602-                              http_status: int | None,
+   apex/ops/engine_context.py-3603-                              offered: int | None = None,
+   apex/ops/engine_context.py-3604-                              accepted: int | None = None) -> dict:
+   apex/ops/engine_context.py-3605-    """Measurements computed from the fetched page itself (D52 A1)."""
+   --
+   apex/ops/engine_context.py:3798:        measurements = page_quality_measurements(
+   apex/ops/engine_context.py-3799-            rows, obs.timeframe, http_status=http_status)
+   apex/ops/engine_context.py-3800-        try:
+   apex/ops/engine_context.py-3801-            await publish_quality_observation(
+   apex/ops/engine_context.py-3802-                store, obs, flags=quality_flags_for_observation(obs),
+
+4. consumers of these numbers (apex/quality/vector.py:120-155)
+   q_seq        = 1 - gap_count/expected_count      -> 1.0 in case 1
+   q_source     = 1.0 if source_health >= 0.8       -> 1.0
+   veto_completeness = completeness_pct < 100       -> never fires
+   veto_source       = source_health < 0.8          -> never fires
