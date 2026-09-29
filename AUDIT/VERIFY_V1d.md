@@ -102,3 +102,83 @@ A, with the final-payload re-validation (so the invariant "what was validated is
 
 ### Acceptance and regression tests
 Assert: extras containing any protected key are REFUSED before transport (no POST, REFUSED classification with a named code); `timeInForce`/`priceType` extras still reach the wire; the final signed payload re-passes type/lattice/min-notional/leverage/side checks; the existing `test_stop_and_target_are_placed_with_the_governed_defaults` and adapter conformance fixture keep passing; an attempt to replace `clientOrderId` is refused by name. Run against the fake responder (no network); no device evidence is needed for this code-level invariant, but the real venue's acceptance of the protected-field set should be confirmed read-only before LIVE.
+
+## E-014
+
+### Auditor claim (short quote)
+"the duplicate cache is only populated after the transport returns; two coroutines with one intent both pass the check. In the concurrent experiment, transport was called twice."
+
+### What I read (files, line ranges, functions, callers)
+`apex/execution/toobit_adapter.py::submit_order` (402–474): the duplicate guard `cached = self._duplicates.get(intent_id); if cached is not None: return self._cached_result(...)` (427–429) is a plain dict read with NO lock/in-flight registry; the cache write `self._duplicates[client_order_id] = result` happens in `_execute` (668–670) only AFTER the awaited transport round-trip completes. Between check and write there is an arbitrary await window (`_bucket(endpoint).acquire()`, `signed_request`, `await self._transport(...)`, backoff sleeps). `_TokenBucket.acquire` serialises only its own lock and does not key on intent. `_cached_result` (712–742) and `_refused` read for context. Callers (grep `submit_order`): `fsm.submit` (one FSM per intent, awaited sequentially), `fsm.place_protection` (suffixed intents, sequential awaits), `paper_loop.manage_positions` exit leg, `scripts/run_apex.py` demo — no current production caller submits the same intent concurrently; the race is reachable by any future/parallel caller of the shared adapter.
+
+### Reproduction (command, probe file, actual result)
+`python3 -B AUDIT/probes_V1d/E-014.py` (raw output `AUDIT/probes_V1d/E-014.out`). Part 1: real `ToobitAdapter` with a gated in-memory transport that blocks the first submit until the second coroutine has also entered `_execute`; `asyncio.gather` of two `submit_order(intent_id="i-race", ...)` → **transport invoked 2 times**, both results `ok=True outcome=ACKNOWLEDGED cached=False attempts=1` with the audit trail showing `['TRANSPORT', 'TRANSPORT', 'CACHE']` (the CACHE entry is the third, sequential re-submit, which correctly makes no new transport call). Part 2: the same race against the repository's real `FakeToobitResponder` (50 ms delay) → **2 POSTs to `/api/v1/futures/order` for one intent, and the venue's order book flags `duplicate_submission: True`** with neither result marked cached.
+
+### Verdict and reasoning
+**CONFIRMED as a mechanism, S2 (auditor said S1).** The race is real and deterministically reproducible with the real adapter: the check-then-act window spans an await, so two same-intent submissions both reach the transport, violating the module's own law ("a repeated key returns the previously recorded response and never resubmits", Ch.16 L16915–16917 / T_ADAPTER_DUPLICATE) and D50 ("never resent"). I lower severity to S2 relative to the auditor because in the current call graph no two production paths can submit the same `intent_id` concurrently: the FSM is constructed per intent and `submit` is awaited once; protection uses suffixed intents; native plan re-sends are blocked upstream by `PLAN_ALREADY_MATERIALIZED` and the durable cell cursor (D50). The defect is a missing local guarantee on a shared venue surface — a latent concurrency hazard for future parallel callers (and for any wrapper that retries a timed-out submit on a new coroutine), not a defect that today's PAPER path can trigger. This is a severity judgement, not a refutation; the auditor's own evidence column also notes venue-side dedup uncertainty.
+
+### Root cause
+Check-then-act on `self._duplicates` without an in-flight registry: the cache entry is written only after the transport future resolves, so concurrent submissions with the same key both observe a miss.
+
+### Direct impact
+Two signed POSTs for one `intent_id` (two venue orders, two audit trails, two idempotency keys) where the contract guarantees exactly one; the second caller receives a fresh venue answer rather than "the previously recorded response", so a lost-ack retry implemented naively around the adapter would double-execute.
+
+### Secondary effects and interactions (upstream/downstream)
+Upstream: none today. Downstream: the venue may reject or double-book the duplicate; ledger/FSM state can then diverge from the venue's actual order set (which of the two orders does `query_order_state(clientOrderId=...)` return?); reconcile-first recovery inherits the ambiguity. Related rows: E-022 (same registry, staleness/collision semantics), F-005 (a different check-outside-queue race in `append_fill`), D50 (binding rule "never resent").
+
+### Contract and decisions
+Binding: APEX_GEN5.md Ch.16 "Execution-layer idempotency (explicit)" (in this checkout L16910–16917): "`intent_id / order_id / fill_id / cancel_id` are unique; a repeated key returns the previously recorded response and never resubmits", and the Adapter Contract's `T_ADAPTER_DUPLICATE`. `PHASE2_DECISION_LOG.md` D50 (L1163): "A repeated client order id … is never resent." No decision authorises concurrent double-send. Precedence: contract + D50 govern.
+
+### Frozen status and non-frozen alternative
+`apex/execution/toobit_adapter.py` is not on the V1d frozen list. No frozen file needs to change: the registry can be extended inside the adapter, or a per-intent reserve can live in a wrapper layer outside it (though only the adapter can make the guarantee universal).
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** per-intent in-flight map of `asyncio.Future` in the adapter: first caller creates the future and executes; concurrent same-intent callers await and return the SAME result (marked cached/duplicate); the map entry is removed only after a durable record exists. Side effects: concurrent-duplicate tests must assert exactly one transport call and a shared result; the audit trail gains a WAIT/DEDUP result_source (AI.8 L18806 requires every dedup to be logged — currently only CACHE hits are); crash-durability of "in-flight" is NOT covered by an in-memory map — a process crash between the two POSTs still needs the existing reconcile-first path, which is contractually correct (UNKNOWN → reconcile, never resubmit). **B:** serialise ALL submissions behind one global `asyncio.Lock` — simpler, but couples unrelated symbols/timeframes and adds latency under the semaphore-4 scheduler. **C:** rely on venue-side dedup — rejected: the contract requires a local guarantee, and venue behaviour is unverifiable from here.
+
+### My recommendation
+A (with the in-flight registry keyed by `client_order_id`), plus an audit record for the joined caller. Keep D50's "never resent" outcome for the post-completion duplicate path unchanged.
+
+### Acceptance and regression tests
+Two concurrent same-intent submits → exactly one transport call, both callers receive an identical result, audit shows one TRANSPORT + one WAIT/CACHE entry; sequential duplicate still returns the recorded response with `cached=True`; different intents still run concurrently (no cross-intent serialisation); after a simulated crash mid-flight, the next submit of the same intent still refuses to blind-resend (reconcile path). Existing `TestNoSilentRetries` and the conformance fixture's DUPLICATE case must keep passing.
+
+## E-015
+
+### Auditor claim (short quote)
+"for PARTIAL/FILLED, missing executedQty/filledQty is compensated with the generic quantity field and missing fill ID is replaced by order/proposal ID. A PARTIAL response with price and quantity=10 but no executed value made a fill of 10; cumulative/incremental is also not distinguished. … the claim 'a fill is never inferred' does not hold."
+
+### What I read (files, line ranges, functions, callers)
+`apex/ops/paper_loop.py::fill_from_result` (277–302) completely, with its docstring ("Extract the EXECUTED price/quantity … Returns None when the venue did not report both numbers — a fill is never inferred"): the fallback chains `price = avgPrice or price or fillPrice`, `quantity = executedQty or quantity or filledQty`, `fill_id = tradeId or fillId or result.order_id or plan.proposal_id`. Callers (grep `fill_from_result`): `_record_submission_fill` (747–760, source SUBMIT_RESULT) and `_observe_fill` (762–800, source VENUE_QUERY) and `manage_positions` (830–843, exit leg with `suffix="-exit"`); all three feed `machine.record_fill` → `LedgerWriter.append_fill` (Ch.16 fill_id idempotency) → `positions_from_ledger` (the T_MATCH single source of truth). `apex/ledger/store.py::append_fill`/`find_by_fill`/`positions_from_ledger`/`_decimal_str` read completely. `tests/integration/test_ops_paper_loop.py::FakeAdapter` (120–146): every FILLED/PARTIAL response it produces carries `avgPrice` AND `executedQty` AND `tradeId` — the fallback branches are never exercised by the wired tests; `tests/fake_toobit_responder.py` order/query responses also always carry `executedQty` (0 while NEW, cumulative while partially filled).
+
+### Reproduction (command, probe file, actual result)
+`python3 -B AUDIT/probes_V1d/E-015.py` (raw output `AUDIT/probes_V1d/E-015.out`), real `fill_from_result` + real `ExecutionFSM.record_fill` + real `LedgerWriter` on temporary SQLite:
+- (a) PARTIAL response `{avgPrice:100, quantity:10}` (no executed value) → fill `{'fill_id':'900001','price':'100','quantity':'10'}` — the ORDER quantity is recorded as executed. Exactly the auditor's scenario.
+- (b) `executedQty: 0` as a JSON number → falls through `0 or quantity` to the ORDER quantity 10 (falsy-zero bug); as the string `"0"` → a zero-quantity fill is recorded verbatim.
+- (c/c2/d) two genuine partials of one order (`executedQty 3 @100`, then `2 @101`, no `tradeId`): both map to `fill_id="900007"`; `append_fill`'s fill_id idempotency then DROPS the second partial — the ledger holds ONE FILL of 3 and `positions_from_ledger` reports net 3 where the venue truth is 5 (and nothing flags the loss).
+- (e) FILLED with `avgPrice="NaN"` → recorded verbatim; the ledger position's `average_entry_price` becomes `NaN`, poisoning entry-dependent P/L, outcome records and attribution (quantity reconcile still agrees, so no divergence alert fires).
+
+### Verdict and reasoning
+**CONFIRMED, S1.** Every element of the claim is reproduced against the real functions: the missing-executed-quantity fallback to the order `quantity` (contra the function's own "never inferred" docstring and the fail-closed law), the missing-fill-id fallback to `order_id`/`proposal_id` with the resulting silent dedup of subsequent partials, the absence of cumulative-vs-incremental distinction (a cumulative `executedQty` would be double-counted by two polls), and the absence of finite/positive validation. The impact lands directly on the Ch.16 §16.2 single-source-of-truth invariant (T_MATCH): the ledger position silently diverges from the venue. S1 (accounting/reconciliation integrity) is justified: the trigger is a venue response shape the adapter/API accepts, and the code chooses to guess rather than refuse.
+
+### Root cause
+`fill_from_result` treats venue fields as interchangeable (`or`-chains with falsy-zero semantics) and synthesises fill identity from non-fill fields, instead of requiring the executed-amount and fill-identity fields the contract's fill model assumes; `record_fill`/`append_fill` then apply fill_id idempotency to the synthesised identity.
+
+### Direct impact
+Over-recording (order qty recorded on an unfilled/partial order → phantom position, premature protection sizing), under-recording (real partials deduplicated away → ledger < venue), zero-quantity fills, and NaN money values in the ledger — each silently, with `FILL_DATA_INCOMPLETE` never raised because `price`/`quantity` were "present".
+
+### Secondary effects and interactions (upstream/downstream)
+Downstream: `positions_from_ledger` (T_MATCH), `reconcile` deltas, protection quantities, `manage_positions` P/L and outcome records, risk exposure vetoes and the training/outcome lineage all consume the corrupted numbers. Upstream: any venue/adapter response lacking the exact field names (`avgPrice`/`executedQty`/`tradeId`) — the FakeAdapter-based tests always supply them, so the suite cannot catch this. Cross-refs: I-016 (the CP-7 integration test hand-builds FILL and close, consistent with the fake never exercising partial fill data); E-006 (exit management reads only the last close — independent); F-005 (append_fill race — independent).
+
+### Contract and decisions
+Binding: APEX_GEN5.md Ch.16 §16.2 "Matching and ledger tests" (in this checkout L17083–17088): "Matching is a first-class invariant: a single source of truth for position state (the ledger, reconciled against exchange), and fills are idempotent under `fill_id`" — fill identity must therefore BE a fill identity, not an order/proposal id. Ch.16 order/identity law (L16910–16917 region): "`intent_id / order_id / fill_id / cancel_id` are unique". G6/P6 fail-closed (an undecidable value refuses, never guesses) governs the missing-field case; P8/G11 (money TEXT-Decimal at boundaries) is violated in spirit by unvalidated NaN text. No decision waives any of this.
+
+### Frozen status and non-frozen alternative
+`apex/ops/paper_loop.py` and `apex/ledger/store.py` are not on the V1d frozen list (note: `apex/ledger/store.py` implements the frozen Ch.4/Ch.16 `ledger`/`trade_plan` DDL — a schema change there would need owner review, but this fix needs no schema change). A producer-side strict parser (a wrapper that refuses responses without `executedQty`+fill identity) can live entirely in `apex/ops/`.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** in `fill_from_result`, require a positive finite `executedQty`/`filledQty` (never fall back to order `quantity`), a positive finite price, and a genuine fill identity (`tradeId`/`fillId`); return `None` (→ `FILL_DATA_INCOMPLETE` / reconcile-required) otherwise; treat `executedQty` as cumulative and convert to per-fill deltas by differencing against the last recorded executed amount for that order. Side effects: `manage_positions`/`_observe_fill` currently treat `fill_from_result → None` as "not filled / stays working" — a strict parser therefore parks more orders in ACKNOWLEDGED until reconciliation, which is the contract-correct behaviour but changes cycle outcomes in tests whose fakes omit the fields (the current fakes all supply the fields, so the wired suites stay green); the delta conversion needs the last executed amount per order (ledger query or in-FSM state); no migration, no retraining; old ledger rows written with synthesised ids remain (they are append-only) and need a reconciliation pass to re-derive truth from the venue. **B:** keep the fallbacks but mark such fills `INFERRED` and force reconcile-required. Weaker: the ledger still contains the guessed numbers. **C:** do nothing, rely on the venue always sending `executedQty` — rejected: unverifiable and contradicts fail-closed.
+
+### My recommendation
+A. Fill data is accounting data; absence must be a named refusal (reconcile-required), never a guess.
+
+### Acceptance and regression tests
+PARTIAL without executedQty, executedQty=0 (number and string), NaN/inf price or quantity, missing tradeId with multiple partials, cumulative executedQty across polls — each must produce NO fabricated fill (named refusal `FILL_DATA_INCOMPLETE` / reconcile-required), no zero/NaN ledger row, and no silent dedup of a genuine second partial; a well-formed partial pair must still sum to the venue truth. Existing CP-7/CP-9 integration tests (which supply well-formed fills) must pass unchanged. Before any LIVE claim, read-only device evidence is needed: sample real venue order-query/userTrades responses to confirm they always carry `avgPrice`/`executedQty`/`tradeId` and whether `executedQty` is cumulative.

@@ -1,0 +1,11 @@
+(a) PARTIAL no executedQty      -> {'fill_id': '900001', 'price': '100', 'quantity': '10', 'order_id': '900001'}
+(b) PARTIAL executedQty=0 (int) -> {'fill_id': '900001', 'price': '100', 'quantity': '10', 'order_id': '900001'}
+    PARTIAL executedQty='0' (str)-> {'fill_id': '900001', 'price': '100', 'quantity': '0', 'order_id': '900001'}
+(c) PARTIAL executedQty=3, no fill id -> {'fill_id': '900007', 'price': '100', 'quantity': '3', 'order_id': '900007'}
+(c2) SECOND partial, same order  -> {'fill_id': '900007', 'price': '101', 'quantity': '2', 'order_id': '900007'}
+(d) two venue partials (3 + 2) -> ledger FILL rows: 1 quantities: ['3']
+    ledger position after both partials: 3 (venue truth: 5)
+(e) FILLED with avgPrice=NaN  -> {'fill_id': '900001', 'price': 'NaN', 'quantity': '1', 'order_id': '900001'}
+    ledger position after NaN fill: 1 | avg entry: NaN
+    |1 - net_quantity| <= 1 (reconcile agree?): True
+tmpdir: /tmp/v1d_e015_oknqi7in

@@ -1,0 +1,7 @@
+transport invocations for intent i-race: 2
+result1: ok=True outcome=ACKNOWLEDGED order_id=900002 cached=False attempts=1
+result2: ok=True outcome=ACKNOWLEDGED order_id=900002 cached=False attempts=1
+distinct venue order ids issued: ['900002']
+third submit (sequential): cached=True new_transport_calls=0
+audit entries result_source: ['TRANSPORT', 'TRANSPORT', 'CACHE']
+venue POSTs for i-race-2: 2 | venue flagged duplicate_submission: True | cached flags: False False
