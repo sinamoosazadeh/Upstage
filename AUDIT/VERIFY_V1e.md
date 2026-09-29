@@ -10,8 +10,8 @@ Baseline verified: `85b2c155d7b054a468379ddfd802eb239d0801f9` (`85b2c15 Merge pu
 | E-002 | CONFIRMED | S1 | S1 | No | — | A: reconstruct/hydrate before READY |
 | E-004 | CONFIRMED | S1 | S1 | No | — | A: cumulative fill/residual authority |
 | E-005 | PARTIAL | S1 | S1 | No | X-V1d-002; D50 | A: lawful exit mapping + residual accounting |
-| E-006 | Pending | S1 | Pending | No | D58; X-V1d-002 | Pending |
-| E-007 | Pending | S1 | Pending | No | X-V1d-002 | Pending |
+| E-006 | PARTIAL | S1 | S1 | Mixed (catalog frozen) | D58; ISSUE-076; X-V1d-002 | A: CP-15 simulator/state + index deployment |
+| E-007 | PARTIAL | S1 | S1 | No | D50; X-V1d-002 | A: durable child exit lifecycle |
 | E-008 | Pending | S1 | Pending | No | — | Pending |
 | E-009 | Pending | S1 | Pending | No | — | Pending |
 | E-010 | Pending | S1 | Pending | No | — | Pending |
@@ -168,4 +168,80 @@ A, landing the adapter mapping and residual accounting together; do not merely e
 
 ### Acceptance and regression tests
 Using a real adapter/fake configured before construction, prove exit ACK, PARTIAL, FILLED, rejected and cached duplicate paths. A 2/10 exit must retain residual 8 with correctly sized protective cover, no outcome until flat/reconciled, and correct P/L only on closed quantity. A reconcile failure must retain recovery state. Assert real adapter wire construction never raises `ORDER_KIND_QX` on the approved exit path and V1d duplicate marker behavior remains explicit.
+
+## E-006
+
+### Auditor claim (short quote)
+“Management compares only the close of the last reader row to stop/target; it omits high/low, gaps, intervening closed candles, time stop and sibling cancellation, and STOP exits omit intended/actual stop attribution.”
+
+### What I read (files, line ranges, functions, callers)
+I read `/tmp/AUDIT.md:199` in full, all required source/test files, `last_closed_price` (`apex/ops/paper_loop.py:305–313`), `manage_positions` (803–870), `SQLiteStore.get_window` and its DDL (data catalog `1–672`, query 497–522), FSM closure/protection methods (`fsm.py:695–910`) and ledger outcome/stop-gap helpers (`ledger/store.py:435–489, 763–868`). Mandatory consumer search was `grep -RInE 'last_closed_price|manage_positions|stop_gap_slippage|intended_stop|actual_fill|cancel\(' apex tests scripts`; it found the manager is invoked from `run_cycle`, and no sibling-order cancellation in this exit path. I read V1b/V1d first and cite V1d X-V1d-002 for the duplicate-marker consumer defect; I do not repeat its verdict.
+
+### Reproduction (command, probe file, actual result)
+`python3 -u -B AUDIT/probes_V1e/E-006.py` (raw `AUDIT/probes_V1e/E-006.out`) runs the real runtime/FSM/ledger/store using the repository’s test-only fill double for the currently unreachable exit seam. A closed bar with high 105, low 94, close 94 triggers `manager_action STOP filled True stop_gap None working []`: only its close selects STOP and `close_position` receives neither stop argument. The same probe uses real DDL and exactly the `get_window` query in `EXPLAIN QUERY PLAN`: without the two named device indexes it records `SCAN market_observation` and two temp B-trees; after `idx_mo_sym_tf_open(symbol,timeframe,open_time)` plus `idx_pit_scope_asof(...)`, it records indexed `SEARCH market_observation ...` (one outer temp B-tree remains). This query occurs once per managed intent each cycle. It also records real adapter duplicate output `real_adapter_cached True DUPLICATE_CLIENT_ORDER_ID ACKNOWLEDGED`, as required; V1d establishes that the FSM does not consume the marker. The focused pytest output is `E-006_E-007-pytest.out` (`2 passed`), based on synthetic test behavior. The synthetic manager fill does not establish any real PAPER/device fill law.
+
+### Verdict and reasoning
+**PARTIAL, S1.** The manager’s actual decision algorithm indisputably reads one latest close, has only stop/target close comparisons, no time condition, no inter-bar loop, no sibling cancel, and passes no intended/actual stop values. The probe demonstrates the missing attribution and confirms the per-active-intent unindexed scan absent the known manual index. But the auditor overstates current executable PAPER behavior: real adapter exit submission is blocked by `kind="exit"` (`ORDER_KIND_QX`, E-005/E-007), and D58 says the governed CP-15 simulator is not yet wired. Therefore no actual current venue/PAPER stop/target fill, gap or missed intrabar touch was reproduced. S1 is retained because this manager becomes a direct safety/accounting defect if the exit path is made reachable; the current exit failure itself is already serious.
+
+### Root cause
+The runtime contains a minimal close-price convenience manager instead of the binding D1/F3 PAPER simulator/order-lifecycle reconciler. It samples `get_window(..., bars=1)`, not an unconsumed-bar frontier, and treats a manager-generated direct exit as sufficient without modelling protective orders or a cancellation/reconciliation transaction.
+
+### Direct impact
+Once exits are enabled, a stop/target touched intrabar then recovered by close, an adverse gap, simultaneous stop/target touch, a time limit, or a fill between polls can be missed or mispriced. STOP outcome records lack `STOP_GAP_SLIPPAGE` inputs; sibling orders can remain live. The current actual adapter instead throws before any exit request.
+
+### Secondary effects and interactions (upstream/downstream)
+This is **= D58** only as to the known unimplemented PAPER fill simulator/CP-15 schedule; beyond D58, the present manager concretely performs a one-close direct-exit algorithm and omits ledger stop attribution/cancellation. It interacts with E-004/005 residual quantity, E-007 exit lifecycle and F-001 P/L (not re-adjudicated here). The unindexed `market_observation` scan is **= ISSUE-076** (manual device index known); beyond that owner item, this verification identifies `manage_positions → last_closed_price` as a per-managed-intent/cycle consumer and records the real-DLL plans. Downstream risk marks, ledger outcomes, replay and training labels may diverge. No actual market data/device scale was tested.
+
+### Contract and decisions
+Binding D1/F3, `APEX_GEN5.md:17034–17066`, specifies CP-15’s simulator: every subsequent CLOSED bar, hard-stop→target→time-stop precedence, stop/target price fills, gap-through at bar open, durable simulator state and reconciliation. `17074–17080` requires both `intended_stop` and `actual_fill`, `STOP_GAP_SLIPPAGE`, realized worst-loss input and market emergency close on protection failure. Ch.16 `16874–16880` also requires reconcile-first. D58/CP-15 is a later owner scheduling item but does not waive F3’s binding behavior; it explains incompleteness. Contract governs design; D58 governs implementation sequence.
+
+### Frozen status and non-frozen alternative
+`apex/ops/paper_loop.py` is non-frozen; `apex/data_catalog/**` including the stock DDL/query are frozen absent owner ruling. A non-frozen CP-15 simulator transport/state layer can consume bars and maintain an execution cursor without changing catalog code; an outside cache/adapter can avoid per-position last-window reads. Adding the missing stock DDL index would touch frozen data catalog, though ISSUE-076 records manual device indexes already exist.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** implement the owner-scheduled CP-15 simulator as the authoritative PAPER five-operation transport, with durable per-order bar cursor, F3 precedence/gap law, sibling cancellation/reconciliation, stop attribution and close/outcome only after confirmed fill. Side effects: new simulator state migration, event/order identities and ledger/outcome data change; PAPER replay/caches/training data need versioning or regeneration; tests using fake direct exits change; no frozen source change required. **B:** enhance `manage_positions` alone to scan windows and cancel siblings. Rejected: duplicates the simulator’s five-operation state and leaves query/restart semantics split. **C:** only add `idx_mo_sym_tf_open` to frozen DDL. It fixes the observed scan but not fill correctness; requires owner ruling/migration or retained device manual-index procedure.
+
+### My recommendation
+A, using F3 exactly and retaining the manual device index guidance from ISSUE-076 until an owner authorizes a frozen DDL migration.
+
+### Acceptance and regression tests
+With durable simulated state, test multiple unprocessed bars, intrabar stop/target precedence, gap fill at open, touch/recover, time exit, sibling cancellation, partial exit and restart replay. Assert STOP outcome carries intended stop/actual fill/slippage and next-risk attribution; no orphan order remains. Run `EXPLAIN QUERY PLAN` for the actual last-price/window query with and without the device indexes; assert the deployment path has no unindexed `market_observation` scan.
+
+## E-007
+
+### Auditor claim (short quote)
+“If an exit first ACKs, the next cycle submits the same intent again; the cache returns the ACK and the manager never queries `intent-exit`.”
+
+### What I read (files, line ranges, functions, callers)
+I read the full row `/tmp/AUDIT.md:200`, the complete mandatory scope and direct caller/callees: `manage_positions` (paper loop 803–870), `ToobitAdapter.submit_order`, `_cached_result` and `query_order_state` (adapter 402–550, 623–819), `order_defaults`/wire defaults and classification map (`toobit_map.py:90–112, 250–289, 320–411`). Mandatory search was `grep -RInE 'kind="exit"|intent_id.*-exit|query_order_state|_cached_result|DUPLICATE_CLIENT_ORDER_ID' apex tests scripts`. The V1b/V1d reports were read first as required: V1b confirms accepted venue state literal `NEW`; V1d X-V1d-002 confirms the cached marker is ignored by the FSM.
+
+### Reproduction (command, probe file, actual result)
+`python3 -u -B AUDIT/probes_V1e/E-007.py` (raw `AUDIT/probes_V1e/E-007.out`) uses a real adapter and repository fake responder configured before adapter construction. It shows identical normal entry retries return `cache ACKNOWLEDGED ACKNOWLEDGED True DUPLICATE_CLIENT_ORDER_ID posts 1`, then the exact exit call used by the manager reports `manager_exit_kind ORDER_KIND_QX transport_posts_after_exit_attempt 1`; no exit POST occurs. This is the required duplicate/cached path, but it disproves the reported first-ACK premise for the current real adapter. Focused relevant tests are recorded in `E-006_E-007-pytest.out` (`2 passed`); their fake-exit success does not prove the real adapter path.
+
+### Verdict and reasoning
+**PARTIAL, S1.** The latent manager logic is as claimed: if a substituted adapter returns an exit ACK without fill, no durable exit FSM/order state is saved; next price-triggered cycle calls submit again with the same `intent_id-exit`, and it does not query that ID. The real adapter cache would return a named cached ACK and V1d proves it is not surfaced by the FSM. However, at this baseline the first real exit cannot ACK: `kind="exit"` is absent from the governed default map and throws pre-transport. The auditor’s asserted current ACK→cached-ACK reproduction is therefore overstated. S1 reflects the existing inability to execute managed exits and the latent duplicate/lost-fill issue if a mapping is added.
+
+### Root cause
+`manage_positions` is stateless about exit orders and reuses a deterministic suffix as a submission action, not an order lifecycle. It also calls an unsupported ad-hoc order kind rather than a governed flatten operation. The adapter correctly caches repeated IDs, but consumer code does not distinguish cache evidence (V1d X-V1d-002).
+
+### Direct impact
+Current price-triggered management errors before submitting any exit. If the kind is enabled without lifecycle persistence, a delayed/filled exit can remain ACKNOWLEDGED in runtime records forever, receive no query after price moves away, and be replayed as a cached ACK rather than ledgered exactly once.
+
+### Secondary effects and interactions (upstream/downstream)
+E-005 shares the unsupported kind/residual closure defect; E-006 shows all price exit management is incomplete; E-001/002 lose non-terminal lifecycle across cycles/restart. D50’s duplicate semantics prevent an extra POST but are not a substitute for fill query/reconciliation. Downstream exposure, protective orders, P/L, loss limits and training outcomes can be false. The fake cache proves repository behavior only, not venue semantics or a device run.
+
+### Contract and decisions
+Ch.16 `APEX_GEN5.md:16891–16904` requires repeat key returns original response without resubmit, state mapping and UNKNOWN reconcile-before-action; `16970–16983` makes client order identity the reconciliation key and requires adapter conformance. D50 (`PHASE2_DECISION_LOG.md:1159`) specifically requires named `DUPLICATE_CLIENT_ORDER_ID`, never resent, original outcome preserved. D1/F3 requires durable simulator order state (`17034–17066`). No later owner decision authorizes a fire-and-forget exit. Contract plus D50 govern; V1d X-V1d-002 remains a cited consumer-side finding.
+
+### Frozen status and non-frozen alternative
+The runtime/adapter are non-frozen, while original wire YAML/default values are frozen. Do not add an `exit` default in frozen YAML without an owner ruling. A non-frozen adapter-level `submit_flatten` implementation composed solely of an existing governed flatten semantic, plus durable runtime exit state, is an alternative outside frozen config; it still must pass conformance/wire review.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** model entry/protection/exit as durable child order records under one parent intent; after exit submit, query/reconcile that child until terminal and record each fill once; make duplicate/cached status explicit per V1d before advancing. Side effects: state/ledger linkage and tests change, old in-flight records require recovery migration/adapter, and D50 cache behavior becomes visible; hashes/identity scheme should remain unchanged. **B:** have each management cycle issue a fresh exit ID. Rejected: can create overlapping reduce-only exits and violates deterministic/reconcile-first identity. **C:** map `kind="exit"` directly in frozen defaults. Requires owner ruling and still does not solve state/query behavior.
+
+### My recommendation
+A, coordinated with E-005-A and V1d X-V1d-002-A; make the adapter path lawful before exposing it.
+
+### Acceptance and regression tests
+Use real adapter/fake responder with a lawful flatten path to assert first ACK produces one durable child record, subsequent cycles query rather than POST, later FILLED records one exit fill and terminal reconciliation, cached duplicate reports its marker, and price reversion does not abandon the outstanding exit. Verify unsupported ad-hoc kinds remain rejected and no new frozen wire literal changes without ruling.
 

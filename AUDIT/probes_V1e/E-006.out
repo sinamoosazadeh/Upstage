@@ -1,0 +1,4 @@
+manager_action STOP filled True stop_gap None working []
+plan_without_device_indexes [(2, 0, 0, 'CO-ROUTINE (subquery-1)'), (8, 2, 0, 'SCAN market_observation'), (42, 2, 0, 'USE TEMP B-TREE FOR ORDER BY'), (63, 0, 0, 'SCAN (subquery-1)'), (84, 0, 0, 'USE TEMP B-TREE FOR ORDER BY')]
+plan_with_device_indexes [(2, 0, 0, 'CO-ROUTINE (subquery-1)'), (9, 2, 0, 'SEARCH market_observation USING INDEX idx_mo_sym_tf_open (symbol=? AND timeframe=? AND open_time<?)'), (44, 0, 0, 'SCAN (subquery-1)'), (65, 0, 0, 'USE TEMP B-TREE FOR ORDER BY')]
+real_adapter_cached True DUPLICATE_CLIENT_ORDER_ID ACKNOWLEDGED

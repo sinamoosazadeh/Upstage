@@ -1,0 +1,2 @@
+cache ACKNOWLEDGED ACKNOWLEDGED True DUPLICATE_CLIENT_ORDER_ID posts 1
+manager_exit_kind ORDER_KIND_QX transport_posts_after_exit_attempt 1
