@@ -1,0 +1,8 @@
+1) production TIF extra  -> ok=True classification=OK
+   sent: {'type': 'STOP', 'quantity': '0.1', 'price': '99', 'reduceOnly': 'true', 'timeInForce': 'GTC'}
+2) valid target          -> ok=True outcome=ACKNOWLEDGED
+   sent: {'type': 'LIMIT', 'quantity': '0.1', 'price': '103', 'reduceOnly': 'true', 'timeInForce': 'GTC'}
+3) same call + extras   -> ok=True outcome=ACKNOWLEDGED
+   sent: {'clientOrderId': 'i-evil', 'leverage': '125', 'positionMode': 'ONE_WAY', 'price': '103', 'quantity': '999', 'recvWindow': '5000', 'reduceOnly': 'false', 'side': 'BUY_OPEN', 'signature': 'bbdb4fca87c99f7df86c084687a09605afc54461702d1ba13d7d839059639294', 'symbol': 'BTC-SWAP-USDT', 'timeInForce': 'GTC', 'timestamp': '1767225600000', 'type': 'MARKET'}
+4) venue recorded clientOrderId: True | adapter-visible intent was i-target-bad
+5) direct order_type=MARKET refused: ToobitMapError ORDER_TYPE_FORBIDDEN: type=MARKET (Ch.16 L16895)

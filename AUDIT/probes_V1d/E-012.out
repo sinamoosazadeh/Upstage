@@ -1,0 +1,8 @@
+raw_hash_chain : raw_hash_chain True PASS | 10 manifest(s), 10 raw observation(s)
+risk_recheck   : risk_recheck True PASS | 2 position(s), 1 plan(s)
+fsm_state      : fsm_state True PASS | 2 non-terminal FSM record(s) re-validated against broker state
+trade_plan row keys: ['as_of', 'contract_multiplier', 'created_utc', 'decision', 'direction', 'entry_ref', 'environment', 'lineage', 'package_version', 'payload_hash', 'proposal_id', 'risk_amount', 'risk_state', 'setup_id', 'sized_quantity', 'snapshot_id', 'stop_price', 'symbol', 'target_price', 'timeframe', 'vetoes_applied']
+'leverage' in any plan row: False
+ledger positions (capital/concentration breach, no protection): {'BTCUSDT': '100000', 'ETHUSDT': '50000'}
+protective orders in ledger: 0
+tmpdir: /tmp/v1d_e012_dryzxr7_
