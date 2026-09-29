@@ -1,0 +1,6 @@
+submit_outcome PARTIAL state PARTIAL
+venue_executed 0.1 plan_quantity 0.2
+repeat_partial_exception ILLEGAL_FSM_TRANSITION state PARTIAL
+protection True state PROTECTED
+stop_quantity 0.2 target_quantity 0.2
+partial_protection_failure_exception ILLEGAL_FSM_TRANSITION state PARTIAL

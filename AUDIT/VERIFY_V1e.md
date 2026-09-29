@@ -8,8 +8,8 @@ Baseline verified: `85b2c155d7b054a468379ddfd802eb239d0801f9` (`85b2c15 Merge pu
 |---|---|---:|---:|---|---|---|
 | E-001 | CONFIRMED | S1 | S1 | No | D58 (separate simulator scope); X-V1d-002 | A: durable non-terminal lifecycle registry |
 | E-002 | CONFIRMED | S1 | S1 | No | — | A: reconstruct/hydrate before READY |
-| E-004 | Pending | S1 | Pending | No | — | Pending |
-| E-005 | Pending | S1 | Pending | No | X-V1d-002 | Pending |
+| E-004 | CONFIRMED | S1 | S1 | No | — | A: cumulative fill/residual authority |
+| E-005 | PARTIAL | S1 | S1 | No | X-V1d-002; D50 | A: lawful exit mapping + residual accounting |
 | E-006 | Pending | S1 | Pending | No | D58; X-V1d-002 | Pending |
 | E-007 | Pending | S1 | Pending | No | X-V1d-002 | Pending |
 | E-008 | Pending | S1 | Pending | No | — | Pending |
@@ -92,4 +92,80 @@ A, sequenced with E-001-A: one durable lifecycle registry reconstructed at boot 
 
 ### Acceptance and regression tests
 Seed ACKNOWLEDGED, PARTIAL, FILLED/PROTECTED/MANAGED and RECOVERY_REQUIRED lineage plus matching fake venue records; restart must hydrate exactly one object per intent, make no duplicate POST, and query/reconcile each correct state. Missing plan/protection/fill lineage, rejected query and mismatched quantity must leave boot non-READY. The existing clean boot and no-adapter fail-closed tests must continue passing.
+
+## E-004
+
+### Auditor claim (short quote)
+“Partial entry is protected at full plan quantity; a repeated PARTIAL triggers an undefined PARTIAL→PARTIAL_FILL transition, and partial protection failure has no legal transition.”
+
+### What I read (files, line ranges, functions, callers)
+I read `/tmp/AUDIT.md:197` in full; the complete required FSM, adapter, ledger, fake responder and tests; plus direct caller `PaperRuntime.execute_plan`/`_observe_fill` (`apex/ops/paper_loop.py:692–801`) and direct callees `ExecutionFSM.record_fill`/`place_protection` (`fsm.py:671–757`) and adapter submit/query code (`toobit_adapter.py:402–550`). Mandatory consumer search was `grep -RInE 'PARTIAL_FILL|place_protection|record_fill|_observe_fill|apply_adapter_result' apex tests scripts`. The transition matrix has no `PARTIAL,PARTIAL_FILL` edge and no `PARTIAL,PROTECTION_FAILED` edge (`fsm.py:130–162`); `place_protection` defaults `qty` to `self._plan.sized_quantity` (`710`) and `advance` refuses absent edges (`451–495`).
+
+### Reproduction (command, probe file, actual result)
+`python3 -u -B AUDIT/probes_V1e/E-004.py` (raw `AUDIT/probes_V1e/E-004.out`) uses the real FSM, adapter, ledger and temporary SQLite with a repository fake responder configured before adapter construction. The real partial entry reports `venue_executed 0.1 plan_quantity 0.2`; its repeated venue PARTIAL raises `ILLEGAL_FSM_TRANSITION state PARTIAL`; after recording the actual 0.1 fill, protection succeeds with `stop_quantity 0.2 target_quantity 0.2`; a business-code `-1022` stop rejection then raises `partial_protection_failure_exception ILLEGAL_FSM_TRANSITION state PARTIAL`. `E-004_E-005-pytest.out` records the focused existing command and `6 passed, 152 deselected`; the passing synthetic tests do not cover this real partial transition. The output demonstrates control flow against a fake venue only, not a real partial-fill feed/device.
+
+### Verdict and reasoning
+**CONFIRMED, S1.** All three reported mechanisms hold. A full-plan pair of protective reduce-only orders is created for half the actual entry quantity; a repeated status is not idempotent; and the failure escalation itself throws when starting at PARTIAL. Any is enough to make partial entry handling unsafe. S1 reflects potential protection/exposure loss after a partial venue execution, rather than a universal S0 startup blocker.
+
+### Root cause
+The FSM holds individual fills but exposes neither cumulative filled quantity nor remaining quantity as the protection sizing authority. The runtime treats any PARTIAL as a fresh state transition, and the frozen transition map omitted idempotent observation/failure edges needed by the caller’s behavior.
+
+### Direct impact
+A partial fill can create over-sized protective orders, crash processing on its next unchanged poll, or crash while processing a rejected stop. The partial exposure is then not reliably protected/reconciled.
+
+### Secondary effects and interactions (upstream/downstream)
+E-001 discards unfilled/partial lifecycle objects; E-002 cannot rebuild them after restart. Over-sized reduce-only stops/targets can produce venue rejection or quantities inconsistent with ledger position. E-005’s residual-close issue is a distinct exit-stage analogue. Resulting fill/accounting/outcome data can corrupt risk limits, replay and training labels. Fixture/fake success is not proof of exchange semantics, position-mode handling or real database data.
+
+### Contract and decisions
+The governing Ch.16 table at `APEX_GEN5.md:16920–16928` says entry IOC permits partial fill and “PARTIAL until `fill_timeout` ⇒ RECOVERY_REQUIRED”; `16874–16880` requires reconcile-first rather than silent failure. The immutable Ch.16 state vocabulary governs the names, but it does not authorize an exception as a partial-fill policy. D50 governs identity/duplicate behavior (`PHASE2_DECISION_LOG.md:1159`) and does not supersede partial-fill safety. Contract then D50 take precedence; no conflicting later owner decision was found.
+
+### Frozen status and non-frozen alternative
+`fsm.py`/`paper_loop.py` are non-frozen under the supplied list, but frozen lifecycle names and Ch.16 values must remain unchanged. A non-frozen producer/runtime projection of cumulative ledger fills can size protection correctly. No change to frozen engine/data-catalog files, YAMLs, research files or `requirements.lock` is needed.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** make `record_fill`/ledger cumulative filled and remaining quantities authoritative; make repeated same-order status observational/idempotent; add lawful partial failure handling that transitions to recovery without throwing; submit/resize/cancel protection only for actual residual exposure. Side effects: tests pinning the transition matrix need revision; protection/order identity and ledger audit entries increase; existing cached duplicate logic must remain distinguishable (X-V1d-002); no DB migration is needed if fills are replayed, but persisted protection linkage would need one. **B:** reject/cancel every partial entry. This is legal only after reconcile and changes the governed “partial fill permitted” behavior; it still needs partial accounting. **C:** protect full quantity and rely on venue reduce-only clipping. Rejected: unsound, venue-dependent, and not traceable.
+
+### My recommendation
+A, with a single cumulative fill/remainder calculator shared by polling, protection, reconciliation and exit accounting.
+
+### Acceptance and regression tests
+Test initial partial, repeated identical partial, increasing partial then full, partial timeout, and stop/target rejection. Assert every protection quantity equals current live exposure, repeated polls create neither transition nor duplicate fill, and failure yields named recovery rather than an exception. Retain fresh ACK/FILLED behavior, D50 duplicate semantics and ledger fill-id idempotency.
+
+## E-005
+
+### Auditor claim (short quote)
+“A PARTIAL exit is closed like a full exit and removed from `working` even when `reconciled=False`.”
+
+### What I read (files, line ranges, functions, callers)
+I read the complete row at `/tmp/AUDIT.md:198`, all required scope files and `PaperRuntime.manage_positions` (`apex/ops/paper_loop.py:803–870`) end-to-end. Its fill branch records `fill[quantity]`, computes P/L using the full `plan.sized_quantity`, calls `close_position`, calls `reconcile`, appends an action, then unconditionally `self.working.pop(intent_id, None)`. Direct callees are `ExecutionFSM.record_fill`, `close_position`, `reconcile` (`fsm.py:671–910`) and `last_closed_price`; the caller is `run_cycle` (`paper_loop.py:1052`). Consumer search was `grep -RInE 'manage_positions|close_position|kind="exit"|DUPLICATE_CLIENT_ORDER_ID|cached' apex tests scripts`. I also read V1d X-V1d-002 rather than re-verifying it: `apply_adapter_result` does not inspect `cached`/`DUPLICATE_CLIENT_ORDER_ID`.
+
+### Reproduction (command, probe file, actual result)
+`python3 -u -B AUDIT/probes_V1e/E-005.py` (raw `AUDIT/probes_V1e/E-005.out`) exercises the real adapter and repository fake responder. One normal submit then the same id produces `first ACKNOWLEDGED False cached ACKNOWLEDGED True DUPLICATE_CLIENT_ORDER_ID post_count 1`; applying that cached receipt yields `cached_apply_state ACKNOWLEDGED duplicate_exposed False reconcile_required False`, independently confirming the relevant consumer-side path noted by V1d. Crucially, the real exit seam reports `actual_exit_exception ORDER_KIND_QX`: `manage_positions` passes `kind="exit"`, but `order_defaults` has no `exit` kind. Thus I could not reproduce an actual partial exit through the current real adapter; the source branch itself is nevertheless directly reachable if a fill-shaped exit result is supplied by the test-only `FakeAdapter`. The focused pytest output is `E-004_E-005-pytest.out` (6 passed), which uses that synthetic adapter and cannot prove real-adapter exit behavior.
+
+### Verdict and reasoning
+**PARTIAL, S1.** The claimed *branch* is proven: if `fill_from_result(exit_result)` returns a partial quantity, code closes the full lifecycle, calculates full-plan P/L and removes it regardless of `reconciled.get("agree")`. However, the claim overstates current executable behavior: the actual shipped adapter raises before an exit can ACK or partially fill because `kind="exit"` is unsupported. This is not a rejection of the dangerous dead branch; it is a partial verdict because the report’s concrete runtime scenario is unreachable at this baseline. S1 remains appropriate: making exit mapping reachable without fixing the branch can abandon residual exposure; current management’s exception is also serious.
+
+### Root cause
+`manage_positions` equates “a fill result exists” with “the position is flat.” It does not compare exit quantity/cumulative ledger residual to exposure and does not gate removal on reconciliation. Separately, its invented `kind="exit"` conflicts with the adapter’s governed defaults; V1b/V1d already recorded that wire-map fact.
+
+### Direct impact
+If the exit branch becomes executable, a 2-of-10 exit books a terminal outcome/P&L at 10 and discards the remaining 8 even after reconciliation says false. At present, triggered exit management instead raises `ORDER_KIND_QX`, so no exit is submitted at all through the real adapter.
+
+### Secondary effects and interactions (upstream/downstream)
+The partial/remnant problem interacts with E-004 partial entries, E-006 stop/target management and E-007 repeated exit intent. It can understate open margin/exposure, distort P/L and loss limits, leave protective orders mismatched, and contaminate outcome/replay/training data. V1d X-V1d-002 means a cached exit acknowledgement would be treated like fresh progress if an exit mapping is later added. Fake/test-double observations cannot prove real exchange reduce-only behavior, fills, accounting or device recovery.
+
+### Contract and decisions
+`APEX_GEN5.md:16874–16880` requires reconciliation before downstream reconciliation state; `16919–16928` makes partial fill a governed lifecycle state until timeout/recovery. `16958–16962` requires working orders/positions reconstruction. D50 (`PHASE2_DECISION_LOG.md:1159`) requires repeated IDs be named `DUPLICATE_CLIENT_ORDER_ID`, never resent, with original outcome preserved; V1d proves the consumer does not use that marker. No owner decision permits terminal closure solely because one partial fill record exists. Contract and D50 therefore prevail.
+
+### Frozen status and non-frozen alternative
+No affected source file is listed frozen; frozen wire defaults must not be edited casually, and the six original YAMLs are frozen. A non-frozen adapter/fabric mapping can give exits a governed existing kind/semantics, while a runtime/ledger residual calculator fixes closure. Changing frozen `order_defaults` would require explicit owner ruling; an outside adapter operation mapping is preferable.
+
+### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A (recommended):** first establish a lawful non-frozen exit adapter path using existing governed flatten semantics; then calculate remaining exposure from ledger/venue fills, retain/rescale protection and `working` until flat **and** reconciled. Side effects: exit identity/order linkage and test fixtures change; old outcomes/caches are not rewritten but may require correction records; current exact action tests change; no retraining is automatic but corrected outcomes affect later training data. **B:** reject partial exits and require manual recovery. Conservative but harms normal partial target policy and still needs reconciliation. **C:** alter frozen `order_defaults` with an `exit` key. Requires owner ruling and broad wire/fixture conformance review; do not choose absent that ruling.
+
+### My recommendation
+A, landing the adapter mapping and residual accounting together; do not merely enable `kind="exit"` and expose the existing full-close branch.
+
+### Acceptance and regression tests
+Using a real adapter/fake configured before construction, prove exit ACK, PARTIAL, FILLED, rejected and cached duplicate paths. A 2/10 exit must retain residual 8 with correctly sized protective cover, no outcome until flat/reconciled, and correct P/L only on closed quantity. A reconcile failure must retain recovery state. Assert real adapter wire construction never raises `ORDER_KIND_QX` on the approved exit path and V1d duplicate marker behavior remains explicit.
 
