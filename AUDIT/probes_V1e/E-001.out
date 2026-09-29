@@ -1,0 +1,6 @@
+submit_outcome ACKNOWLEDGED
+fill {'filled': False, 'outcome': 'ACKNOWLEDGED', 'source': 'VENUE_QUERY', 'reason': 'FILL_NOT_OBSERVED_YET'}
+fsm_state ACKNOWLEDGED
+poll_query_count 3
+working_keys []
+adapter_order_status NEW

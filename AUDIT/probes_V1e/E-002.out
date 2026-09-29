@@ -1,0 +1,5 @@
+boot_state READY
+reconcile_agree True
+open_intents ('i-prior',)
+runtime_working []
+prior_order_status NEW
