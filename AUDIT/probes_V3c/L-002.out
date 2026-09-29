@@ -1,0 +1,22 @@
+Traceback (most recent call last):
+  File "/home/user/Upstage/AUDIT/probes_V3c/L-002.py", line 63, in main
+    r2 = asyncio.run(cat.get("OBV", "BTCUSDT", "15m", as_of, lookback=2))
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'decimal.Decimal' object has no attribute 'close'
+obv_series 1-bar [rising]: 0
+obv_series 2-bar [rising]: RAISED AttributeError: 'decimal.Decimal' object has no attribute 'close'
+obv_series 1-bar [falling]: 0
+obv_series 2-bar [falling]: RAISED AttributeError: 'decimal.Decimal' object has no attribute 'close'
+obv_series 1-bar [flat]: 0
+obv_series 2-bar [flat]: RAISED AttributeError: 'decimal.Decimal' object has no attribute 'close'
+Catalog.get("OBV") default: status=OK reason='' value=0E-8
+Catalog.get("OBV", lookback=2): RAISED:
+E03 obv_series_wilder rising [100,105] vols [10,10]: [10.0, 20.0]
+E03 obv_series_wilder falling [105,100] vols [10,10]: [10.0, 0.0]
+E03 obv_series_wilder flat [100,100] vols [10,10]: [10.0, 10.0]

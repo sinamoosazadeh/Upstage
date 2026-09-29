@@ -1,0 +1,10 @@
+ATOM count: 44
+distinct (lookback, warmup) over all ATOM contracts: [(1, 0)]
+EngineBase.feature signature default lookback: 1
+TR_t      default(1): status=UNAVAILABLE reason=INSUFFICIENT_BARS_QX   value=None | lookback=22: status=OK          reason=                       value=8.0000000000
+ATR       default(1): status=UNAVAILABLE reason=INSUFFICIENT_BARS_QX   value=None | lookback=22: status=OK          reason=                       value=8.0000000000
+SMA       default(1): status=UNAVAILABLE reason=INSUFFICIENT_BARS_QX   value=None | lookback=22: status=OK          reason=                       value=131.5000000000
+RSI       default(1): status=UNAVAILABLE reason=INSUFFICIENT_BARS_QX   value=None | lookback=22: status=OK          reason=                       value=100.0000
+VolumeZ   default(1): status=UNAVAILABLE reason=INSUFFICIENT_BARS_QX   value=None | lookback=22: status=OK          reason=                       value=1.6475
+return_k  default(1): status=UNAVAILABLE reason=INSUFFICIENT_BARS_QX   value=None | lookback=22: status=OK          reason=                       value={'k1': Decimal('0.0071428571'), 'k5': Decimal('0.0367647059'), 'k20': Decimal('0.1652892562')}
+OBV       default(1): status=OK          reason=                       value=0E-8 | lookback=22: RAISED AttributeError: 'decimal.Decimal' object has no attribute 'close'
