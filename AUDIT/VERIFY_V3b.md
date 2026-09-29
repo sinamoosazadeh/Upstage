@@ -39,7 +39,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-023 | CONFIRMED | S2 | S2 | No — `apex/ops/partial_bar_repair.py` / `scripts/run_apex.py` | K-022 (same command), ISSUE-CP13-001 | A — unique run id + exclusive atomic create; report-write failure is a named non-READY outcome |
 | K-024 | CONFIRMED (severity lowered) | S1 | S2 | No — detector and ingest wiring are non-frozen; `raw_observation` DDL and the parser are frozen | K-022/K-023 (same command), ISSUE-CP13-001 | A — persist a measured capture/receipt time and key detection on it; B — bounded verification of suspect bars |
 | K-025 | CONFIRMED | S1 | S1 | No — `apex/ops/engine_context.py` / `bootstrap_service.py` are non-frozen; `apex/quality/vector.py` is not in the frozen set either | D52 A1; K-019 (publish path); K-010 (calendar step) | A — carry offered/accepted/receipt and the previous frontier into the measurement; unknown must stay unknown |
-| K-026 | PENDING | S1 | — | — | — | — |
+| K-026 | CONFIRMED (severity lowered) | S1 | S2 | No — `apex/ops/engine_context.py` non-frozen; the freshness thresholds are governed params | D52 B (backfill), D33/ISSUE-037 (minimum veto), K-019/K-025 (same publish path) | A — report usability, not just `written`; B — owner-approved warmup-vs-decision window policy |
 | K-027 | PENDING | S2 | — | — | — | — |
 | K-028 | PENDING | S2 | — | — | — | — |
 | K-029 | PENDING | S2 | — | — | — | — |
@@ -2101,3 +2101,150 @@ with the D52 A1 wording amended by the owner in the same change.
 5. The 1mo/1w calendar step is used for `expected_count` (regression tie-in with K-010).
 6. A quality fact with a real gap triggers `veto_completeness` end to end in
    `calc_quality_vector`.
+
+---
+
+## K-026 — the PAPER historical backfill writes quality facts the reader can never use
+
+#### Auditor claim (short quote)
+> «D52 backfill، `created_at` زمان درج تاریخی را به‌عنوان receipt می‌گیرد؛ وقتی دریافت از close بیش از SLA است، `calc_quality_vector` با `QUARANTINED_FRESHNESS` و QX برمی‌گردد، **اما fact همچنان «written» ثبت می‌شود** و `quality_window` با دیدن q=None امتناع می‌کند … تست D52 فقط `written=1` و `already_present=1` را می‌سنجد، نه موفقیت خواننده … این **اثر مشروطِ سیاست محافظه‌کارانهٔ تازگی** است، نه مجوز تاریخ‌سازی.»
+> — “The D52 backfill takes `created_at`, the historical insert time, as the receipt; when reception is later than the SLA after the close, `calc_quality_vector` returns `QUARANTINED_FRESHNESS`/QX, **yet the fact is still recorded as ‘written’**, and `quality_window` refuses on q=None … the D52 test only checks `written=1`/`already_present=1`, not reader success … this is a **conditional effect of the conservative freshness policy**, not a licence to fabricate.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/engine_context.py:3645–3752` — `publish_quality_backfill`: `receipt_ms =
+_created_at_ms(created_at)` (3672); rows with `receipt_ms < close_ms` are listed in
+`skipped_receipt_before_close` and never faked (3678–3685); otherwise the fact is published
+with `measurements={"source_health": 1.0, …}`, `receipt_time_ms=receipt_ms`,
+`measured_at=_ms_to_iso(receipt_ms)`,
+`measurement_source="HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS"`, `provenance="BACKFILL"`
+(3734–3742) and counted as `written` (3743–3744). The return dict has no "usable" metric.
+`apex/ops/engine_context.py:3836–3854` — `publish_quality_observation` computes the quality
+vector for the fact and stores it (state `QUARANTINED_FRESHNESS`, `q_raw=None`) without
+refusing.
+`apex/ops/engine_context.py:2030–2093` — `quality_window`: recomputes
+`delay = freshness([obs], timeframe, receipt_time=fact["receipt_time_ms"]/1000)
+["staleness_seconds"]`, then `q, state, tier = calc_quality_vector(...)` and
+`if q is None: raise BridgeError("WINDOW_QUALITY_UNAVAILABLE", state)` (2079–2081); the
+BACKFILL provenance is additionally rejected outside PAPER (2052–2054).
+`apex/ops/engine_context.py:2291–2297` — `bundle()` calls `quality_window` first, so the
+refusal propagates to plan/decision.
+`apex/quality/vector.py:110–112` — `freshness = obs.delay_seconds;
+if freshness > thresholds.get(tf, 30): return None, "QUARANTINED_FRESHNESS", "QX"`.
+`:149–160` — the four independent vetoes (completeness, source, OI lag, freshness).
+`tests/unit/test_cp146.py:321–359` — the D52 tests assert `written`/`already_present` and the
+`skipped_receipt_before_close` listing; no test asserts that a reader can consume the result.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-026.py`; probe/output `AUDIT/probes_V3b/K-026.py|.out`.
+Real store seeded with 8 CLOSED 1h bars, each inserted 24 h after its own close (a lawful
+historical receipt), then the real backfill and the real reader:
+```
+publish_quality_backfill(environment='PAPER'):
+   written = 8   already_present = 0   skipped = 0
+   skipped_receipt_before_close = []
+durable fact for the newest bar:
+   measurement_source = 'HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS'
+   provenance         = 'BACKFILL'
+   receipt_time_ms    = 1672646400000 (2023-01-02T08:00:00.000Z)
+   q_raw / state      = None / 'QUARANTINED_FRESHNESS'
+   delay_seconds      = 86400.0
+reader path: quality_window raised BridgeError('WINDOW_QUALITY_UNAVAILABLE',
+                                               'QUARANTINED_FRESHNESS')
+```
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2 (auditor S1, lowered).** The end-to-end behaviour is
+exactly as claimed, including the `written` count that says success while every fact is
+QX and the reader refuses. I lower the severity because the system **fails closed**: no
+fabricated freshness, no usable-but-wrong evidence, the QX state is stored honestly, and the
+refusal is explicit and named. What is defective is the *reporting* (a command that claims
+success for work that produces nothing usable) and the *absence of a policy* for how a
+historical warmup window is supposed to become usable — a readiness/expectation problem, not
+a correctness one. The auditor's own framing agrees ("conditional effect of the conservative
+freshness policy").
+
+#### Root cause
+Two different notions of "quality" share one function: the *freshness SLA of a live decision*
+(seconds after close) and the *historical validity of a stored bar*. The backfill necessarily
+produces receipts far past the close, so every backfilled fact fails the live SLA gate. No
+separate contract exists for historical/warmup facts, and the command's success metric is
+"rows written" rather than "window usable".
+
+#### Direct impact
+`publish-quality-backfill` can report `written=N, skipped=0` while the PAPER path still
+refuses with `WINDOW_QUALITY_UNAVAILABLE`, and — because the reader's default window is up to
+300 bars with the D33 minimum-veto — the refusal persists until **every** backfilled bar has
+left the window (≈12.5 days on 1h; far longer on high timeframes), with nothing in
+`status`/CLI stating that.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream this is the same publish path as **K-019** (catch-up facts) and the same measurement
+helper as **K-025**; note the backfill's `source_health=1.0` is the one admittedly
+non-measured value, named as such by D52 B — consistent with the contract, but it means the
+only thing blocking usability is the freshness gate. Downstream, `bundle()` → plan/decision
+is blocked for the whole window, so the operator may conclude that some *other* blocker
+(H-008 OI, C-002/D-001 transport) is still open. Per **D30** the E11 fit scope is 20 base
+cells, distinct from the 140-cell data scope — a readiness statement must say which one it
+measured (see K-020).
+
+#### Contract and decisions
+* `PHASE2_DECISION_LOG.md:1163` (**D52 B**, binding): `publish-quality-backfill` is PAPER-only,
+  writes facts labelled `HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS`/`provenance=BACKFILL`,
+  “`source_health=1.0` is the only non-measured value and is named as such”, and a row whose
+  `created_at` is earlier than its bar close “is listed … and is never faked”. The
+  implementation honours all of this — so the behaviour is *compliant*; what D52 B does not
+  define is whether the resulting facts are expected to be consumable.
+* `PHASE2_DECISION_LOG.md:819` and **D14** define `freshness_ok ⇔ staleness_seconds ≤
+  freshness_sla_seconds` measured on the bars actually present, and **D22** forbids rewriting
+  freshness for any other reason. Precedence: D14/D22 are binding and explicitly forbid a
+  waiver, so any fix must **not** relax the freshness gate; only an owner decision can create
+  a separate historical/warmup class.
+* `APEX_GEN5.md:431` (D33/ISSUE-037): the native minimum-veto with “unknown provenance
+  refusing” is exactly what fires here — the refusal is the contract working.
+* `APEX_GEN5.md:5068`: a degraded status must be carried as a flag and must not bypass a hard
+  gate — supports keeping the refusal and fixing the reporting instead.
+
+#### Frozen status and non-frozen alternative
+**Not frozen**: `apex/ops/engine_context.py` (backfill + reader) and `apex/quality/vector.py`
+are outside the frozen set. However the freshness thresholds live in the governed quality
+params (`_qw()["freshness_threshold_seconds"]`), and the six original params YAMLs **are**
+frozen — so changing a threshold is a governed parameter change, not a code fix. The
+non-frozen alternative is to change what the *command reports* and to add an explicit,
+owner-approved historical class, without touching thresholds.
+
+#### Fix options (A/B/C…)
+* **A (recommended, no policy change)** — make the backfill report usability: for each cell
+  return `written`, plus `usable_now`, `quarantined_by_reason` (e.g.
+  `{"QUARANTINED_FRESHNESS": 300}`), and `earliest_as_of_when_window_clears`; surface the same
+  in `run_apex status` so the operator sees "PAPER blocked for N more bars / until <time>".
+  Side effects: the D52 tests (tests/unit/test_cp146.py:321–359) gain assertions; the CLI's
+  exit mapping should treat `usable_now == 0` as DEGRADED, not READY (ties into K-020); no
+  frozen file, no parameter change.
+* **B** — owner-approved policy separating *warmup/feature-history* quality from
+  *decision-window* quality: historical facts are admitted for feature warmup with an explicit
+  `HISTORICAL` class that can never satisfy the decision gate, while the decision window keeps
+  D14 unchanged. Side effects: needs a new decision (D14/D22 cannot be reinterpreted by
+  implementation), new fact field + migration, and careful tests that no decision path ever
+  consumes the historical class.
+* **C** — shrink the reader's window (fewer bars) so recent live facts dominate sooner. Side
+  effects: changes D33 minimum-veto semantics and window quality; governance change with
+  real signal consequences — not recommended as a workaround.
+* **D** — do nothing and document the warmup delay. Side effects: acceptable only with A;
+  alone it leaves a command that reports success for nothing usable.
+
+#### My recommendation
+**A now** (honest reporting of a correct refusal), and take **B** to the owner as an explicit
+policy question. Never relax the freshness gate silently — D14/D22 forbid it, and the auditor's
+own acceptance criterion says the same.
+
+#### Acceptance and regression tests
+1. Backfill over historical bars: `written > 0` **and** `usable_now == 0`, with the
+   quarantine reason and the clearing time reported; CLI exit is not READY.
+2. `quality_window` over that window raises `WINDOW_QUALITY_UNAVAILABLE`
+   (`QUARANTINED_FRESHNESS`) — the refusal is asserted, not incidental.
+3. After enough bars with genuine in-SLA receipts, the same window succeeds and the reported
+   `usable_now` matches.
+4. No path grants a freshness waiver, and no BACKFILL fact is consumable outside PAPER
+   (`QUALITY_PROVENANCE_BACKFILL_NOT_LIVE` still fires).
+5. `skipped_receipt_before_close` continues to list (never fake) rows whose receipt precedes
+   their close.

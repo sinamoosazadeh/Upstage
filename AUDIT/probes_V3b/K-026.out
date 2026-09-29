@@ -1,0 +1,19 @@
+# K-026 — historical backfill freshness vs the PAPER window gate
+
+seeded 8 CLOSED 1h bars, each created_at = its close + 24 h
+
+publish_quality_backfill(environment='PAPER'):
+   written                      = 8
+   already_present              = 0
+   skipped                      = 0
+   skipped_receipt_before_close = []
+
+durable fact for the newest bar:
+   measurement_source = 'HISTORICAL_BACKFILL_BOOTSTRAP_DEFAULTS'
+   provenance         = 'BACKFILL'
+   receipt_time_ms    = 1672646400000 (2023-01-02T08:00:00.000Z)
+   q_raw / state      = None / 'QUARANTINED_FRESHNESS'
+   delay_seconds      = 86400.0
+
+reader path (EngineContextProducer.quality_window):
+   quality_window raised BridgeError('WINDOW_QUALITY_UNAVAILABLE', 'QUARANTINED_FRESHNESS')
