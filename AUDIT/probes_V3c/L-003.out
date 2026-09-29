@@ -1,0 +1,6 @@
+catalog zscore(prior+current,20) = 1.917659864219593473582532451
+contract  (current vs prior-only) = 2.167774923810299979201914143
+E03 zscore_pit(23, 1..20, 20)     = 2.1677749238103
+rolling prior low extreme = 90
+F74 _volume_z(prior, sweep_bar) = 1.917659864219593473582532451 (gate needs >= 2)
+compute_sweep -> value=0 q=1.0 status=OK reason=NO_SWEEP_IN_BLOCK

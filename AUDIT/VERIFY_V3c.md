@@ -27,8 +27,8 @@ and synthetic failure proves the code path, not that it has already damaged a de
 |---|---|---:|---:|---|---|---|
 | L-001 | CONFIRMED | S2 | S2 | Yes — `apex/data_catalog/**` + frozen `engines/base.py` | — | B now (explicit lookback / non-frozen depth adapter); A by owner ruling (validity-vs-depth split) |
 | L-002 | CONFIRMED | S2 | S2 | Yes — `apex/data_catalog/math` + `atomic/features.py` | L-001 (default depth hides crash as OK/0) | B now (refuse/reroute to E03); A by owner ruling (Wilder convention verbatim) |
-| L-003 | PENDING | S1 | — | — | — | — |
-| L-004 | PENDING | S1 | — | — | — | — |
+| L-003 | CONFIRMED | S1 | S1 | Yes — `apex/data_catalog/math` + `atomic/molecular/features.py` | E03 `zscore_pit` is the conformant reference | B now (conformant adapter, never consume catalog z-features); A by owner ruling (baseline + σ-guard together) |
+| L-004 | CONFIRMED | S1 | S1 | Yes — `apex/data_catalog/atomic/features.py` | L-003 (same window-as-baseline confusion) | B now (adapter currency check); A by owner ruling jointly with L-003-A |
 | L-005 | PENDING | S2 | — | — | — | — |
 | L-006 | PENDING | S2 | — | — | — | — |
 | L-007 | PENDING | S2 | — | — | — | — |
@@ -131,3 +131,93 @@ B immediately (refuse-or-reroute adapter) so no future consumer silently eats `O
 - Rising/falling/flat 2-bar windows return the governed signed/zero increments (no exception); 1-bar returns `UNAVAILABLE` (seed is not a value); 20-bar series equals E03 `obv_series_wilder` on the same closes/volumes to the 8-digit quantization.
 - `Catalog.get("OBV", lookback=2)` returns a status, never raises.
 - Regression: `tests/unit/test_e03_volume.py` (OBV fixtures) unchanged; new test pins catalog OBV to the E03 convention.
+## L-003 — z-score self-normalization (current bar in its own baseline) + F74 sweep gate
+
+#### Auditor claim (short quote)
+> "`zscore` takes mean/σ from 20 values INCLUDING the current candle; the E03 VolumeZ/RangeZ contract uses the 20 values BEFORE the candle. F74 repeats the same self-normalization in `_volume_z(prior+obs,20)`. In the sample (prior vols 1..20, sweep-bar vol 23) contract Z≈2.1678 but computed Z≈1.9177; with low=89 under extreme=90 and close=95, F74 returned `OK/NO_SWEEP_IN_BLOCK` instead of a valid sweep."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/data_catalog/math/__init__.py:167–178` (`zscore`): `recent = values[-n:]`, `last = values[-1]` — the scored value is a member of its own baseline by construction.
+- `apex/data_catalog/atomic/features.py:236–241` (`_f19_volume_z`), `:321–327` (`_f34_range_z`): pass the full window including the current bar; `:257–263` (`_f21_oi_z`) passes the None-filtered list likewise. Mandatory grep shows these plus `molecular/features.py:113` are the ONLY `m.zscore` callers in `apex/`.
+- `apex/data_catalog/molecular/features.py` (complete, 123 lines): `_volume_z(prior, obs)` (108–115) builds `vols = prior + [obs]` (21 items) then `m.zscore(vols, 20)` — the last 20 = 19 prior + current; `compute_sweep` (64–84) requires `vol_z >= VOLUMEZ_GATE = 2` at the penetration candle before testing penetration geometry.
+- `apex/engines/e03_volume/engine.py:119–124` (`zscore_pit(current, history, n)` — current scored against a SEPARATE history) with call sites `vz` (572), `rz` (574), `oi_z` (598), `obv_z` (623); the current bar is appended to `history_vols/ranges/closes/obv` only AFTER computation (732–735; the warmup path returns early without scoring). E03 baselines are therefore strictly prior-only — the contract-conformant shape.
+- Tests: no test pins F74 sweep values (`tests/unit/test_catalog.py:194–201` only counts `sweep` computer invocations for cache behavior); nothing asserts `_f19/_f34` values against a prior-only oracle.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-003.py`. Probe: `AUDIT/probes_V3c/L-003.py` (real `cmath.zscore`, real `compute_sweep`/`_volume_z`, real E03 `zscore_pit`; synthetic bars). Raw output: `AUDIT/probes_V3c/L-003.out`. Result: catalog `zscore = 1.91765986…` vs prior-only contract value `2.16777492…` (auditor's 1.9177/2.1678 to 4dp); E03 `zscore_pit = 2.1677749238103` (matches contract); F74 `_volume_z = 1.9177 < 2` so `compute_sweep → OK/NO_SWEEP_IN_BLOCK` on geometry that the contract Z (2.1678 ≥ 2) would admit as a sweep.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). The self-normalization, the exact numbers, the missed sweep, and the E03/catalog split are all reproduced in real code. S1 because a threshold gate (`VolumeZ ≥ 2`) is systematically biased downward near the boundary — outliers are shrunk toward the baseline that contains them — and the same wrong primitive feeds `VolumeZ`, `RangeZ`, `OI_z` and F74. Severity stays S1 rather than S0 only because the catalog path has no runtime consumer today (E03 computes its own conformant scores); the day catalog features feed serve, this corrupts sweep/outlier detection silently.
+
+#### Root cause
+`zscore(values, n)` conflates "the window the caller hands over" with "the baseline": it scores `values[-1]` against statistics that include `values[-1]`. Every caller passes a window whose last element is the bar being scored, and F74 additionally concatenates `prior + [obs]` before calling it — so the current bar dilutes its own deviation in all four consumers.
+
+#### Direct impact
+Near-threshold sweeps and outliers are missed or under-scored: any `VolumeZ/RangeZ/OI_z` within the dilution band below its gate reads low, and F74 drops valid penetration candles (`NO_SWEEP_IN_BLOCK` with `q=1.0`, i.e. confidently wrong).
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the defect is in the shared primitive, so one fix covers all four consumers. Downstream, catalog `VolumeZ/RangeZ` disagree with E03's `vz/rz` on identical inputs (proven: 1.9177 vs 2.1678), so any future calibration, backtest statistics, or setup/playbook logic built on catalog features would silently diverge from E03-native behavior. Beyond-audit note (same function, same clause, same fix vehicle — folded here, not a separate X-ID): §3.1 also specifies `σ<ε → clamp σ=ε (1e-8)`, but `zscore` returns `Decimal(0)` when `σ<ε` — a second, unclaimed deviation in the same formula that the owner ruling should settle together with the baseline question.
+
+#### Contract and decisions
+`APEX_GEN5.md:3970–3978` (§3.1) is explicit: "the reference SMA and standard deviation are computed only over the window preceding the current bar, never including it", with `VZ_t^PIT = (V_t − μ_{t−1,n})/max(σ_{t−1,n}, ε)` over `i=t−n..t−1`; `L9152–9158` repeats `VolumeZ = (V_t − SMA_{t−1}(V,20))/max(SD_{t−1}(V,20), ε)`. The code violates the "never including it" sentence directly. No `PHASE2_DECISION_LOG.md` ruling overrides §3.1 (later decisions override contract prose; none touches z-score baselines). Precedence: §3.1 governs; E03's implementation is the conformant reference.
+
+#### Frozen status and non-frozen alternative
+**Frozen:** `apex/data_catalog/math/__init__.py`, `atomic/features.py`, `molecular/features.py` are all under frozen `apex/data_catalog/**`. A non-frozen alternative EXISTS for consumers: compute z-scores outside the frozen tree with the §3.1 formula (prior-only baseline, σ-clamp) in a producer/adapter layer — E03's `zscore_pit` (non-frozen engine code) is exactly such a reference and can be reused or mirrored. There is NO non-frozen way to repair `Catalog.get("VolumeZ"/"RangeZ"/"OI_z"/"sweep")` themselves.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — frozen primitive + caller fix (owner ruling):** change `zscore` to score `values[-1]` against `values[-n-1:-1]` (or take an explicit `(current, history)` pair like `zscore_pit`), fix `_volume_z` to pass prior-only history, and settle the σ-guard (clamp vs 0) in the same ruling. Side effects: `VolumeZ/RangeZ/OI_z/sweep` VALUES CHANGE on every bar (intended — they were wrong); NO existing test breaks (no value-pinning tests for these features); no hashes/caches/DB/retraining impact (catalog unconsumed, ATOM/MOLE values unhashed at rest... MOLE is cached 5 candles — the cache is in-memory per-process `TierCache`, invalidated by `code_revision`, so no durable invalidation needed). Touches frozen files → owner ruling required.
+**B — non-frozen adapter (no frozen change):** §3.1-conformant z-score/sweep in the producer layer; refuse or relabel catalog z-features until A lands. Side effects: catalog reads stay wrong for direct callers; adapter must mirror the σ-guard ruling once made.
+
+#### My recommendation
+B now (conformant adapter; never consume catalog z-features/sweep directly); pursue A by owner ruling, deciding baseline AND σ-guard together, before any serve wiring.
+
+#### Acceptance and regression tests
+- `prior=1..20/current=23 → Z>2` and the auditor's sweep geometry yields a valid sweep with the governed θ; boundary tests at exactly Z=2, trend windows, σ≈0 windows, and a no-future-leak test (shifting the current bar must not change any earlier bar's score).
+- Parity test: catalog `VolumeZ/RangeZ` equal E03 `vz/rz` on identical synthetic windows to quantization.
+- Regression: `tests/unit/test_catalog.py` (incl. the sweep cache-count test) and `tests/unit/test_e03_volume.py` pass.
+
+## L-004 — OI_z with missing current OI returns history as OK
+
+#### Auditor claim (short quote)
+> "`_f21_oi_z` drops every `None` OI from the window and checks only the survivor count; with 20 valid-OI bars and a current bar lacking OI, `lookback=20` gives MISSING but `lookback=21` returns history as `OK/1.6475` for the SAME as_of. The existing test covers only a single OI-less bar."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/data_catalog/atomic/features.py:257–263` (`_f21_oi_z`): `ois = [o.oi for o in window if o.oi is not None]`; `len(ois) < n → MISSING/OI_MISSING_QX`, else `m.zscore(ois, n)` → `OK` with `q=1.0`. The current bar's OI is never inspected — a `None` simply vanishes from the list.
+- `apex/data_catalog/catalog.py:336–361`: `bars = max(lookback, 1)` supplies the window; the same `as_of` with different `lookback` yields different windows, hence different verdicts for one missing input.
+- `apex/data_catalog/contracts.py:243–257` (`oi_state_for`): `oi=None → (MISSING, 0.0)`; "Missing OI is NEVER 0 (T-DC-004)". The catalog returns `OK/q=1.0` — full quality — for a feature whose current input is exactly this MISSING state.
+- `tests/unit/test_catalog.py:286–294` (T-OM-002): single bar with `oi=None → MISSING` — the only OI_z test; it cannot catch survivor-count logic because one bar never reaches n=20.
+- Boundary contrast: `apex/engines/e03_volume/engine.py:577–600` — `oi=None → oi_state="MISSING"`, `oi_z=None` (no value fabricated); the native path treats missing current OI as unavailable.
+- Callers: `_f21_oi_z` is reachable only via `Catalog.get("OI_z")`, which has no runtime caller (L-001).
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-004.py`. Probe: `AUDIT/probes_V3c/L-004.py` (real `Catalog.get("OI_z")`; 21 synthetic bars, bars 0–19 OI-valid, bar 20 OI-None). Raw output: `AUDIT/probes_V3c/L-004.out`. Result: same `as_of`, `lookback=20 → MISSING/OI_MISSING_QX/q=0.0`, `lookback=21 → OK/1.6475/q=1.0`; the control (current OI valid) returns the IDENTICAL `OK/1.6475/q=1.0` — the missing current OI is completely invisible in the output.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). The depth-dependent verdict flip and the auditor's `OK/1.6475` are reproduced exactly, and the control proves indistinguishability from a genuinely-OK read. S1 because a missing current input produces a full-quality `OK` value — the worst failure mode (confident fabrication from stale history) — even though the path is latent today. The "never coerce OI to 0" comment in the code shows the author cared about OI-missing semantics but enforced it only on the count, not on currency.
+
+#### Root cause
+Currency is never validated: the function filters `None` over the whole window and counts survivors, so "20 valid OIs somewhere in the window" passes — including the case where the 20 are all history and the bar being scored has no OI. Depth then decides the verdict instead of the input state.
+
+#### Direct impact
+A consumer reading `OI_z` at sufficient depth cannot distinguish "current OI missing" from "current OI present" — same status, same value shape, same `q=1.0`. Any OI-gated logic (regime, risk, quality) built on this read would act on a stale-history value as if it were current.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, this is the same "window-as-baseline" confusion as L-003 plus a missing currency check. Downstream, the verdict flip by `lookback` (MISSING at 20, OK at 21) makes the read non-deterministic across callers with different depths — two consumers of the same `as_of` legitimately disagree. No cache/identity impact (ATOM uncached, results unhashed). E03's native `oi_z=None`-on-missing is the correct reference behavior and disagrees with the catalog read on identical inputs.
+
+#### Contract and decisions
+T-DC-004 (`contracts.py` + §AI.6): "Missing OI is NEVER 0" with `Q_oi=0/MISSING` as a label. Returning `OK/q=1.0` for a missing-current-OI feature contradicts the missing-OI-must-be-visible principle; the code's own `OI_MISSING_QX` reason shows the intended vocabulary. No `PHASE2_DECISION_LOG.md` ruling covers `OI_z` currency. Precedence: T-DC-004 + E03's `oi_z=None` behavior govern; the survivor-count logic has no contract support.
+
+#### Frozen status and non-frozen alternative
+**Frozen:** `apex/data_catalog/atomic/features.py` is under frozen `apex/data_catalog/**`. A non-frozen alternative EXISTS for consumers: validate `window[-1].oi is not None` (and window contiguity) in a non-frozen adapter BEFORE consuming `OI_z`, refusing currency-violating reads regardless of the catalog verdict. There is NO non-frozen way to repair `Catalog.get("OI_z")` itself.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — frozen currency fix (owner ruling):** require `window[-1].oi is not None` (MISSING otherwise) and compute the z-score over the governed contiguous window (prior-only per L-003-A). Side effects: `OI_z` flips `OK→MISSING` exactly on missing-current reads (intended); NO existing test breaks (T-OM-002's single-bar case stays MISSING); no hashes/caches/DB/retraining impact. Touches frozen files → owner ruling required.
+**B — non-frozen adapter guard (no frozen change):** currency-check wrapper; refuse stale reads. Side effects: direct catalog reads stay wrong; one more seam to keep aligned with the frozen reason vocabulary.
+
+#### My recommendation
+B now (adapter currency check on every `OI_z` consumption); pursue A by owner ruling together with L-003-A (the z-score baseline fix), since both touch `_f21_oi_z`.
+
+#### Acceptance and regression tests
+- The probe's 21-bar case (current OI None) returns `MISSING/Q0` at EVERY lookback; current-valid + history-valid returns `OK`; current-valid + short history returns `MISSING` (not a short-window value).
+- Contiguity: a `None` OI strictly inside history is either refused or explicitly degraded per the owner ruling — never silently dropped.
+- Regression: T-OM-002 (`tests/unit/test_catalog.py:286–294`) still passes; add the two-depth test to `test_catalog.py`.

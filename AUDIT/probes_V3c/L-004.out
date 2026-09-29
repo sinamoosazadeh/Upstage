@@ -1,0 +1,4 @@
+bars=21, current-bar OI=None, as_of=2024-01-01T00:20:00.000Z (same for both reads)
+lookback=20: status=MISSING reason=OI_MISSING_QX value=None q=0.0
+lookback=21: status=OK reason= value=1.6475 q=1.0
+control (current OI valid): status=OK value=1.6475 q=1.0
