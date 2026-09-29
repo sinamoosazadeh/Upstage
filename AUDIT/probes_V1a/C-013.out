@@ -1,0 +1,11 @@
+{"case": "growth_without_dispatch", "heap_delta": 1506646, "p1_maxsize": 0, "p1_qsize": 1000, "published": 1000, "shared_qsize": 0}
+{"case": "growth_without_dispatch", "heap_delta": 3028638, "p1_maxsize": 0, "p1_qsize": 2000, "published": 2000, "shared_qsize": 0}
+{"case": "growth_without_dispatch", "heap_delta": 6073006, "p1_maxsize": 0, "p1_qsize": 4000, "published": 4000, "shared_qsize": 0}
+{"case": "slow_dispatch_enqueued", "p1": 75, "shared": 0}
+{"case": "slow_dispatch_complete", "evictions": 0, "fifo": true, "max_p1_completion_delay": 3.021563721000007, "max_p1_start_delay": 2.9812919810000267, "p0_publish_seconds": 3.0047999985072238e-05, "p1_delivered": 75, "p1_start_over_2s": 25, "p2_start_delay": 3.0214821920000077, "wall_seconds": 3.022362842000007}
+{"case": "shared_control", "evicted": 5, "qsize": 10}
+{"capacity": 1000, "case": "generic_bus_feature_topic", "note": "Not a claim that an independent feature queue is wired; generic bus does not enforce its 500-item contract", "queued": 501}
+{"case": "raw_control", "drops": 1, "oldest": 1, "qsize": 1000}
+{"case": "existing_native_nfr_queue_probe", "result": {"all_p0_processed": true, "bounded": true, "counts": {"evicted": 100, "p0_delivered": 2000, "raw_dropped": 0}, "eviction_reason": "QUEUE_OVERFLOW_DROP", "lane_qsize": 1000, "p0_delivered": 2000, "p0_expected": 2000, "p2_evicted": 100, "p2_published": 1000, "p3_evicted": 0, "p3_published": 100, "some_p2_evicted": true}}
+{"guard_blocked_attempts": []}
+PASS: actual dispatcher exhibits P1 backlog/delay; existing queue probe still reports bounded shared lane

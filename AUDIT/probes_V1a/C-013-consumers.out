@@ -1,0 +1,59 @@
+apex/bus.py:98:        self._p1_lane: asyncio.Queue[BusEvent] = asyncio.Queue()
+apex/bus.py:133:        if event.priority == Priority.P1:
+apex/bus.py:136:            if self._p1_lane.qsize() >= self._lane_maxsize:
+apex/bus.py:138:            await self._p1_lane.put(event)
+apex/bus.py:176:                if not self._p1_lane.empty():
+apex/bus.py:177:                    event = self._p1_lane.get_nowait()
+apex/execution/fsm.py:518:        priority = Priority.P0 if critical else Priority.P1
+apex/execution/fsm.py:1058:                    else Priority.P1), "execution.boot",
+apex/scheduler/clock.py:53:PRIORITY_ORDER: Tuple[int, ...] = (Priority.P0, Priority.P1, Priority.P2,
+apex/telegram/signaling.py:95:    Priority.P1: {"content": ("veto REJECT of ALLOW-proposed plan",
+apex/telegram/signaling.py:110:     "escalation": "15 min → L1", "priority": Priority.P1,
+apex/telegram/signaling.py:126:     "priority": Priority.P1, "dedup_exempt": False},
+apex/telegram/signaling.py:140:                                                      Priority.P1: 5.0}
+apex/telegram/signaling.py:947:                    chat_id=str(self.owner_chat_id or ""), priority=Priority.P1,
+apex/telegram/signaling.py:957:            chat_id=str(self.owner_chat_id or ""), priority=Priority.P1,
+scripts/run_apex.py:164:        self.bus = EventBus()
+scripts/run_apex.py:171:            self.bus.subscribe(topic, collector)
+scripts/run_apex.py:848:            chat_id=str(chat_id), priority=Priority.P1, text=text,
+scripts/run_nfr_harness.py:72:async def _queue_bounds_probe() -> Dict[str, Any]:
+scripts/run_nfr_harness.py:76:    bus = EventBus()                      # dispatcher NOT started: nothing drains
+scripts/run_nfr_harness.py:82:    bus.subscribe("nfr", consumer)
+scripts/run_nfr_harness.py:203:        "t_nfr_004": asyncio.run(_queue_bounds_probe()),
+tests/integration/paper_harness.py:31:    bus = EventBus()
+tests/integration/test_cp14_producer.py:248:        bus=EventBus();bus.start();notices=[]
+tests/integration/test_cp7_paper_loop.py:181:        self.bus = EventBus()
+tests/integration/test_cp7_paper_loop.py:182:        self.bus.subscribe("execution.fsm.transition", self._on_event)
+tests/integration/test_cp7_paper_loop.py:183:        self.bus.subscribe("execution.boot", self._on_event)
+tests/integration/test_cp7_paper_loop.py:184:        self.bus.subscribe("scheduler.cell", self._on_event)
+tests/integration/test_cp7_paper_loop.py:185:        self.bus.subscribe("telegram.message", self._on_event)
+tests/unit/test_bus.py:29:        bus = EventBus()
+tests/unit/test_bus.py:35:        bus.subscribe("t", c1)
+tests/unit/test_bus.py:36:        bus.subscribe("t", c2)
+tests/unit/test_bus.py:49:        bus = EventBus(lane_maxsize=10)
+tests/unit/test_bus.py:53:        bus.subscribe("t", sink)
+tests/unit/test_bus.py:70:        bus = EventBus(lane_maxsize=5)
+tests/unit/test_bus.py:74:        bus.subscribe("t", sink)
+tests/unit/test_bus.py:92:        bus = EventBus(lane_maxsize=1)
+tests/unit/test_bus.py:100:        assert bus._p1_lane.qsize() == 2
+tests/unit/test_bus.py:107:        bus = EventBus(lane_maxsize=1)
+tests/unit/test_bus.py:128:        bus = EventBus()
+tests/unit/test_bus.py:132:        bus.subscribe("t", c)
+tests/unit/test_ai10_nfr_harness.py:84:        bus = EventBus()
+tests/unit/test_ai10_nfr_harness.py:90:        bus.subscribe("t", consumer)
+tests/unit/test_execution_fsm.py:157:            self.bus = EventBus()
+tests/unit/test_execution_fsm.py:162:            self.bus.subscribe("execution.fsm.transition", collector)
+tests/unit/test_execution_fsm.py:163:            self.bus.subscribe("execution.boot", collector)
+tests/unit/test_execution_fsm.py:351:        assert events[0].priority == int(Priority.P1)
+tests/unit/test_execution_fsm.py:377:        assert priorities == [int(Priority.P1), int(Priority.P0)]
+tests/unit/test_scheduler_clock.py:401:        assert C.PRIORITY_ORDER == (Priority.P0, Priority.P1, Priority.P2,
+tests/unit/test_scheduler_clock.py:438:            bus = EventBus()
+tests/unit/test_scheduler_clock.py:444:            bus.subscribe("scheduler.cell", collector)
+tests/unit/test_telegram_signaling.py:154:        assert S.SIGNAL_TIERS[Priority.P1]["bound"] == "≤2 s declared UNVERIFIED"
+tests/unit/test_telegram_signaling.py:413:            event_bus = EventBus()
+tests/unit/test_telegram_signaling.py:418:            event_bus.subscribe("telegram.message", collector)
+tests/unit/test_telegram_signaling.py:530:        assert rows["FEED_DEGRADED"]["priority"] == int(Priority.P1)
+tests/unit/test_telegram_signaling.py:531:        assert rows["STORAGE"]["priority"] == int(Priority.P1)
+tests/unit/test_telegram_signaling.py:648:        assert alert.priority == int(Priority.P1)
+tests/unit/test_telegram_signaling.py:662:        assert alert.priority == int(Priority.P1)
+tests/unit/test_telegram_signaling.py:667:                                                      int(Priority.P1): 5.0}
