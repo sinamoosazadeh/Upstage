@@ -43,7 +43,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-027 | CONFIRMED | S2 | S2 | Partly — `apex/fabric/evidence.py` is NOT in the frozen list; `apex/ops/plan_bridge.py` is not frozen either | V3 K-015/K-020 (auditor cross-ref); E-PIT-001 | A — parse and check each event's own availability_time in the adapter; B — always re-measure age from event_time |
 | K-028 | CONFIRMED (spec-level; no production caller) | S2 | S2 | No — `apex/quality/pit.py` is non-frozen, but it transcribes the frozen APEX_GEN5.md §2.3 pseudocode | K-025 (coverage measured from delivered rows), K-020 | A — count distinct in-window closes and apply the freshness SLA, with an owner doc amendment to §2.3 |
 | K-029 | CONFIRMED (worse than claimed) | S2 | S2 | No — `apex/quality/pit.py` non-frozen; the §2.3 payload shape is contract text | K-028 (same helper), V3 K-001 (store hash) | A — bind the manifest to sorted content hashes of every qualifying bar + real package digest |
-| K-030 | PENDING | S2 | — | — | — | — |
+| K-030 | CONFIRMED | S2 | S2 | No — `apex/quality/pit.py` non-frozen; `MarketObservation` (frozen contract) legitimately has no `q_raw` | K-028/K-029 (same helper), K-025 (measurement inputs) | A — take the computed quality vector with provenance, or return a named unknown/refusal |
 | K-031 | PENDING | S2 | — | — | — | — |
 | K-032 | PENDING | S1 | — | — | — | — |
 | K-033 | PENDING | S2 | — | — | — | — |
@@ -2673,3 +2673,127 @@ payload and the D28 package id.
    different `snapshot_id`.
 4. `symbol_scope` beyond 10 or `timeframe_scope` beyond 14 is refused, not truncated.
 5. The identity stays a 64-hex canonical SHA-256 with no UUID/timestamp component.
+
+---
+
+## K-030 — the snapshot's combined quality state is a fabricated zero, reported alongside VALID/Q1
+
+#### Auditor claim (short quote)
+> «`_min_q_and_weighted_mean` برای `MarketObservation` دارای قرارداد frozen که اصلاً `q_raw` ندارد، از `getattr(...,0)` همیشه صفر می‌سازد؛ با همان ورودی، تابع با `quality_state={'min_q':0,'weighted_q':0}` ولی `source_state='VALID'` و کلاس `Q1` برمی‌گردد. نبود کیفیت واقعی به عدد ساختگی صفر تبدیل و بدون veto ثبت می‌شود.»
+> — “`_min_q_and_weighted_mean` always produces zero via `getattr(..., 0)` for a `MarketObservation` whose frozen contract has no `q_raw` at all; with that same input the function returns `quality_state={'min_q':0,'weighted_q':0}` yet `source_state='VALID'` and class `Q1`. A missing real quality becomes a fabricated zero and is recorded with no veto.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/quality/pit.py:169–178` — `_min_q_and_weighted_mean`:
+`qs.append(float(getattr(obs, "q_raw", 0.0) or 0.0))` for every observation, then
+`{"min_q": min(qs), "weighted_q": sum(qs)/len(qs)}`; the docstring rationalises it as
+“Observations without a computed Q_raw count as Q0”.
+`apex/quality/pit.py:134–166` — the caller: `quality_state = _min_q_and_weighted_mean(
+valid_observations)` is embedded both in the hashed `payload` and in the returned
+`snapshot`, and the function then returns `snapshot, "VALID", "Q1"` unconditionally —
+`source_state` is the literal `"VALID"` in the payload, with no consistency check against
+`quality_state`.
+`apex/data_catalog/contracts.py:107–133` — the frozen `MarketObservation` field list: there is
+no `q_raw` (confirmed by `dataclasses.fields` in the probe); the quality *inputs* it does carry
+are `source_health`, `gap_count`, `expected_count`, `completeness_pct`, `delay_seconds`, and
+the repository's real scorer is `apex/quality/vector.py::calc_quality_vector`, which consumes
+exactly those.
+`tests/unit/test_quality.py:267–273` — `test_as_of_max_availability` asserts `state == "VALID"`
+and a 64-hex id; no test asserts `quality_state`, so the zero is unpinned but also unnoticed.
+Callers: as in K-028/K-029, `calc_snapshot_pit_window` has no production caller.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-030.py`; probe/output `AUDIT/probes_V3b/K-030.py|.out`:
+```
+MarketObservation has a q_raw field = False
+observation source_health/completeness = 1.0 / 100.0
+_min_q_and_weighted_mean(perfectly healthy bars) = {'min_q': 0.0, 'weighted_q': 0.0}
+calc_snapshot_pit_window -> state='VALID' class='Q1'
+   snapshot['quality_state'] = {'min_q': 0.0, 'weighted_q': 0.0}
+   source_state              = 'VALID'
+```
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The zero is unconditional (the
+attribute can never exist on the frozen contract), and it is emitted together with
+`source_state='VALID'` and class `Q1`, i.e. the two halves of the same return value
+contradict each other: `min_q = 0.0` is exactly what the minimum-veto is supposed to reject.
+S2 for the same reason as K-028/K-029 — the helper has no production consumer today; were it
+wired, a consumer reading `quality_state` would refuse everything while a consumer reading the
+class would accept everything.
+
+#### Root cause
+The snapshot binder was written to *read* a quality score off the observation, but the
+computed score lives in a different object (`calc_quality_vector`'s output / the quality-plane
+fact keyed `QUALITY_<observation_id>`), and it was never plumbed in. `getattr(..., default)`
+then converted "this field does not exist" into a measured-looking `0.0`, and no invariant
+ties the returned `source_state`/class to the `quality_state` it carries.
+
+#### Direct impact
+Every snapshot this helper builds claims a minimum quality of 0 for data that may be perfect,
+while simultaneously declaring itself `VALID`/`Q1`; the fabricated zero is also inside the
+hashed payload, so it is baked into the snapshot identity.
+
+#### Secondary effects and interactions (upstream/downstream)
+Same helper as **K-028** (sufficiency/freshness) and **K-029** (identity binding) — one fix
+pass should cover all three, since A here changes the same payload K-029 must change.
+Related to **K-025**: there the measured numbers exist but are computed over the wrong scope;
+here the measured numbers are not consulted at all. The correct source is already present in
+the codebase (`apex/quality/vector.py::calc_quality_vector`, used by
+`EngineContextProducer.quality_window`), so the fix is plumbing, not new math.
+
+#### Contract and decisions
+* `APEX_GEN5.md:973–976`: a Snapshot binds “… **a combined quality state (minimum-veto plus
+  weighted average)** …”. A constant zero is not that state; and per `APEX_GEN5.md:431`
+  (Session-CP-14 / D33 / ISSUE-037) the native minimum-veto design requires “unknown
+  provenance refusing”, not a substituted number.
+* `APEX_GEN5.md:5068`: a degraded/unknown status “MUST be carried as a degraded
+  quality/provenance flag. It MUST NOT bypass a hard data-quality, PIT, …” gate — reporting
+  `VALID/Q1` next to `min_q=0` bypasses the veto in one direction and slanders good data in
+  the other.
+* AI.6 / `APEX_GEN5.md:557` (“missing/unavailable OI is never converted to zero”) states the
+  repository's general rule for absent measurements; the same rule applies to an absent
+  quality score. Precedence: these are general contract rules and nothing in
+  `PHASE2_DECISION_LOG.md` authorises a Q0 default for snapshots — the closest decision,
+  D33/ISSUE-037, points the other way (refuse).
+* Note the docstring's own defence (“without a computed Q_raw count as Q0”) is an
+  implementation note, not an owner ruling, and it is self-defeating here because *no*
+  observation can ever carry a `Q_raw`.
+
+#### Frozen status and non-frozen alternative
+`apex/quality/pit.py` is **not** frozen. `apex/data_catalog/contracts.py` **is** frozen, so
+`MarketObservation` must not gain a `q_raw` field — the fix must pass the computed quality in
+from outside (a parameter, or a lookup of the quality-plane facts by `observation_id`), which
+is exactly how the non-frozen `EngineContextProducer` already does it.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — give the helper the real scores: add a required
+  `qualities: Mapping[observation_identity, float]` (or accept the already-hydrated
+  observations that `calc_quality_vector` produced, which do carry the measured fields), and
+  compute `min_q`/`weighted_q` from them; when a score is missing for any qualifying bar,
+  return a named unknown (`None`, `"QUALITY_UNAVAILABLE"`, `"QX"`) instead of a number, and
+  make the returned `source_state`/class a function of `quality_state` (min-veto applied).
+  Side effects: the signature changes, so `tests/unit/test_quality.py`'s snapshot tests must
+  supply qualities; every `snapshot_id` changes (as it must — see K-029); no frozen file, no
+  migration.
+* **B** — keep the signature and simply refuse: if no quality is supplied, return
+  `(None, "QUALITY_UNAVAILABLE", "QX")`. Side effects: smallest honest change, but leaves the
+  helper unusable until A is done — acceptable given it has no production caller.
+* **C** — leave the value and only fix the inconsistency (return `QX`/`INVALID` whenever
+  `min_q == 0`). Side effects: stops the contradictory output but keeps the fabricated zero
+  in the hashed payload; would make every snapshot QX, i.e. B with extra steps.
+* **D** — remove `quality_state` from the payload. Side effects: **rejected** —
+  `APEX_GEN5.md:973` requires the binding.
+
+#### My recommendation
+**A**, shipped together with the K-028/K-029 changes (all three touch the same payload), with
+**B** as the interim state if A cannot land immediately.
+
+#### Acceptance and regression tests
+1. Input without any quality fact → a named refusal/unknown (`QX`), never
+   `{'min_q': 0.0, 'weighted_q': 0.0}` with `VALID/Q1`.
+2. Real per-bar quality values → `min_q`/`weighted_q` equal to the minimum-veto and weighted
+   mean of those values, reproducibly.
+3. One bar below the veto threshold → the snapshot's class/state reflect the veto (not `Q1`).
+4. `quality_state` participates in the hashed payload, so changing a bar's quality changes the
+   `snapshot_id` (ties into K-029 test 2).
+5. No path substitutes 0 for an unavailable measurement (AI.6 conformance test).

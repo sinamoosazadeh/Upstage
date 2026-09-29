@@ -1,0 +1,14 @@
+# K-030 — snapshot quality_state is always zero
+
+MarketObservation has a q_raw field = False
+fields carrying quality inputs = ['source_health', 'gap_count', 'expected_count', 'completeness_pct', 'delay_seconds']
+observation source_health/completeness = 1.0 / 100.0
+
+_min_q_and_weighted_mean(perfectly healthy bars) = {'min_q': 0.0, 'weighted_q': 0.0}
+
+calc_snapshot_pit_window -> state='VALID' class='Q1'
+   snapshot['quality_state'] = {'min_q': 0.0, 'weighted_q': 0.0}
+   source_state              = 'VALID'
+   -> min_q = 0.0 (a minimum-veto failure) is reported together with source_state VALID and class Q1
+
+the value comes from apex/quality/pit.py:174 — getattr(obs, 'q_raw', 0.0) on a dataclass with no q_raw attribute; the docstring calls it 'Observations without a computed Q_raw count as Q0'
