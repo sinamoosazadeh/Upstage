@@ -1,0 +1,19 @@
+# K-031 — SnapshotBarrier mutability
+
+constructed snapshot_id = 397052efb6311baf20ac6fb1cb35f1f111a8279a6f4e4fca29605714f380fdd8
+payload hash recomputed = 397052efb6311baf20ac6fb1cb35f1f111a8279a6f4e4fca29605714f380fdd8
+
+1. mutate public fields after construction
+   quality_state now = {'min_q': 0.0, 'weighted_q': 0.95}  source_state now = 'INVALID'
+
+2. mutate a NESTED dict through the caller's own object (constructor does dict(...) — a shallow copy)
+   caller changed windows['1h']['bars'] -> barrier sees 1
+
+3. grow symbol_scope past the §2.3 limit of 10
+   len(symbol_scope) = 11
+   constructing a NEW barrier with 11 symbols: refused (symbol_scope over 10 → BLOCK (§2.3))
+
+4. identity vs current content
+   to_dict()['snapshot_id']      = 397052efb6311baf20ac6fb1cb35f1f111a8279a6f4e4fca29605714f380fdd8
+   hash of the CURRENT payload   = da760c7fdb2fe319bef2b36353782be9d6da53332fcfc5620d10248339881b81
+   equal = False

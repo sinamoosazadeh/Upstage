@@ -44,7 +44,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-028 | CONFIRMED (spec-level; no production caller) | S2 | S2 | No — `apex/quality/pit.py` is non-frozen, but it transcribes the frozen APEX_GEN5.md §2.3 pseudocode | K-025 (coverage measured from delivered rows), K-020 | A — count distinct in-window closes and apply the freshness SLA, with an owner doc amendment to §2.3 |
 | K-029 | CONFIRMED (worse than claimed) | S2 | S2 | No — `apex/quality/pit.py` non-frozen; the §2.3 payload shape is contract text | K-028 (same helper), V3 K-001 (store hash) | A — bind the manifest to sorted content hashes of every qualifying bar + real package digest |
 | K-030 | CONFIRMED | S2 | S2 | No — `apex/quality/pit.py` non-frozen; `MarketObservation` (frozen contract) legitimately has no `q_raw` | K-028/K-029 (same helper), K-025 (measurement inputs) | A — take the computed quality vector with provenance, or return a named unknown/refusal |
-| K-031 | PENDING | S2 | — | — | — | — |
+| K-031 | CONFIRMED | S2 | S2 | No — `apex/identity/snapshot.py` and `apex/quality/pit.py` are non-frozen | K-029 (identity binding), K-030 (quality_state) | A — deep-copy inputs, freeze attributes, re-validate scope, and verify the id against the payload before use |
 | K-032 | PENDING | S1 | — | — | — | — |
 | K-033 | PENDING | S2 | — | — | — | — |
 | K-034 | PENDING | S2 | — | — | — | — |
@@ -2797,3 +2797,123 @@ is exactly how the non-frozen `EngineContextProducer` already does it.
 4. `quality_state` participates in the hashed payload, so changing a bar's quality changes the
    `snapshot_id` (ties into K-029 test 2).
 5. No path substitutes 0 for an unavailable measurement (AI.6 conformance test).
+
+---
+
+## K-031 — `SnapshotBarrier` is documented immutable but is mutable, id-frozen and scope-checked only at construction
+
+#### Auditor claim (short quote)
+> «`SnapshotBarrier` خود را immutable می‌نامد اما فیلدهای public و دیکشنری/لیست‌های تو‌در‌تو قابل تغییرند؛ hash فقط در سازنده محاسبه می‌شود. تغییر `quality_state` و `observation_windows`، سپس افزایش `symbol_scope` از ۱ به ۱۱، ID قدیم را در `to_dict` نگه داشت، درحالی‌که hash مجدد payload فرق داشت و محدودیت ۱۰ نماد دور زده شد.»
+> — “`SnapshotBarrier` calls itself immutable, yet its public fields and nested dicts/lists are mutable; the hash is computed only in the constructor. Changing `quality_state` and `observation_windows`, then growing `symbol_scope` from 1 to 11, kept the old ID in `to_dict`, while a re-hash of the payload differed and the 10-symbol limit was bypassed.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/identity/snapshot.py:81–156` — `SnapshotBarrier`: the docstring states “Immutable
+snapshot binding one PIT boundary (§2.3) … snapshot_id is computed once at construction …
+never an edit”; the constructor validates `len(symbol_scope) > 10` / `len(timeframe_scope) >
+14` / non-empty `parameter_package_id`/`code_version`, then assigns **plain public
+attributes** with only *shallow* copies (`list(symbol_scope)`, `dict(quality_state)`,
+`dict(observation_windows)` — the nested per-timeframe dicts stay shared with the caller);
+`self._snapshot_id = snapshot_id_from_payload(self._canonical_payload())` runs once;
+`snapshot_id` is a read-only property but `to_dict()` re-emits the *current* payload with the
+*original* id. No `__slots__`, no `__setattr__` guard, no `frozen=True` dataclass.
+`apex/quality/pit.py:185–211` — `build_snapshot_barrier` passes the caller's dicts straight
+through.
+`tests/unit/test_identity.py:118–176` — the barrier tests cover the scope BLOCKs, the
+missing-package refusal and determinism of the id; none attempts mutation after construction.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-031.py`; probe/output `AUDIT/probes_V3b/K-031.py|.out`:
+```
+constructed snapshot_id = 397052ef…fdd8   (payload re-hash agrees at construction)
+1. barrier.quality_state["min_q"] = 0.0 ; barrier.source_state = "INVALID"  -> accepted
+2. caller mutates its own windows["1h"]["bars"] = 1 -> barrier sees 1 (shallow copy)
+3. barrier.symbol_scope grown to 11 entries -> accepted
+   (constructing a NEW barrier with 11 symbols is correctly refused:
+    "symbol_scope over 10 → BLOCK (§2.3)")
+4. to_dict()['snapshot_id']    = 397052ef…fdd8
+   hash of the CURRENT payload = da760c7f…1b81      equal = False
+```
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). Every step reproduces, including
+the nested-dict leak through the caller's own object (a *shallow*-copy bug distinct from plain
+attribute mutability) and the scope limit that is enforced for a new object but trivially
+bypassed on an existing one. S2: the class is a utility whose production consumption is not
+demonstrated (`build_snapshot_barrier` is only reachable through the same unwired
+`apex/quality/pit.py` helper family as K-028…K-030), so today this is a broken guarantee
+rather than a live corruption.
+
+#### Root cause
+"Immutable" was asserted in prose and implemented only as a private id plus shallow copies.
+Python gives no protection for public attributes or nested containers, and the validation is
+constructor-scoped, so every invariant the class advertises (identity ↔ payload, scope bounds)
+holds only at t=0.
+
+#### Direct impact
+A `SnapshotBarrier` can be edited after creation while continuing to present its original
+`snapshot_id`, so one id can refer to two different payloads; and its scope can be grown past
+the §2.3 limit of 10 symbols / 14 timeframes without any check.
+
+#### Secondary effects and interactions (upstream/downstream)
+The id it carries is the same identity whose *content binding* is missing in **K-029** and
+whose `quality_state` is a fabricated zero in **K-030** — K-031 is the third leg: even a
+correctly built identity would not stay bound to its payload. Downstream, anything that uses
+a barrier as a cache key, a lineage anchor, a PIT gate input or an evidence `snapshot_id`
+(24-field contract #6) would inherit a stale identity. The auditor's own caveat — that
+consumption in the native PAPER path is not demonstrated — matches my `grep`.
+
+#### Contract and decisions
+* `APEX_GEN5.md:980–984`: “**Snapshots are immutable**; any new artifact triggers
+  supertemporal_window: OLD → CORRECTION EVENT → NEW VERSION → SUPERSEDES, producing a new
+  `as_of` … and creating a new Snapshot.” Editing a barrier in place is precisely the
+  forbidden path, and it defeats supersession.
+* `APEX_GEN5.md:985–996` (**Canonical snapshot_id form, frozen**): the id is
+  `SHA256(canonical_json(canonical_snapshot_payload))` — an id that no longer equals the hash
+  of its own payload is not that identity.
+* `APEX_GEN5.md:973–976` binds `symbol_scope`/`timeframe_scope` into the snapshot, and the
+  §2.3 BLOCK limits (10 symbols / 14 timeframes) are stated in the module's own docstring and
+  enforced in the constructor — so the intent is unambiguous; only the enforcement window is
+  wrong.
+* `APEX_GEN5.md:468`: “Non-repainting — once a candle is CONFIRMED it is immutable” expresses
+  the same principle for the data layer. No `PHASE2_DECISION_LOG.md` decision authorises
+  mutable snapshot objects.
+
+#### Frozen status and non-frozen alternative
+`apex/identity/snapshot.py` and `apex/quality/pit.py` are **not** in the frozen set, so the
+class can be hardened directly. The frozen artefacts here are the *contract statements* in
+APEX_GEN5.md, which already require immutability — no doc amendment is needed for this row.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — make it structurally immutable: `@dataclass(frozen=True)` (or
+  `__slots__` + a `__setattr__` that raises after `__init__`), **deep**-copy every input
+  (`copy.deepcopy`, or store `MappingProxyType`/tuples of frozen mappings), expose read-only
+  views from `to_dict()`, re-validate the scope bounds inside `_canonical_payload()`, and add
+  a `verify()` that recomputes the id and refuses a mismatch before any consumer uses it.
+  Side effects: callers that currently mutate a barrier (none found in production; check
+  `tests/unit/test_identity.py` and any fixture that reuses a dict) must build a new object
+  instead; deep copies cost O(payload) per construction — negligible at 10×14 scope; no frozen
+  file, no migration, no hash change for correctly-used barriers.
+* **B** — keep the class mutable but recompute the id on every access. Side effects:
+  **rejected** — it would silently change identity under a consumer's feet, which is worse
+  than a stale id and contradicts “computed once … never an edit”.
+* **C** — leave the class and defend at the boundary: every consumer calls `verify()` before
+  use. Side effects: cheap, but each consumer must remember; A subsumes it.
+* **D** — deprecate `SnapshotBarrier` in favour of the payload dict returned by
+  `calc_snapshot_pit_window`. Side effects: that dict has exactly the same problems (K-029/
+  K-030) and no validation at all — rejected.
+
+#### My recommendation
+**A**, together with the K-029/K-030 fixes, since all three concern the same identity object;
+keep the constructor's existing BLOCK checks and extend them to every payload emission.
+
+#### Acceptance and regression tests
+1. Any attempt to set an attribute after construction raises (`FrozenInstanceError`/
+   `AttributeError`).
+2. Mutating the caller's original `observation_windows`/`quality_state`/`symbol_scope` after
+   construction does **not** change the barrier (deep copy).
+3. `to_dict()['snapshot_id']` always equals `snapshot_id_from_payload(payload)` of the same
+   `to_dict()` payload.
+4. A barrier can never present a scope beyond 10 symbols / 14 timeframes, at construction or
+   afterwards.
+5. A corrected artifact yields a **new** barrier with a new id, and the old one is still
+   reproducible (supersession traceable).
