@@ -1,0 +1,25 @@
+== A: run_cycle calls plan_provider.prepare outside the trade budget ==
+prepare_calls=[('BTCUSDT', '1h')] provider_calls=[('BTCUSDT', '1h')]
+context_preparation={'cells_checked': 1, 'cells_prepared': 1, 'failures': []}
+budget taken: before=0 after=0
+A1 (prepare per due cell, budget untouched) PASS=True
+failure case: context_preparation={'cells_checked': 1, 'cells_prepared': 0, 'failures': [{'cell': 'BTCUSDT:1h', 'reason': 'ENGINE_CONTEXT_INVALID', 'detail': 'probe fake failure'}]}
+runtime._context_preparation_failed={'BTCUSDT:1h': {'cell': 'BTCUSDT:1h', 'reason': 'ENGINE_CONTEXT_INVALID', 'detail': 'probe fake failure'}}
+A2 (prepare failure recorded fail-closed) PASS=True
+
+== C: context/risk key counts ==
+REQUIRED_CONTEXT_KEYS=38 REQUIRED_RISK_KEYS=23 -> PASS=True
+
+== B: bridge guard layers (prepare PAPER-only, no plan build) ==
+prepare() delegated to producer preparer; build_trade_plan calls=0
+LIVE prepare refused with reason=PAPER_ONLY_EXECUTION
+out-of-universe call -> return=None refusal={'reason': 'CELL_OUT_OF_UNIVERSE', 'detail': 'NOPE:1h'}
+context-less call -> return=None refusal={'reason': 'ENGINE_CONTEXT_UNAVAILABLE', 'detail': 'no governed engine context or complete persisted evidence reader'}
+B PASS=True (delegation=True LIVE-refusal=True universe=True fail-closed=True plan-free-prepare=True)
+
+== D: _build invokes stage authorities in order (real validation) ==
+stage call order: ['build_forecast', 'evaluate_cell', 'instantiate_playbook', 'build_stops', 'eligibility', 'generate_candidates', 'rank', 'select', 'arbitrate', 'build_proposal', 'adjudicate', 'build_trade_plan']
+plan returned: {'plan_id': 'plan_probe'}
+traces recorded: ['BTCUSDT:1h'] materialize_setup calls: [('PAT-WYC-001', 'TREND')]
+D PASS=True
+CLAIMS_REPRODUCED=True

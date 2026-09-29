@@ -18,8 +18,8 @@
 | C-011 | تأیید | S2 | S2 | بله — علت اصلی در bootstrap.py (فریز)؛ جبران service-layer ممکن | K-020 | ب |
 | C-014 | تأیید | S2 | S2 | بله — علت اصلی در bootstrap.py (فریز)؛ جبران service-layer ممکن | G-005*، K-020 | ب |
 | C-015 | تأیید | S2 | S2 | نه | C-005, D51 (HANDOFF_CP9:934) | الف (release در مسیر exception اثباتاً-پیش‌ارسال + علت‌ثبت) |
-| O-006 | _در حال بررسی_ | S4 | — | — | — | — |
-| V-003 | _در حال بررسی_ | S4 | — | — | D-001، D-002، E-016، H-007 | — |
+| O-006 | تأیید (راستی‌آزمایی شواهد؛ ردیف توافق دامنه، بدون ادعای نقص) | S4 | S4/غیرنقص | نه (params نسخه‌دار FROZEN_BOOTSTRAP؛ کد غیرفریز) | D51 (HANDOFF_CP9:935)، خانوادهٔ C-007/C-015 | الف+ب (سند دامنه + تست پین) |
+| V-003 | تأیید (وصل‌بودن اتصال؛ بدون ادعای صحت محاسبات) | S4 | S4/کنترل تأییدشده | نه (همهٔ مسیرهای خوانده‌شده غیرفریز) | C-002 (مانع شاهد نهایی)، D-001/D-002، E-016، H-007 | ب (تست پین دائمی) + الف (تصریح سندی DECLARED_SKIP) |
 
 ## بخش‌های تفصیلی
 
@@ -328,3 +328,77 @@ _(پس از راستی‌آزمایی هر ردیف، بخش دوازده‌سر
 **پیشنهاد من:** اکنون ب (fail-closed در `bootstrap_service.py`، بدون لمس فریز، با storage سبک مشترک) + ثبت در DECISION_LOG که «W.8-3 در عمل required است»، و در پنجرهٔ حکم مالک گزینهٔ الف برای یکپارچگی runner.
 
 **آزمون پذیرش و رگرسیون:** پذیرش پس از اصلاح: (۱) resume پس از وقفهٔ ۲۵h در service مستقیماً به fetch منتهی نشود (fail-closed با PENDING_RECHECK یا معادل)؛ (۲) پاک‌شدن فوراً `paused_at` باعث نشود state «needs_recheck» از دست برود — آن باید در service پایدار بماند و با یکی از دو مسیر پاک شود؛ (۳) بدون تأیید/recheck، run بعدی هیچ فراخوانی fetch انجام ندهد (`fetch_calls==0`). رگرسیون: `python3 -m pytest -q -p no:cacheprovider tests/unit/test_research_bootstrap.py tests/unit/test_ops_bootstrap_service.py` (تست‌های فعلی فریز زیر گزینهٔ ب نباید تغییر کنند؛ پس از حکم مالک، آزمون advisor-f در unit‌ها بازنویسی می‌شود) + تست service جدید برای سناریوی resume→run blocked → confirm → run resumes.
+### O-006 — محدودیت شواهد: بودجهٔ پیش‌فرض ۴ معامله و تک‌جفتی family/playbook نیازمند توافق دامنه‌اند
+
+**ادعای ممیز (نقل کوتاه):** «بودجهٔ پیش‌فرض ۴ معامله در cycle وجود دارد و D51 معنای آن را مصوب کرده است؛ family/playbook فعلی هم یک جفت مشخص است. صرف وجود محدودیت را bug اعلام نمی‌کنیم؛ «تمام قابلیت‌ها» باید در برابر دامنهٔ مصوب تعریف شود» (`apex/ops/paper_loop.py:366,527–538`؛ `params/setup_weights_v1.yaml:4–5`؛ `PHASE2_HANDOFF_CP9.md:934–935`؛ ردهٔ S4 / کنترل با دامنهٔ محدود — ردیف نقص نیست، ردیف توافق دامنه است).
+
+**آنچه خواندم:**
+- `apex/ops/paper_loop.py:360–370` (امضای ctor: `max_trades_per_cycle: int = 4` دقیقاً در خط 366) و `:527–538` (`_take_budget`/`_release_budget`: بررسی و افزایش سنکرون — رزرو اتمیک زیر semaphore هم‌روندی ۴؛ «`self.trades` is history only and is never a gate»؛ release فقط وقتی submission از پروسه خارج نشود).
+- `params/setup_weights_v1.yaml` (فایل کامل): خط ۴ `family_id: SF_FVG_SWEEP_REV` و خط ۵ `playbook_id: PB_FVG_SWEEP_REV_A` — سرلوحهٔ فایل صراحتاً می‌گوید «the only Wave-In family، و FROZEN_BOOTSTRAP — do not retune in code».
+- `PHASE2_HANDOFF_CP9.md:935` (WHAT LANDED): «- D51: `max_trades_per_cycle` resets every cycle, is reserved only when a valid plan exists, and is released if the submission does not leave the process. A planless cell does not consume a slot.» — معنای بودجه مصوب ثبت‌شده است (استناد ممیز به خط 934 هم درست است: تیتر D50 در 933، متن D51 از 934–935).
+- تست رفرنس D51 در `tests/unit/test_cp146.py:402–445` (`test_d51_six_cycles_each_admit_one_trade`: با cap=1 هر ۶ چرخه دقیقاً یک trade پذیرفته می‌شود و رزرو هر چرخه ریست می‌شود).
+
+**بازتولید:** `python3 AUDIT/probes_V1c/O-006.py` (خروجی خام `AUDIT/probes_V1c/O-006.out`؛ نمونهٔ زندهٔ PaperRuntime با stack واقعی store/ledger/bus در SQLite موقت، بدون شبکه):
+- (۱) امضای واقعی ctor: `default max_trades_per_cycle = 4`؛ نمونهٔ زنده: نگهداری بودجه ۴؛ پنج `_take_budget()` متوالی → `[True, True, True, True, False]`؛ پس از یک `_release_budget()` گرفتن بعدی → `True` (رزرو/آزادسازی سنکرون D51).
+- (۲) خطوط ۴–۵ فایل params دقیقاً همان دو کلید‌اند و لودر خود مخزن (`apex.config._load_yaml("setup_weights")`) همان جفت `SF_FVG_SWEEP_REV / PB_FVG_SWEEP_REV_A` را برمی‌گرداند.
+- (۳) متن D51 در هندآف CP9 در خط 935 یافت شد و به `max_trades_per_cycle` اشاره دارد.
+- `CLAIMS_REPRODUCED=True`.
+
+**حکم و دلیل:** **تأیید (به معنای راستی‌آزمایی شواهد)**. ردیف ادعای نقص ندارد — ممیز صراحتاً اعلام می‌کند وجود محدودیت bug نیست و نقش ردیف «تثبیت معیار پذیرش» است. هر سه پایهٔ شاهد ممیز بازتولید شد و شمار خطوط استناد دقیق است. شدت مستقل: مطابق ممیز **S4 / غیرنقص (نیاز بررسی دامنه)** روی مقیاس من — چون عیبی در رفتار کد مشاهده نشد که به S0–S3 منتسب شود.
+
+**علت ریشه‌ای (چرا چنین ردیفی لازم شد):** سرمایه‌گذاری قبلی روی عبارت «بعد از Phase 1 همهٔ قابلیت‌ها را ندارید» (`APEX_GEN5.md:17294` — در بخش C-009 هم نقل شد) و بودجهٔ ایمن D51 می‌توانند توسط یک ارزیاب سطحی به‌عنوان «نقص در تعداد/تنوع معاملات» خوانده شوند؛ درحالی‌که هر دو تصمیم آگاهانهٔ مصوب‌اند (دامنهٔ W قسمت دوم: «After Phase 1 the operator does not have 100% of capabilities …» و D51 در هندآف CP9).
+
+**اثر مستقیم:** هیچ — خود ممیز هم هیچ اثر عدم اصلاحی را «ابهام در معیار پذیرش و انتظار تعداد/تنوع معاملات» معرفی کرده، نه رفتار معیوب سیستم.
+
+**اثرات ثانویه و تعاملات:** حذف عجولانهٔ cap یا جایگزینی family/playbook بدون حکم مالک، کنترل ریسک D51 و معنای آموزش/ارزیابی را تغییر می‌دهد (اثر ثانویهٔ نامبردهٔ خود ممیز). تعامل با C-015 (نشت بودجه در مسیر exception) و C-007 (کیفیت متریک trades) در خانوادهٔ «معنای بودجه/شمارش» قرار می‌گیرد — این سه باید با هم در یک سند دامنه قفل شوند.
+
+**نسبت با قرارداد و تصمیم‌ها:** D51 مصوب است (HANDOFF_CP9:935)؛ جفت family/playbook «FROZEN_BOOTSTRAP» در params است (هر تغییری = تغییر نسخهٔ پارامتر با پروسهٔ خودش، نه patch کد). معیار صحت: اگر پذیرش PAPER روی حذف محدودیت ایمن سوار شود، آن تغییر به‌تناقض با D51 می‌افتد — درست مثل هشدار ممیز.
+
+**فریز و راه‌حل:** نه درایو فریز در این ردیف هست و نه نیازی به تغییر کد. پارامترهای yaml نسخه‌دار و در دستهٔ FROZEN_BOOTSTRAP محسوب می‌شوند (تغییر فقط از مسیر حکم مالک + نسخهٔ جدید yaml).
+
+**گزینه‌های اقدام (همه غیرتهاجمی):**
+- الف) **تثبیت سند دامنه (پیشنهاد من):** در DECISION_LOG یا سند پذیرش، فهرست صریح «محدودیت‌های مصوب فعلی» درج شود: cap پیش‌فرض ۴ trade/cycle (D51)، تک‌جفت SF_FVG_SWEEP_REV / PB_FVG_SWEEP_REV_A (params FROZEN_BOOTSTRAP)، و تعریف پذیرش‌پذیر «تمام قابلیت‌ها» در برابر همین دامنه. هزینه: فقط سندی.
+- ب) تست پین‌کنندهٔ unit برای دو واقعیت (default=4 در signature و جفت family/playbook از لودر config) — غیرتهاجمی، جلوی رگرسیون سندی را می‌گیرد (probe فعلی دقیقاً همین را می‌کند و می‌تواند مستقیم به تست تبدیل شود).
+- پ) اگر مالک دامنه‌ی متفاوت می‌خواهد (cap متفاوت/خانوادهٔ دوم): فقط از مسیر رسمی تصمیم (D-xx جدید + نسخهٔ جدید params) — هرگز با حذف cap یا دور زدن frozen params.
+
+**پیشنهاد من:** الف + ب (سند دامنه + تست پین). بدون تغییر رفتار.
+
+**آزمون پذیرش و رگرسیون:** پذیرش = نبود ابهام: هر گزارش پذیرش PAPER جدید باید با فهرست محدودیت‌های مصوب سازگار باشد و نسخهٔ سند نقل شود. رگرسیون: `python3 -m pytest -q -p no:cacheprovider tests/unit/test_cp146.py tests/integration/test_ops_paper_loop.py` + تبدیل probe O-006 به تست واحد پایدار.
+
+---
+
+### V-003 — اتصال engine→decision در مسیر serve واقعاً برقرار است (کنترل تأییدشده با دامنهٔ محدود)
+
+**ادعای ممیز (نقل کوتاه):** «برخلاف docstring قدیمی DECLARED_SKIP، مسیر serve واقعاً producer.prepare و get_bridge_context را به PaperPlanBridge وصل می‌کند؛ bridge فراخوانی forecast/setup/risk/build_trade_plan دارد. لذا از نام skip نمی‌توان نتیجه گرفت موتور→تصمیم کاملاً اسکلت است. درستی مدل/فرمول و اجرای واقعی دستگاه هنوز تأیید نشده» (`scripts/run_apex.py:748–765`؛ `apex/ops/paper_loop.py:1008–1027`؛ `apex/ops/plan_bridge.py:530–559,774–785,794–817,949–976`؛ `apex/ops/engine_context.py:1798–1841,2283–2335`؛ ردهٔ S4 / کنترل تأییدشده؛ = D-001/D-002، E-016، H-007).
+
+**آنچه خواندم:**
+- `scripts/run_apex.py:744–770` (خوانش دقیق): در `_serve`، `producer = EC.EngineContextProducer(...)` (فقط برای PAPER)، آنگاه `plan_bridge = PB.PaperPlanBridge(store=..., environment=..., context_source=producer.get_bridge_context, context_preparer=producer.prepare)` و بلافاصله `PL.PaperRuntime(..., plan_provider=plan_bridge, ...)`. کامنت مجاور صریح است: «every PAPER cell now asks the governed store/context → pattern/setup → gates → forecast → risk/decision chain for a real plan».
+- `apex/ops/paper_loop.py:1000–1027` (خوانش دقیق): `run_cycle` پیش از ساخت تسک‌های سلول، `prepare = getattr(self.plan_provider, "prepare", None)` را به‌ازای هر سلول due — **خارج از بودجهٔ trade** — صدا می‌زند؛ آمار `cells_checked/cells_prepared/failures` در `cycle["context_preparation"]` و شکست‌ها در `_context_preparation_failed[cell_id]` با reason ثبت می‌شوند (skip برای `_catch_up_failed`).
+- `apex/ops/plan_bridge.py:1–1026` (نقاط کلیدی): ثابت‌های `REQUIRED_CONTEXT_KEYS` (۵۱–۱۰۷) و `REQUIRED_RISK_KEYS` (۱۱۴–۱۳۹)؛ `PaperPlanBridge.prepare` (۵۳۰–۵۴۰ — بیرون از بودجه، PAPER-only، «Never call the plan builder here»)؛ `__call__` (۵۴۲–۵۵۹ + catch در ۵۶۰–۵۸۰ — ردّ نام‌دار نرم در `self.refusals[key]`)؛ `_build` (۶۱۷–۹۷۶): زنجیرهٔ کامل اعتبارسنجی (flatten→required 38-field→e11 shapes→events→_fabric_ref→EvidenceFabric.assemble×۲→disagreement/quality_asymmetry/stale_fraction→resolve conflict→build_context + solvency→pattern_entity→ForecastEvent)، سپس فراخوانی‌ها: `build_forecast` (۷۷۴)، `evaluate_cell` یعنی خانواده + ۱۳ گیت (۷۹۴)، ردّ SETUP_NOT_EMITTED (۸۱۸)، `instantiate_playbook` + `build_stops` (۸۳۷)، `eligibility` (۸۴۹)، `generate_candidates/rank/select` (۸۷۸–۸۸۰)، `arbitrate` (۹۰۳)، `build_proposal` (۹۱۲)، بررسی کامل‌بودن ۲۳ کلید risk (۹۲۱–۹۲۳) + transport-ایمن (۹۲۸–۹۴۲) سپس `adjudicate` (۹۴۸) و `build_trade_plan` (۹۴۹)، و در پایان `_materialize_setup` + ثبت trace در `self.traces`.
+- `apex/ops/engine_context.py:1798–1841` (`prepare` با caching بر اساس `input_fingerprint` + `validate_produced_context` + persist به عنوان BRIDGE_CONTEXT fact؛ `get_bridge_context` — docstring: «Exactly 38 context fields / 23 risk fields; no fixture fallback»، کپی ارزان داخل بودجهٔ scheduler، lazy prepare برای فراخوان مستقل) و `:2283–2335` (`prepare_engine_bundle`: محاسبهٔ native کامل — classifier artifact sha256 مقید، تحمل window engine/quality، lineage روی eventها، persist evidence) — خود محاسبات را در این نشست اجرا نکردم (دامنهٔ ردیف «اتصال» است، نه «صحت محاسبات»).
+- docstringهای DECLARED_SKIP در `paper_loop.py:501–526` (`_stage_features`/`_stage_engines`): زمان‌گیر قدیمی برای «این increment خود engine evidence تولید نمی‌کند» و «seam فریز SL-5→SL-6» — مسیر فعلی serve با plan_provider واقعی از کنار پرش می‌کند، اما کلمهٔ SKIP به‌تنهایی گمراه‌کننده است (نکتهٔ ممیز).
+- تست‌های موجود: `tests/unit/test_plan_bridge.py` (۱۳۸ خط — شکل کاننیکال context برای ردّها؛ از همان برای fixture probe استفاده شد) و تمایز refusal نام‌دار از promotion خام evidence.
+
+**بازتولید:** `python3 AUDIT/probes_V1c/V-003.py` (خروجی خام `AUDIT/probes_V1c/V-003.out`; stack واقعی SQLite/ledger/bus، بدون شبکه؛ **صداقت روش:** در بخش D بدنهٔ ۱۲ تابع مرحله با خروجی‌های canned جایگذاری شد تا ترتیب/وجود فراخوانی‌ها قابل مشاهده باشد؛ تمام کدهای اعتبارسنجی، fabric، conflict، context و risk-completenessِ bridge واقعاً اجرا شدند — هیچ محاسبهٔ مدل بازنویسی نشد):
+- A1: runtime با SpyProvider → `prepare_calls=[('BTCUSDT','1h')]` و `context_preparation={'cells_checked':1,'cells_prepared':1,'failures':[]}` با بودجهٔ صفر پیش و پس از چرخه ⇒ نقل ممیز از «prepare بیرون از بودجه» درست است.
+- A2: با provider شکست‌خورده → `failures=[{'cell':'BTCUSDT:1h','reason':'ENGINE_CONTEXT_INVALID',...}]` و همان در `_context_preparation_failed` ⇒ ثبت fail-closed per-cell درست است.
+- B: `prepare` با preparer واقعی-جاسوسی → فراخوان منتقل شد و `build_trade_plan` هرگز صدا نشد (spy=0)؛ LIVE → استثنای `PAPER_ONLY_EXECUTION`؛ خارج از جهان → ردّ نرم `CELL_OUT_OF_UNIVERSE` در `refusals`؛ بدون context → ردّ نرم `ENGINE_CONTEXT_UNAVAILABLE` (رفتار واقعی `__call__`: استثنا نمی‌اندازد — refusal نام‌دار در dict ثبت و None برمی‌گردد؛ این را probe صادقانه سند کرد چون انتظار اولیهٔ من raise بود و نبود).
+- C: `REQUIRED_CONTEXT_KEYS=38` و `REQUIRED_RISK_KEYS=23` — دقیقاً مطابق docstring سرویس‌دهندهٔ engine_context.
+- D: با context در شکل کاننیکال تست واحد، `bridge._build` مسیر اعتبارسنجی واقعی را تا انتها پیمود (fabric assemble/resolve/conflict/context سازی شدند — بدون لمس این لایه‌ها exec شد) و توالی فراخوانی‌ها دقیقاً این بود: `build_forecast → evaluate_cell → instantiate_playbook → build_stops → eligibility → generate_candidates → rank → select → arbitrate → build_proposal → adjudicate → build_trade_plan`؛ `_materialize_setup` دقیقاً یک‌بار با `(pattern_id='PAT-WYC-001', regime='TREND')`؛ plan ساخته و trace ثبت شد.
+- `CLAIMS_REPRODUCED=True`.
+
+**حکم و دلیل:** **تأیید** (هر سه ستون ادعا: wiring در serve، فراخوانی prepare از runtime، و وجود فراخوانی forecast/setup/risk/plan در bridge). شدت مستقل: **S4 / کنترل تأییدشده** — ادعای نقصی در این ردیف نیست که به S0–S3 برسد. دو قید صداقت همان‌جور که ممیز نوشت: (۱) صحت خود محاسبات producer/engine در این نشست سنجیده نشده (وابسته به شواهد E-016/H-007 و اجرای واقعی روی دادهٔ دستگاه)؛ (۲) probe بخش D ترتیب فراخوانی را اثبات می‌کند نه صحت خروجی مدل را.
+
+**علت ریشه‌ای (چرا ردیف لازم شد):** نام‌گذاری تاریخی DECLARED_SKIP در `_stage_features/_stage_engines` (paper_loop.py:501–526) دربارهٔ «این increment engine evidence تولید نمی‌کند / seam فریز» بود و خوانندهٔ سطحی آن را «موتور→تصمیم اسکلت» برداشت می‌کرد؛ درحالی‌که مسیر آمادهٔ production (serve) جدا از آن docstringها plan_provider واقعی را تزریق می‌کند. شکاف سندی، نه شکاف کدی.
+
+**اثر مستقیم:** آنچه ممیز گفت: از بازنویسی بی‌دلیل producer و از پذیرش بیش‌ازحد آمادگی PAPER هر دو جلوگیری می‌کند؛ موانع D-001/C-002 دست‌نخورده برقرارند (در محدودهٔ این نشست، اتصالِ وجودی تأیید شد — هیچ حکم آمادگی تجاری از آن نمی‌آید).
+
+**اثرات ثانویه و تعاملات:** بالادست: C-002 (ریشهٔ context/bundle که در V1a با S0 تأیید شد) همچنان مانع اجرای end-to-end واقعی است — اتصال V-003 بالای آن مانع سوار است و فقط با رفع آن، شاهد نهایی (E-016) قابل گرفتن است. پایین‌دست: هر تست پذیرش آینده باید latency آماده‌سازی را از `cycle["context_preparation"]` بخواند (در حال حاضر مرئی است — خوب). تعامل با O-006 (دامنهٔ مصوب) و ردیف‌های M-011/M-012 (ستون‌های durable setup) — هم‌پوشانی موضوعی، بدون تناقض.
+
+**نسبت با قرارداد و تصمیم‌ها:** معیار قضاوت ممیز «وجود اتصال کد» بود و آن محقق است؛ قرارداد مصوب مرتبط: D63/D59 (در کد bridge نقل‌قول‌دار رعایت شده‌اند — مثلاً window حکومتی YAML playbook در build_stops/eligibility و ردّ DECISION_NO_TRADE از arbitrate). تصمیم مؤخری در DECISION_LOG که این اتصال را عقب ببرد ندیدم.
+
+**فریز و راه‌حل:** این ردیف درخواست اصلاح کد ندارد. دو اقدام غیرتهاجمی پیشنهادی: (الف) هم‌ترازسازی سند: docstringهای DECLARED_SKIP در paper_loop.py:501–526 با یک جملهٔ «مسیر production را ببین: scripts/run_apex.py:748–765» تصریح شوند تا خوانندهٔ آینده از واژهٔ SKIP نتیجهٔ اسکلت‌بودن نگیرد (تغییر سندی در فایل غیرفریز)؛ (ب) تبدیل probe به تست واحد دائمی (افزودنی، غیرتهاجمی) که wiring A/B/C/D را پین کند تا رگرسیون آتی سریع دیده شود.
+
+**پیشنهاد من:** ب (تست پین دائمی) + الف (یک خط تصریح سندی). کد فعلی را دست نزنید؛ شاهد محاسباتی را در ردیف اختصاصی E-016 بعد از C-002 بگیرید، همان‌طور که ممیز هم خواسته.
+
+**آزمون پذیرش و رگرسیون:** پذیرش تغییرات سندی/تستی: تست جدید چهار بخش را (A1/A2/B/C/D) در CI سبز نگه دارد و docstringها خواننده را به محل wiring ارجاع دهند. رگرسیون: `python3 -m pytest -q -p no:cacheprovider tests/unit/test_plan_bridge.py tests/unit/test_cp146.py tests/integration/test_ops_paper_loop.py` + تست یکپارچهٔ پس از نخستین plan واقعی (E-016) وقتی C-002 رفع شود؛ «اتصال تنها PASS نیست» — همان‌طور که ممیز نوشت.

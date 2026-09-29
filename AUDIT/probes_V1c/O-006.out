@@ -1,0 +1,15 @@
+== (1) default budget and D51 semantics on a live instance ==
+ctor default max_trades_per_cycle = 4
+instance max_trades_per_cycle = 4
+five consecutive _take_budget(): [True, True, True, True, False]
+after one _release_budget(): next take = True
+
+== (2) single family/playbook pair in params/setup_weights_v1.yaml ==
+line 4: 'family_id: SF_FVG_SWEEP_REV'
+line 5: 'playbook_id: PB_FVG_SWEEP_REV_A'
+parsed: family_id=SF_FVG_SWEEP_REV playbook_id=PB_FVG_SWEEP_REV_A
+
+== (3) D51 note in PHASE2_HANDOFF_CP9.md ==
+'- D51:' found at line 935
+text: - D51: `max_trades_per_cycle` resets every cycle, is reserved only when a valid plan exists, and is released if the submission does not leave the proc
+CLAIMS_REPRODUCED=True
