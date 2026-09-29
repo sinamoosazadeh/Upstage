@@ -29,7 +29,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-013 | CONFIRMED | S2 | S2 | Yes — `apex/data_catalog/**` is frozen | — | A — identity computed in the non-frozen producer/adapter layer and bound to the cache key |
 | K-014 | CONFIRMED | S2 | S2 | Yes — parser, store and contracts are frozen | — | A — validate at the non-frozen ingest hop (`ingest_observations`) with named quarantine |
 | K-015 | CONFIRMED | S1 | S1 | Source is non-frozen (`apex/ops/bootstrap_service.py`); the runner `apex/research/bootstrap.py` is frozen | — | A — distinguish a repeat-stop from a real exhaustion and refuse COMPLETE without an earliest-retained witness |
-| K-016 | PENDING | S1 | — | — | — | — |
+| K-016 | CONFIRMED (worse than claimed) | S1 | S1 | Source non-frozen; runner `apex/research/bootstrap.py` frozen | ISSUE-076 (per-row commits) | A — advance the delivery high-water mark only after a confirmed durable write |
 | K-017 | PENDING | S2 | — | — | — | — |
 | K-018 | PENDING | S2 | — | — | — | — |
 | K-019 | PENDING | S1 | — | — | — | — |
@@ -684,3 +684,140 @@ held back unless the owner wants the guarantee inside the frozen runner.
    together with `SELECT symbol,timeframe,MIN(open_time),COUNT(*) FROM market_observation
    GROUP BY symbol,timeframe;` — a `DONE` cell whose `MIN(open_time)` is far later than
    2020-01-01 is a live instance of this defect.
+
+---
+
+## K-016 — the delivery high-water mark survives a failed ingest and leaves a permanent hole
+
+#### Auditor claim (short quote)
+> «منبع `_served_upto` را **هنگام تحویل صفحه، قبل از ingest/checkpoint** جلو می‌برد؛ ingest خام هر سطر را جدا commit می‌کند. اگر سطر سوم از سه سطر fail شود و همان service.run دوباره اجرا گردد، `set_frontiers` فقط frontier دیتابیس را از سطر دوم می‌خواند و `_served_upto` قبلی (سطر سوم) را پاک نمی‌کند … `catch_up` با `begin_catch_up` reset جداگانه دارد.»
+> — “The source advances `_served_upto` **at page delivery, before ingest/checkpoint**; raw ingest commits each row separately. If the third of three rows fails and the same `service.run` runs again, `set_frontiers` only reads the database frontier from row two and does not clear the previous `_served_upto` (row three) … `catch_up` has its own reset via `begin_catch_up`.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/bootstrap_service.py:504–519` — `begin_catch_up`, which *does* clear
+`_served_upto`, `_history`, `_history_end` and sets `_catch_up_floor`.
+`apex/ops/bootstrap_service.py:521–537` — `set_frontiers`, whose docstring states the
+behaviour verbatim: “`_served_upto` is **deliberately NOT cleared** here: it is the
+within-process high-water mark that keeps a `--max-pages` stop resumable in the same
+process.”
+`apex/ops/bootstrap_service.py:588–621` — the serve filter (`open_ms <= frontier_ms`
+→ skip, `open_ms <= served_upto` → skip) and the update at 612–617, which raises
+`_served_upto[key]` to the last **delivered** bar, before the caller has ingested anything.
+`apex/ops/bootstrap_service.py:622–632` — empty chunk ⇒ `_queue_cell_complete` + empty page.
+`apex/ops/bootstrap_service.py:1042–1070` — `ingest_observations`: `await store.ingest_raw`
+per row, and `SQLiteStore.ingest_raw` (sqlite_store.py:383–446) commits per row — the
+per-row-commit behaviour named in ISSUE-076.
+`apex/research/bootstrap.py:276–321` (frozen) — the page loop: `if rows: await self.ingest(...)`
+(an ingest exception propagates out of `run_phase1`, so no checkpoint is written for that
+page), cursor advance, `save_bootstrap`, and the default `verified: True` → `COMPLETE`.
+`apex/ops/bootstrap_service.py:1399–1424` — `BootstrapService.run()`: `set_frontiers(await
+self._read_frontiers())` once per run, then `runner.run_phase1(...)`; `_read_frontiers`
+(1278–1300) is `SELECT MAX(as_of) FROM raw_observation` per cell.
+`apex/ops/bootstrap_service.py:1485` — the only `begin_catch_up` caller, on the catch-up
+path, not on the Phase-1 re-run path.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-016.py`; probe `AUDIT/probes_V3b/K-016.py`, output
+`AUDIT/probes_V3b/K-016.out`. Real source, real `BootstrapRunner`, real
+`ResearchCheckpointStore`, real `SQLiteStore.ingest_raw`; a venue with three retained closed
+bars; the only fault injected is an ingest that raises on row 3.
+```
+run 1: run_phase1 raised RuntimeError: INJECTED_INGEST_FAILURE on row 3
+run 1: rows durably stored  = [1726437600000, 1726441200000]
+run 1: source._served_upto  = {('BTCUSDT', '1h'): 1726444800000}
+run 1: store frontier now   = {('BTCUSDT', '1h'): 1726441200000}
+run 2: set_frontiers({... : 1726441200000}) — _served_upto after handoff = {...: 1726444800000}
+       run_phase1 status=COMPLETE
+       rows durably stored = [1726437600000, 1726441200000]
+       MISSING FOR EVER    = [1726444800000]
+       checkpoint = status=COMPLETE cursor_ms=1726448400000 bars=0
+run 3 (after begin_catch_up reset): _served_upto = {} ; rows stored unchanged;
+       missing = [1726444800000]
+```
+So the claim reproduces exactly — and **run 3 shows it is worse than claimed**: even the
+catch-up reset that the auditor credits as a mitigation does not recover the bar, because the
+durable cursor (`cursor_ms=1726448400000`) has already advanced past the hole and the cell is
+already `COMPLETE`, so the runner's `while cursor < end` loop never fetches again.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained; the defect is broader than
+stated). Every step is reproduced with real code: the high-water mark is advanced at
+delivery, `set_frontiers` intentionally preserves it, the re-run serves nothing, and the
+cell is checkpointed `COMPLETE` with a hole. The additional finding is that
+`begin_catch_up` does not repair an already-`COMPLETE` cell.
+
+#### Root cause
+Two independent progress markers exist with different durability: `_served_upto` (in-memory,
+advanced at *delivery*) and the store frontier / `bootstrap_progress.cursor_ms` (durable,
+advanced at *write*). Nothing reconciles them after a failure, and the reconciliation that
+does exist (`set_frontiers`) is documented as deliberately one-way. Underneath, ingest is not
+atomic per page (per-row commits), so a page can be half-written by construction.
+
+#### Direct impact
+A page that was delivered but not written is never re-delivered in the same process; the
+missing bar becomes a permanent gap in a cell that reports `COMPLETE`, with
+`bars_ingested=0` recorded for the completing page.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream: any exception during ingest reaches this state — a disk-full event (D57's disk
+floor), a transient SQLite lock (ISSUE-077), a DDL CHECK rejection (K-014's geometry law), or
+a process-level error. Downstream: the hole is in the middle/end of the cell history, so it
+corrupts `window()` continuity, `page_quality_measurements`' gap count for later pages, E11
+label windows (49 consecutive CLOSED candles) and any ADV/feature computation crossing it;
+K-015 makes such a cell indistinguishable from a complete one, and K-017 means the drop/skip
+evidence is not durable either. `= ISSUE-076` for the per-row-commit part; the high-water
+mark/no-reset part goes **beyond** ISSUE-076.
+
+#### Contract and decisions
+APEX_GEN5.md:17276 (Phase 1, normative): “insert closed bars into `raw_observation`;
+checkpoint `bootstrap_progress`. **Resume from cursor, never rewind Phase 1.** −1003 backoff,
+**do not skip**.” The observed behaviour skips a bar and then advances the cursor past it,
+violating “do not skip”; the “never rewind” clause is what makes the damage permanent, so a
+fix must re-deliver *before* the cursor advances rather than rewinding afterwards.
+`PHASE2_DECISION_LOG.md` D50 (retry policy) and the CP-13 cursor-trap notes in the source
+govern the serve boundary; no decision authorises treating an unwritten delivery as written.
+
+#### Frozen status and non-frozen alternative
+`apex/ops/bootstrap_service.py` is **not** frozen — `_served_upto`, `set_frontiers`,
+`ingest_observations` and the service `run()` all live there, and that is enough for the fix.
+`apex/research/bootstrap.py` **is** frozen; no change to it is required, because the service
+controls both the source state and the `ingest` callable it passes to the runner.
+
+#### Fix options (A/B/C…)
+* **A (non-frozen, recommended)** — make the high-water mark *write-confirmed*: have the
+  service's `ingest` callable report the last successfully stored open time back to the
+  source, and advance `_served_upto` only to that value (or clear it in `set_frontiers` when
+  the store frontier is behind it). Side effects: after a failure the same rows are served
+  again — harmless because `ingest_raw` deduplicates by `content_hash`, but `pages_served`,
+  `--max-pages` budgets and ETA figures change slightly; no frozen file, no migration, no
+  hash change.
+* **B** — make the page ingest atomic (one transaction per page) so a page is either fully
+  written or not at all, then key resumption on the store frontier only. Side effects: the
+  atomic writer must live outside the frozen `SQLiteStore` or be owner-approved inside it
+  (same boundary as K-005 in V3); larger transactions increase memory and lock duration,
+  interacting with ISSUE-077's transient-lock problem.
+* **C** — call `begin_catch_up` on every Phase-1 re-run instead of `set_frontiers`. Side
+  effects: cheapest change, but the probe's run 3 shows it is **insufficient alone** — it
+  does not repair a cell whose cursor already advanced; it also discards the walk cache, so
+  every re-run re-walks the venue.
+
+#### My recommendation
+**A + B**: A alone closes the reproduced hole with no frozen-file dependency; B removes the
+half-written page as a class of failure and should be taken together with the K-005 atomic
+writer decision. C is not sufficient. Additionally, a repair pass is needed for cells already
+marked `COMPLETE`: a read-only coverage audit (bar-count vs expected per cell) must be able
+to demote a cell back to incomplete, otherwise existing holes are unreachable.
+
+#### Acceptance and regression tests
+1. Fault on the last row of a page + re-run in the **same process**: all three bars are
+   stored exactly once and the cell only reaches `COMPLETE` afterwards.
+2. The same with a fresh process (new source object) — must also pass, and must not
+   re-ingest duplicates (content-hash dedup proven by row counts).
+3. A successful `--max-pages` budget stop must still resume exactly where it stopped, with no
+   re-delivery — the behaviour `set_frontiers` was written to protect.
+4. A cell already marked `COMPLETE` with a missing bar must be detectable and demotable by
+   the coverage audit (new test).
+5. Device evidence (read-only): per cell, compare
+   `SELECT COUNT(*), MIN(open_time), MAX(open_time) FROM market_observation GROUP BY
+   symbol,timeframe` against the expected bar count for the timeframe span, and list cells
+   whose `bootstrap_progress.status='DONE'` but whose count is short.

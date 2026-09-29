@@ -1,0 +1,19 @@
+venue retains 3 closed bars: [1726437600000, 1726441200000, 1726444800000]
+
+run 1: frontiers handed to source = {('BTCUSDT', '1h'): None}
+run 1: run_phase1 raised RuntimeError: INJECTED_INGEST_FAILURE on row 3
+run 1: rows durably stored  = [1726437600000, 1726441200000]
+run 1: source._served_upto  = {('BTCUSDT', '1h'): 1726444800000}
+run 1: store frontier now   = {('BTCUSDT', '1h'): 1726441200000}
+
+run 2 (same process, ingest healthy, service re-reads frontiers):
+  set_frontiers({('BTCUSDT', '1h'): 1726441200000}) — _served_upto after handoff = {('BTCUSDT', '1h'): 1726444800000}
+  run_phase1 status=COMPLETE completed=None skipped=None
+  rows durably stored = [1726437600000, 1726441200000]
+  MISSING FOR EVER    = [1726444800000]
+  checkpoint          = status=COMPLETE cursor_ms=1726448400000 bars=0
+
+run 3 (same process, after begin_catch_up reset):
+  _served_upto after begin_catch_up = {}
+  rows durably stored = [1726437600000, 1726441200000]
+  missing             = [1726444800000]
