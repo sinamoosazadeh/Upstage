@@ -1,0 +1,17 @@
+# K-024 — candidate detection uses commit time, not capture time
+
+SKEW_MARGIN_SECONDS = 5
+  seeded open=2023-01-01T00:00:00.000Z created=2023-01-01T00:59:00.000Z  (written 60 s BEFORE its close (partial))
+  seeded open=2023-01-01T01:00:00.000Z created=2023-01-01T02:10:00.000Z  (pre-close snapshot, COMMITTED 10 min after the close (partial))
+  seeded open=2023-01-01T02:00:00.000Z created=2023-01-01T03:10:00.000Z  (genuinely closed bar, committed 10 min after the close)
+
+stored rows (as_of | created_at | availability_time):
+   2023-01-01T00:00:00.000Z | 2023-01-01T00:59:00.000Z | 2023-01-01T00:59:59.999Z
+   2023-01-01T01:00:00.000Z | 2023-01-01T02:10:00.000Z | 2023-01-01T01:59:59.999Z
+   2023-01-01T02:00:00.000Z | 2023-01-01T03:10:00.000Z | 2023-01-01T02:59:59.999Z
+   note: availability_time is DERIVED (= close time, apex/data_catalog/ingest/toobit_public.py:169), not a measured receipt
+
+find_candidates -> 1 candidate(s)
+   open=2023-01-01T00:00:00.000Z created=2023-01-01T00:59:00.000Z
+
+rows 2 and 3 are indistinguishable in the store: same columns, same created_at relationship to close; only row 1 is repairable.

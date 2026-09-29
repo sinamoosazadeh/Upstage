@@ -37,7 +37,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-021 | CONFIRMED | S2 | S2 | No — the wrapper lives in `apex/ops/bootstrap_service.py`; the two DDLs are frozen | ISSUE-CP9-007 (canonical table = resume authority); K-017 | A — surface the mirror failure as a named DEGRADED status and reconcile the two tables |
 | K-022 | CONFIRMED | S2 | S2 | No — `apex/ops/partial_bar_repair.py` and `scripts/run_apex.py` are non-frozen | ISSUE-CP13-001 / CP-13.1 (governed repair) | A — classify the fetch failure, retry transients, and give an exhausted window its own verdict |
 | K-023 | CONFIRMED | S2 | S2 | No — `apex/ops/partial_bar_repair.py` / `scripts/run_apex.py` | K-022 (same command), ISSUE-CP13-001 | A — unique run id + exclusive atomic create; report-write failure is a named non-READY outcome |
-| K-024 | PENDING | S1 | — | — | — | — |
+| K-024 | CONFIRMED (severity lowered) | S1 | S2 | No — detector and ingest wiring are non-frozen; `raw_observation` DDL and the parser are frozen | K-022/K-023 (same command), ISSUE-CP13-001 | A — persist a measured capture/receipt time and key detection on it; B — bounded verification of suspect bars |
 | K-025 | PENDING | S1 | — | — | — | — |
 | K-026 | PENDING | S1 | — | — | — | — |
 | K-027 | PENDING | S2 | — | — | — | — |
@@ -1815,3 +1815,147 @@ file under `data/` (which this audit never touches).
    either the old file or the complete new one).
 5. Existing CP-13 CLI expectations (`verified=1` exit 0, evidence-fallback path) remain green
    with the new naming.
+
+---
+
+## K-024 — partial-bar detection keys on commit time, so a late-committed pre-close snapshot is invisible
+
+#### Auditor claim (short quote)
+> «کاندیدا فقط وقتی انتخاب می‌شود که `raw.created_at < bar_close+5s`؛ اما created_at زمان **commit** در ingest است، نه زمان دریافت snapshot … probe با created_at یک‌دقیقه پیش از close کاندیدا=۱، با همان bar پیش‌از-close ولی commit ده‌دقیقه پس از close کاندیدا=۰ … برای ۹۱ مورد گزارش‌شدهٔ مالک وقوع این الگو ادعا نمی‌شود.»
+> — “A candidate is selected only when `raw.created_at < bar_close+5s`; but created_at is the **commit** time at ingest, not the time the snapshot was received … the probe found 1 candidate with created_at one minute before the close and 0 for the same pre-close bar committed ten minutes after the close … occurrence of this pattern is not claimed for the owner's 91 reported cases.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/partial_bar_repair.py:281–320` — `find_candidates`: the SQL selects all
+`candle_status='CLOSED'` rows and the Python filter is
+`if created_ms < close_ms + SKEW_MARGIN_SECONDS * 1000:` (310), with
+`SKEW_MARGIN_SECONDS = 5` (113). `created_ms` comes from `raw_observation.created_at`.
+`apex/data_catalog/store/sqlite_store.py:411–423` (frozen) — `ingest_raw` writes
+`created_at = _utc_now_ms_iso()` — the **insert** moment, and `availability_time = obs.availability_time`.
+`apex/data_catalog/ingest/toobit_public.py:160–171` (frozen) — `parse_kline_to_observation`
+sets `availability_time=_ts(close_time_ms)`, i.e. the PIT field is **derived from the close
+time**, not measured at reception. There is therefore no stored capture/receipt timestamp
+anywhere on the row.
+`apex/ops/bootstrap_service.py:454–468` — the source caches `self._history` /
+`self._history_end` per cell (a backward walk taken at one moment, served page by page later).
+`apex/ops/bootstrap_service.py:647–711` — `_walk_backward` collects the venue's whole retained
+history in one pass before any page is served or ingested.
+`apex/ops/bootstrap_service.py:1042–1065` — `ingest_observations` → `store.ingest_raw` per row,
+i.e. the commit happens an arbitrary time after the walk.
+`apex/ops/bootstrap_service.py:609–640` — the CP-13 serve law: a row is served only when
+`close_time_ms(open) <= end_ms`, which in production (`end_ms = now`) means the bar had
+already closed when the walk was taken.
+`tests/unit/test_ops_partial_bar_repair.py:139–167` — the detection tests seed `created_at`
+explicitly around the 5 s skew boundary; none covers a late commit.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-024.py`; probe/output `AUDIT/probes_V3b/K-024.py|.out`.
+Real store, the repository's own seeding helper, the real detector:
+```
+stored rows (as_of | created_at | availability_time):
+   2023-01-01T00:00:00.000Z | 2023-01-01T00:59:00.000Z | 2023-01-01T00:59:59.999Z
+   2023-01-01T01:00:00.000Z | 2023-01-01T02:10:00.000Z | 2023-01-01T01:59:59.999Z
+   2023-01-01T02:00:00.000Z | 2023-01-01T03:10:00.000Z | 2023-01-01T02:59:59.999Z
+find_candidates -> 1 candidate(s)
+   open=2023-01-01T00:00:00.000Z created=2023-01-01T00:59:00.000Z
+```
+Row 2 (a pre-close snapshot committed 10 minutes late) and row 3 (a genuinely closed bar) are
+byte-indistinguishable; only row 1 is detected.
+
+#### Verdict and reasoning
+**CONFIRMED as stated — independent severity S2 (auditor S1, lowered).** The mechanism
+reproduces exactly and the store genuinely holds no capture time (`availability_time` is a
+derived copy of the close time, which strengthens the auditor's point). I lower the severity
+because I could not find a *live* path that produces the pattern in the current code: under
+the CP-13 serve law a row is served only when `close_time_ms(open) <= end_ms`, and production
+always passes `end_ms = now` (`BootstrapRunner.run_phase1` computes `end = now()*1000` when
+`end_ms is None`, and `catch_up` uses `now_ms`), so a snapshot taken while the bar was open is
+not served in the first place. The exposure is therefore (a) historical rows written before
+CP-13 — precisely the owner's 45/91 set, whose commit times are whatever they are — and
+(b) any caller that passes a future `end_ms` (the test suite does; no production caller does).
+That makes this a real coverage limit of a compensating control rather than an active
+data-corruption path: S2.
+
+#### Root cause
+The only durable time associated with a row other than the bar's own timestamps is the commit
+time, and it is used as a proxy for the capture time. The two differ by the entire duration of
+walk-cache → page serve → ingest, which is unbounded.
+
+#### Direct impact
+A partial bar whose row was committed more than 5 s after its close can never be listed by
+`repair-partial`, so the governed repair path will never examine it and the owner has no way
+to know it exists.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the absence of a measured receipt time also affects the quality plane: K-019's
+`publish_catch_up_quality` has to fall back to `int(time.time()*1000)` when the page carries
+no `receipt_time_ms`, so "receipt" is likewise a proxy. Downstream, an undetected partial bar
+is immutable (the frozen `IMMUTABLE_RAW_STORE` trigger) and flows into features, training and
+PAPER exactly like a closed bar. Interacts with **K-022**/**K-023** (the same command's
+cause-blindness and report fragility) and with **K-001/K-002** from session V3, which are
+separate correction-path risks (`= V3 K-001/K-002`).
+
+#### Contract and decisions
+* `APEX_GEN5.md:12915` — the **UTC provenance invariant**: all runtime timestamps are
+  UTC-normalized and no host/session setting may alter semantics. It presumes timestamps that
+  *mean* what their name says; a `created_at` standing in for reception time is a semantic
+  substitution the clause does not authorise.
+* `APEX_GEN5.md:5068` — an unknown/degraded provenance “MUST be carried as a degraded
+  quality/provenance flag”; a bar whose capture time is unknown is currently carried as a
+  fully trusted CLOSED row.
+* `APEX_GEN5.md:14545`-area Data-Plane DDL and `:17276` (Phase 1: “insert **closed** bars”)
+  require that only closed bars are inserted — the detector exists precisely because that
+  invariant was once violated.
+* `PHASE2_DECISION_LOG.md:182` (**ISSUE-CP13-001**) establishes the serve law, the repair CLI
+  and the detection rule (“`created_at` strictly earlier than its bar close”), and records the
+  owner's measurement of 91 stored bars / 45 confirmed mismatches. Precedence: the decision
+  defines detection by `created_at` because that is the only timestamp available; it does not
+  claim the rule is complete. Extending detection is additive and consistent with the
+  decision's own “open follow-up (a)”.
+* Bounded-scan discipline: any replacement detector must respect the C-008 / latency budget
+  (no unbounded venue verification of every historical bar) — the auditor makes the same point.
+
+#### Frozen status and non-frozen alternative
+Mixed. `apex/data_catalog/store/sqlite_store.py` (the `created_at` write and the
+`raw_observation` DDL) and `apex/data_catalog/ingest/toobit_public.py` (the derived
+`availability_time`) are **frozen**, so a new column or a changed parser is out of scope.
+Non-frozen alternatives: record the measured capture/receipt time per page in the **ops**
+database (the same non-frozen store proposed for K-017's evidence and K-019's outbox), keyed
+by `(symbol, timeframe, open_ms)` or by `content_hash`, and have `find_candidates`
+(non-frozen) left-join it; the detector, `apex/ops/bootstrap_service.py` and
+`scripts/run_apex.py` are all editable.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — persist a real capture/receipt time: the source already knows when
+  each walk page was fetched; write `(content_hash → fetched_at_ms, page_receipt_ms)` into a
+  non-frozen ops table at ingest, and change `find_candidates` to use
+  `COALESCE(capture_time, created_at)`. Side effects: new table + migration in the ops DB;
+  `find_candidates` gains a join (bounded, indexed by content_hash); rows written before the
+  change keep the old behaviour, so option B is still needed for the legacy set; existing
+  detection tests stay valid because `created_at` remains the fallback.
+* **B** — bounded verification of suspect legacy rows: for a governed, capped selection (e.g.
+  the owner's 91 plus any row whose `created_at − close` lies within a configured window),
+  compare against the venue or supplied evidence and report a verdict, never modifying data
+  blindly. Side effects: venue calls against the rate-limit budget (must reuse the governed
+  3× 1s/2s/4s backoff and a hard cap per run); requires owner sign-off on the selection rule.
+* **C** — widen `SKEW_MARGIN_SECONDS`. Side effects: **rejected** — it does not model the
+  actual uncertainty (which is walk-to-commit latency, not clock skew) and it would
+  misclassify genuinely closed bars as partial, inviting unnecessary corrections.
+* **D** — make ingest commit each page immediately after its fetch, bounding
+  `created_at − capture` to something small and documented. Side effects: touches the ingest
+  loop's batching (interacts with K-005/ISSUE-076 per-row commit work); reduces but does not
+  eliminate the gap, and does nothing for legacy rows.
+
+#### My recommendation
+**A** for every future row (cheap, non-frozen, makes the detector's premise true), plus a
+scoped **B** run for the legacy set with owner-approved bounds. Do not widen the skew.
+
+#### Acceptance and regression tests
+1. A bar captured before its close but committed 10 minutes later is detected as a candidate
+   once the capture time is recorded; the identical row with a genuine post-close capture is
+   **not** detected.
+2. Legacy rows with no capture record fall back to `created_at` and behave exactly as today
+   (no regression of the existing 5 s boundary tests).
+3. The bounded verification path never exceeds its configured venue-call cap and never writes
+   without a governed verdict.
+4. `availability_time` remains the frozen derived value; no test asserts it as a receipt.
+5. A genuinely closed bar is never corrected as a result of the new detection rule.
