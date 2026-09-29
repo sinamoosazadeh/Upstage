@@ -1,0 +1,7 @@
+tol for ATR=1.0 is 0.15
+single source [100,100.1,100.2] -> 1 cluster(s)
+  count=3 spread=0.20000000000000284 centre=100.10000000000001 sources=['only_source', 'only_source', 'only_source']
+single-source chain [100.0, 100.1, 100.2, 100.3, 100.4, 100.5] -> 1 cluster(s)
+  count=6 spread=0.5
+two sources [100],[100.1] -> 1 cluster(s), spread=0.09999999999999432
+=== TestConfluence::test_levels_within_tolerance_cluster: 1 passed (pins spread=0.2 at tol=0.15)

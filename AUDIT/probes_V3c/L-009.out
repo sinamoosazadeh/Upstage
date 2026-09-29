@@ -1,0 +1,13 @@
+baseline (all finite)  -> state=VALID class=Q1
+C=NaN                  -> RAISED InvalidOperation: [<class 'decimal.InvalidOperation'>]
+O=NaN                  -> RAISED InvalidOperation: [<class 'decimal.InvalidOperation'>]
+H=NaN                  -> RAISED InvalidOperation: [<class 'decimal.InvalidOperation'>]
+L=NaN                  -> RAISED InvalidOperation: [<class 'decimal.InvalidOperation'>]
+V=NaN                  -> state=VALID class=Q1
+ATR_n=NaN              -> RAISED InvalidOperation: [<class 'decimal.InvalidOperation'>]
+tick_size=NaN          -> state=VALID class=Q1
+quantity_step=NaN      -> state=VALID class=Q1
+C=+Inf                 -> RAISED InvalidOperation: [<class 'decimal.InvalidOperation'>]
+H=+Inf                 -> RAISED InvalidOperation: [<class 'decimal.InvalidOperation'>]
+ATR_n=+Inf             -> state=VALID class=Q1
+H<L (finite)           -> state=QUARANTINED_H_LT_L class=QX

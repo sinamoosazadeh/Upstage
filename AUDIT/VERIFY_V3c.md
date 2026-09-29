@@ -33,8 +33,8 @@ and synthetic failure proves the code path, not that it has already damaged a de
 | L-006 | CONFIRMED | S2 | S2 | No — `apex/quality/vector.py` + `apex/setup/gates.py` are non-frozen | D-026 (same NaN-through-comparison theme at risk layer) | A — single path: API-boundary finite/range validation |
 | L-007 | CONFIRMED | S2 | S2 | No — `apex/fabric/context.py` is non-frozen | — | A — single path: time-aware pairing (backward compatible) |
 | L-008 | CONFIRMED | S2 | S2 | No for this helper; consistent triad fix touches frozen `_f41` | `_f41_volume_ratio` (frozen) + E03 `volume_ratio_pit` share the degraded reading | Owner ruling for the triad: A-with-cap or B (contract amendment); do not flip this branch alone |
-| L-009 | PENDING | S2 | — | — | — | — |
-| L-010 | PENDING | S2 | — | — | — | — |
+| L-009 | CONFIRMED (worse than claimed: 4 silent-VALID positions) | S2 | S2 | No — `apex/quality/numerical.py` is non-frozen | `guarded_div` in the same file is the correct pattern | A — single path: pre-validate all inputs |
+| L-010 | CONFIRMED | S2 | S2 | No — `apex/pattern/fibonacci.py` is non-frozen | N-010 (same single-linkage-vs-diameter theme in runtime E02) | Owner ruling quantifying independence + diameter, then A; rewrite the pinning test |
 | L-011 | PENDING | S2 | — | — | — | — |
 | L-012 | PENDING | S1 | — | — | — | — |
 | L-013 | PENDING | S2 | — | — | — | — |
@@ -396,3 +396,86 @@ Ask the owner to choose A-with-cap or B for the whole triad; do not flip this br
 - Under A: `V>0,SMA_prev=0 → finite value == V/eps (or governed cap with named reason)`; `V` genuinely missing → independent missing/degraded state per contract; `_f41`/E03 parity test across the triad.
 - Under B: contract sentence amended; docstring/test descriptions updated to cite the ruling; a test pins the distinguished V-null vs SMA-zero states.
 - Regression: `tests/unit/test_quality.py` (updated only as the ruling directs).
+## L-009 — calc_numerical_contract guards non-finite AFTER arithmetic (raises; some positions silently VALID)
+
+#### Auditor claim (short quote)
+> "The docstring promises `(None,'QUARANTINED_NAN_INF','QX')` for NaN/Inf, but `Decimal('NaN')` raises `decimal.InvalidOperation` at comparison/`max` instead; the non-finite guard sits AFTER the arithmetic. Valid ingest pre-checks finite upstream, but this API does not honor its own contract."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/quality/numerical.py:128–166` (`calc_numerical_contract`, full file read): epsilon pre-computation (136–139), `Decimal(str(x))` coercion (141–142), `H_d < L_d` comparison (144), `max(range_d, eps_range)` (147), five ratio computations + `quantize` (149–156) — and only THEN the non-finite check (158–160) over the five results. `Decimal('NaN')` `<`/`max`/`quantize` raise `InvalidOperation` (IEEE comparison semantics), so NaN in any compared/coerced position explodes before line 158 is reached.
+- `apex/data_catalog/contracts.py:204–212` (`validate_market_observation` step 2): the raw ingest path raises `E-NUM-001/002` on non-finite OHLCV/OI — the upstream finite pre-condition the auditor cites (verified by reading; ingest callers in `sqlite_store`/`bootstrap_service` enforce it before any quality math).
+- `tests/unit/test_quality.py:219–239`: pins the finite example + `H<L` quarantine; NO NaN/Inf test exists for this function — the fix breaks nothing.
+- Callers (mandatory grep): NONE in `apex/` or `scripts/` — the function is currently test-only; all native quality math flows through `calc_quality_vector`/`formula_*`/producer guards instead.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-009.py`. Probe: `AUDIT/probes_V3c/L-009.py` (real function; each Decimal input set to NaN/+Inf in turn). Raw output: `AUDIT/probes_V3c/L-009.out`. Result: baseline `VALID/Q1`; `C/O/H/L/ATR_n=NaN` and `C/H=+Inf` → `RAISED InvalidOperation` (claim confirmed); `H<L` finite → `QUARANTINED_H_LT_L/QX` (intact). BEYOND the claim, four positions return `VALID/Q1` with non-finite inputs: `V=NaN`, `tick_size=NaN`, `quantity_step=NaN` (V/tick/step never enter the five ratios, so the post-guard cannot see them) and `ATR_n=+Inf` (`range/max(Inf,eps) = 0`, finite — silently accepted).
+
+#### Verdict and reasoning
+**CONFIRMED (worse than claimed) — independent severity S2** (auditor S2 retained). The claimed exception path reproduces on 6 positions, and 4 further positions fail WORSE than claimed (silent `VALID` on NaN/Inf, not even an exception). S2 because the function has no caller in the checkout (latent API) and the ingest path it would sit behind already refuses non-finite — but the silent-`VALID` positions mean a future direct caller would get corrupted quality output with no signal at all, which is strictly worse than the loud `InvalidOperation`.
+
+#### Root cause
+Guard-after-compute plus guard-over-outputs-only: finiteness is checked on the five derived ratios after all comparisons/divisions/quantizations, so (a) NaN in compared positions raises before the guard runs, and (b) NaN/Inf in positions that do not affect the ratios (V, tick, step) or that collapse to finite (ATR=+Inf) passes as `VALID`.
+
+#### Direct impact
+Direct callers get one of three wrong outcomes for non-finite inputs: an unclassified `InvalidOperation` traceback (6 positions), or a confident `VALID/Q1` (4 positions) — never the documented `QUARANTINED_NAN_INF/QX`. The documented refusal contract is dead in all 10 non-finite positions tested.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, `validate_market_observation` step 2 protects the ingest path only — this function's whole purpose as a standalone §2.2 oracle is defeated for direct callers. Downstream, an uncaught `InvalidOperation` would abort quality reporting/lineage chains with an unrelated traceback (no Ch.7 code, no QX label), while the silent-`VALID` cases would feed NaN-derived eps outputs (`eps_price/volume/range` can be NaN when tick/step/ATR are NaN — they are returned inside the `VALID` dict) into any consumer. Note `guarded_div` (same file, :91–107) demonstrates the correct pattern: explicit pre-check raising `ValueError("NAN_INF_QX")`.
+
+#### Contract and decisions
+Module contract (`numerical.py` docstring + §2.2): "NaN/Inf always set Q_formula_valid=0 (degraded) — never silently skipped"; the function docstring promises `QUARANTINED_NAN_INF/QX`. Both are violated (loudly on 6 positions, silently on 4). No `PHASE2_DECISION_LOG.md` ruling touches this function. Precedence: the fail-closed §2.2 contract governs; the guard must move before all arithmetic and cover all inputs.
+
+#### Frozen status and non-frozen alternative
+**NOT frozen:** `apex/quality/numerical.py` is outside the frozen set. Fix directly; no alternative layer needed.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — pre-validate all inputs (single path, non-frozen):** check `is_finite()` on every Decimal input (C/O/H/L/V/ATR_n/tick/step) BEFORE any comparison or arithmetic; any non-finite → `(None, "QUARANTINED_NAN_INF", "QX")`. Keep the post-check as defense-in-depth. Side effects: the 6 raising positions become named refusals and the 4 silent-`VALID` positions become refusals (all intended); NO existing test breaks (finite example + `H<L` pins are preserved — verify by re-running `test_quality.py`); no callers exist, so no downstream behavior changes; no hashes/caches/DB/retraining impact.
+
+#### My recommendation
+Implement A (ten-line pre-validation); add the probe's 10-position matrix as a regression test.
+
+#### Acceptance and regression tests
+- NaN/±Inf in EVERY field (C/O/H/L/V/ATR_n/tick/step) → `QUARANTINED_NAN_INF/QX` with no traceback; `H<L` still quarantines with its own code; ordinary numbers keep the exact pinned outputs (`test_numerical_contract_example` bit-identical).
+- Regression: full `tests/unit/test_quality.py` passes.
+
+## L-010 — fibonacci.confluence clusters by neighbor gaps, ignores source independence and diameter
+
+#### Auditor claim (short quote)
+> "`confluence` claims independent levels with in-tolerance diameter, but clusters by neighbor distances and never checks source. One source with levels 100/100.1/100.2 at ATR=1 returned a 3-member cluster with spread=0.2 over tolerance=0.15; the existing test even pins spread=0.2 for ATR=1."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/pattern/fibonacci.py:160–196` (`confluence`, full file read): flattens `(level, source)` pairs, sorts by price, and cuts a new cluster ONLY when `v − cur[-1][0] > tol` (neighbor gap, :184–187) — single-linkage chaining with no diameter cap and no source-diversity check; clusters of size ≥2 are reported with `spread = max−min` (:190–196), which can therefore exceed `tol` by construction.
+- `APEX_GEN5.md:15005–15021` (Ch.9 §9.0 Pattern contract): lists "Fibonacci … confluence" among deterministic detection families without pinning a single-source/diameter rule — the "independent constructions" requirement comes from the function's own docstring ("Cluster levels from independent constructions", :160–161), which the code does not enforce.
+- `tests/unit/test_pattern_fibonacci.py:117–126` (`test_levels_within_tolerance_cluster`): asserts `spread == 0.2` at `atr=1.0` (tol=0.15) — pins the diameter violation (re-ran: 1 passed).
+- Callers/boundary (mandatory grep): `confluence` is re-exported by `apex/pattern/__init__.py:42–55` but NEVER called in `apex/` outside its module — `detect.py` (full grep) implements its own touch-count logic (`_touch_count`, :586–587) and never imports fibonacci levels; harmonics are `RESEARCH_ONLY` with a scoring gate (`detect.py:160–164`, `assert_scoring_admissible` refuses RESEARCH_ONLY rows). No native decision path consumes `confluence` today.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-010.py` + re-run of the pinning test. Probe: `AUDIT/probes_V3c/L-010.py` (real `confluence`). Raw output: `AUDIT/probes_V3c/L-010.out`. Result: single source `[100,100.1,100.2]` → 1 cluster, `count=3, spread=0.2 > tol=0.15` (auditor's case exactly); single-source 6-chain → `spread=0.5` (diameter unbounded — chaining); two-source `[100],[100.1]` → `spread=0.1` (legitimate cluster shape); existing test passes (pins the violation).
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). Single-source clustering, diameter overflow, and the pinning test all reproduce exactly; the chaining probe shows the diameter is unbounded, not just slightly over. S2 because `confluence` has no consumer in the checkout (research-only helper, scoring-gated harmonics) — the impact is a certified-wrong oracle awaiting a future caller, plus a test suite that blesses the wrong behavior. Distinct from N-010 (E02 streaming merge), which is the same single-linkage-vs-diameter theme in a different, RUNTIME engine — that one is S1; this one stays S2 for latency.
+
+#### Root cause
+Single-linkage clustering (cut on neighbor gap) without the two constraints the docstring implies: (1) minimum count of DISTINCT sources/legs, (2) complete-linkage/diameter cap (`spread ≤ tol`).
+
+#### Direct impact
+Confluence counts are inflated (one leg can "confirm" itself) and reported clusters can span many× the tolerance (0.5 vs 0.15 demonstrated) — any consumer would treat a lone noisy ladder as multi-source confirmation.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the `confluence_atr_mult=0.15` tolerance (the θ_eq row) is the only governed input and is applied to gaps, not diameters — the tolerance's meaning is silently changed. Downstream, no native consumer exists; IF connected to pattern/stop/E07 logic later, entry confidence and stop placement would rest on phantom confirmation. Interaction: fixing the diameter without fixing source-independence (or vice versa) leaves half the hole — both constraints must land together, and the pinning test must be rewritten, not just updated.
+
+#### Contract and decisions
+Ch.9 §9.0 names confluence as a Fibonacci family member but does not quantify independence/diameter; the function's docstring ("independent constructions … within tolerance") is the operative spec and is violated. E02's `group_equal_levels_hierarchical` (diameter/median rule, cited by N-010) is the in-checkout precedent for the complete-linkage reading. No `PHASE2_DECISION_LOG.md` ruling covers fibonacci confluence. Precedence: docstring + E02 precedent govern until the owner quantifies "independent" (distinct legs? distinct sources? distinct families?) and the diameter rule.
+
+#### Frozen status and non-frozen alternative
+**NOT frozen:** `apex/pattern/fibonacci.py` is outside the frozen set. Fix directly; no alternative layer needed.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — enforce both constraints (single path, non-frozen):** require ≥2 distinct sources (per the owner-quantified independence rule) AND `spread ≤ tol` per cluster (split or reject over-diameter chains deterministically). Side effects: `test_levels_within_tolerance_cluster` MUST be rewritten (it pins spread=0.2>tol as correct); other confluence tests use in-tolerance multi-source cases (re-run to confirm); no callers exist, so no downstream changes; no hashes/caches/DB/retraining impact.
+
+#### My recommendation
+Ask the owner to quantify independence + diameter (one ruling), then implement A and rewrite the pinning test in the same change — never "fix" the code while leaving a test that certifies the old behavior.
+
+#### Acceptance and regression tests
+- Single source alone → no cluster; `spread>tol` chains → split/rejected per the ruling; legitimate multi-source in-tolerance sets still cluster with identical centres.
+- Regression: `tests/unit/test_pattern_fibonacci.py` (with the rewritten test) passes; `detect.py` scoring-gate tests unaffected.
