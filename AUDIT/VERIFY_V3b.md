@@ -30,7 +30,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-014 | CONFIRMED | S2 | S2 | Yes — parser, store and contracts are frozen | — | A — validate at the non-frozen ingest hop (`ingest_observations`) with named quarantine |
 | K-015 | CONFIRMED | S1 | S1 | Source is non-frozen (`apex/ops/bootstrap_service.py`); the runner `apex/research/bootstrap.py` is frozen | — | A — distinguish a repeat-stop from a real exhaustion and refuse COMPLETE without an earliest-retained witness |
 | K-016 | CONFIRMED (worse than claimed) | S1 | S1 | Source non-frozen; runner `apex/research/bootstrap.py` frozen | ISSUE-076 (per-row commits) | A — advance the delivery high-water mark only after a confirmed durable write |
-| K-017 | PENDING | S2 | — | — | — | — |
+| K-017 | CONFIRMED | S2 | S2 | No — `apex/ops/bootstrap_service.py` is non-frozen | — | A — persist per-cell drop evidence idempotently at every checkpoint, not only at COMPLETE |
 | K-018 | PENDING | S2 | — | — | — | — |
 | K-019 | PENDING | S1 | — | — | — | — |
 | K-020 | PENDING | S1 | — | — | — | — |
@@ -821,3 +821,129 @@ to demote a cell back to incomplete, otherwise existing holes are unreachable.
    `SELECT COUNT(*), MIN(open_time), MAX(open_time) FROM market_observation GROUP BY
    symbol,timeframe` against the expected bar count for the timeframe span, and list cells
    whose `bootstrap_progress.status='DONE'` but whose count is short.
+
+---
+
+## K-017 — drop evidence becomes durable only when the cell reaches COMPLETE
+
+#### Auditor claim (short quote)
+> «شمار/reason drop فقط هنگام `status=COMPLETE` در checkpoint durable می‌شود. تست budget-stop پس از دو drop صراحتاً `payload.invalid_bars_dropped=0` را انتظار دارد؛ status داخل همان process عدد ۲، ولی پس از خروج و پیش از تکمیل offline صفر است.»
+> — “The drop count/reason becomes durable only at `status=COMPLETE`. The budget-stop test, after two drops, explicitly expects `payload.invalid_bars_dropped=0`; the in-process status says 2, but after exiting and before completion the offline status is zero.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/bootstrap_service.py:713–740` — `_record_invalid_bar` (in-memory only:
+`invalid_dropped`, `invalid_by_cell`, `invalid_reasons`, `invalid_offenders`) and
+`_offenders_summary`; the only persistence-adjacent consumer is the wiring print in
+`_queue_cell_complete` (742–764).
+`apex/ops/bootstrap_service.py:946–1019` — `CanonicalMirroredCheckpoints.save_bootstrap`:
+the `invalid_bars_dropped`/`invalid_reasons` merge is inside `if status == "COMPLETE"`;
+the `else` branch (996–1007) only *carries forward* keys that already exist
+(“Non-COMPLETE saves carry previously persisted evidence keys forward instead of wiping
+them … First-run budget stops are unaffected (no old keys exist yet)” — the source states
+the gap itself).
+`apex/ops/bootstrap_service.py:1345–1380` — `status()`: `durable_total` from completed
+cells' payloads **plus** `source_extra` from the live in-process source for cells that are
+not yet complete; with no source (offline) the second term is 0 by construction.
+`tests/unit/test_ops_bootstrap_service.py:1161–1183`
+(`test_budget_stop_keeps_the_drop_evidence`) and **1738–1760**
+(`test_budget_stop_reports_live_drops_but_persists_nothing`, whose name states the
+behaviour and whose body asserts `row["payload"].get("invalid_bars_dropped", 0) == 0`).
+Callers of `status()`: the CLI `status` command (`scripts/run_apex.py`) and the service's
+own reporting.
+
+#### Reproduction (command, probe file, actual result)
+Commands: `python3 -B AUDIT/probes_V3b/K-017.py` and
+`python3 -m pytest -q -p no:cacheprovider tests/unit/test_ops_bootstrap_service.py -k "budget_stop or drop_evidence or persists_nothing"` → **5 passed, 66 deselected**.
+Probe output (`AUDIT/probes_V3b/K-017.out`), using the repository's own poison-row venue
+helpers and the real service:
+```
+budget stop: status=BUDGET_REACHED resumable=True invalid_bars_dropped(reported)=2
+durable checkpoint: status=IN_PROGRESS payload={}
+in-process status(): invalid_bars_dropped=2
+live source evidence: invalid_by_cell={('BTCUSDT','1d'): 2}
+                      reasons={('BTCUSDT','1d'): {'LOW_ABOVE_MIN_OPEN_CLOSE':1,
+                                                  'HIGH_BELOW_MAX_OPEN_CLOSE':1}}
+
+AFTER EXIT — offline service.source is None: True
+offline status(): invalid_bars_dropped=0 cells_completed=0
+offline checkpoint: status=IN_PROGRESS payload={}
+```
+Two real poison bars were dropped with named reasons; nothing about them survives the
+process. The offline operator view reports **0**.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). The claim reproduces exactly,
+including the existing test that pins the zero. S2 rather than S1: no wrong number reaches a
+decision, and a later successful walk over the same retained window will re-count the
+offenders; the damage is operator-visible truth (“0 dropped” is asserted, not “unknown”),
+which is an observability failure. It is not S3 because the zero is indistinguishable from a
+genuine clean run, and the evidence is unrecoverable once venue retention slides the poison
+bar out of the window — exactly the caveat the auditor states.
+
+#### Root cause
+Drop evidence lives only in the source object's memory, and the single persistence hook was
+attached to the COMPLETE transition. Every non-COMPLETE checkpoint (`IN_PROGRESS`, `PAUSED`,
+budget stop) writes a payload that can only *preserve* evidence, never create it.
+
+#### Direct impact
+After a `--max-pages` budget stop, a pause or any process exit before completion, the
+per-cell drop count and reasons are lost, and `status` reports `invalid_bars_dropped=0`
+for that cell.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream: the CP-12 hygiene gate (K-014's `_ohlc_violation`) is the producer of this
+evidence, and only geometry violations are counted — so the figure is already narrower than
+“bad data seen”. Downstream: the operator's completeness judgement for the 140-cell data
+scope rests on this number; combined with K-015 (a truncated cell can be COMPLETE) and K-016
+(a hole can be COMPLETE), the three together mean “COMPLETE, 0 dropped” carries almost no
+information. Note a genuine mitigation the auditor did not credit: `status()` does merge
+live in-process evidence for non-complete cells (bootstrap_service.py:1357–1364), so the
+zero appears only after process exit — my probe separates the two cases explicitly.
+
+#### Contract and decisions
+APEX_GEN5.md:17276 (Phase 1, normative) requires checkpointing `bootstrap_progress` and
+forbids skipping; §2.6/AI.5 (implemented at `sqlite_store.py:245–288`) requires that “every
+correction, revocation, or deletion is logged with event_id, timestamp, reason, and actor
+identity (immutable audit trail)” — a dropped venue bar is the closest analogue and is
+currently logged only to stdout. No `PHASE2_DECISION_LOG.md` decision authorises discarding
+drop evidence on a clean stop; CP-13/ISSUE-CP13-003 (quoted in the source at 900–914)
+introduced the COMPLETE-only merge, so the gap is a known-scope limitation rather than an
+owner ruling that non-COMPLETE evidence may be dropped.
+
+#### Frozen status and non-frozen alternative
+**Not frozen** — `apex/ops/bootstrap_service.py` owns `_record_invalid_bar`,
+`CanonicalMirroredCheckpoints` and `status()`. The durable target
+(`research_bootstrap_progress.payload_json`) already exists and already accepts arbitrary
+payload keys, so no frozen DDL or frozen runner change is needed.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — merge `invalid_bars_dropped`/`invalid_reasons`/offenders into the
+  payload on **every** `save_bootstrap`, not only at COMPLETE, using a max/union merge so
+  re-walks cannot double-count (the COMPLETE branch's `max(cur, old)` rule already exists
+  and can be reused). Side effects: `test_budget_stop_reports_live_drops_but_persists_nothing`
+  must be rewritten (it asserts the current zero); payload rows grow slightly; the
+  idempotence rule must be stated explicitly or a resumed walk inflates the count.
+* **B** — write a separate append-only drop-evidence record (one row per dropped bar) at the
+  moment of the drop. Side effects: strongest evidence (per-bar, with reason and raw repr)
+  and naturally idempotent if keyed by `(symbol,timeframe,open_time,reason)`; needs a new
+  table, i.e. a migration — in the **frozen** `sqlite_store.py` MIGRATIONS list unless it is
+  placed in the non-frozen research checkpoint store, which is where it belongs.
+* **C** — leave persistence as is and make `status()` report `unknown` instead of `0` when no
+  source is attached and the cell is incomplete. Side effects: smallest change, removes the
+  false zero but not the evidence loss; acceptable only as an interim measure.
+
+#### My recommendation
+**A now, C immediately as a one-line honesty fix, B when the checkpoint store next takes a
+migration.** A restores the count with no new schema; C stops the `0` from being read as
+“clean”; B is the only option that preserves *which* bars were dropped after retention slides
+them out of the venue window.
+
+#### Acceptance and regression tests
+1. Two drops + `max_pages=1` + process exit: the offline status shows the same two
+   offenders/reasons (or an explicit durable receipt), not `0`.
+2. Resuming and completing the same cell must not double-count (still `2`).
+3. A genuinely clean cell must still report `0` — the fix must not turn “no evidence” into
+   “unknown” for completed clean cells.
+4. Regression: `tests/unit/test_ops_bootstrap_service.py::test_budget_stop_keeps_the_drop_evidence`
+   (in-process reporting) must keep passing; the `…persists_nothing` test must be re-baselined
+   to the new durability guarantee.

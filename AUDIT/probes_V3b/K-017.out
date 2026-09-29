@@ -1,0 +1,8 @@
+budget stop: status=BUDGET_REACHED resumable=True invalid_bars_dropped(reported)=2
+durable checkpoint: status=IN_PROGRESS payload={}
+in-process status(): invalid_bars_dropped=2
+live source evidence: invalid_by_cell={('BTCUSDT', '1d'): 2} reasons={('BTCUSDT', '1d'): {'LOW_ABOVE_MIN_OPEN_CLOSE': 1, 'HIGH_BELOW_MAX_OPEN_CLOSE': 1}}
+
+AFTER EXIT — offline service.source is None: True
+offline status(): invalid_bars_dropped=0 cells_completed=0
+offline checkpoint: status=IN_PROGRESS payload={}
