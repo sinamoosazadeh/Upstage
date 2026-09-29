@@ -42,7 +42,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-026 | CONFIRMED (severity lowered) | S1 | S2 | No — `apex/ops/engine_context.py` non-frozen; the freshness thresholds are governed params | D52 B (backfill), D33/ISSUE-037 (minimum veto), K-019/K-025 (same publish path) | A — report usability, not just `written`; B — owner-approved warmup-vs-decision window policy |
 | K-027 | CONFIRMED | S2 | S2 | Partly — `apex/fabric/evidence.py` is NOT in the frozen list; `apex/ops/plan_bridge.py` is not frozen either | V3 K-015/K-020 (auditor cross-ref); E-PIT-001 | A — parse and check each event's own availability_time in the adapter; B — always re-measure age from event_time |
 | K-028 | CONFIRMED (spec-level; no production caller) | S2 | S2 | No — `apex/quality/pit.py` is non-frozen, but it transcribes the frozen APEX_GEN5.md §2.3 pseudocode | K-025 (coverage measured from delivered rows), K-020 | A — count distinct in-window closes and apply the freshness SLA, with an owner doc amendment to §2.3 |
-| K-029 | PENDING | S2 | — | — | — | — |
+| K-029 | CONFIRMED (worse than claimed) | S2 | S2 | No — `apex/quality/pit.py` non-frozen; the §2.3 payload shape is contract text | K-028 (same helper), V3 K-001 (store hash) | A — bind the manifest to sorted content hashes of every qualifying bar + real package digest |
 | K-030 | PENDING | S2 | — | — | — | — |
 | K-031 | PENDING | S2 | — | — | — | — |
 | K-032 | PENDING | S1 | — | — | — | — |
@@ -2537,3 +2537,139 @@ admission and say so in its docstring.
 5. An artefact whose `availability_time` exceeds a caller-supplied `as_of` produces
    `PIT_VIOLATION` (the branch becomes reachable).
 6. Identical inputs still produce identical `snapshot_id` (determinism preserved).
+
+---
+
+## K-029 — snapshot identity is not bound to the data and is not stable across processes
+
+#### Auditor claim (short quote)
+> «`manifest_hash/snapshot_id` به محتوای OHLCV یا شناسهٔ observationها bind نیست: با تغییر `close/volume` همان ID (`fb01f635…`) ماند؛ از طرف دیگر `symbol_scope=list(set(...))` باعث شد ورودی یکسان با `PYTHONHASHSEED=1..4` چهار ID مختلف بسازد. `parameter_package_id` هم ثابتِ `params_v1_frozen` است، نه digest واقعی بسته.»
+> — “`manifest_hash`/`snapshot_id` is bound neither to the OHLCV content nor to the observation ids: changing `close`/`volume` kept the same ID; conversely `symbol_scope=list(set(...))` made the identical input produce four different IDs under `PYTHONHASHSEED=1..4`. `parameter_package_id` is also the constant `params_v1_frozen`, not the real package digest.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/quality/pit.py:116–152` — the identity construction: `symbol_scope =
+list({obs.symbol for obs in valid_observations})[:10]` (a **set** → insertion order depends on
+`PYTHONHASHSEED` for `str` keys, and over-scope is silently truncated rather than blocked);
+`manifest = {symbol_scope, timeframe_scope, observation_windows, as_of, mtf_states,
+overall_mtf}` → `mhash = manifest_hash(manifest)`; `parameter_package_id =
+"params_v1_frozen"  # package id placeholder replaced by CP-6 governance`; the hashed
+`payload` adds `source_state`, `manifest_hash`, `code_version` and `quality_state` —
+**no OHLCV, no `content_hash`, no `observation_id`, no per-bar timestamps**.
+`apex/identity/snapshot.py` — `manifest_hash` / `snapshot_id_from_payload` hash the canonical
+JSON they are given; they are faithful, so the defect is the payload's *content*.
+`apex/data_catalog/contracts.py:107–133` — `MarketObservation` carries `open/high/low/close/
+volume/oi/timestamp/sequence` and a `content_hash()`; none of it reaches the payload.
+`tests/unit/test_quality.py:309–313` — `test_deterministic_snapshot_id` compares two calls in
+**one** process, so neither the cross-process instability nor the content binding is covered.
+`apex/quality/pit.py:1–21` — the module docstring claims “symbol_scope > 10 → BLOCK” and
+“Snapshots are immutable: a new artifact produces a new snapshot_id (deterministic SHA-256
+over the canonical payload)”.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-029.py`; probe/output `AUDIT/probes_V3b/K-029.py|.out`
+(the probe re-invokes itself in four read-only subprocesses):
+```
+1. identical window, corrected OHLCV
+   close=100.5 volume=10   -> snapshot_id=033c4cde4bacd51e069de43fe31b05db2c059aeb158369b43e1e67871d13a855
+   close=999.9 volume=4242 -> snapshot_id=033c4cde4bacd51e069de43fe31b05db2c059aeb158369b43e1e67871d13a855
+   identical = True ; manifest_hash identical = True
+2. same bytes, four subprocesses
+   PYTHONHASHSEED=1 -> 3bc79dcc… manifest=a5463bc8…
+   PYTHONHASHSEED=2 -> b015408c… manifest=ebae9da9…
+   PYTHONHASHSEED=3 -> e9b8b678… manifest=524b0a91…
+   PYTHONHASHSEED=4 -> 65ceff7c… manifest=147d5054…
+   distinct snapshot_ids for identical input = 4
+3. parameter_package_id = 'params_v1_frozen' ; code_version = '4.0.0'
+```
+
+#### Verdict and reasoning
+**CONFIRMED (worse than claimed) — independent severity S2** (auditor S2 retained). Both
+directions reproduce exactly: the same identity for materially different data, and four
+identities for identical data. My additions: the instability is not limited to `snapshot_id`
+— the **`manifest_hash` itself** differs per process, so the manifest is unusable as a
+comparison key; and the same `list(set(...))[:10]` line silently truncates an over-wide symbol
+scope although the module docstring promises a BLOCK. S2 rather than S1 because, as with
+K-028, nothing in production calls this helper today (`grep -rn "calc_snapshot_pit_window"`
+→ definition + `tests/unit/test_quality.py`); the runtime PIT path is
+`EngineContextProducer`. If it were wired, this would be S1.
+
+#### Root cause
+The payload was built from *window metadata* (scope, windows, as_of, mtf states) rather than
+from *content identity*. Two independent flaws follow: (i) no content binding — the hash
+cannot distinguish corrected OHLCV, so the immutability/supersession rule cannot be enforced;
+(ii) an unordered `set` leaks Python's per-process string-hash randomisation into a value that
+must be deterministic, and `parameter_package_id` is a placeholder constant rather than the
+D28 digest.
+
+#### Direct impact
+A corrected bar produces the *same* `snapshot_id`, so a cache/lineage/replay keyed on it would
+silently serve pre-correction data; and the same data produces *different* ids in different
+processes, so replay comparison, deduplication and audit matching all break.
+
+#### Secondary effects and interactions (upstream/downstream)
+Same helper as **K-028** (the sufficiency/freshness defects) — both must be fixed together,
+since A's fix changes the payload anyway. Distinct from V3 **K-001** (the store-side hash
+defect), which the auditor also separates. Downstream consumers would be
+`snapshot_pit`/`snapshot_id` bindings in evidence (contract field #6) and the
+`supertemporal_window` supersession chain. Cross-process instability also defeats
+`T_REPLAY_BINARY`-style byte-identical replay if this identity is ever used in it.
+
+#### Contract and decisions
+* `APEX_GEN5.md:985–996` (**Canonical snapshot_id form, frozen**): `snapshot_id =
+  SHA256(canonical_json(canonical_snapshot_payload))`, and “the deterministic snapshot identity
+  contains no UUID, timestamp-randomness, bar-index suffix, or truncated digest.” A payload
+  whose member order is decided by the interpreter's hash seed is precisely
+  non-deterministic identity, and a truncated `symbol_scope` is a truncated scope claim.
+* `APEX_GEN5.md:973–984`: a Snapshot binds “… manifest hash, `parameter_package_id`,
+  `code_version`, a combined quality state …”, and “Snapshots are immutable; any new artifact
+  triggers … OLD → CORRECTION EVENT → NEW VERSION → SUPERSEDES.” Supersession is only
+  meaningful if a corrected artifact yields a different identity — here it does not.
+* `APEX_GEN5.md:978` (**Session-CP-14 / D28**): `parameter_package_id =
+  "cp14_paper_bootstrap-v1.0.0-" + SHA256(canonical_parameter_bytes)[:12]`, “any governed-value
+  change yields a new package identity.” The hard-coded `params_v1_frozen` contradicts the
+  binding, and its own comment admits it is a placeholder. Precedence: D28 (owner decision,
+  CP-14) is later and more specific than the generic §2.3 text, so the real digest is
+  required wherever a package id is bound.
+* `APEX_GEN5.md:12915` (UTC/provenance invariant) and the repository's canonical-JSON
+  serializer rule both require host-independent values.
+
+#### Frozen status and non-frozen alternative
+`apex/quality/pit.py` is **not** frozen; `apex/identity/snapshot.py` (the hashing primitives)
+is likewise outside the frozen list and needs no change. The *payload field list* is contract
+text in APEX_GEN5.md §2.3 — adding content binding therefore needs an owner doc amendment
+(the same ISSUE mechanism recommended for K-028), while sorting the scope and using the real
+package digest are pure conformance fixes that need no amendment.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — bind identity to content: include, in canonical sorted order, the
+  `(timeframe, timestamp, content_hash)` (or `observation_id`) of every qualifying bar; sort
+  `symbol_scope`/`timeframe_scope` deterministically and **refuse** (not truncate) when the
+  scope exceeds 10/14; replace `parameter_package_id` with the D28 digest of the governed
+  params. Side effects: every `snapshot_id`/`manifest_hash` changes (no stored production
+  snapshot exists today, so nothing is invalidated in practice, but any fixture hash must be
+  regenerated); `test_deterministic_snapshot_id` should be extended to a cross-process
+  comparison; payload growth is O(bars) — cap/aggregate via a Merkle-style digest of the
+  sorted per-bar hashes to keep the payload small.
+* **B** — minimal determinism fix only: `sorted(...)` for the scopes (and the BLOCK instead of
+  the slice). Side effects: one line, removes the cross-process instability immediately, but
+  leaves the content-binding hole, so corrections remain invisible.
+* **C** — keep the metadata payload and add a separate `content_digest` field that consumers
+  must compare. Side effects: avoids redefining `snapshot_id`, but creates two identities and
+  invites use of the weaker one.
+* **D** — deprecate the helper (as in K-028 option D). Side effects: **rejected** for the same
+  reason: it is exported and will be used.
+
+#### My recommendation
+**B immediately** (determinism is a one-line correctness fix with no contract question), then
+**A** together with the K-028 changes under one owner doc-amendment ISSUE covering the §2.3
+payload and the D28 package id.
+
+#### Acceptance and regression tests
+1. Identical inputs in four subprocesses with different `PYTHONHASHSEED` produce **one**
+   `snapshot_id` and one `manifest_hash`.
+2. Changing any bar's OHLCV (a correction) produces a different `snapshot_id`, and the old id
+   remains reproducible from the old bytes (supersession traceable).
+3. A different governed parameter package produces a different `parameter_package_id` and a
+   different `snapshot_id`.
+4. `symbol_scope` beyond 10 or `timeframe_scope` beyond 14 is refused, not truncated.
+5. The identity stays a 64-hex canonical SHA-256 with no UUID/timestamp component.

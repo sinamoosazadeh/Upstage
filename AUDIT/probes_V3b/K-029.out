@@ -1,0 +1,20 @@
+# K-029 — snapshot identity binding and determinism
+
+1. identical window, corrected OHLCV
+   close=100.5 volume=10     -> snapshot_id=033c4cde4bacd51e069de43fe31b05db2c059aeb158369b43e1e67871d13a855
+   close=999.9 volume=4242   -> snapshot_id=033c4cde4bacd51e069de43fe31b05db2c059aeb158369b43e1e67871d13a855
+   identical                 = True
+   manifest_hash identical   = True
+
+2. same bytes, four subprocesses with different PYTHONHASHSEED
+   PYTHONHASHSEED=1 -> 3bc79dcc34d0a756ae02c7128819d248b12b208e7e2e98f03cd0cd65f8bfb253 manifest=a5463bc8dc8ac976c930c2c9fd702cd039a2ccb50627c26cca2a24fe6aa453c7
+   PYTHONHASHSEED=2 -> b015408cbb725a0a2ab71750432e0dedf331343c566ef31d5bf837e10482502f manifest=ebae9da9ecf157ec2c55cf4b3d7ee9293444d9dc242fa808bbae736434024e21
+   PYTHONHASHSEED=3 -> e9b8b678b476cc5e94ea40513bb961bcad8a93e3243765ccf5746604a293b3fe manifest=524b0a91c299531a267522fe7f1653e8d8308f5266dd872034096d64934d0363
+   PYTHONHASHSEED=4 -> 65ceff7ce16d4bf91d49df446c2c263a19f61d4fdabeb4cdc1064b4fc8a6158f manifest=147d5054cee1c6f45c0846792b3d87fd4971924cea009abfcca821058da64a38
+   distinct snapshot_ids for identical input = 4
+
+3. other identity fields
+   parameter_package_id = 'params_v1_frozen'
+   code_version         = '4.0.0'
+   apex/quality/pit.py:117 hard-codes 'params_v1_frozen' (comment: 'package id placeholder replaced by CP-6 governance')
+   symbol_scope is list(set(...))[:10] — over-scope is silently truncated although the module docstring says 'symbol_scope > 10 -> BLOCK'
