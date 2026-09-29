@@ -1,0 +1,14 @@
+level(100,200,inf)                         -> inf
+level(100,200,nan)                         -> RAISED ValueError: FIB_NAN_QX: non-finite input
+extensions(100,200,ratios=(inf,))          -> {inf: inf}
+retracements(100,200,ratios=(inf,))        -> {inf: -inf}
+ladder(100,200) finite control             -> [FibLevel(ratio=0.236, price=176.4, kind='retrace', source_leg=(100.0, 200.0)), FibLevel(ratio=0.382, price=161.8, kind='retrace', source_leg=(100.0, 200.0)), FibLevel(ratio=0.5, price=150.0, kind='retrace', source_leg=(100.0, 200.0)), FibLevel(ratio=0.618, price=138.2, kind='retrace', source_leg=(100.0, 200.0)), FibLevel(ratio=0.786, price=121.39999999999999, kind='retrace', source_leg=(100.0, 200.0)), FibLevel(ratio=1.0, price=200.0, kind='extension', source_leg=(100.0, 200.0)), FibLevel(ratio=1.272, price=227.2, kind='extension', source_leg=(100.0, 200.0)), FibLevel(ratio=1.618, price=261.8, kind='extension', source_leg=(100.0, 200.0)), FibLevel(ratio=2.0, price=300.0, kind='extension', source_leg=(100.0, 200.0)), FibLevel(ratio=2.618, price=361.8, kind='extension', source_leg=(100.0, 200.0))]
+confluence inf level                       -> []
+confluence two inf levels                  -> [{'centre': inf, 'spread': nan, 'members': [{'level': inf, 'source': 'a'}, {'level': inf, 'source': 'b'}], 'count': 2}]
+confluence atr=inf                         -> [{'centre': 300.0, 'spread': 400.0, 'members': [{'level': 100.0, 'source': 'a'}, {'level': 500.0, 'source': 'b'}], 'count': 2}]
+confluence NaN level (control)             -> RAISED ValueError: FIB_NAN_QX: a carries a NaN level
+harmonic_prz BAT inf legs                  -> {'pattern': 'BAT', 'ab_ratio': -0.0, 'in_band': False, 'deviation': 0.382, 'prz': nan, 'lifecycle_status': 'RESEARCH_ONLY', 'note': 'record tolerance — never assume perfection (Ch.9 §9.0); the row is RESEARCH_ONLY and produces no setup-scoring evidence (§9.1 round-2 demotion)'}
+--- supplementary (same session, real APIs): NaN-ratio asymmetry ---
+retracements(ratios=(nan,)) -> {nan: nan}   [inline compute, no level() call]
+expansion(ratios=(nan,))    -> {nan: nan}   [inline compute, no level() call]
+projections(ratios=(nan,))  -> RAISED ValueError FIB_NAN_QX (via level())

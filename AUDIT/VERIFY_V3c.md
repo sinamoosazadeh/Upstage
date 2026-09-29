@@ -35,8 +35,8 @@ and synthetic failure proves the code path, not that it has already damaged a de
 | L-008 | CONFIRMED | S2 | S2 | No for this helper; consistent triad fix touches frozen `_f41` | `_f41_volume_ratio` (frozen) + E03 `volume_ratio_pit` share the degraded reading | Owner ruling for the triad: A-with-cap or B (contract amendment); do not flip this branch alone |
 | L-009 | CONFIRMED (worse than claimed: 4 silent-VALID positions) | S2 | S2 | No — `apex/quality/numerical.py` is non-frozen | `guarded_div` in the same file is the correct pattern | A — single path: pre-validate all inputs |
 | L-010 | CONFIRMED | S2 | S2 | No — `apex/pattern/fibonacci.py` is non-frozen | N-010 (same single-linkage-vs-diameter theme in runtime E02) | Owner ruling quantifying independence + diameter, then A; rewrite the pinning test |
-| L-011 | PENDING | S2 | — | — | — | — |
-| L-012 | PENDING | S1 | — | — | — | — |
+| L-011 | CONFIRMED | S2 | S2 | No — `apex/pattern/fibonacci.py` is non-frozen | L-010 (diameter fix must include non-finite refusal); L-006 (NaN-comparison theme) | A — single path: uniform isfinite gates on inputs + outputs, jointly with L-010 |
+| L-012 | CONFIRMED | S1 | S1 | No — `quality/vector.py` + `setup/gates.py` + `risk/kernel.py` non-frozen | H-014 (label side); D-026 (adjacent risk-NaN theme); D59 (formula preserved, validation added) | A — single path: finite+domain pre-validation, D59 formula untouched |
 | L-013 | PENDING | S2 | — | — | — | — |
 | L-014 | PENDING | S2 | — | — | — | — |
 | L-015 | PENDING | S2 | — | — | — | — |
@@ -479,3 +479,89 @@ Ask the owner to quantify independence + diameter (one ruling), then implement A
 #### Acceptance and regression tests
 - Single source alone → no cluster; `spread>tol` chains → split/rejected per the ruling; legitimate multi-source in-tolerance sets still cluster with identical centres.
 - Regression: `tests/unit/test_pattern_fibonacci.py` (with the rewritten test) passes; `detect.py` scoring-gate tests unaffected.
+## L-011 — Fibonacci APIs refuse NaN but pass ±Inf through as valid levels
+
+#### Auditor claim (short quote)
+> "`level(100,200,inf)` gives `inf` and `extensions(...,ratios=(inf,))` gives `{inf:inf}`; the NaN comparison and the `r<1` check do not refuse Infinity. Infinite ATR and infinite levels can also pass through `confluence`, against the non-finite fail-closed contract."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/pattern/fibonacci.py` (complete, 266 lines): `level` (62–67) checks `r != r` (NaN only) — `inf` computes `a + inf·(b−a) = inf`; `extensions` (93–103) checks only `r < 1.0` — `inf` passes; verified asymmetry for NaN ratios: `retracements`/`expansion` compute inline WITHOUT calling `level`, so `ratios=(nan,)` passes through as `{nan:nan}` (supplementary probe in `L-011.out`), while `projections`/`extensions` route through `level` and refuse NaN; `retracements` (80–91) and `expansion` (106–123) validate only the segment/NaN-C, never ratios; `confluence` (160–177) refuses NaN levels (:174) but appends ±inf levels, and refuses only `atr<=0/NaN/None` (:168–169) — `atr=+inf` yields `tol=+inf`, clustering everything; `harmonic_prz` (126–157) has NO finite checks at all.
+- Existing-test boundary: `tests/unit/test_pattern_fibonacci.py:54–63` pins NaN-`r` refusal + inf-SEGMENT refusal (`_validate_segment` is correct) + degenerate-leg refusal — the suite proves the authors intended fail-closed but covered only NaN ratios and inf segments.
+- Callers/boundary: same as L-010 — `fibonacci` APIs are re-exported but never called in `apex/`; harmonics RESEARCH_ONLY with scoring gate; no native decision consumption.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-011.py`. Probe: `AUDIT/probes_V3c/L-011.py` (real APIs). Raw output: `AUDIT/probes_V3c/L-011.out`. Result: `level(100,200,inf) → inf`; `extensions(ratios=(inf,)) → {inf:inf}`; `retracements(ratios=(inf,)) → {inf:-inf}` (beyond claim, same hole); NaN-`r` refused (control); `confluence` mixed finite+inf → `[]` (inf level silently dropped, no refusal); `confluence` two inf levels → cluster `{centre: inf, spread: nan}` (passes through); `confluence atr=inf` → 400-wide cluster of [100, 500] (passes through); `harmonic_prz` inf legs → `prz: nan` silently recorded as RESEARCH_ONLY output.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). Both claimed pass-throughs reproduce, plus three same-family extras (inf retracement ratios, silent inf-drop in mixed confluence, NaN `prz` from inf legs). S2 because the module has no native consumer and harmonics are scoring-gated research-only — latent API surface. The `spread: nan` cluster is the nastiest shape: a NaN smuggled INSIDE a passed cluster record, which would poison any downstream comparison exactly like L-006.
+
+#### Root cause
+Asymmetric non-finite discipline: NaN checks (`!=`) placed per-function instead of a uniform `math.isfinite` gate on every numeric input AND every computed output; `inf` was simply never considered (comparisons like `r<1` and `atr<=0` are inf-transparent).
+
+#### Direct impact
+Infinite levels/ratios/ATRs produce infinite/NaN-carrying records presented as ordinary outputs (`{inf:inf}`, `{centre:inf, spread:nan}`, 400-wide "confluence") — no refusal, no reason code. Mixed finite+inf confluence silently drops the inf level and may return `[]` (indistinguishable from "no confluence").
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, `_validate_segment` shows the correct pattern (finite + degenerate checks) — the ladders just do not extend it to ratios, and `harmonic_prz`/`confluence` never got it. Downstream, no native consumer; IF pattern/stop logic ever consumes these helpers, inf levels would corrupt stop placement and the `spread:nan` record would fail-open any `spread <= tol` check downstream (NaN comparison — the L-006 theme). Interaction with L-010: the diameter fix must ALSO refuse non-finite levels first, or `spread:nan` evades the diameter cap.
+
+#### Contract and decisions
+Ch.9 §9.0 (`Level(r) = A + r·(B−A)`, finite-price formula) presupposes finite inputs; the repo-wide non-finite fail-closed rule (§2.2 "NaN/Inf never return silently", `canonical_json` forbidding NaN/Inf, `measured_number` finite checks) governs all numeric APIs. No `PHASE2_DECISION_LOG.md` ruling covers fibonacci validation. Precedence: the fail-closed rule governs; no governed ratio/level domain beyond finiteness is documented, so finiteness is the minimum bar.
+
+#### Frozen status and non-frozen alternative
+**NOT frozen:** `apex/pattern/fibonacci.py` is outside the frozen set. Fix directly; no alternative layer needed.
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — uniform isfinite gates (single path, non-frozen):** `math.isfinite` on every numeric input (a/b/c/r/ATR/levels/XABCD) before arithmetic AND on every computed output (level/ladder/prz/cluster fields) after arithmetic, with named `FIB_*_QX` refusals. Side effects: inf-input calls become refusals (intended); finite behavior bit-identical — existing tests use finite inputs (re-run to confirm); the NaN pins stay green. No callers exist: no downstream changes; no hashes/caches/DB/retraining impact.
+
+#### My recommendation
+Implement A together with the L-010 diameter/source fix (one coherent confluence/validation change; the L-010 acceptance tests must include non-finite cases so `spread:nan` cannot evade the diameter cap).
+
+#### Acceptance and regression tests
+- ±Inf/NaN in every a/b/c/r/ATR/level/XABCD position AND in every intermediate output → named refusal; ordinary levels bit-consistent (`ladder(100,200)` records unchanged).
+- `confluence` mixed finite+inf → refusal (not silent `[]`); `harmonic_prz` inf legs → refusal (not `prz:nan`).
+- Regression: `tests/unit/test_pattern_fibonacci.py` passes (NaN pins preserved).
+
+## L-012 — Gate13 + risk adjudicate accept impossible calibration metrics (log_loss=+inf/−100 → ALLOW 2.5)
+
+#### Auditor claim (short quote)
+> "Gate13 checks only PRESENCE of the three metrics for non-bootstrap packages; `_clip01` refuses only NaN, clips `+inf→1` and negatives→0. With a synthetic versioned LIVE package (`cal=brier=0`, `log_loss` +inf and −100), both passed Gate13 and `adjudicate` on controlled risk input gave `ALLOW/sized_quantity=2.5`; no real calibrated/OOS package exists in the checkout. H-014 covers the forecast label separately; this row is the numeric control of the package in setup/risk."
+
+#### What I read (files, line ranges, functions, callers)
+- `apex/quality/vector.py:229–250` (`_clip01` + `bounded_model_quality`): `_clip01` raises only on NaN (`v != v`); `+inf→1.0`, any negative→`0.0`; the D59 bounded form `1 − (clip(cal) + clip(2·brier) + clip(log_loss/ln4))/3` then scores garbage as healthy (0.667 for +inf, 1.0 for −100).
+- `apex/setup/gates.py:362–414` (`gate13_parameter_package`): non-bootstrap path requires the three keys present, computes the bounded form, compares `value < thr` (0.5) — no finiteness/domain check on the metrics; `ValueError` from `_clip01(NaN)` is caught as `GATE13_METRICS_MISSING` (fail) — so NaN fails while +inf/negatives pass (verified asymmetry).
+- `apex/risk/kernel.py:441–498` (`adjudicate`): with `risk_input["package"]` set, calls gate13 and sizes on pass (`size()` → `sized_quantity`, :360–430); vetoes evaluated after the package check. Callers of gate13: `run_all` + `adjudicate` only.
+- `PHASE2_TRACEABILITY_MATRIX.md:207` (C6-G13): "package must carry version+id; degraded/missing ⇒ block (…the risk kernel REFUSES to size on a degraded package…)" — impossible metrics are a degraded package the gate cannot see.
+- Boundary: `apex/ops/engine_context.py::paper_package_binding` returns `BOOTSTRAP_UNCALIBRATED` with NO metric keys (verified in probe: keys contain no `rolling_calibration_error/brier/log_loss`) — the native PAPER path never exercises the recorded-metrics branch; no calibrated package artifact exists in the checkout (auditor's claim; consistent with `test_paper_package_is_named_uncalibrated_and_not_zero_metrics` and the absence of any package-producing code path writing metrics — grep shows metrics only in tests/probes).
+- Existing tests: `test_setup_gates.py:172–191` (finite good `0.05/0.20/0.69 → PACKAGE_VALID`, finite degraded `1.0/1.0/2.0 → GATE13_PACKAGE_DEGRADED`), `test_cp146.py::test_t4` + `test_paper_package…` (finite triples) — all finite, so a pre-check breaks none.
+
+#### Reproduction (command, probe file, actual result)
+Command: `PYTHONPATH=/home/user/Upstage python3 AUDIT/probes_V3c/L-012.py`. Probe: `AUDIT/probes_V3c/L-012.py` (real `_clip01`/`bounded_model_quality`/gate13/`adjudicate`; synthetic versioned package + controlled risk input with capital=10000, stop=20, min_q=0.1). Raw output: `AUDIT/probes_V3c/L-012.out`. Result: `_clip01(+inf)=1.0, _clip01(−100)=0.0, _clip01(nan)→ValueError`; `log_loss=+inf → score 0.6667 → PACKAGE_VALID`; `log_loss=−100 → 1.0 → PACKAGE_VALID`; `brier=−100 → 0.8341 → PACKAGE_VALID`; `log_loss=NaN → GATE13_METRICS_MISSING (fail)`; `adjudicate` on BOTH bad packages → `ALLOW/sized_quantity=2.5/reason=SIZED` (auditor's numbers exactly); native PAPER package carries no metrics.
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S1** (auditor S1 retained). Gate13 pass on impossible metrics and `ALLOW/2.5` sizing reproduce exactly, including the NaN-fails-but-inf-passes asymmetry. S1 (not S0) because exploitation needs a recorded-metrics package carrying bad values: the native PAPER path supplies a metric-less bootstrap package (different branch), and no calibrated-package producer exists in the checkout — so the hole is armed but unfed today. It is S1 rather than S2 because gate13 is a HARD safety gate whose verdict directly sizes real quantity in `adjudicate`, and the FIRST real (or corrupted, or hand-fed) metrics package with a bad value would sail through a gate whose traceability row promises refusal. No LIVE trading is proven or claimed — the probe sizes on synthetic inputs only.
+
+#### Root cause
+Missing domain validation before clipping: `_clip01` treats "not NaN" as "valid", and clipping (designed to bound VALID metrics per D59) silently rehabilitates impossible ones (+inf→worst-valid→bounded-pass, negatives→best-valid→pass). Gate13 then scores and thresholds the laundered numbers.
+
+#### Direct impact
+A package with statistically impossible metrics (`log_loss=+inf/−100`, negative brier/calibration, +inf anywhere) is judged `PACKAGE_VALID`, and `adjudicate` sizes positive quantity on it. The gate-13 verdict is unreliable as a package-health signal for any recorded-metrics package.
+
+#### Secondary effects and interactions (upstream/downstream)
+Upstream, the metrics have no producer in the checkout (no schema/provenance validation exists for the day one arrives) — the fix must cover metric INGEST (finite? non-negative? in-domain?) not just gate13. Downstream, `adjudicate`'s package check is the ONLY metric control before sizing — vetoes do not re-examine package metrics — so gate13's pass is final. Cross-refs: H-014 (forecast LABEL validity — the label side; this row is the numeric side, exactly as the auditor scopes it); D-026 (risk-kernel NaN permissiveness — adjacent theme, but veto inputs here were controlled/finite); L-006 (same clip/compare-without-validate family at the gate layer).
+
+#### Contract and decisions
+D59 item (2) (`PHASE2_DECISION_LOG.md:1177`) mandates the bounded FORM `1 − (clip(cal) + clip(2·brier) + clip(log_loss/ln4))/3` — the formula is owner-governed and must be preserved for valid inputs. D59 does NOT mandate the absence of validation, and its purpose (admit well-calibrated models, per `test_t4`) is about bounding valid metrics, not laundering invalid ones. C6-G13 (traceability :207) requires degraded-package refusal. Precedence: D59's formula stands; a finite+domain pre-check (finite? cal≥0? brier≥0? log_loss≥0?) with a named refusal reason implements C6-G13 WITHOUT altering D59's formula on any valid input — no D59 conflict, no new ruling strictly needed (though recording the domains in the decision log is advisable).
+
+#### Frozen status and non-frozen alternative
+**NOT frozen:** `apex/quality/vector.py`, `apex/setup/gates.py`, `apex/risk/kernel.py` are all outside the frozen set. Fix directly; no alternative layer needed. No frozen YAML/lock change (thresholds unchanged).
+
+#### Fix options (A/B/C… each with side effects, or "single path" with justification)
+**A — finite+domain pre-validation (single path, non-frozen):** before clipping, require each metric finite AND in its governed domain (cal≥0, brier≥0, log_loss≥0 — the natural statistical domains; record in decision log); violations → named refusal (`GATE13_METRIC_OUT_OF_DOMAIN` / `NONFINITE`), distinct from `METRICS_MISSING`. Apply in `bounded_model_quality` (so `q_forecast` shares it) or at gate13 entry — one place, shared by both callers. Side effects: impossible-metric packages now refuse (intended); ALL existing tests use finite in-domain metrics (good `0.05/0.20/0.69`, degraded `1.0/1.0/2.0`, `test_t4` triples) — none break; NaN behavior changes reason (`METRICS_MISSING` → named nonfinite reason — verify no test pins the NaN reason: none found); valid-input scores bit-identical (formula untouched). No hashes/caches/DB/retraining impact (pure functions).
+
+#### My recommendation
+Implement A with the three domains recorded in the decision log; add the probe's +inf/−100/negative matrix as gate13 regression tests. Do NOT "fix" by changing D59's formula.
+
+#### Acceptance and regression tests
+- `log_loss/brier/cal ∈ {+inf, −inf, negative, NaN}` → named refusal with the offending metric identified; finite in-domain triples keep bit-identical scores (good→VALID, degraded→DEGRADED).
+- `adjudicate` with an impossible-metrics package → `REJECT/PARAMETER_PACKAGE_INVALID`, never sized.
+- Regression: `tests/unit/test_setup_gates.py`, `tests/unit/test_quality.py`, `tests/unit/test_cp146.py` pass unchanged.

@@ -1,0 +1,9 @@
+_clip01(+inf)=1.0 _clip01(-100)=0.0
+_clip01(nan): ValueError (QUALITY_NONFINITE)
+log_loss=+inf  bounded_score=0.6667 gate13 passed=True reason=PACKAGE_VALID
+log_loss=-100  bounded_score=1.0000 gate13 passed=True reason=PACKAGE_VALID
+brier=-100     bounded_score=0.8341 gate13 passed=True reason=PACKAGE_VALID
+log_loss=NaN    gate13 passed=False reason=GATE13_METRICS_MISSING
+adjudicate [log_loss=+inf]: decision=ALLOW sized_quantity=2.5 reason=SIZED
+adjudicate [log_loss=-100]: decision=ALLOW sized_quantity=2.5 reason=SIZED
+native PAPER package keys: ['calibration', 'environment', 'package_version', 'paper_bootstrap', 'parameter_files', 'parameter_package_id', 'parameter_sha256'] (calibration=BOOTSTRAP_UNCALIBRATED)
