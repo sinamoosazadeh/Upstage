@@ -1,0 +1,28 @@
+# K-034 — PaperPlanBridge._window PIT check on a 1h window
+as_of = 2024-01-01T01:30:00.000Z   (the 01:00 candle closes at 02:00)
+
+ACCEPTED  bar open=01:00, CLOSED, closes 02:00 (AFTER as_of) — 'timestamp' is the OPEN time
+          normalised keys kept = ['c', 'h', 'l', 'o', 'status', 'timestamp', 'v']
+
+ACCEPTED  same bar, plus availability_time=04:00 (published 2.5h after as_of)
+          normalised keys kept = ['c', 'h', 'l', 'o', 'status', 'timestamp', 'v']
+
+ACCEPTED  future bar carried on the 'ts' alias (02:00 > as_of)
+          normalised keys kept = ['c', 'h', 'l', 'o', 'status', 'ts', 'v']
+
+ACCEPTED  bar with NO time and NO status at all
+          normalised keys kept = ['c', 'h', 'l', 'o', 'v']
+
+REJECTED  future bar on 'timestamp' (02:00 > as_of) — the one check that fires
+          BridgeError: BRIDGE_PIT_VIOLATION: bar index=0
+
+REJECTED  bar with status=PARTIAL
+          BridgeError: DATA_QUALITY_QX: bar index=0
+
+What _normalise_bars keeps from a real MarketObservation:
+   MarketObservation fields = ['symbol', 'timeframe', 'open', 'high', 'low', 'close', 'volume', 'oi', 'timestamp', 'sequence', 'status', 'source', 'availability_time', 'oi_timestamp', 'oi_lag_seconds', 'source_health', 'gap_count', 'expected_count', 'completeness_pct', 'delay_seconds']
+   -> normalised row keys = ['c', 'h', 'l', 'o', 'status', 'timestamp', 'v']
+   availability_time survived = False
+
+For contrast, the native producer EngineContextProducer.window (engine_context.py:2367-2405) filters with close_time_ms(ts, timeframe) <= end, requires raw availability (RAW_LINEAGE_INVALID when NULL) and skips rows whose availability_time > end.
+   close_time_ms(01:00, '1h') = 1704074400000  vs  as_of = 1704072600000  -> native DROPS the bar

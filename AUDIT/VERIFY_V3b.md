@@ -47,7 +47,7 @@ failure proves the code path, not that it has already damaged a device record.
 | K-031 | CONFIRMED | S2 | S2 | No — `apex/identity/snapshot.py` and `apex/quality/pit.py` are non-frozen | K-029 (identity binding), K-030 (quality_state) | A — deep-copy inputs, freeze attributes, re-validate scope, and verify the id against the payload before use |
 | K-032 | CONFIRMED | S1 | S2 | No — `apex/setup/*`, `apex/ops/plan_bridge.py` non-frozen (`apex/fabric/evidence.py` non-frozen too) | K-027 (fabric built from unverified inputs), X-V3b-001 | A — verify `fabric.hash` unconditionally and bind any caller payload to the same cell + member content_ids |
 | K-033 | CONFIRMED | S2 | S2 | No — `apex/fabric/evidence.py` is not in the frozen set | K-032 (custom payload emits the mutated fabric), K-031 (same defect class on `SnapshotBarrier`) | A — store `redundancy_state` as an immutable mapping and verify `hash` at every consumption |
-| K-034 | PENDING | S2 | — | — | — | — |
+| K-034 | CONFIRMED | S2 | S2 | No — `apex/ops/plan_bridge.py` is not in the frozen set | K-032 (same bridge trusts caller payload), K-027 (event-time trust), = the native `EngineContextProducer.window` guard | A — bind every bar to close_time + raw availability at the bridge boundary and fail closed on missing time/status |
 | L-001 | PENDING | S2 | — | — | — | — |
 | L-002 | PENDING | S2 | — | — | — | — |
 | L-003 | PENDING | S1 | — | — | — | — |
@@ -3216,3 +3216,167 @@ check, since B is what gives K-032's check something trustworthy to compare agai
 5. With the K-032 fix in place, a fabric whose body no longer matches its hash is rejected on
    **both** the `payload=None` and the custom-payload paths (probe step 4 must show
    `FABRIC_HASH_MISMATCH` twice).
+
+---
+
+## K-034 — the bridge's PIT window check tests only the bar's *open* timestamp: unclosed candles, future availability, the `ts` alias and time-less bars all pass
+
+#### Auditor claim (short quote)
+> «`_normalise_bars` در mapping فقط OHLCV و زمان/`status` محدود را نگه می‌دارد و `availability_time` را حذف می‌کند؛ `_window` فقط `timestamp/as_of` را با as_of می‌سنجد، نه `ts` پذیرفته‌شده، receipt یا `close_time_ms`؛ نبود زمان/`status` نیز مجاز است. probe 1h با as_of=01:30: بار open=01:00 که تازه 02:00 بسته می‌شود و availability=04:00 با برچسب CLOSED، بار با `ts=02:00` و bar بی‌زمان همگی پذیرفته شدند؛ فقط `timestamp=02:00` رد شد.»
+> — “`_normalise_bars` keeps only OHLCV and a limited time/`status` in the mapping branch and drops `availability_time`; `_window` compares only `timestamp`/`as_of` against `as_of`, not the accepted `ts`, not a receipt, not `close_time_ms`; a missing time/`status` is also allowed. 1h probe at as_of=01:30: a bar opening at 01:00 that only closes at 02:00 with availability 04:00 labelled CLOSED, a bar with `ts=02:00`, and a time-less bar were all accepted; only `timestamp=02:00` was rejected.”
+
+#### What I read (files, line ranges, functions, callers)
+`apex/ops/plan_bridge.py:379–412` — `_normalise_bars`. The `MarketObservation` branch builds
+`{"o","h","l","c","v","timestamp","status"}` — **`availability_time` is not carried**. The
+`Mapping` branch takes OHLCV via `pick("o","O","open")` etc. and then copies **only** the keys
+`("timestamp","ts","as_of","status")` *if present* — so `ts` is admitted into the row, and a bar
+with none of those keys is a valid row. The remaining checks are OHLC-bounds and non-negative
+volume only.
+`:592–612` — `PaperPlanBridge._window`: `supplied = context.get("bars")`; when absent it reads
+`self.store.get_window(...)`; then for each normalised bar
+`timestamp = bar.get("timestamp", bar.get("as_of"))` — **`ts` is never consulted** — and only
+`if stamp_ms is not None and stamp_ms > _as_of_ms(as_of): BRIDGE_PIT_VIOLATION`; plus
+`if bar.get("status") not in (None, "CLOSED"): DATA_QUALITY_QX` — note `None` is admitted. There
+is no `close_time_ms(...)` call and no availability comparison anywhere in the function.
+`:614–671` — `_build` calls `self._window(...)` after the evidence work; `context["bars"]` comes
+straight from `_flatten_context(raw_context)` / the `bridge_inputs` transport, so a
+`context_source` supplying `bars` bypasses the store reader entirely.
+`apex/ops/engine_context.py:2367–2405` — the **native** `EngineContextProducer.window`: it filters
+`close_time_ms(_iso_to_ms(o.timestamp), timeframe) <= end`, joins `raw_observation` for
+`availability_time`, raises `RAW_LINEAGE_INVALID` when availability is NULL or the content
+binding is missing, and `continue`s on `_iso_to_ms(row[4]) > end` — “never expose not-yet-
+available observations”. `:2000–2005` — the producer packs `"bars": bars` into the
+`bridge_inputs` transport, i.e. the native path hands the bridge *already-guarded* bars.
+`apex/data_catalog/contracts.py` — `MarketObservation` has 20 fields including
+`availability_time`, `oi_timestamp`, `delay_seconds`; the bridge keeps 7 of them.
+
+#### Reproduction (command, probe file, actual result)
+Command: `python3 -B AUDIT/probes_V3b/K-034.py`; probe/output `AUDIT/probes_V3b/K-034.py|.out`
+(real `PaperPlanBridge._window`, real `MarketObservation`, 1h cell, `as_of = 2024-01-01T01:30Z`):
+```
+ACCEPTED  bar open=01:00, CLOSED, closes 02:00 (AFTER as_of)
+ACCEPTED  same bar + availability_time=04:00 (2.5 h after as_of)
+          normalised keys kept = ['c','h','l','o','status','timestamp','v']
+ACCEPTED  future bar carried on the 'ts' alias (02:00 > as_of)
+          normalised keys kept = ['c','h','l','o','status','ts','v']
+ACCEPTED  bar with NO time and NO status at all
+          normalised keys kept = ['c','h','l','o','v']
+REJECTED  future bar on 'timestamp' (02:00 > as_of)  -> BRIDGE_PIT_VIOLATION
+REJECTED  status=PARTIAL                             -> DATA_QUALITY_QX
+MarketObservation → normalised row keys = ['c','h','l','o','status','timestamp','v']
+          availability_time survived = False
+native contrast: close_time_ms(01:00,'1h') = 1704074400000 > as_of 1704072600000
+          -> the native producer DROPS the bar the bridge accepts
+```
+
+#### Verdict and reasoning
+**CONFIRMED — independent severity S2** (auditor S2 retained). All four acceptances and both
+rejections reproduce exactly on the real code path, and the `MarketObservation` branch is shown
+to discard `availability_time` (so even a store-supplied bar loses the field the PIT rule is
+defined on). S2 rather than S1 for the reason the auditor himself records: on the native path
+`EngineContextProducer.window` has already applied the close-time and availability filters
+before the bars reach `bridge_inputs`, so today no wired producer can exercise the hole — it
+needs an alternative `context_source`/store reader. This is a missing defence in depth at a
+boundary that explicitly advertises a PIT check, not a demonstrated live leak.
+
+#### Root cause
+The bridge treats a bar's `timestamp` as if it were the bar's *information time*, but in this
+system `timestamp` is the candle's **open** time; the information time is
+`close_time = open + tf_duration` and the admissibility time is `availability_time`. Because
+`_normalise_bars` projects bars down to OHLCV + a loose time/status before `_window` runs, the
+only two fields needed for a correct check (`availability_time`, and the timeframe-derived close)
+are unavailable by the time the check happens; the check that remains is the weakest of the
+three, and it silently tolerates absent inputs (`timestamp is None`, `status is None`) instead
+of failing closed.
+
+#### Direct impact
+Any caller that supplies `bars` through `context_source` can obtain a window that includes a
+still-forming candle, a candle whose data was not published until after `as_of`, or a bar with
+no provenance at all, and the bridge will label that window PIT-valid.
+
+#### Secondary effects and interactions (upstream/downstream)
+The window feeds `evaluate_cell` — ATR, the sweep/reclaim extremes, the FVG lookback, BOS, the
+scoring window and `window_qualities` — so a leaked bar propagates into the fabric, the setup,
+the forecast and the plan, and the resulting `snapshot_id`/lineage will claim a PIT boundary the
+data violates. It composes with **K-032** (the same bridge lets a caller supply the payload that
+Gate 11 then validates against itself) and with **K-027** (caller-trusted evidence times): an
+adapter can supply future bars *and* the identity that blesses them. The countervailing control
+is the native `EngineContextProducer.window` guard — which is exactly why this stays S2, and why
+that guard must not be weakened.
+
+#### Contract and decisions
+* `APEX_GEN5.md:901–931` (§2.3, PIT window management): “**Mission:** define `as_of` … so that
+  no computation can ever see data from the future”; `as_of = max(availability_time of all
+  required artifacts) where … closed_only=true`; “A Snapshot is only built once every required
+  artifact's `availability_time ≤ as_of` (the PIT rule)”; and explicitly “This PIT rule is what
+  prevents: future candles … future corrections … and **unfinished higher-timeframe bars** from
+  leaking into any calculation.” The bridge checks none of these three quantities.
+* `APEX_GEN5.md:1295–1296` (§1.2 Scope): “**Input:** only CLOSED candles; `close_time <= as_of -
+  latency`. A still-forming candle is never admitted.” The probe's first case is precisely a
+  still-forming candle (`close_time` 02:00 > `as_of` 01:30) and it is admitted.
+* `APEX_GEN5.md:14731` (error table): “**E-PIT-001** | `availability_time > as_of` Future Leak |
+  PIT rule: for each decision, all artifacts `availability_time <= as_of` — If violates →
+  **BLOCK**.” The bridge cannot raise E-PIT-001 because it has thrown the field away.
+* `APEX_GEN5.md:20512–20517` (D5 per-close catch-up): the frontier rule is “closed bars only:
+  `open_time > store_frontier AND open_time > served_upto AND **close_time <= end_ms**`” — the
+  system's own frontier uses `close_time`, confirming `timestamp` alone is not the PIT quantity.
+* `PHASE2_DECISION_LOG.md` contains no decision relaxing the PIT rule at the bridge boundary;
+  D5 reinforces it. Precedence: APEX_GEN5 §2.3/§1.2 + E-PIT-001 (frozen contract) > bridge code.
+* Cross-reference: **VERIFY_V3.md** K-003/K-005 established the same pattern (a check that exists
+  but measures the wrong quantity); this row is its bridge-layer instance.
+
+#### Frozen status and non-frozen alternative
+**Not frozen.** `apex/ops/plan_bridge.py` and `apex/ops/engine_context.py` are outside the frozen
+set. The frozen artefacts nearby are `apex/data_catalog/contracts.py` (`MarketObservation`) —
+untouched by the fix, since the fix only stops *discarding* its fields — and the §2.3/§1.2
+clauses, which already demand the stricter behaviour. So no frozen-file touch and no doc
+amendment are required.
+
+#### Fix options (A/B/C…)
+* **A (recommended)** — make `_window` measure the contract's quantities and fail closed:
+  1. `_normalise_bars` preserves `availability_time` (and `oi_timestamp`/`delay_seconds`) from
+     `MarketObservation`, and normalises the mapping aliases into one canonical `timestamp`
+     (accept `ts`/`as_of` as aliases, reject a bar carrying two disagreeing ones);
+  2. `_window` rejects a bar with no time and no status (`BRIDGE_CONTEXT_INCOMPLETE`) instead of
+     passing it;
+  3. `_window` applies `close_time_ms(stamp_ms, timeframe) <= _as_of_ms(as_of)` — reusing the
+     existing helper from `engine_context` — and `availability_time <= as_of`, raising the
+     contract's own `E-PIT-001`/`BRIDGE_PIT_VIOLATION`;
+  4. keep the native producer guard as defence in depth (do not delete it on the grounds that the
+     bridge now checks).
+  Side effects: bars that legitimately lack `availability_time` (legacy store projection — the
+  native producer already calls this out at `engine_context.py:2374–2377`) would start failing;
+  they must be routed through the producer's metadata recovery, or the bridge must accept a
+  producer-signed receipt. Tests supplying hand-made bars without times
+  (`tests/integration/test_context_to_trade_paper.py`, `tests/unit/test_cp146.py` fixtures) will
+  need timestamps — a fixture change, not a logic change. No frozen file, no migration, no hash
+  invalidation.
+* **B** — forbid caller-supplied `bars` entirely: `_window` always reads through
+  `self.store.get_window` / the producer. Side effects: removes the `context_source` extension
+  point used by `tests/integration/test_context_to_trade_paper.py`; strongest guarantee, but it
+  moves the whole burden onto the store reader, which for an alternative store has the same
+  problem.
+* **C** — require the producer to stamp the transport with a signed window receipt (window hash +
+  `as_of` + close/availability bounds) that `_window` verifies. Side effects: the cleanest
+  end-to-end binding and it composes with the **K-024** receipt work, but it is the largest
+  change and needs a receipt format decision first.
+* **D** — do nothing, documenting that the native producer is the only permitted source. Side
+  effects: rejected — `_window` *advertises* a PIT check (`BRIDGE_PIT_VIOLATION`), and a check
+  that measures the wrong quantity is worse than no check.
+
+#### My recommendation
+**A now** (it is small, local and restores exactly what §2.3 and §1.2 require), and **C** later as
+part of the K-024 receipt work; keep the native guard regardless.
+
+#### Acceptance and regression tests
+1. 1h cell, `as_of = 01:30`: a bar with `timestamp = 01:00` (close 02:00) is **rejected**
+   (`BRIDGE_PIT_VIOLATION`) — the probe's first case must flip.
+2. A bar with `availability_time > as_of` is rejected with the contract's `E-PIT-001` semantics,
+   including when it arrives as a `MarketObservation` (the field must survive normalisation).
+3. A future bar carried on `ts` (or `as_of`) is rejected exactly like one on `timestamp`;
+   disagreeing aliases are rejected.
+4. A bar with no time or no `status` is rejected (`BRIDGE_CONTEXT_INCOMPLETE`), never admitted.
+5. A genuine native window (bars whose close **and** availability are ≤ `as_of`, with raw
+   lineage) still passes and produces the same plan as before the fix.
+6. A negative test on an alternative `context_source` adapter and a positive test on the native
+   producer, so the bridge guard is proven independent of the producer guard.
